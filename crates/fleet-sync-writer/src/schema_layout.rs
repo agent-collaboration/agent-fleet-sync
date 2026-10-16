@@ -1,11 +1,33 @@
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", try_from = "StoredTableLayout")]
 pub struct TableLayout {
     name: String,
     columns: Vec<String>,
     primary_key: Vec<usize>,
     integer_primary_key: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StoredTableLayout {
+    name: String,
+    columns: Vec<String>,
+    primary_key: Vec<usize>,
+    integer_primary_key: Option<usize>,
+}
+impl TryFrom<StoredTableLayout> for TableLayout {
+    type Error = LayoutError;
+    fn try_from(stored: StoredTableLayout) -> Result<Self, Self::Error> {
+        Self::new(
+            stored.name,
+            stored.columns,
+            stored.primary_key,
+            stored.integer_primary_key,
+        )
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]

@@ -1,0 +1,1 @@
+CREATE TABLE local_notes(id TEXT PRIMARY KEY, note TEXT NOT NULL);

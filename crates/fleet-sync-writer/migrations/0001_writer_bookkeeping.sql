@@ -18,3 +18,8 @@ CREATE TABLE _fleet_sync_rejected_tails (
     epoch TEXT PRIMARY KEY,
     record TEXT NOT NULL
 );
+CREATE TABLE _fleet_sync_schema_steps (
+    version INTEGER PRIMARY KEY,
+    statements TEXT NOT NULL,
+    schema_layout TEXT NOT NULL
+);

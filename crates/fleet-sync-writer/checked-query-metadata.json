@@ -1,14 +1,14 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "../../Cargo.lock": "3ff6643458da9d680d708435a67ea54ecab5b3397158d6089a335440d2c3aa65",
+    "../../Cargo.lock": "67d5de8a6e75df639b743c49f82328a3854168da92050430d01a56e94e7da59f",
     "../../rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "../fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "../fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "../fleet-sync-query-gen/src/lib.rs": "e2c75aea7e0202d0ad0a71394dba18ec229ee625a43ff180f9388702242cb477",
     "../fleet-sync-query-gen/src/main.rs": "528bf0583d11bde8fc4b7c0d5a2ea21bde8380e452c0c123a22929dfa5635cfd",
     "../fleet-sync-query-gen/src/native_generation.rs": "c27944fb2f548a37c68c75fd33cef7cd32a4e9c7fa5170acc4f8ddd5c4394883",
-    "../fleet-sync-query-gen/src/query_render.rs": "f0774c13b73fe7272baab2325588afd0e64b10bf97e73fc474b296501f65da4b",
+    "../fleet-sync-query-gen/src/query_render.rs": "2584f37650c8355b5537362ff5f66c8cf6a3955eb7a903faa5c5887ec26c880a",
     "../fleet-sync-query-gen/src/source_freshness.rs": "caf2814c7255afdb3fc3714f3c6bb093702a6cfd3ca9d26c01896c75824f9583",
     "../fleet-sync-query-gen/src/source_manifest.rs": "770e53cb230b27d44731507738e08f7217dba8fc230617d97bda765c78be8ad8",
     "../sqlx-durable-object-core/Cargo.toml": "5af0f7433ff001c4f2347d0575306bb35da43f53b3b75ae4c0fb2c3a0b5e308f",
@@ -49,12 +49,20 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "19efa011eaacfea2b55b6c9c8aaedd8a7b27abc6de3b787b0f7425eed413a315",
-    "migrations/0001_writer_bookkeeping.sql": "d33f27c157fac06eefce502b1df625166475d928dfa95bc6297bc756ef2ba220",
+    "checked-queries.json": "4c8cd96523fae802416124fae8e11e17a48c0588995a1355b714859c096b042e",
+    "migrations/0001_writer_bookkeeping.sql": "4202f8eaaf326395e2f393904c7b4ac46bb61ae1de1ae0fd36eb3b94812fc1f4",
+    "query-schema/99990001_capture_query_schema.sql": "1e1ee98953e04f6edcd18b85abc33326819a0e0210f3fc42717e4cd30e4b1c98",
+    "sql/prune_capture.sql": "1a30ee5e9032e29a0c26bad86b2f8fe60842b53b7586a6a777498a2199482485",
+    "sql/read_applied_migrations.sql": "d28e0c75869577acf37e787e52b1e1213c7f0f5c529ea5b66371c655c86cec48",
+    "sql/read_capture.sql": "ce964afd18720f1c1c173d7d4d4436fa0bf3d44d2ec35d0e91af731c114f6844",
     "sql/read_foreign_keys.sql": "7ecca70236bf3d19a579874c974a159bd9ed565aa2523e305c8b8870a4d22387",
     "sql/read_schema_entries.sql": "770651a8f1a53c6a4889f5f13b257dcf222d3bff6fb72b0dc0f8aefbd2159cff",
+    "sql/read_schema_steps.sql": "ff7b04e447ac1008cca6a30ed065918a609f748b991e6200421c7d6efc5d8914",
     "sql/read_table_columns.sql": "f38bc12d08a3c32f08f308624a45ce409e0ce50b1eefa680672cff408416f100",
-    "src/checked_queries.rs": "4dbf2db6636ecaa446e2f0dcc35bf035f553367a96e597a30735a242d9503f33"
+    "sql/read_writer.sql": "14680aaf3ad3c85a9124ff74018154a54c61081b0664215bea360e65bd9ef83f",
+    "sql/write_schema_step.sql": "25bf187503cdca23522d2da0d086a329b812bf5c06e904308956aa8a2f8687cc",
+    "sql/write_writer.sql": "2897299ed63abcbcf3162c1bd725e8ff664020aa9a384d7820028341460282bf",
+    "src/checked_queries.rs": "0983b1c617ef7d0966c603034a591c15fd279235267137f3060ec408e8f86a3f"
   },
   "queries": [
     {
@@ -284,6 +292,199 @@
           "type_source": "typeof"
         }
       ]
+    },
+    {
+      "name": "read_writer",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "singleton",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "singleton_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "record_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "write_writer",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "read_schema_steps",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "version",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "version_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "statements",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "statements_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "schema_layout",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "layout_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "write_schema_step",
+      "bind_slots": 3,
+      "columns": []
+    },
+    {
+      "name": "read_applied_migrations",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "version",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "version_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "read_capture",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "change_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "id_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "transaction_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "transaction_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "change_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "kind_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "table_name",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "table_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "before_image",
+          "sql_type": "BLOB",
+          "rust_type": "Option<Vec<u8>>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "after_image",
+          "sql_type": "BLOB",
+          "rust_type": "Option<Vec<u8>>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "prune_capture",
+      "bind_slots": 1,
+      "columns": []
     }
   ]
 }

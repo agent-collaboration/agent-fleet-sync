@@ -1,6 +1,6 @@
 use crate::{LeasePolicy, WriterState};
 use fleet_sync_protocol::{
-    DatabaseId, Epoch, GateReasonCode, LeaseRefusal, LeaseState, LeaseStatus, PeerId, RenewAnswer,
+    DatabaseId, Epoch, GateReason, LeaseRefusal, LeaseState, LeaseStatus, PeerId, RenewAnswer,
     ReplicationPosition, SyncTime, TransferId,
 };
 use std::time::Duration;
@@ -12,7 +12,7 @@ pub enum HolderError {
     #[error("registry refused the writer: {0:?}")]
     Refused(LeaseRefusal),
     #[error("registration rejected: {reason:?}")]
-    RegistrationRejected { reason: GateReasonCode },
+    RegistrationRejected { reason: GateReason },
     #[error("writer cannot make this transition from its current state")]
     InvalidTransition,
 }
@@ -50,7 +50,7 @@ enum HolderAuthority {
     },
     Refused(LeaseRefusal),
     Rejected {
-        reason: GateReasonCode,
+        reason: GateReason,
     },
 }
 
@@ -247,7 +247,7 @@ impl LeaseHolder {
         }
     }
 
-    pub fn reject_registration(&mut self, reason: GateReasonCode) -> Result<(), HolderError> {
+    pub fn reject_registration(&mut self, reason: GateReason) -> Result<(), HolderError> {
         if !matches!(self.authority, HolderAuthority::Provisional) {
             return Err(HolderError::InvalidTransition);
         }

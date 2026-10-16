@@ -3,8 +3,8 @@
 use durable_steps::Uuid;
 use fleet_sync_lease::{HolderError, LeaseHolder, LeasePolicy, WriterState};
 use fleet_sync_protocol::{
-    CommitSequence, DatabaseId, Epoch, GateReasonCode, LeaseRefusal, LeaseState, LeaseStatus,
-    PeerId, RenewAnswer, RenewResult, ReplicationPosition, SyncTime, TransferId,
+    CommitSequence, DatabaseId, Epoch, GateReason, GateReasonCode, LeaseRefusal, LeaseState,
+    LeaseStatus, PeerId, RenewAnswer, RenewResult, ReplicationPosition, SyncTime, TransferId,
 };
 use std::time::Duration;
 
@@ -152,7 +152,10 @@ fn seeding_and_draining_survive_same_epoch_renewals_and_release_is_final() -> Te
 fn retirement_and_registration_refusal_never_look_like_writing() -> TestResult {
     let (database, peer) = identities()?;
     let mut holder = LeaseHolder::provisional(database, peer, policy());
-    let reason = GateReasonCode::new("consumer_refused")?;
+    let reason = GateReason {
+        code: GateReasonCode::new("consumer_refused")?,
+        detail: "registration refused by consumer".into(),
+    };
     holder.reject_registration(reason.clone())?;
     assert_eq!(
         holder.writer_state(sync_time(0)),

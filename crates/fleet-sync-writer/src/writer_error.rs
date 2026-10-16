@@ -1,7 +1,13 @@
-use fleet_sync_protocol::{Epoch, GateReasonCode, SyncTime, TableName, TransferId};
+use fleet_sync_protocol::{Epoch, GateReason, SyncTime, TableName, TransferId};
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SchemaForm {
+    #[error("schema version {store} is newer than supported version {supported}")]
+    SchemaTooNew { store: u64, supported: u64 },
+    #[error("migration statement is not admitted: {statement}: {detail}")]
+    InvalidMigration { statement: String, detail: String },
+    #[error("migration statement calls nondeterministic function {function}: {statement}")]
+    NonDeterministicMigration { statement: String, function: String },
     #[error("replicated table {table:?} has no primary key")]
     NoPrimaryKey { table: TableName },
     #[error("replicated table {table:?} is missing")]
@@ -23,6 +29,10 @@ pub enum SchemaForm {
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum OpenError {
+    #[error("migration write refused: {refusal}")]
+    WriteRefused { refusal: WriteRefusal },
+    #[error("existing unmanaged database needs explicit schema-checked adoption")]
+    UnmanagedFile,
     #[error("unsupported replicated schema: {form}")]
     SchemaUnsupported { form: SchemaForm },
     #[error("reserved replicated table {table:?}")]
@@ -38,7 +48,7 @@ pub enum WriteRefusal {
     #[error("database has not registered")]
     Provisional,
     #[error("registration rejected: {reason:?}")]
-    Rejected { reason: GateReasonCode },
+    Rejected { reason: GateReason },
     #[error("statement refused: {form}")]
     StatementRefused { form: crate::StatementForm },
     #[error("writer is being seeded")]

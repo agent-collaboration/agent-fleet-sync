@@ -1,4 +1,4 @@
-use crate::TableLayout;
+use crate::{OpenError, SchemaForm, TableLayout};
 use std::collections::HashMap;
 use turso_parser::{
     ast::{Cmd, InsertBody, Stmt, UpsertDo},
@@ -44,6 +44,7 @@ pub struct StatementGuard {
 struct CheckedProfiles {
     read: Result<(), StatementRefusal>,
     write: Result<(), StatementRefusal>,
+    migration: Result<Vec<String>, OpenError>,
 }
 
 impl StatementGuard {
@@ -62,13 +63,23 @@ impl StatementGuard {
         self.checked_profiles(sql).read.clone()
     }
 
+    pub(crate) fn migration_statements(&mut self, sql: &str) -> Result<Vec<String>, OpenError> {
+        self.checked_profiles(sql).migration.clone()
+    }
+
     fn checked_profiles(&mut self, sql: &str) -> &CheckedProfiles {
         self.checked.entry(sql.to_owned()).or_insert_with(|| {
             match check_statements(sql, &self.tables) {
                 Ok(profiles) => profiles,
                 Err(error) => CheckedProfiles {
                     read: Err(error.clone()),
-                    write: Err(error),
+                    write: Err(error.clone()),
+                    migration: Err(OpenError::SchemaUnsupported {
+                        form: SchemaForm::InvalidMigration {
+                            statement: sql.into(),
+                            detail: error.to_string(),
+                        },
+                    }),
                 },
             }
         })
@@ -87,12 +98,42 @@ fn check_statements(
     let mut profiles = CheckedProfiles {
         read: Ok(()),
         write: Ok(()),
+        migration: Ok(Vec::new()),
     };
+    let mut statement_start = 0;
     while let Some(command) = parser.next_cmd().map_err(|error| StatementRefusal {
         form: StatementForm::InvalidSql {
             message: error.to_string(),
         },
     })? {
+        let statement_end = parser.offset();
+        let statement_sql = sql.get(statement_start..statement_end).ok_or_else(|| {
+            refuse(StatementForm::InvalidSql {
+                message: "invalid parser offset".into(),
+            })
+        })?;
+        statement_start = statement_end;
+        if profiles.migration.is_ok() {
+            if let Err(error) = fleet_sync_protocol::admit_schema_command(&command) {
+                profiles.migration = Err(OpenError::SchemaUnsupported {
+                    form: SchemaForm::InvalidMigration {
+                        statement: statement_sql.into(),
+                        detail: error.to_string(),
+                    },
+                });
+            } else if let Some(function) =
+                crate::migration_determinism::nondeterministic_function(&command)
+            {
+                profiles.migration = Err(OpenError::SchemaUnsupported {
+                    form: SchemaForm::NonDeterministicMigration {
+                        statement: statement_sql.into(),
+                        function,
+                    },
+                });
+            } else if let Ok(statements) = &mut profiles.migration {
+                statements.push(statement_sql.to_owned());
+            }
+        }
         let Cmd::Stmt(statement) = &command else {
             continue;
         };

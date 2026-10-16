@@ -16,10 +16,10 @@ fleet-sync-lease = { path = "../fleet-sync-lease" }
 fleet-sync-protocol = { path = "../fleet-sync-protocol" }
 futures-core.workspace = true
 futures-util.workspace = true
-runtime-primitives = { path = "../runtime-primitives" }
+runtime-primitives = { path = "../runtime-primitives", features = ["tokio"] }
 serde.workspace = true
 serde_json.workspace = true
-sqlx = { workspace = true, features = ["migrate"] }
+sqlx = { workspace = true, features = ["macros", "migrate"] }
 sqlx-core = { workspace = true, features = ["migrate", "offline"] }
 sqlx-turso.workspace = true
 thiserror.workspace = true
