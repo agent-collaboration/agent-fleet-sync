@@ -1,0 +1,20 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT record AS \"record!: String\" FROM client_fixture_state WHERE singleton = 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "record!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "17d7af894b6b0108c7dca3521fb0d2fa2095e7ec8d526b3f319f20490093a57d"
+}
