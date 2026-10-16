@@ -11,6 +11,7 @@ publish = false
 repository = "https://github.com/agent-collaboration/agent-fleet-sync"
 
 [workspace.dependencies]
+runtime-primitives = { path = "crates/runtime-primitives" }
 chrono = "0.4.45"
 either = "1.16.0"
 futures-core = "0.3.34"
