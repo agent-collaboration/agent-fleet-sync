@@ -12,7 +12,7 @@ use std::{
     marker::PhantomData,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -156,8 +156,17 @@ impl CallTarget for DoubleTarget {
     }
 }
 
+#[derive(Clone)]
 struct ThreeStepTask {
     first_name: &'static str,
+    synchronous_invocations: Arc<AtomicU64>,
+}
+
+fn three_steps(first_name: &'static str) -> ThreeStepTask {
+    ThreeStepTask {
+        first_name,
+        synchronous_invocations: Arc::new(AtomicU64::new(0)),
+    }
 }
 impl Task for ThreeStepTask {
     const KIND: &'static str = "three-steps";
@@ -171,8 +180,10 @@ impl Task for ThreeStepTask {
         input: &u64,
     ) -> Result<u64, OperationFailure> {
         let value = *input;
+        let synchronous_invocations = Arc::clone(&self.synchronous_invocations);
         let prepared = ctx
             .local(step(self.first_name), move |scope| {
+                synchronous_invocations.fetch_add(1, Ordering::SeqCst);
                 Box::pin(async move {
                     scope.increment("prepare_effect")?;
                     Ok(value)
@@ -194,15 +205,15 @@ impl Task for ThreeStepTask {
 }
 
 #[test]
-fn lost_answer_replays_call_id_and_local_outputs_after_engine_reopen() -> TestResult {
+fn lost_answer_replays_call_id_without_invoking_saved_local_callback() -> TestResult {
     block_on(async {
         let host = TestHost::new();
         host.lose_answers.store(1, Ordering::SeqCst);
         let store = Arc::new(TestStore::new(Arc::clone(&host)));
         let mut engine = Engine::new(Arc::clone(&store), Arc::clone(&host));
-        engine.register(ThreeStepTask {
-            first_name: "prepare",
-        })?;
+        let task = three_steps("prepare");
+        let synchronous_invocations = Arc::clone(&task.synchronous_invocations);
+        engine.register(task.clone())?;
         let id = engine
             .start::<ThreeStepTask>(&key("lost-answer"), 7)
             .await?;
@@ -213,9 +224,7 @@ fn lost_answer_replays_call_id_and_local_outputs_after_engine_reopen() -> TestRe
         drop(engine);
         host.advance(10);
         let mut reopened = Engine::new(Arc::clone(&store), Arc::clone(&host));
-        reopened.register(ThreeStepTask {
-            first_name: "prepare",
-        })?;
+        reopened.register(task)?;
         reopened.drive_due().await?;
         let OperationState::Completed { result } = reopened.status(&id).await?.state else {
             return Err("operation did not complete".into());
@@ -223,6 +232,7 @@ fn lost_answer_replays_call_id_and_local_outputs_after_engine_reopen() -> TestRe
         assert_eq!(serde_json::from_slice::<u64>(&result)?, 14);
         assert_eq!(host.deliveries.load(Ordering::SeqCst), 2);
         assert_eq!(host.effects.load(Ordering::SeqCst), 1);
+        assert_eq!(synchronous_invocations.load(Ordering::SeqCst), 1);
         store
             .transaction(|scope| {
                 Box::pin(async move {
@@ -250,9 +260,7 @@ fn retry_waits_for_its_deadline_and_changed_step_name_fails_without_an_effect() 
         host.retry_calls.store(true, Ordering::SeqCst);
         let store = Arc::new(TestStore::new(Arc::clone(&host)));
         let mut engine = Engine::new(Arc::clone(&store), Arc::clone(&host));
-        engine.register(ThreeStepTask {
-            first_name: "prepare",
-        })?;
+        engine.register(three_steps("prepare"))?;
         let id = engine
             .start::<ThreeStepTask>(&key("changed-step"), 7)
             .await?;
@@ -261,9 +269,7 @@ fn retry_waits_for_its_deadline_and_changed_step_name_fails_without_an_effect() 
         drop(engine);
         host.advance(10);
         let mut reopened = Engine::new(Arc::clone(&store), Arc::clone(&host));
-        reopened.register(ThreeStepTask {
-            first_name: "renamed",
-        })?;
+        reopened.register(three_steps("renamed"))?;
         reopened.drive_due().await?;
         assert!(matches!(
             reopened.status(&id).await?.state,
