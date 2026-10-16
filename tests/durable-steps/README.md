@@ -13,6 +13,8 @@ cargo tree -p durable-steps --no-default-features --target wasm32-unknown-unknow
 
 The last tree must contain no Tokio. The `turso` adapter deliberately enables Tokio; the default execution core does not.
 
+`TursoStore::open_and_migrate(path, host)` enforces foreign keys by default. Copy owners can use `TursoStore::open_with(path, TursoStoreOptions { foreign_keys: false }, host)`; the policy is applied during connection setup before the migration transaction. The native options test checks actual orphan business-row rejection by default and committed readback when enforcement is disabled. It failed with the old hardcoded policy and passed after the option was wired through. The journal migration-history table remains `_fleet_sync_migrations`.
+
 ## Native process recovery
 
 ```sh

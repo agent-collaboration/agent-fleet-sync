@@ -19,15 +19,36 @@ pub struct TursoStore<H: Host> {
     host: Arc<H>,
 }
 
+/// Connection settings applied before the store begins its migration transaction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TursoStoreOptions {
+    pub foreign_keys: bool,
+}
+
+impl Default for TursoStoreOptions {
+    fn default() -> Self {
+        Self { foreign_keys: true }
+    }
+}
+
 impl<H: Host> TursoStore<H> {
     pub async fn open_and_migrate(
         path: impl AsRef<Path>,
         host: Arc<H>,
     ) -> Result<Self, StoreError> {
+        Self::open_with(path, TursoStoreOptions::default(), host).await
+    }
+
+    /// Open and migrate with connection settings chosen by the store's owner.
+    pub async fn open_with(
+        path: impl AsRef<Path>,
+        options: TursoStoreOptions,
+        host: Arc<H>,
+    ) -> Result<Self, StoreError> {
         let mut connection = TursoConnectOptions::new()
             .filename(path)
             .create_if_missing(true)
-            .foreign_keys(true)
+            .foreign_keys(options.foreign_keys)
             .connect()
             .await
             .map_err(StoreError::backend)?;
