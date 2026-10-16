@@ -123,6 +123,9 @@ pub enum HolderChangeRequest {
     deny_unknown_fields
 )]
 pub enum HolderChangeRefusal {
+    GateRefused {
+        reason: crate::GateReason,
+    },
     TransferInProgress {
         transfer: TransferId,
     },

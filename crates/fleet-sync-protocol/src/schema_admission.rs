@@ -67,7 +67,13 @@ pub fn admit_schema_statement(sql: &str) -> Result<(), SchemaAdmissionError> {
             reason: SchemaAdmissionReason::StatementCount,
         });
     }
-    let form = statement_form(&command);
+    admit_schema_command(&command)
+}
+
+/// Apply schema policy to one parsed command. The caller owns SQL framing;
+/// `admit_schema_statement` also rejects empty, invalid and multiple statements.
+pub fn admit_schema_command(command: &turso_parser::ast::Cmd) -> Result<(), SchemaAdmissionError> {
+    let form = statement_form(command);
     if !matches!(
         form,
         SchemaStatementForm::CreateTable

@@ -81,6 +81,10 @@ pub enum ReplicationRequest<A = ()> {
     },
     SeedPage(Box<SeedPage>),
     SeedComplete(SeedComplete),
+    SnapshotManifest {
+        database: DatabaseId,
+        position: ReplicationPosition,
+    },
     SnapshotPage {
         database: DatabaseId,
         cursor: Option<SnapshotCursor>,
@@ -156,6 +160,7 @@ pub enum ReplicationAnswer {
     SeedPage(SeedPageAnswer),
     SeedComplete(SeedAnswer),
     SnapshotPage(SnapshotRead),
+    SnapshotManifest(SnapshotManifestAnswer),
     CopyStatus(CopyStatusAnswer),
 }
 

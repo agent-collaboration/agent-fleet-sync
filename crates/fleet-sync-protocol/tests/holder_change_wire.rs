@@ -34,3 +34,14 @@ fn takeover_preview_carries_content_fence_and_optional_last_seen_without_clock_e
         assert_eq!(serde_json::to_value(preview).unwrap(), wire);
     }
 }
+
+#[test]
+fn release_supersession_and_request_conflicts_are_typed_answers() {
+    for wire in [
+        serde_json::json!({"kind":"requestConflict"}),
+        serde_json::json!({"kind":"releaseRefused","value":{"kind":"superseded","value":{"current":3}}}),
+    ] {
+        let answer: ReleaseAnswer = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(answer).unwrap(), wire);
+    }
+}

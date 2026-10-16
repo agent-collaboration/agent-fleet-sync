@@ -187,12 +187,19 @@ pub struct CreateCopy {
     pub holder: Option<PeerId>,
     pub origin: CopyOrigin,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
 pub enum CreateCopyAnswer {
     CopyCreated,
     AlreadyCreated,
     Retired,
+    CreationConflict { existing: CreateCopy },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -301,6 +308,7 @@ pub struct Retirement {
     deny_unknown_fields
 )]
 pub enum RetirementRefusal {
+    CopyNotInitialized,
     LeaseHeld,
     TransferInProgress,
     GateRefused {

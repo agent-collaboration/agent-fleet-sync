@@ -17,6 +17,7 @@ mod schema_admission;
 mod schema_fingerprint;
 mod schema_sql;
 mod session_frame;
+mod snapshot_manifest;
 mod snapshot_page;
 mod transaction_part;
 
@@ -34,5 +35,6 @@ pub use runtime_primitives::{CallId, OperationId, StepName, SyncTime};
 pub use schema_admission::*;
 pub use schema_fingerprint::*;
 pub use session_frame::*;
+pub use snapshot_manifest::*;
 pub use snapshot_page::*;
 pub use transaction_part::*;

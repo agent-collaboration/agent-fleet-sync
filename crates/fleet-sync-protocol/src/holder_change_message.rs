@@ -71,6 +71,9 @@ pub enum MigrationState {
     deny_unknown_fields
 )]
 pub enum ReleaseRefusal {
+    Superseded {
+        current: Epoch,
+    },
     MigrationPending {
         migration: u64,
         state: MigrationState,
@@ -90,6 +93,7 @@ pub enum ReleaseRefusal {
     deny_unknown_fields
 )]
 pub enum ReleaseAnswer {
+    RequestConflict,
     Released {
         #[serde(rename = "final")]
         final_position: ReplicationPosition,
