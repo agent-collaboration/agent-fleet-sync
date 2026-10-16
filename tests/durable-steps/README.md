@@ -13,6 +13,8 @@ cargo tree -p durable-steps --no-default-features --target wasm32-unknown-unknow
 
 The last tree must contain no Tokio. The `turso` adapter deliberately enables Tokio; the default execution core does not.
 
+`engine_send` asserts that `start`, `drive_due` and `status` return Send futures from a store-generic task with higher-ranked scope bounds, then actually spawns it on Tokio and reads its result from Turso. It failed with a higher-ranked Send error before the engine declared explicit future bounds. The targeted `manual_async_fn` expectations preserve those bounds rather than accepting Clippy's suggestion to restore the failing form.
+
 `TursoStore::open_and_migrate(path, host)` enforces foreign keys by default. Copy owners can use `TursoStore::open_with(path, TursoStoreOptions { foreign_keys: false }, host)`; the policy is applied during connection setup before the migration transaction. The native options test checks actual orphan business-row rejection by default and committed readback when enforcement is disabled. It failed with the old hardcoded policy and passed after the option was wired through. The journal migration-history table remains `_fleet_sync_migrations`.
 
 `TursoScope::new(&mut transaction, &host)` borrows the caller's connection without owning its transaction. `migrate_journal(&mut connection)` installs the journal on that same connection; the caller supplies the surrounding migration transaction. The borrowed-scope test commits and rolls back an admitted operation with a business row through one caller-owned connection.
