@@ -185,11 +185,7 @@ async fn open_transfer_does_not_stop_renewal_and_retired_marker_precedes_saved_a
                     from_epoch: Epoch::new(1)?,
                     to: holder(2)?,
                 },
-                new_epoch: Epoch::new(2)?,
-                expect: FenceExpectation {
-                    epoch: Epoch::new(1)?,
-                    acked: ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(0)),
-                },
+                new_epoch: Some(Epoch::new(2)?),
             },
             outcome: None,
         })

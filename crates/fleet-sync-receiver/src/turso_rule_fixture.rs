@@ -7,6 +7,7 @@ use fleet_sync_protocol::*;
 use sqlx_core::{
     connection::{ConnectOptions, Connection},
     row::Row,
+    sql_str::SqlSafeStr,
 };
 use sqlx_turso::{Turso, TursoConnectOptions, TursoConnection};
 
@@ -35,6 +36,19 @@ pub(super) struct Hook {
 impl ReceiverHook<TursoScope<'_>> for Hook {
     type Protocol = NoConsumer;
     type FollowUp = String;
+    fn local_migrations(&self) -> &'static [sqlx_core::migrate::Migration] {
+        static MIGRATIONS: std::sync::LazyLock<Vec<sqlx_core::migrate::Migration>> =
+            std::sync::LazyLock::new(|| {
+                vec![sqlx_core::migrate::Migration::new(
+                    1,
+                    "local hook records".into(),
+                    sqlx_core::migrate::MigrationType::Simple,
+                    "CREATE TABLE hook_records(value TEXT PRIMARY KEY);".into_sql_str(),
+                    false,
+                )]
+            });
+        &MIGRATIONS
+    }
     async fn on_applied(
         &self,
         scope: &mut TursoScope<'_>,
@@ -73,7 +87,7 @@ pub(super) fn writer() -> TestResult<PeerId> {
 pub(super) fn position(commit: u64) -> TestResult<ReplicationPosition> {
     Ok(ReplicationPosition::new(
         Epoch::new(1)?,
-        CommitSequence::new(commit),
+        CommitSequence::new(commit + 1),
     ))
 }
 pub(super) fn piece(commit: u64, from: u64) -> TestResult<Piece> {
@@ -83,7 +97,7 @@ pub(super) fn piece(commit: u64, from: u64) -> TestResult<Piece> {
         continues_from: position(from)?,
         through: position(commit)?,
         transactions: vec![ReplicatedTransaction::Rows {
-            commit_id: CommitSequence::new(commit),
+            commit_id: position(commit)?.sequence,
             rows: vec![RowChange::upsert(
                 "records",
                 vec![SqlValue::Integer(9_007_199_254_740_993)],
@@ -100,10 +114,14 @@ pub(super) fn piece(commit: u64, from: u64) -> TestResult<Piece> {
 pub(super) async fn connection() -> TestResult<TursoConnection> {
     let mut connection = TursoConnectOptions::new().connect().await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
-    sqlx_core::raw_sql::raw_sql(include_str!("../migrations/0001_copy_rules.sql"))
-        .execute(&mut *transaction)
-        .await?;
-    sqlx_core::raw_sql::raw_sql("CREATE TABLE records(id INTEGER PRIMARY KEY, body TEXT); CREATE TABLE hook_records(value TEXT PRIMARY KEY);").execute(&mut *transaction).await?;
+    sqlx_core::raw_sql::raw_sql(concat!(
+        include_str!("../migrations/0001_copy_rules.sql"),
+        "\n",
+        include_str!("../migrations/0002_replicated_schema.sql")
+    ))
+    .execute(&mut *transaction)
+    .await?;
+    initialize_hook(&mut TursoScope(&mut transaction), &Hook { refuse: false }).await?;
     create_copy(
         &mut TursoScope(&mut transaction),
         &CreateCopy {
@@ -114,8 +132,45 @@ pub(super) async fn connection() -> TestResult<TursoConnection> {
         },
     )
     .await?;
+    let schema = Piece::<()>::new(PieceContents {
+        database: database()?,
+        epoch: Epoch::new(1)?,
+        continues_from: ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(0)),
+        through: position(0)?,
+        transactions: vec![ReplicatedTransaction::SchemaStep {
+            commit_id: CommitSequence::new(1),
+            migration_version: 1,
+            statements: vec!["CREATE TABLE records(id INTEGER PRIMARY KEY, body TEXT)".into()],
+        }],
+        part: None,
+        annotation: None,
+    })?;
+    apply_piece(
+        &mut TursoScope(&mut transaction),
+        &schema,
+        &writer()?,
+        &SchemaHook,
+        SyncTime::from_unix_millis(0),
+    )
+    .await?;
     transaction.commit().await?;
     Ok(connection)
+}
+
+struct SchemaHook;
+impl ReceiverHook<TursoScope<'_>> for SchemaHook {
+    type Protocol = NoConsumer;
+    type FollowUp = ();
+    async fn on_applied(
+        &self,
+        _: &mut TursoScope<'_>,
+        _: &AppliedPiece<'_, ()>,
+    ) -> Result<Vec<()>, HookRefusal> {
+        Ok(Vec::new())
+    }
+    async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
+        Ok(FollowUpDone)
+    }
 }
 pub(super) async fn counts(
     connection: &mut TursoConnection,

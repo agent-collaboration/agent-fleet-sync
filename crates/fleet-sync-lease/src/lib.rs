@@ -52,3 +52,38 @@ mod preview_rules;
 mod preview_task;
 pub use preview_rules::preview_takeover;
 pub use preview_task::PreviewTakeoverTask;
+
+mod change_checks;
+pub use change_checks::holder_change_request_key;
+
+mod change_completion;
+
+mod holder_change_rules;
+pub use holder_change_rules::holder_change;
+
+mod holder_change_task;
+mod settle_reservation_task;
+pub use holder_change_task::HolderChangeTask;
+pub use settle_reservation_task::SettleReservationTask;
+
+#[cfg(test)]
+mod turso_registry_copy;
+#[cfg(test)]
+mod turso_registry_fixture;
+#[cfg(test)]
+mod turso_registry_gates;
+
+#[cfg(test)]
+mod turso_lifecycle_tests;
+
+pub use change_completion::holder_change_answer;
+#[cfg(test)]
+mod turso_copy_fixture;
+
+#[cfg(test)]
+mod turso_change_race_tests;
+#[cfg(test)]
+mod turso_change_tests;
+
+#[cfg(test)]
+mod turso_claim_recovery_tests;

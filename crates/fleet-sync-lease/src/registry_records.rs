@@ -49,8 +49,7 @@ pub(crate) struct RenewalAttempt {
 #[serde(deny_unknown_fields)]
 pub(crate) struct TransferIntent {
     pub request: HolderChangeRequest,
-    pub new_epoch: Epoch,
-    pub expect: FenceExpectation,
+    pub new_epoch: Option<Epoch>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TransferRecord {

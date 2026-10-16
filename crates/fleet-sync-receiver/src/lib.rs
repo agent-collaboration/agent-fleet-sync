@@ -8,14 +8,17 @@ mod copy_contract;
 mod copy_lifecycle;
 mod copy_storage;
 mod fence_rules;
+mod hook_migrations;
 mod part_assembly;
 mod receiver_contract;
 mod row_apply;
 mod row_transactions;
+mod schema_membership;
 mod schema_reads;
 mod seed_publication;
 mod seed_rules;
 mod seed_storage;
+mod snapshot_manifest;
 mod snapshot_reads;
 mod sql_transport;
 
@@ -24,11 +27,13 @@ pub use apply_rules::{apply_piece, discard_staged_parts};
 pub use copy_lifecycle::{copy_status, create_copy, retire_copy};
 pub use fence_rules::fence;
 pub use fleet_sync_protocol::{CopyRole, CopyStatus};
+pub use hook_migrations::initialize_hook;
 pub use receiver_contract::{
     AppliedPiece, ApplyDecision, ApplyFailure, FollowUpDone, FollowUpFailure, ReceiverError,
     ReceiverHook,
 };
 pub use seed_rules::{seed_begin, seed_complete, seed_page};
+pub use snapshot_manifest::snapshot_manifest;
 pub use snapshot_reads::snapshot_page;
 pub use sql_transport::StoreError;
 use sql_transport::{BoundStatement, BoundValue};
@@ -48,4 +53,8 @@ mod turso_follow_up_tests;
 #[cfg(test)]
 mod turso_copy_identity_tests;
 #[cfg(test)]
+mod turso_hook_migration_tests;
+#[cfg(test)]
 mod turso_rule_fixture;
+#[cfg(test)]
+mod turso_schema_isolation_tests;

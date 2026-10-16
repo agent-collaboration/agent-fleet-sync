@@ -40,7 +40,7 @@ where
     async move {
         let mut status = match CopyStorage(scope).load().await? {
             Some(CopyRecord::Following(status)) if status.database == piece.database => status,
-            Some(CopyRecord::Retired(_)) => {
+            Some(CopyRecord::Retired { .. }) => {
                 return Err(ApplyFailure::Refused(PieceRefusal::Retired));
             }
             _ => return Err(ApplyFailure::Refused(PieceRefusal::NotInitialized)),
@@ -195,12 +195,14 @@ fn unsupported_schema_form(transactions: &[ReplicatedTransaction]) -> Option<Sch
 }
 
 /// After a final-part refusal, discard its staging in a separate host transaction.
-pub async fn discard_staged_parts<S>(
-    scope: &mut S,
-    transaction: &TransactionKey,
-) -> Result<(), ReceiverError>
+// Explicit Send is required by borrowed-scope host dispatch.
+#[allow(clippy::manual_async_fn)]
+pub fn discard_staged_parts<'scope, S>(
+    scope: &'scope mut S,
+    transaction: &'scope TransactionKey,
+) -> impl std::future::Future<Output = Result<(), ReceiverError>> + Send + 'scope
 where
-    S: TransactionScope,
+    S: TransactionScope + 'scope,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'value> String:
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
@@ -208,6 +210,8 @@ where
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    CopyStorage(scope).drop_parts(*transaction).await?;
-    Ok(())
+    async move {
+        CopyStorage(scope).drop_parts(*transaction).await?;
+        Ok(())
+    }
 }

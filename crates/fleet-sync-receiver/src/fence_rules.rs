@@ -8,9 +8,14 @@ use sqlx_core::{
     encode::Encode, types::Type,
 };
 
-pub async fn fence<S>(scope: &mut S, request: &FenceRequest) -> Result<FenceResult, ReceiverError>
+// Explicit Send is required by borrowed-scope host dispatch.
+#[allow(clippy::manual_async_fn)]
+pub fn fence<'scope, S>(
+    scope: &'scope mut S,
+    request: &'scope FenceRequest,
+) -> impl std::future::Future<Output = Result<FenceResult, ReceiverError>> + Send + 'scope
 where
-    S: TransactionScope,
+    S: TransactionScope + 'scope,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'value> String:
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
@@ -18,50 +23,52 @@ where
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    let mut storage = CopyStorage(scope);
-    let Some(record) = storage.load().await? else {
-        return Ok(FenceResult::NotInitialized);
-    };
-    let mut status = match record {
-        CopyRecord::Following(status) => status,
-        CopyRecord::Seeding { .. } => return Ok(FenceResult::NotInitialized),
-        CopyRecord::Retired(_) => return Ok(FenceResult::Retired),
-    };
-    if status.database != request.database {
-        return Ok(FenceResult::NotInitialized);
+    async move {
+        let mut storage = CopyStorage(scope);
+        let Some(record) = storage.load().await? else {
+            return Ok(FenceResult::NotInitialized);
+        };
+        let mut status = match record {
+            CopyRecord::Following(status) => status,
+            CopyRecord::Seeding { .. } => return Ok(FenceResult::NotInitialized),
+            CopyRecord::Retired { .. } => return Ok(FenceResult::Retired),
+        };
+        if status.database != request.database {
+            return Ok(FenceResult::NotInitialized);
+        }
+        if let Some(receipt) = storage.fence_receipt(request).await? {
+            validate_replayed_fence(&status, request, &receipt)?;
+            return Ok(receipt);
+        }
+        if request.new_epoch <= status.fence {
+            return Ok(FenceResult::FenceNotAdvanced {
+                current_epoch: status.fence,
+            });
+        }
+        if request.expect.epoch != status.fence || request.expect.acked != status.acked {
+            return Ok(FenceResult::PreviewStale {
+                acked: status.acked,
+            });
+        }
+        if status.schema.version > request.target_schema_max {
+            return Ok(FenceResult::SchemaTooNew {
+                store: status.schema,
+                supported: request.target_schema_max,
+            });
+        }
+        let result = FenceResult::Fenced {
+            old_epoch: status.fence,
+            new_epoch: request.new_epoch,
+            start: status.acked,
+        };
+        let old_holder = status.holder;
+        status.fence = request.new_epoch;
+        status.holder = Some(request.holder);
+        status.start = status.acked;
+        storage.save(&CopyRecord::Following(status)).await?;
+        storage.save_fence(request, old_holder, &result).await?;
+        Ok(result)
     }
-    if let Some(receipt) = storage.fence_receipt(request).await? {
-        validate_replayed_fence(&status, request, &receipt)?;
-        return Ok(receipt);
-    }
-    if request.new_epoch <= status.fence {
-        return Ok(FenceResult::FenceNotAdvanced {
-            current_epoch: status.fence,
-        });
-    }
-    if request.expect.epoch != status.fence || request.expect.acked != status.acked {
-        return Ok(FenceResult::PreviewStale {
-            acked: status.acked,
-        });
-    }
-    if status.schema.version > request.target_schema_max {
-        return Ok(FenceResult::SchemaTooNew {
-            store: status.schema,
-            supported: request.target_schema_max,
-        });
-    }
-    let result = FenceResult::Fenced {
-        old_epoch: status.fence,
-        new_epoch: request.new_epoch,
-        start: status.acked,
-    };
-    let old_holder = status.holder;
-    status.fence = request.new_epoch;
-    status.holder = Some(request.holder);
-    status.start = status.acked;
-    storage.save(&CopyRecord::Following(status)).await?;
-    storage.save_fence(request, old_holder, &result).await?;
-    Ok(result)
 }
 
 fn validate_replayed_fence(

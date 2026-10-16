@@ -43,9 +43,13 @@ fn position() -> TestResult<ReplicationPosition> {
 async fn setup(expected_position: Option<ReplicationPosition>) -> TestResult<TursoConnection> {
     let mut connection = TursoConnectOptions::new().connect().await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
-    sqlx_core::raw_sql::raw_sql(include_str!("../migrations/0001_copy_rules.sql"))
-        .execute(&mut *transaction)
-        .await?;
+    sqlx_core::raw_sql::raw_sql(concat!(
+        include_str!("../migrations/0001_copy_rules.sql"),
+        "\n",
+        include_str!("../migrations/0002_replicated_schema.sql")
+    ))
+    .execute(&mut *transaction)
+    .await?;
     create_copy(
         &mut TursoScope(&mut transaction),
         &CreateCopy {
@@ -101,6 +105,75 @@ fn snapshot(seed: SeedId) -> TestResult<(SeedPage, SeedComplete)> {
         table_digests: vec![(TableName::new("records")?, digest.finish())],
     };
     Ok((page, done))
+}
+
+#[tokio::test]
+async fn retirement_erases_unpublished_seed_rows_and_keeps_the_permanent_marker() -> TestResult {
+    let mut connection = setup(None).await?;
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    let seed = seed_begin(
+        &mut TursoScope(&mut transaction),
+        database()?,
+        Uuid::from_u128(401),
+    )
+    .await?;
+    let (page, _) = snapshot(seed)?;
+    assert_eq!(
+        seed_page(&mut TursoScope(&mut transaction), &page).await?,
+        SeedPageAnswer::Staged
+    );
+    transaction.commit().await?;
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    let request = RetireCopy {
+        database: database()?,
+        expect_fence: Epoch::new(1)?,
+        expect_acked: ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(0)),
+    };
+    assert_eq!(
+        retire_copy(
+            &mut TursoScope(&mut transaction),
+            &request,
+            SyncTime::from_unix_millis(101)
+        )
+        .await?,
+        RetireCopyAnswer::Retired
+    );
+    transaction.commit().await?;
+    let row = sqlx_core::query::query::<Turso>("SELECT CAST((SELECT count(*) FROM _fleet_sync_seed_pages) AS TEXT) AS pages, CAST((SELECT count(*) FROM _fleet_sync_creation) AS TEXT) AS creation").fetch_one(&mut connection).await?;
+    assert_eq!(row.try_get::<String, _>("pages")?, "0");
+    assert_eq!(row.try_get::<String, _>("creation")?, "0");
+    let row = sqlx_core::query::query::<Turso>("SELECT record, CAST((SELECT count(*) FROM _fleet_sync_seed)+(SELECT count(*) FROM _fleet_sync_seed_attempts)+(SELECT count(*) FROM _fleet_sync_receipts)+(SELECT count(*) FROM _fleet_sync_staged_parts)+(SELECT count(*) FROM _fleet_sync_fence_receipts)+(SELECT count(*) FROM _fleet_sync_schema_steps)+(SELECT count(*) FROM _fleet_sync_copy_tables) AS TEXT) AS other_records FROM _fleet_sync_copy").fetch_one(&mut connection).await?;
+    assert_eq!(row.try_get::<String, _>("other_records")?, "0");
+    let marker = row.try_get::<String, _>("record")?;
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&marker)?,
+        serde_json::json!({"state":"retired", "copy":{"database":database()?,"retired_at":101}})
+    );
+
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    assert_eq!(
+        copy_status(&mut TursoScope(&mut transaction)).await?,
+        CopyStatusAnswer::Retired
+    );
+    assert_eq!(
+        seed_page(&mut TursoScope(&mut transaction), &page).await?,
+        SeedPageAnswer::Retired
+    );
+    assert_eq!(
+        retire_copy(
+            &mut TursoScope(&mut transaction),
+            &request,
+            SyncTime::from_unix_millis(999)
+        )
+        .await?,
+        RetireCopyAnswer::Retired
+    );
+    transaction.commit().await?;
+    let repeated = sqlx_core::query::query::<Turso>("SELECT record FROM _fleet_sync_copy")
+        .fetch_one(&mut connection)
+        .await?;
+    assert_eq!(repeated.try_get::<String, _>("record")?, marker);
+    Ok(())
 }
 
 #[tokio::test]

@@ -1,0 +1,1 @@
+DELETE FROM _fleet_sync_fence_receipts

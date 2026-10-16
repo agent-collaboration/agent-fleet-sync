@@ -9,7 +9,7 @@ use durable_steps::{
 };
 use fleet_sync_protocol::*;
 use runtime_primitives::{Clock, IdSource, WakeScheduler};
-use sqlx_core::{connection::ConnectOptions, row::Row};
+use sqlx_core::{connection::ConnectOptions, row::Row, sql_str::SqlSafeStr};
 use sqlx_turso::{Turso, TursoConnectOptions, TursoConnection};
 use std::sync::{
     Arc,
@@ -31,20 +31,31 @@ struct Hook {
 impl ReceiverHook<TursoScope<'_, TestHost>> for Hook {
     type Protocol = NoConsumer;
     type FollowUp = String;
+    fn local_migrations(&self) -> &'static [sqlx_core::migrate::Migration] {
+        static MIGRATIONS: std::sync::LazyLock<Vec<sqlx_core::migrate::Migration>> =
+            std::sync::LazyLock::new(|| {
+                vec![sqlx_core::migrate::Migration::new(
+                    1,
+                    "consumer apply marks".into(),
+                    sqlx_core::migrate::MigrationType::Simple,
+                    "CREATE TABLE consumer_applied(value TEXT PRIMARY KEY)".into_sql_str(),
+                    false,
+                )]
+            });
+        &MIGRATIONS
+    }
     async fn on_applied(
         &self,
         scope: &mut TursoScope<'_, TestHost>,
         _: &AppliedPiece<'_, ()>,
     ) -> Result<Vec<String>, HookRefusal> {
-        sqlx_core::query::query::<Turso>(
-            "INSERT INTO _fleet_sync_consumer_applied(value) VALUES('applied')",
-        )
-        .execute(scope.executor())
-        .await
-        .map_err(|error| HookRefusal {
-            code: "storage".into(),
-            detail: error.to_string(),
-        })?;
+        sqlx_core::query::query::<Turso>("INSERT INTO consumer_applied(value) VALUES('applied')")
+            .execute(scope.executor())
+            .await
+            .map_err(|error| HookRefusal {
+                code: "storage".into(),
+                detail: error.to_string(),
+            })?;
         Ok(vec!["notice".into()])
     }
     async fn follow_up(
@@ -128,10 +139,10 @@ fn incoming() -> TestResult<Piece> {
     Ok(Piece::new(PieceContents {
         database: database()?,
         epoch,
-        continues_from: ReplicationPosition::new(epoch, CommitSequence::new(0)),
-        through: ReplicationPosition::new(epoch, CommitSequence::new(1)),
+        continues_from: ReplicationPosition::new(epoch, CommitSequence::new(1)),
+        through: ReplicationPosition::new(epoch, CommitSequence::new(2)),
         transactions: vec![ReplicatedTransaction::Rows {
-            commit_id: CommitSequence::new(1),
+            commit_id: CommitSequence::new(2),
             rows: vec![RowChange::upsert(
                 "records",
                 vec![SqlValue::Integer(1)],
@@ -166,19 +177,54 @@ async fn host(path: &std::path::Path) -> TestResult<Arc<TestHost>> {
 fn storage(error: impl std::fmt::Display) -> durable_steps::StoreError {
     durable_steps::StoreError::backend(error)
 }
-async fn setup(store: &TursoStore<TestHost>) -> TestResult {
+async fn setup(store: &TursoStore<TestHost>, hook: Arc<Hook>) -> TestResult {
     let request = CreateCopy {
         database: database()?,
         epoch: Epoch::new(1)?,
         holder: Some(writer()?),
         origin: CopyOrigin::Empty,
     };
-    store.transaction(move|scope|Box::pin(async move{
-        sqlx_core::raw_sql::raw_sql(include_str!("../migrations/0001_copy_rules.sql")).execute(scope.executor()).await?;
-        sqlx_core::raw_sql::raw_sql("CREATE TABLE records(id INTEGER PRIMARY KEY,body TEXT); CREATE TABLE _fleet_sync_consumer_applied(value TEXT PRIMARY KEY);").execute(scope.executor()).await?;
-        create_copy(scope,&request).await.map_err(storage)?;
-        Ok(())
-    })).await?;
+    store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                sqlx_core::raw_sql::raw_sql(concat!(
+                    include_str!("../migrations/0001_copy_rules.sql"),
+                    "\n",
+                    include_str!("../migrations/0002_replicated_schema.sql")
+                ))
+                .execute(scope.executor())
+                .await?;
+                initialize_hook(scope, &*hook).await.map_err(storage)?;
+                create_copy(scope, &request).await.map_err(storage)?;
+                let piece = Piece::<()>::new(PieceContents {
+                    database: request.database,
+                    epoch: request.epoch,
+                    continues_from: ReplicationPosition::new(request.epoch, CommitSequence::new(0)),
+                    through: ReplicationPosition::new(request.epoch, CommitSequence::new(1)),
+                    transactions: vec![ReplicatedTransaction::SchemaStep {
+                        commit_id: CommitSequence::new(1),
+                        migration_version: 1,
+                        statements: vec![
+                            "CREATE TABLE records(id INTEGER PRIMARY KEY,body TEXT)".into(),
+                        ],
+                    }],
+                    part: None,
+                    annotation: None,
+                })
+                .map_err(storage)?;
+                apply_piece(
+                    scope,
+                    &piece,
+                    &writer().map_err(storage)?,
+                    &SchemaHook,
+                    SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage)?;
+                Ok(())
+            })
+        })
+        .await?;
     Ok(())
 }
 async fn apply_and_admit(
@@ -223,7 +269,7 @@ async fn apply_and_admit(
 }
 async fn counts(store: &TursoStore<TestHost>) -> TestResult<(String, String, String, String)> {
     Ok(store.transaction(|scope|Box::pin(async move{
-        let row=sqlx_core::query::query::<Turso>("SELECT CAST((SELECT count(*) FROM records) AS TEXT) AS records,CAST((SELECT count(*) FROM _fleet_sync_consumer_applied) AS TEXT) AS hooks,CAST((SELECT count(*) FROM _fleet_sync_operations) AS TEXT) AS operations,CAST((SELECT count(*) FROM _fleet_sync_receipts) AS TEXT) AS receipts").fetch_one(scope.executor()).await?;
+        let row=sqlx_core::query::query::<Turso>("SELECT CAST((SELECT count(*) FROM records) AS TEXT) AS records,CAST((SELECT count(*) FROM consumer_applied) AS TEXT) AS hooks,CAST((SELECT count(*) FROM _fleet_sync_operations) AS TEXT) AS operations,CAST((SELECT count(*) FROM _fleet_sync_receipts) AS TEXT) AS receipts").fetch_one(scope.executor()).await?;
         Ok((row.try_get("records")?,row.try_get("hooks")?,row.try_get("operations")?,row.try_get("receipts")?))
     })).await?)
 }
@@ -234,7 +280,7 @@ async fn follow_up_admission_rolls_back_with_apply_and_recovers_after_lost_answe
     let journal_path = directory.path().join("copy.db");
     let host = host(&directory.path().join("consumer.db")).await?;
     let store = Arc::new(TursoStore::open_and_migrate(&journal_path, Arc::clone(&host)).await?);
-    setup(&store).await?;
+    setup(&store, Arc::clone(&host.hook)).await?;
     let mut engine = Engine::new(Arc::clone(&store), Arc::clone(&host));
     engine.register(ApplyFollowUp::<TursoStore<TestHost>, String>::new())?;
     assert!(matches!(
@@ -243,14 +289,14 @@ async fn follow_up_admission_rolls_back_with_apply_and_recovers_after_lost_answe
     ));
     assert_eq!(
         counts(&store).await?,
-        ("0".into(), "0".into(), "0".into(), "0".into())
+        ("0".into(), "0".into(), "0".into(), "1".into())
     );
     assert!(engine.drive_due().await?.retried.is_empty());
     assert!(host.calls.lock().await.is_empty());
     apply_and_admit(&store, Arc::clone(&host.hook), false).await?;
     assert_eq!(
         counts(&store).await?,
-        ("1".into(), "1".into(), "1".into(), "1".into())
+        ("1".into(), "1".into(), "1".into(), "2".into())
     );
     let report = engine.drive_due().await?;
     assert_eq!(report.retried.len(), 1);
@@ -277,10 +323,26 @@ async fn follow_up_admission_rolls_back_with_apply_and_recovers_after_lost_answe
     // KEEP_RESULT=false removes the finished journal row; replay remains the piece owner's job.
     assert_eq!(
         counts(&reopened).await?,
-        ("1".into(), "1".into(), "0".into(), "1".into())
+        ("1".into(), "1".into(), "0".into(), "2".into())
     );
     apply_and_admit(&reopened, Arc::clone(&host.hook), false).await?;
     assert!(engine.drive_due().await?.completed.is_empty());
     assert_eq!(host.calls.lock().await.len(), 2);
     Ok(())
+}
+
+struct SchemaHook;
+impl ReceiverHook<TursoScope<'_, TestHost>> for SchemaHook {
+    type Protocol = NoConsumer;
+    type FollowUp = ();
+    async fn on_applied(
+        &self,
+        _: &mut TursoScope<'_, TestHost>,
+        _: &AppliedPiece<'_, ()>,
+    ) -> Result<Vec<()>, HookRefusal> {
+        Ok(Vec::new())
+    }
+    async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
+        Ok(FollowUpDone)
+    }
 }

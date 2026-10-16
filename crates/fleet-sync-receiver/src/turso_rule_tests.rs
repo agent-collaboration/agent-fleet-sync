@@ -41,7 +41,7 @@ async fn repeated_piece_returns_original_position_without_repeating_hook_writes(
     transaction.commit().await?;
     assert_eq!(
         counts(&mut connection).await?,
-        ("1".into(), "2".into(), "2".into())
+        ("1".into(), "2".into(), "3".into())
     );
     let row = sqlx_core::query::query::<Turso>("SELECT CAST(id AS TEXT) AS id,body FROM records")
         .fetch_one(&mut connection)
@@ -71,7 +71,7 @@ async fn hook_refusal_rolls_back_rows_receipts_and_hook_writes_then_resend_appli
     transaction.rollback().await?;
     assert_eq!(
         counts(&mut connection).await?,
-        ("0".into(), "0".into(), "0".into())
+        ("0".into(), "0".into(), "1".into())
     );
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     assert_eq!(
@@ -92,7 +92,7 @@ async fn hook_refusal_rolls_back_rows_receipts_and_hook_writes_then_resend_appli
     transaction.commit().await?;
     assert_eq!(
         counts(&mut connection).await?,
-        ("1".into(), "1".into(), "1".into())
+        ("1".into(), "1".into(), "2".into())
     );
     Ok(())
 }
@@ -105,7 +105,7 @@ async fn wrong_sender_digest_conflict_gap_and_unsupported_schema_leave_no_writes
     wrong_digest.transactions.clear();
     let schema = Piece::new(PieceContents {
         transactions: vec![ReplicatedTransaction::SchemaStep {
-            commit_id: CommitSequence::new(1),
+            commit_id: position(1)?.sequence,
             migration_version: 1,
             statements: vec![
                 "CREATE TRIGGER bad AFTER INSERT ON records BEGIN DELETE FROM records; END".into(),
@@ -163,7 +163,7 @@ async fn wrong_sender_digest_conflict_gap_and_unsupported_schema_leave_no_writes
     }
     assert_eq!(
         counts(&mut connection).await?,
-        ("0".into(), "0".into(), "0".into())
+        ("0".into(), "0".into(), "1".into())
     );
     Ok(())
 }
@@ -174,7 +174,7 @@ async fn split_transaction_stays_invisible_until_final_and_failed_final_discards
     // Wrong behavior: exposing a prefix, retaining a poisoned partial set, or repeating the final hook.
     let mut connection = connection().await?;
     let whole = ReplicatedTransaction::Rows {
-        commit_id: CommitSequence::new(1),
+        commit_id: position(1)?.sequence,
         rows: vec![
             RowChange::upsert(
                 "records",
@@ -193,7 +193,7 @@ async fn split_transaction_stays_invisible_until_final_and_failed_final_discards
     };
     let key = TransactionKey {
         epoch: Epoch::new(1)?,
-        commit_id: CommitSequence::new(1),
+        commit_id: position(1)?.sequence,
     };
     let mut pieces = Vec::new();
     for (index, row) in rows.iter().enumerate() {
@@ -203,7 +203,7 @@ async fn split_transaction_stays_invisible_until_final_and_failed_final_discards
             continues_from: position(0)?,
             through: position(1)?,
             transactions: vec![ReplicatedTransaction::Rows {
-                commit_id: CommitSequence::new(1),
+                commit_id: position(1)?.sequence,
                 rows: vec![row.clone()],
             }],
             part: Some(TransactionPart::new(
@@ -232,11 +232,11 @@ async fn split_transaction_stays_invisible_until_final_and_failed_final_discards
     transaction.commit().await?;
     assert_eq!(
         counts(&mut connection).await?,
-        ("0".into(), "0".into(), "0".into())
+        ("0".into(), "0".into(), "1".into())
     );
     let mut broken = last.clone();
     broken.transactions = vec![ReplicatedTransaction::Rows {
-        commit_id: CommitSequence::new(1),
+        commit_id: position(1)?.sequence,
         rows: Vec::new(),
     }];
     broken.digest = broken.recomputed_digest()?;
@@ -268,7 +268,7 @@ async fn split_transaction_stays_invisible_until_final_and_failed_final_discards
     }
     assert_eq!(
         counts(&mut connection).await?,
-        ("2".into(), "1".into(), "2".into())
+        ("2".into(), "1".into(), "3".into())
     );
     for incoming in &pieces {
         let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
@@ -304,7 +304,7 @@ async fn fencing_preserves_old_holder_cutoff_and_retirement_dominates_replays() 
             epoch: Epoch::new(1)?,
             acked: position(1)?,
         },
-        target_schema_max: 0,
+        target_schema_max: 1,
         holder: next_writer,
     };
     let expected = FenceResult::Fenced {
@@ -346,7 +346,12 @@ async fn fencing_preserves_old_holder_cutoff_and_retirement_dominates_replays() 
     };
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     assert_eq!(
-        retire_copy(&mut TursoScope(&mut transaction), &retire).await?,
+        retire_copy(
+            &mut TursoScope(&mut transaction),
+            &retire,
+            SyncTime::from_unix_millis(101)
+        )
+        .await?,
         RetireCopyAnswer::Retired
     );
     transaction.commit().await?;
@@ -356,7 +361,12 @@ async fn fencing_preserves_old_holder_cutoff_and_retirement_dominates_replays() 
         FenceResult::Retired
     );
     assert_eq!(
-        retire_copy(&mut TursoScope(&mut transaction), &retire).await?,
+        retire_copy(
+            &mut TursoScope(&mut transaction),
+            &retire,
+            SyncTime::from_unix_millis(101)
+        )
+        .await?,
         RetireCopyAnswer::Retired
     );
     assert_eq!(
@@ -414,7 +424,7 @@ async fn snapshot_pages_use_primary_key_cursor_and_stop_when_position_moves() ->
         continues_from: position(0)?,
         through: position(1)?,
         transactions: vec![ReplicatedTransaction::Rows {
-            commit_id: CommitSequence::new(1),
+            commit_id: position(1)?.sequence,
             rows,
         }],
         part: None,

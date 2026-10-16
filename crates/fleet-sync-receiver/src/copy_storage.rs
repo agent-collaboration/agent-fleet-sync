@@ -1,7 +1,4 @@
-use crate::{
-    StoreError, checked_queries,
-    copy_contract::{CopyRecord, validate_copy_status},
-};
+use crate::{StoreError, checked_queries, copy_contract::CopyRecord};
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::{Piece, PieceDigest, TransactionKey};
 use serde::{Serialize, de::DeserializeOwned};
@@ -58,13 +55,44 @@ where
             return Ok(None);
         };
         let copy: CopyRecord = decode_record(row.record, "copy record")?;
-        validate_copy_status(copy.status())?;
+        copy.validate()?;
         Ok(Some(copy))
     }
 
     pub(crate) async fn save(&mut self, copy: &CopyRecord) -> Result<(), StoreError> {
-        validate_copy_status(copy.status())?;
+        copy.validate()?;
         checked_queries::write_copy(self.0, encode_record(copy)?)
+            .await
+            .map_err(crate::sql_transport::sql_error)?;
+        Ok(())
+    }
+
+    pub(crate) async fn erase_records(&mut self) -> Result<(), StoreError> {
+        checked_queries::erase_receipts(self.0)
+            .await
+            .map_err(crate::sql_transport::sql_error)?;
+        checked_queries::erase_staged_parts(self.0)
+            .await
+            .map_err(crate::sql_transport::sql_error)?;
+        checked_queries::erase_fence_receipts(self.0)
+            .await
+            .map_err(crate::sql_transport::sql_error)?;
+        checked_queries::erase_schema_steps(self.0)
+            .await
+            .map_err(crate::sql_transport::sql_error)?;
+        checked_queries::erase_seed(self.0)
+            .await
+            .map_err(crate::sql_transport::sql_error)?;
+        checked_queries::erase_seed_pages(self.0)
+            .await
+            .map_err(crate::sql_transport::sql_error)?;
+        checked_queries::erase_seed_attempts(self.0)
+            .await
+            .map_err(crate::sql_transport::sql_error)?;
+        checked_queries::erase_creation(self.0)
+            .await
+            .map_err(crate::sql_transport::sql_error)?;
+        checked_queries::erase_copy_tables(self.0)
             .await
             .map_err(crate::sql_transport::sql_error)?;
         Ok(())

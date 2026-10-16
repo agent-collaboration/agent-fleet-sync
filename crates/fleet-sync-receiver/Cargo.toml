@@ -9,7 +9,7 @@ description = "Runtime-independent replication copy rules over borrowed SQLx sco
 
 [dependencies]
 durable-steps = { path = "../durable-steps" }
-sqlx-core.workspace = true
+sqlx-core = { workspace = true, features = ["migrate"] }
 fleet-sync-protocol = { path = "../fleet-sync-protocol" }
 serde.workspace = true
 serde_json.workspace = true

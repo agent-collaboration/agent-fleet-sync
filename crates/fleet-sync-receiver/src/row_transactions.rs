@@ -1,5 +1,5 @@
 use crate::{
-    BoundStatement, ReceiverError, StoreError, checked_queries, copy_storage::encode_record,
+    ReceiverError, StoreError, checked_queries, copy_storage::encode_record,
     row_apply::plan_row_change, schema_reads::SchemaReads,
 };
 use durable_steps::storage::TransactionScope;
@@ -60,9 +60,9 @@ where
                             field: "schema version must advance".into(),
                         });
                     }
-                    for sql in statements {
-                        BoundStatement::new(sql, Vec::new()).execute(self.0).await?;
-                    }
+                    crate::schema_membership::SchemaMembership(self.0)
+                        .apply(statements)
+                        .await?;
                     let record = SchemaStepRecord {
                         version: *migration_version,
                         statements: statements.clone(),

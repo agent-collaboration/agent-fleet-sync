@@ -674,3 +674,324 @@ where
         Ok(())
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct StoredCopyTableRow {
+    pub name: Option<String>,
+    pub name_class: Option<String>,
+}
+pub(crate) fn read_copy_tables<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<StoredCopyTableRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_copy_tables.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredCopyTableRow {
+                    name: row.try_get("name")?,
+                    name_class: row.try_get("name_class")?,
+                })
+            })
+            .collect()
+    }
+}
+pub(crate) fn write_copy_table<S>(
+    scope: &mut S,
+    name: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_copy_table.sql"
+        )))
+        .bind(name);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn drop_copy_table<S>(
+    scope: &mut S,
+    name: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/drop_copy_table.sql"
+        )))
+        .bind(name);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredHookMigrationRow {
+    pub version: Option<String>,
+    pub version_class: Option<String>,
+    pub checksum: Option<String>,
+    pub checksum_class: Option<String>,
+}
+pub(crate) fn read_hook_migrations<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<StoredHookMigrationRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_hook_migrations.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredHookMigrationRow {
+                    version: row.try_get("version")?,
+                    version_class: row.try_get("version_class")?,
+                    checksum: row.try_get("checksum")?,
+                    checksum_class: row.try_get("checksum_class")?,
+                })
+            })
+            .collect()
+    }
+}
+pub(crate) fn write_hook_migration<S>(
+    scope: &mut S,
+    version: String,
+    checksum: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_hook_migration.sql"
+        )))
+        .bind(version)
+        .bind(checksum);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn schema_object_exists<S>(
+    scope: &mut S,
+    name: String,
+) -> impl std::future::Future<Output = Result<bool, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/schema_object_exists.sql"
+        )))
+        .bind(name);
+        Ok(statement.fetch_optional(scope.executor()).await?.is_some())
+    }
+}
+pub(crate) fn erase_receipts<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/erase_receipts.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn erase_staged_parts<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/erase_staged_parts.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn erase_fence_receipts<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/erase_fence_receipts.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn erase_schema_steps<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/erase_schema_steps.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn erase_seed<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/erase_seed.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn erase_seed_pages<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/erase_seed_pages.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn erase_seed_attempts<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/erase_seed_attempts.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn erase_creation<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/erase_creation.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn erase_copy_tables<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/erase_copy_tables.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredSchemaOwnerRow {
+    pub owner: Option<String>,
+    pub owner_class: Option<String>,
+}
+pub(crate) fn read_schema_owner<S>(
+    scope: &mut S,
+    name: String,
+) -> impl std::future::Future<Output = Result<Option<StoredSchemaOwnerRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_schema_owner.sql"
+        )))
+        .bind(name);
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(StoredSchemaOwnerRow {
+                    owner: row.try_get("owner")?,
+                    owner_class: row.try_get("owner_class")?,
+                })
+            })
+            .transpose()
+    }
+}

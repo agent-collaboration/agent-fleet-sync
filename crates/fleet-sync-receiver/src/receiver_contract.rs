@@ -18,6 +18,10 @@ pub struct AppliedPiece<'piece, A> {
 pub trait ReceiverHook<S: TransactionScope>: Send + Sync + 'static {
     type Protocol: ConsumerProtocol;
     type FollowUp: Serialize + DeserializeOwned + Send + Sync;
+    /// Local tables initialized by the host before any piece is applied.
+    fn local_migrations(&self) -> &'static [sqlx_core::migrate::Migration] {
+        &[]
+    }
     fn on_applied(
         &self,
         scope: &mut S,

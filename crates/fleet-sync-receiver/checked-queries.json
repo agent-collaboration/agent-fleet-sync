@@ -344,6 +344,153 @@
           "nullable": false
         }
       ]
+    },
+    {
+      "name": "read_copy_tables",
+      "sql": "sql/read_copy_tables.sql",
+      "result": "many",
+      "row": "StoredCopyTableRow",
+      "parameters": []
+    },
+    {
+      "name": "write_copy_table",
+      "sql": "sql/write_copy_table.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": [
+        {
+          "name": "name",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "drop_copy_table",
+      "sql": "sql/drop_copy_table.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": [
+        {
+          "name": "name",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_hook_migrations",
+      "sql": "sql/read_hook_migrations.sql",
+      "result": "many",
+      "row": "StoredHookMigrationRow",
+      "parameters": []
+    },
+    {
+      "name": "write_hook_migration",
+      "sql": "sql/write_hook_migration.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": [
+        {
+          "name": "version",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "checksum",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "schema_object_exists",
+      "sql": "sql/schema_object_exists.sql",
+      "result": "exists",
+      "row": null,
+      "parameters": [
+        {
+          "name": "name",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "erase_receipts",
+      "sql": "sql/erase_receipts.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_staged_parts",
+      "sql": "sql/erase_staged_parts.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_fence_receipts",
+      "sql": "sql/erase_fence_receipts.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_schema_steps",
+      "sql": "sql/erase_schema_steps.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_seed",
+      "sql": "sql/erase_seed.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_seed_pages",
+      "sql": "sql/erase_seed_pages.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_seed_attempts",
+      "sql": "sql/erase_seed_attempts.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_creation",
+      "sql": "sql/erase_creation.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_copy_tables",
+      "sql": "sql/erase_copy_tables.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "read_schema_owner",
+      "sql": "sql/read_schema_owner.sql",
+      "result": "optional",
+      "row": "StoredSchemaOwnerRow",
+      "parameters": [
+        {
+          "name": "name",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
     }
   ]
 }

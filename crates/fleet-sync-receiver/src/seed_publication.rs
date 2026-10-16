@@ -50,9 +50,9 @@ where
             }
         })?;
     }
-    for sql in &first.contents.schema_steps {
-        BoundStatement::new(sql, Vec::new()).execute(scope).await?;
-    }
+    crate::schema_membership::SchemaMembership(scope)
+        .apply(&first.contents.schema_steps)
+        .await?;
     if SchemaReads(scope).fingerprint().await? != done.schema.fingerprint {
         return Err(ReceiverError::SeedRefused {
             answer: SeedAnswer::SchemaMismatch,

@@ -8,7 +8,7 @@ use sqlx_core::{
 
 pub(crate) struct SchemaReads<'scope, S>(pub &'scope mut S);
 
-fn required_text(
+pub(crate) fn required_text(
     value: Option<String>,
     class: Option<String>,
     field: &str,
@@ -56,6 +56,15 @@ where
         if reserved_namespace(table) {
             return Err(ReceiverError::InvalidInput {
                 field: "replicated table is reserved".into(),
+            });
+        }
+        if !crate::schema_membership::SchemaMembership(self.0)
+            .names()
+            .await?
+            .contains(&table.to_ascii_lowercase())
+        {
+            return Err(ReceiverError::InvalidInput {
+                field: "table is outside the replicated schema".into(),
             });
         }
         let rows = checked_queries::read_table_columns(self.0, table.to_owned())

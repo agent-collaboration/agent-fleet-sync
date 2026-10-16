@@ -1,5 +1,5 @@
 use crate::StoreError;
-use fleet_sync_protocol::CopyStatus;
+use fleet_sync_protocol::{CopyStatus, DatabaseId, SyncTime};
 use serde::{Deserialize, Serialize};
 
 pub(crate) fn validate_copy_status(status: &CopyStatus) -> Result<(), StoreError> {
@@ -15,7 +15,7 @@ pub(crate) fn validate_copy_status(status: &CopyStatus) -> Result<(), StoreError
     Ok(())
 }
 
-/// The retired marker retains the fence and position after user records are deleted.
+/// Live state and the minimal permanent marker have different retention rules.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "state",
@@ -29,15 +29,28 @@ pub(crate) enum CopyRecord {
         expected_position: Option<fleet_sync_protocol::ReplicationPosition>,
     },
     Following(CopyStatus),
-    Retired(CopyStatus),
+    Retired {
+        database: DatabaseId,
+        retired_at: SyncTime,
+    },
 }
 
 impl CopyRecord {
-    pub(crate) fn status(&self) -> &CopyStatus {
+    pub(crate) fn database(&self) -> DatabaseId {
         match self {
-            Self::Seeding { status, .. } | Self::Following(status) | Self::Retired(status) => {
-                status
+            Self::Seeding { status, .. } | Self::Following(status) => status.database,
+            Self::Retired { database, .. } => *database,
+        }
+    }
+    pub(crate) fn validate(&self) -> Result<(), StoreError> {
+        match self {
+            Self::Seeding { status, .. } | Self::Following(status) => validate_copy_status(status),
+            Self::Retired { database, .. } if database.as_uuid().is_nil() => {
+                Err(StoreError::Corrupt {
+                    field: "retired database".into(),
+                })
             }
+            Self::Retired { .. } => Ok(()),
         }
     }
 }
