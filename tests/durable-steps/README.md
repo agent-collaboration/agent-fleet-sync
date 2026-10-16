@@ -15,6 +15,8 @@ The last tree must contain no Tokio. The `turso` adapter deliberately enables To
 
 `TursoStore::open_and_migrate(path, host)` enforces foreign keys by default. Copy owners can use `TursoStore::open_with(path, TursoStoreOptions { foreign_keys: false }, host)`; the policy is applied during connection setup before the migration transaction. The native options test checks actual orphan business-row rejection by default and committed readback when enforcement is disabled. It failed with the old hardcoded policy and passed after the option was wired through. The journal migration-history table remains `_fleet_sync_migrations`.
 
+`TursoScope::new(&mut transaction, &host)` borrows the caller's connection without owning its transaction. `migrate_journal(&mut connection)` installs the journal on that same connection; the caller supplies the surrounding migration transaction. The borrowed-scope test commits and rolls back an admitted operation with a business row through one caller-owned connection.
+
 ## Native process recovery
 
 ```sh
@@ -38,7 +40,7 @@ cp tests/durable-steps/shim.mjs tests/durable-steps/build/shim.mjs
 node tests/durable-steps/run-workerd.mjs
 ```
 
-The first endpoint runs the same 11-case conformance module on real DO SQLite transactions. The second tests alarm rollback with a business write and absolute, earlier-only scheduling. The journey then starts the **same three-step task as native**, with its last local step due three seconds later. Before shutdown it checks that the first local effect and remote answer are saved, with two step records. It disposes the runtime and opens the same persisted object in a new runtime. Only `alarm()` drives the operation after restart; inspection only reads. A persisted alarm count and timestamp prove a platform alarm ran after the restart. The final observations require one local effect each, one remote delivery/effect and zero step records. The bounded inspection loop observes that result; it does not drive the engine or run an alarm by hand.
+The first endpoint runs the same 14-case conformance module on real DO SQLite transactions. The second tests alarm rollback with a business write and absolute, earlier-only scheduling. The journey then starts the **same three-step task as native**, with its last local step due three seconds later. Before shutdown it checks that the first local effect and remote answer are saved, with two step records. It disposes the runtime and opens the same persisted object in a new runtime. Only `alarm()` drives the operation after restart; inspection only reads. A persisted alarm count and timestamp prove a platform alarm ran after the restart. The final observations require one local effect each, one remote delivery/effect and zero step records. The bounded inspection loop observes that result; it does not drive the engine or run an alarm by hand.
 
 ## Conformance oracles and limits
 
@@ -57,8 +59,11 @@ The first endpoint runs the same 11-case conformance module on real DO SQLite tr
 | Non-deduplicating lost answer | a possible effect is repeated blindly | named Uncertain, one dispatch |
 | In-flight recovery | dropped dispatch is treated as proven unsent | no NeverSent, stable CallId, one receiver effect |
 | Non-deduplicating in-flight | restart blindly repeats an unresolved dispatch | Uncertain, no second dispatch |
+| Resume Finish | a superseded operation resends an unanswered call or runs later steps | supplied output, no further dispatch, hook writes and normal compact/delete retention commit together |
+| Resume Continue | the hook bypasses saved history or changes normal output | saved first effect remains once, unfinished effect runs once, normal task output |
+| Stale resume hook | a replaced drive invokes the hook before checking its token | yielded drive, zero synchronous hook/task invocations, no step writes |
 
-The new contract cases first passed when introduced; no pre-fix product red was observed for them. The real Turso runner did fail when the terminal-row update had an incomplete bind list, and passed after the binds were corrected. Earlier replay/clock sensitivity evidence is tracked in the implementation trace. A target-specific independent Verifier observation is separate from these author-run receipts. Hosted Cloudflare deployment is not exercised by local workerd.
+The resume Finish case failed on the unwired engine and passed after wiring. The stale-hook case forces a replacement claim after the original claim commits and before its hook transaction, using a forwarding store wrapper and controlled clock; both claims and hook transactions use the real adapter. The earlier contract cases first passed when introduced; no pre-fix product red was observed for them. The real Turso runner did fail when the terminal-row update had an incomplete bind list, and passed after the binds were corrected. Earlier replay/clock sensitivity evidence is tracked in the implementation trace. A target-specific independent Verifier observation is separate from these author-run receipts. Hosted Cloudflare deployment is not exercised by local workerd.
 
 ## Checked SQL
 

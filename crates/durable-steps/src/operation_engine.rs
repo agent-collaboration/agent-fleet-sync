@@ -1,6 +1,7 @@
 use crate::{
     AtomicStore, BoxFuture, DriveLease, DriveReport, Host, JournalScope, OperationFailure,
-    OperationId, OperationState, OperationStatus, RequestKey, StartRefusal, StoreError, Task,
+    OperationId, OperationState, OperationStatus, RequestKey, Resume, StartRefusal, StoreError,
+    Task,
     operation_context::EngineContext,
     storage::{JournalStorage, OperationExecution, OperationOutcome},
 };
@@ -10,6 +11,11 @@ use std::{collections::BTreeMap, sync::Arc, time::Duration};
 trait RegisteredTask<S: AtomicStore, H: Host>: Send + Sync {
     fn version(&self) -> u32;
     fn keep_result(&self) -> bool;
+    fn before_resume<'s, 't>(
+        &'s self,
+        scope: &'s mut S::Scope<'t>,
+        key: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Resume<Vec<u8>>, StoreError>>;
     fn on_failed<'s, 't>(
         &'s self,
         scope: &'s mut S::Scope<'t>,
@@ -31,6 +37,26 @@ impl<S: AtomicStore, H: Host, T: Task<Store = S>> RegisteredTask<S, H> for TaskR
     }
     fn keep_result(&self) -> bool {
         T::KEEP_RESULT
+    }
+    fn before_resume<'s, 't>(
+        &'s self,
+        scope: &'s mut S::Scope<'t>,
+        key: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Resume<Vec<u8>>, StoreError>> {
+        Box::pin(async move {
+            match self.0.before_resume(scope, key).await? {
+                Resume::Continue => Ok(Resume::Continue),
+                Resume::Finish(output) => {
+                    serde_json::to_vec(&output)
+                        .map(Resume::Finish)
+                        .map_err(|error| StoreError::StepRollback {
+                            failure: Box::new(OperationFailure::InvalidPayload {
+                                message: error.to_string(),
+                            }),
+                        })
+                }
+            }
+        })
     }
     fn on_failed<'s, 't>(
         &'s self,
@@ -185,7 +211,19 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
             };
             let execution = match &task {
                 Some(task) if task.version() == record.version => {
-                    task.execute(&mut context, input).await
+                    let resumed = self
+                        .before_resume(Arc::clone(task), id, token, record.request_key.clone())
+                        .await;
+                    report.wake_failure = self.rearm().await?.or(report.wake_failure);
+                    match resumed {
+                        Ok(Resume::Continue) => task.execute(&mut context, input).await,
+                        Ok(Resume::Finish(())) => {
+                            report.completed.push(id);
+                            continue;
+                        }
+                        Err(StoreError::StepRollback { failure }) => Err(*failure),
+                        Err(error) => Err(OperationFailure::Storage { error }),
+                    }
                 }
                 Some(task) => Err(OperationFailure::VersionMismatch {
                     recorded: record.version,
@@ -298,6 +336,42 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
             }
         }
         Ok(report)
+    }
+
+    async fn before_resume(
+        &self,
+        task: Arc<dyn RegisteredTask<S, H>>,
+        id: OperationId,
+        token: uuid::Uuid,
+        key: RequestKey,
+    ) -> Result<Resume<()>, StoreError> {
+        let finished_at = self.host.now();
+        self.store
+            .transaction(move |scope| {
+                Box::pin(async move {
+                    scope.check_token(id, token).await?;
+                    let resumed = match task.before_resume(scope, &key).await? {
+                        Resume::Continue => Resume::Continue,
+                        Resume::Finish(result) => {
+                            scope
+                                .finish(
+                                    id,
+                                    token,
+                                    OperationOutcome::Completed { result },
+                                    finished_at,
+                                    task.keep_result(),
+                                )
+                                .await?;
+                            Resume::Finish(())
+                        }
+                    };
+                    if let Some(earliest) = scope.earliest().await? {
+                        scope.ensure_wake(earliest).await?;
+                    }
+                    Ok(resumed)
+                })
+            })
+            .await
     }
 
     async fn rearm(&self) -> Result<Option<crate::WakeFailure>, StoreError> {

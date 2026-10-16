@@ -202,6 +202,13 @@ pub enum CallResult<TAnswer> {
     NeverSent { last_seen: Option<SyncTime> },
 }
 
+/// A domain decision taken before a running operation replays its history.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Resume<TOutput> {
+    Continue,
+    Finish(TOutput),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Error)]
 pub enum NotSentReason {
     #[error("receiver unreachable (last seen {last_seen:?})")]

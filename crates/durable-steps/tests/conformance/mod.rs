@@ -2,6 +2,8 @@
 #![allow(clippy::panic, clippy::panic_in_result_fn, clippy::expect_used)]
 
 mod call_cases;
+mod resume_cases;
+mod resume_token_case;
 mod task_cases;
 mod task_fixtures;
 
@@ -63,7 +65,13 @@ where
     passed.push("non-deduplicating answer loss is Uncertain");
     call_cases::in_flight_recovery(Arc::clone(&store), Arc::clone(&host)).await?;
     passed.push("in-flight dispatch prevents false NeverSent");
-    call_cases::non_deduplicating_in_flight(store, host).await?;
+    call_cases::non_deduplicating_in_flight(Arc::clone(&store), Arc::clone(&host)).await?;
     passed.push("non-deduplicating in-flight recovery is Uncertain");
+    resume_cases::finish_unanswered(Arc::clone(&store), Arc::clone(&host)).await?;
+    passed.push("resume hook finishes unanswered calls with normal retention");
+    resume_cases::continue_replays(Arc::clone(&store), Arc::clone(&host)).await?;
+    passed.push("resume hook Continue preserves normal replay");
+    resume_token_case::stale_hook_is_not_invoked(store, host).await?;
+    passed.push("stale drive cannot invoke the resume hook");
     Ok(passed)
 }

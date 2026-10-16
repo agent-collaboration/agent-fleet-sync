@@ -1,5 +1,5 @@
 use crate::{
-    Admitted, CallFailure, CallId, CallResult, OperationFailure, OperationId, RequestKey,
+    Admitted, CallFailure, CallId, CallResult, OperationFailure, OperationId, RequestKey, Resume,
     StartRefusal, StepError, StepName, StoreError, SyncTime, storage::JournalStorage,
 };
 use runtime_primitives::{Clock, IdSource, WakeScheduler};
@@ -27,6 +27,15 @@ pub trait Task: Send + Sync + 'static {
         _failure: &'s OperationFailure,
     ) -> BoxFuture<'s, Result<(), StoreError>> {
         Box::pin(async { Ok(()) })
+    }
+    /// Re-read domain state before replaying steps or re-sending calls. The
+    /// engine checks the drive token in this transaction before invoking it.
+    fn before_resume<'s, 't>(
+        &'s self,
+        _scope: &'s mut <Self::Store as AtomicStore>::Scope<'t>,
+        _request_key: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Resume<Self::Output>, StoreError>> {
+        Box::pin(async { Ok(Resume::Continue) })
     }
 }
 

@@ -56,12 +56,7 @@ impl<H: Host> TursoStore<H> {
             .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(StoreError::backend)?;
-        let mut migrator = sqlx::migrate!("./migrations");
-        migrator.dangerous_set_table_name("_fleet_sync_migrations");
-        migrator
-            .run_direct(None, &mut *transaction, false)
-            .await
-            .map_err(StoreError::backend)?;
+        migrate_journal(&mut transaction).await?;
         transaction.commit().await.map_err(StoreError::backend)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -70,9 +65,28 @@ impl<H: Host> TursoStore<H> {
     }
 }
 
+/// Migrate the journal on the caller's connection. The caller owns the
+/// surrounding transaction and its commit or rollback, just as for business SQL.
+pub async fn migrate_journal(connection: &mut TursoConnection) -> Result<(), StoreError> {
+    let mut migrator = sqlx::migrate!("./migrations");
+    migrator.dangerous_set_table_name("_fleet_sync_migrations");
+    migrator
+        .run_direct(None, connection, false)
+        .await
+        .map_err(StoreError::backend)
+}
+
 pub struct TursoScope<'t, H: Host> {
     connection: &'t mut TursoConnection,
     host: &'t H,
+}
+
+impl<'t, H: Host> TursoScope<'t, H> {
+    /// Borrow the caller's transaction connection and host. This scope never
+    /// begins, commits or rolls back; the caller must provide the atomic boundary.
+    pub fn new(connection: &'t mut TursoConnection, host: &'t H) -> Self {
+        Self { connection, host }
+    }
 }
 
 impl<H: Host> TransactionScope for TursoScope<'_, H> {
@@ -100,10 +114,7 @@ impl<H: Host> AtomicStore for TursoStore<H> {
             .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(StoreError::backend)?;
-        let mut scope = TursoScope {
-            connection: &mut transaction,
-            host: &*self.host,
-        };
+        let mut scope = TursoScope::new(&mut transaction, &*self.host);
         match run(&mut scope).await {
             Ok(output) => {
                 transaction.commit().await.map_err(StoreError::backend)?;
