@@ -190,3 +190,25 @@ fn schema_fingerprint_ignores_engine_tables_and_canonicalizes_quoting() {
         schema_fingerprint(&[quoted, internal]).unwrap()
     );
 }
+
+#[test]
+fn hook_refusal_codes_validate_on_decode_and_preserve_valid_reasons() {
+    let valid = serde_json::json!({"code":"consumerRejected","detail":"hook rejected"});
+    let refusal: HookRefusal = serde_json::from_value(valid.clone()).unwrap();
+    assert_eq!(serde_json::to_value(refusal).unwrap(), valid);
+    let nested = serde_json::json!({"kind":"hook","value":valid});
+    let refusal: PieceRefusal = serde_json::from_value(nested.clone()).unwrap();
+    assert_eq!(serde_json::to_value(refusal).unwrap(), nested);
+    assert!(
+        serde_json::from_value::<HookRefusal>(
+            serde_json::json!({"code":"","detail":"hook rejected"})
+        )
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<PieceRefusal>(
+            serde_json::json!({"kind":"hook","value":{"code":"","detail":"hook rejected"}})
+        )
+        .is_err()
+    );
+}

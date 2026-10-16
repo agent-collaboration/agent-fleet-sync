@@ -11,6 +11,7 @@ pub enum SocketCommand {
     Drop,
 }
 pub struct SocketPeer {
+    pub peer: PeerId,
     pub sender: mpsc::Sender<SocketCommand>,
 }
 pub struct HeldClose {
@@ -33,6 +34,7 @@ pub struct FixtureHost {
     pub clock: watch::Sender<SyncTime>,
     pub stop: watch::Sender<bool>,
     pub close_held: watch::Sender<bool>,
+    pub registrations_changed: watch::Sender<()>,
 }
 pub enum RuleInput {
     Opened,
@@ -48,6 +50,7 @@ impl FixtureHost {
         let (clock, _) = watch::channel(state.now);
         let (stop, _) = watch::channel(false);
         let (close_held, _) = watch::channel(false);
+        let (registrations_changed, _) = watch::channel(());
         Ok(Self {
             database: Arc::new(Mutex::new(HostDatabase {
                 connection,
@@ -62,6 +65,7 @@ impl FixtureHost {
             clock,
             stop,
             close_held,
+            registrations_changed,
         })
     }
 
@@ -71,6 +75,17 @@ impl FixtureHost {
         input: RuleInput,
     ) -> TestResult<Vec<SessionEffect<FixtureProtocol>>> {
         let mut database = self.database.lock().await;
+        let peer_connections = if matches!(&input, RuleInput::Revoke) {
+            database
+                .sockets
+                .iter()
+                .filter_map(|(connection, socket)| {
+                    (socket.peer == binding.peer).then_some(*connection)
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         let registrations = database.registrations.clone();
         let mut transaction = database.connection.begin_with("BEGIN IMMEDIATE").await?;
         let state = read_state(&mut transaction).await?;
@@ -98,7 +113,26 @@ impl FixtureHost {
             RuleInput::Closed(cause) => connection_closed(&mut scope, &binding, cause, now).await?,
             RuleInput::Revoke => {
                 scope.state.revoked = true;
-                end_sessions(&mut scope, &binding.peer, EndReason::PeerRevoked, now).await?
+                let mut effects: Vec<SessionEffect<FixtureProtocol>> =
+                    end_sessions(&mut scope, &binding.peer, EndReason::PeerRevoked, now).await?;
+                // Invalidate every owned socket before another frame can acquire
+                // the host lock, including sockets that have not sent Hello.
+                for connection in peer_connections {
+                    scope.set_registration(&connection, ConnectionRegistration::Closed);
+                    if !effects.iter().any(|effect| {
+                        matches!(effect, SessionEffect::Close { connection: closing, .. } if *closing == connection)
+                    }) {
+                        let reason = CloseReason::CredentialRejected(AuthRefusal::Revoked);
+                        effects.push(SessionEffect::Send {
+                            connection,
+                            frame: ServerFrame::Closed {
+                                reason: reason.clone(),
+                            },
+                        });
+                        effects.push(SessionEffect::Close { connection, reason });
+                    }
+                }
+                effects
             }
         };
         let mut expanded = Vec::new();
@@ -155,6 +189,7 @@ impl FixtureHost {
         let registrations = scope.registrations;
         transaction.commit().await?;
         database.registrations = registrations;
+        self.registrations_changed.send_replace(());
         // Deliberately lose one answer only after the operation and receipt commit.
         if database.drop_next_answer
             && expanded.iter().any(|effect| {
@@ -278,6 +313,22 @@ impl FixtureHost {
 
     pub async fn control(&self, request: ControlRequest) -> TestResult<FixtureSnapshot> {
         match request {
+            ControlRequest::WaitForOpening => {
+                let mut changed = self.registrations_changed.subscribe();
+                loop {
+                    if self
+                        .database
+                        .lock()
+                        .await
+                        .registrations
+                        .values()
+                        .any(|registration| *registration == ConnectionRegistration::Opening)
+                    {
+                        break;
+                    }
+                    tokio::time::timeout(Duration::from_secs(5), changed.changed()).await??;
+                }
+            }
             ControlRequest::SetUnreadableCopy { unreadable } => {
                 self.database.lock().await.unreadable_copy = unreadable
             }

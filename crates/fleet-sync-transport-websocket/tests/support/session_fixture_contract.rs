@@ -69,6 +69,7 @@ impl Default for FixtureState {
 )]
 pub enum ControlRequest {
     Snapshot,
+    WaitForOpening,
     DropNextAnswer,
     SetUnreadableCopy { unreadable: bool },
     FailNextWelcome,

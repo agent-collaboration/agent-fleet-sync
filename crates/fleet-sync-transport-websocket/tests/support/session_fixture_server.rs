@@ -162,11 +162,13 @@ async fn handle_socket(
     };
     let binding = ConnectionBinding::new(ConnectionId::new(uuid::Uuid::now_v7())?, peer);
     let (sender, mut commands) = mpsc::channel(32);
-    host.database
-        .lock()
-        .await
-        .sockets
-        .insert(binding.connection, SocketPeer { sender });
+    host.database.lock().await.sockets.insert(
+        binding.connection,
+        SocketPeer {
+            peer: binding.peer,
+            sender,
+        },
+    );
     host.dispatch(host.apply(binding, RuleInput::Opened).await?)
         .await?;
     let mut clock = host.clock.subscribe();

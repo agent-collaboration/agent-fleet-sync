@@ -97,7 +97,7 @@ pub enum ReplicationRequest<A = ()> {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HookRefusal {
-    pub code: String,
+    pub code: HookRefusalCode,
     pub detail: String,
 }
 
