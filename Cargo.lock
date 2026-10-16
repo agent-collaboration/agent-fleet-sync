@@ -793,10 +793,15 @@ name = "fleet-sync-session"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "durable-steps",
  "fleet-sync-protocol",
+ "fleet-sync-query-gen",
  "runtime-primitives",
  "serde",
  "serde_json",
+ "sqlx",
+ "sqlx-core",
+ "sqlx-turso",
  "thiserror",
  "tokio",
  "url",

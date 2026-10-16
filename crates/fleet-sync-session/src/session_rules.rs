@@ -1,17 +1,28 @@
+use crate::session_storage::{load_session, save_session, sessions_for_peer};
 use crate::*;
+use sqlx_core::{
+    arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
+    encode::Encode, types::Type,
+};
+
 use fleet_sync_protocol::*;
 
-pub async fn connection_opened<S: SessionScope<P>, P: ConsumerProtocol>(
+pub async fn connection_opened<S, P: ConsumerProtocol>(
     scope: &mut S,
     binding: &ConnectionBinding,
     now: SyncTime,
-) -> Result<Vec<SessionEffect<P>>, SessionError> {
-    if scope.registration(binding.connection).await?.is_some() {
+) -> Result<Vec<SessionEffect<P>>, SessionError>
+where
+    S: SessionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+{
+    if scope.registration(&binding.connection).is_some() {
         return Ok(Vec::new());
     }
-    scope
-        .save_registration(binding.connection, ConnectionRegistration::Opening)
-        .await?;
+    scope.set_registration(&binding.connection, ConnectionRegistration::Opening);
     if binding.expires_at <= now {
         return close_connection(
             scope,
@@ -24,13 +35,20 @@ pub async fn connection_opened<S: SessionScope<P>, P: ConsumerProtocol>(
     Ok(Vec::new())
 }
 
-pub async fn frame_received<S: SessionScope<P>, P: ConsumerProtocol>(
+pub async fn frame_received<S, P: ConsumerProtocol>(
     scope: &mut S,
     binding: &ConnectionBinding,
     frame: &[u8],
     now: SyncTime,
-) -> Result<Vec<SessionEffect<P>>, SessionError> {
-    let Some(registration) = scope.registration(binding.connection).await? else {
+) -> Result<Vec<SessionEffect<P>>, SessionError>
+where
+    S: SessionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+{
+    let Some(registration) = scope.registration(&binding.connection) else {
         return Ok(Vec::new());
     };
     if registration == ConnectionRegistration::Closed {
@@ -71,7 +89,7 @@ pub async fn frame_received<S: SessionScope<P>, P: ConsumerProtocol>(
         peer: binding.peer,
         session_id,
     };
-    let Some(record) = scope.load_session(&key).await? else {
+    let Some(record) = load_session(scope, &key).await? else {
         return Ok(Vec::new());
     };
     if record.state
@@ -96,14 +114,21 @@ pub async fn frame_received<S: SessionScope<P>, P: ConsumerProtocol>(
     })
 }
 
-async fn attach_session<S: SessionScope<P>, P: ConsumerProtocol>(
+async fn attach_session<S, P: ConsumerProtocol>(
     scope: &mut S,
     binding: &ConnectionBinding,
     registration: ConnectionRegistration,
     session_id: SessionId,
     schema_support: SchemaSupport,
     now: SyncTime,
-) -> Result<Vec<SessionEffect<P>>, SessionError> {
+) -> Result<Vec<SessionEffect<P>>, SessionError>
+where
+    S: SessionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+{
     let key = SessionKey {
         peer: binding.peer,
         session_id,
@@ -117,7 +142,7 @@ async fn attach_session<S: SessionScope<P>, P: ConsumerProtocol>(
             if attached != session_id || declared != schema_support {
                 return close_connection(scope, binding, CloseReason::MalformedFrame, now).await;
             }
-            let Some(record) = scope.load_session(&key).await? else {
+            let Some(record) = load_session(scope, &key).await? else {
                 return Ok(Vec::new());
             };
             if record.state
@@ -127,11 +152,11 @@ async fn attach_session<S: SessionScope<P>, P: ConsumerProtocol>(
             {
                 return Ok(Vec::new());
             }
-            return welcome(scope, binding, session_id).await;
+            return Ok(welcome(binding, session_id));
         }
         ConnectionRegistration::Opening => {}
     }
-    let existing = scope.load_session(&key).await?;
+    let existing = load_session(scope, &key).await?;
     if existing
         .as_ref()
         .is_some_and(|record| matches!(record.state, SessionState::Ended { .. }))
@@ -139,21 +164,19 @@ async fn attach_session<S: SessionScope<P>, P: ConsumerProtocol>(
         return close_connection(scope, binding, CloseReason::SessionEnded, now).await;
     }
     let mut effects = Vec::new();
-    for mut previous in scope.sessions_for_peer(&binding.peer).await? {
+    for mut previous in sessions_for_peer(scope, &binding.peer).await? {
         if previous.session_id == session_id || matches!(previous.state, SessionState::Ended { .. })
         {
             continue;
         }
         if let SessionState::Active { connection } = previous.state {
-            scope
-                .save_registration(connection, ConnectionRegistration::Closed)
-                .await?;
+            scope.set_registration(&connection, ConnectionRegistration::Closed);
             effects.extend(closed_effects(connection, CloseReason::SessionEnded));
         }
         previous.state = SessionState::Ended {
             reason: EndReason::NewSession,
         };
-        scope.save_session(&previous).await?;
+        save_session(scope, &previous).await?;
     }
     let mut record = existing.unwrap_or(SessionRecord {
         peer: binding.peer,
@@ -166,86 +189,88 @@ async fn attach_session<S: SessionScope<P>, P: ConsumerProtocol>(
     } = record.state
         && previous != binding.connection
     {
-        scope
-            .save_registration(previous, ConnectionRegistration::Closed)
-            .await?;
+        scope.set_registration(&previous, ConnectionRegistration::Closed);
         effects.extend(closed_effects(previous, CloseReason::ConnectionReplaced));
     }
     record.state = SessionState::Active {
         connection: binding.connection,
     };
-    scope.save_session(&record).await?;
-    scope
-        .save_registration(
-            binding.connection,
-            ConnectionRegistration::Attached {
-                session_id,
-                schema_support,
-            },
-        )
-        .await?;
-    effects.extend(welcome(scope, binding, session_id).await?);
+    save_session(scope, &record).await?;
+    scope.set_registration(
+        &binding.connection,
+        ConnectionRegistration::Attached {
+            session_id,
+            schema_support,
+        },
+    );
+    effects.extend(welcome(binding, session_id));
     Ok(effects)
 }
 
-async fn welcome<S: SessionScope<P>, P: ConsumerProtocol>(
-    scope: &mut S,
+fn welcome<P: ConsumerProtocol>(
     binding: &ConnectionBinding,
     session_id: SessionId,
-) -> Result<Vec<SessionEffect<P>>, SessionError> {
-    let databases = scope.database_statuses(&binding.peer).await?;
-    Ok(vec![SessionEffect::Send {
+) -> Vec<SessionEffect<P>> {
+    vec![SessionEffect::Welcome {
         connection: binding.connection,
-        frame: ServerFrame::Welcome {
-            session_id,
-            databases,
-        },
-    }])
+        peer: binding.peer,
+        session_id,
+    }]
 }
 
-pub async fn connection_closed<S: SessionScope<P>, P: ConsumerProtocol>(
+pub async fn connection_closed<S, P: ConsumerProtocol>(
     scope: &mut S,
     binding: &ConnectionBinding,
     _cause: CloseCause,
     now: SyncTime,
-) -> Result<Vec<SessionEffect<P>>, SessionError> {
-    let registration = scope.registration(binding.connection).await?;
-    scope
-        .save_registration(binding.connection, ConnectionRegistration::Closed)
-        .await?;
+) -> Result<Vec<SessionEffect<P>>, SessionError>
+where
+    S: SessionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+{
+    let registration = scope.registration(&binding.connection);
+    scope.set_registration(&binding.connection, ConnectionRegistration::Closed);
     if let Some(ConnectionRegistration::Attached { session_id, .. }) = registration {
         let key = SessionKey {
             peer: binding.peer,
             session_id,
         };
-        if let Some(mut record) = scope.load_session(&key).await?
+        if let Some(mut record) = load_session(scope, &key).await?
             && record.state
                 == (SessionState::Active {
                     connection: binding.connection,
                 })
         {
             record.state = SessionState::Detached { since: now };
-            scope.save_session(&record).await?;
+            save_session(scope, &record).await?;
         }
     }
     Ok(Vec::new())
 }
 
-pub async fn end_sessions<S: SessionScope<P>, P: ConsumerProtocol>(
+pub async fn end_sessions<S, P: ConsumerProtocol>(
     scope: &mut S,
     peer: &PeerId,
     reason: EndReason,
     _now: SyncTime,
-) -> Result<Vec<SessionEffect<P>>, SessionError> {
+) -> Result<Vec<SessionEffect<P>>, SessionError>
+where
+    S: SessionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+{
     let mut effects = Vec::new();
-    for mut record in scope.sessions_for_peer(peer).await? {
+    for mut record in sessions_for_peer(scope, peer).await? {
         if matches!(record.state, SessionState::Ended { .. }) {
             continue;
         }
         if let SessionState::Active { connection } = record.state {
-            scope
-                .save_registration(connection, ConnectionRegistration::Closed)
-                .await?;
+            scope.set_registration(&connection, ConnectionRegistration::Closed);
             let close = match reason {
                 EndReason::NewSession => CloseReason::SessionEnded,
                 EndReason::PeerRevoked => CloseReason::CredentialRejected(AuthRefusal::Revoked),
@@ -253,7 +278,7 @@ pub async fn end_sessions<S: SessionScope<P>, P: ConsumerProtocol>(
             effects.extend(closed_effects(connection, close));
         }
         record.state = SessionState::Ended { reason };
-        scope.save_session(&record).await?;
+        save_session(scope, &record).await?;
     }
     Ok(effects)
 }
@@ -273,12 +298,19 @@ fn closed_effects<P: ConsumerProtocol>(
     ]
 }
 
-async fn close_connection<S: SessionScope<P>, P: ConsumerProtocol>(
+async fn close_connection<S, P: ConsumerProtocol>(
     scope: &mut S,
     binding: &ConnectionBinding,
     reason: CloseReason,
     now: SyncTime,
-) -> Result<Vec<SessionEffect<P>>, SessionError> {
-    connection_closed(scope, binding, CloseCause::Dropped, now).await?;
+) -> Result<Vec<SessionEffect<P>>, SessionError>
+where
+    S: SessionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+{
+    connection_closed::<S, P>(scope, binding, CloseCause::Dropped, now).await?;
     Ok(closed_effects(binding.connection, reason))
 }

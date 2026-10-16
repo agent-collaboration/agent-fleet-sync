@@ -121,6 +121,13 @@ pub enum CloseCause {
 }
 
 pub enum SessionEffect<P: ConsumerProtocol = NoConsumer> {
+    /// The host gathers current registry/copy status after commit, then sends Welcome.
+    /// Report an unreadable copy as Unavailable; close if the overall gather fails.
+    Welcome {
+        connection: ConnectionId,
+        peer: PeerId,
+        session_id: SessionId,
+    },
     Send {
         connection: ConnectionId,
         frame: ServerFrame<P>,
@@ -152,41 +159,7 @@ pub struct StoredNotice<P: ConsumerProtocol> {
 /// until that commit: on Tokio the host owns them beside its socket tasks; on
 /// a Durable Object they are its hibernatable socket attachments. A rolled-back
 /// session transaction must publish none of its registration edits or effects.
-pub trait SessionScope<P: ConsumerProtocol = NoConsumer>: Send {
-    fn load_session(
-        &mut self,
-        key: &SessionKey,
-    ) -> impl Future<Output = Result<Option<SessionRecord>, StoreError>> + Send;
-    fn save_session(
-        &mut self,
-        record: &SessionRecord,
-    ) -> impl Future<Output = Result<(), StoreError>> + Send;
-    fn sessions_for_peer(
-        &mut self,
-        peer: &PeerId,
-    ) -> impl Future<Output = Result<Vec<SessionRecord>, StoreError>> + Send;
-    fn registration(
-        &mut self,
-        connection: ConnectionId,
-    ) -> impl Future<Output = Result<Option<ConnectionRegistration>, StoreError>> + Send;
-    fn save_registration(
-        &mut self,
-        connection: ConnectionId,
-        registration: ConnectionRegistration,
-    ) -> impl Future<Output = Result<(), StoreError>> + Send;
-    /// Read now, including a typed Unavailable entry for each unreadable copy.
-    fn database_statuses(
-        &mut self,
-        peer: &PeerId,
-    ) -> impl Future<Output = Result<Vec<DatabaseStatus>, StoreError>> + Send;
-    fn save_notice(
-        &mut self,
-        session: &SessionKey,
-        notice: &StoredNotice<P>,
-    ) -> impl Future<Output = Result<(), StoreError>> + Send;
-    fn notices_after(
-        &mut self,
-        session: &SessionKey,
-        after: NoticePosition,
-    ) -> impl Future<Output = Result<Vec<StoredNotice<P>>, StoreError>> + Send;
+pub trait SessionScope: durable_steps::storage::TransactionScope {
+    fn registration(&self, connection: &ConnectionId) -> Option<ConnectionRegistration>;
+    fn set_registration(&mut self, connection: &ConnectionId, registration: ConnectionRegistration);
 }

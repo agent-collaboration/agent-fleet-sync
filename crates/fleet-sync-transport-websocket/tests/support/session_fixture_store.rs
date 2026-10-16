@@ -2,7 +2,7 @@ use super::session_fixture_contract::*;
 use fleet_sync_protocol::*;
 use fleet_sync_session::*;
 use sqlx_turso::{
-    TursoConnectOptions, TursoConnection,
+    Turso, TursoConnectOptions, TursoConnection,
     sqlx::{ConnectOptions, Connection},
 };
 use std::{collections::BTreeMap, path::Path, sync::Arc};
@@ -17,7 +17,12 @@ pub async fn open_and_migrate(path: &Path) -> TestResult<TursoConnection> {
         .connect()
         .await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
-    FIXTURE_MIGRATOR
+    let migrations = FIXTURE_MIGRATOR
+        .iter()
+        .chain(SESSION_MIGRATOR.iter())
+        .cloned()
+        .collect();
+    sqlx::migrate::Migrator::with_migrations(migrations)
         .run_direct(None, &mut *transaction, false)
         .await?;
     transaction.commit().await?;
@@ -55,120 +60,39 @@ fn store_error(error: impl std::fmt::Display) -> StoreError {
         message: error.to_string(),
     }
 }
-impl SessionScope<FixtureProtocol> for FixtureScope<'_> {
-    async fn load_session(
+impl TransactionScope for FixtureScope<'_> {
+    type Database = Turso;
+    type Executor<'query>
+        = &'query mut TursoConnection
+    where
+        Self: 'query;
+    fn executor(&mut self) -> Self::Executor<'_> {
+        self.transaction
+    }
+}
+impl SessionScope for FixtureScope<'_> {
+    fn registration(&self, connection: &ConnectionId) -> Option<ConnectionRegistration> {
+        self.registrations.get(connection).copied()
+    }
+    fn set_registration(
         &mut self,
-        key: &SessionKey,
-    ) -> Result<Option<SessionRecord>, StoreError> {
-        Ok(self
-            .state
-            .sessions
-            .iter()
-            .find(|record| record.key() == *key)
-            .cloned())
-    }
-    async fn save_session(&mut self, record: &SessionRecord) -> Result<(), StoreError> {
-        match self
-            .state
-            .sessions
-            .iter_mut()
-            .find(|stored| stored.key() == record.key())
-        {
-            Some(stored) => *stored = record.clone(),
-            None => self.state.sessions.push(record.clone()),
-        }
-        write_state(self.transaction, &self.state)
-            .await
-            .map_err(store_error)
-    }
-    async fn sessions_for_peer(&mut self, peer: &PeerId) -> Result<Vec<SessionRecord>, StoreError> {
-        Ok(self
-            .state
-            .sessions
-            .iter()
-            .filter(|record| record.peer == *peer)
-            .cloned()
-            .collect())
-    }
-    async fn registration(
-        &mut self,
-        connection: ConnectionId,
-    ) -> Result<Option<ConnectionRegistration>, StoreError> {
-        Ok(self.registrations.get(&connection).copied())
-    }
-    async fn save_registration(
-        &mut self,
-        connection: ConnectionId,
+        connection: &ConnectionId,
         registration: ConnectionRegistration,
-    ) -> Result<(), StoreError> {
-        self.registrations.insert(connection, registration);
-        Ok(())
+    ) {
+        self.registrations.insert(*connection, registration);
     }
-    async fn database_statuses(
-        &mut self,
-        peer: &PeerId,
-    ) -> Result<Vec<DatabaseStatus>, StoreError> {
-        let database = DatabaseId::new(uuid::Uuid::from_u128(10)).map_err(store_error)?;
-        let epoch = Epoch::new(1).map_err(store_error)?;
-        let remaining_ms = u64::try_from(
-            self.state
-                .lease_expires_at
-                .unix_millis()
-                .saturating_sub(self.state.now.unix_millis())
-                .max(0),
-        )
-        .map_err(store_error)?;
-        Ok(vec![DatabaseStatus::Ready {
-            database,
-            acked: ReplicationPosition::new(epoch, CommitSequence::new(self.state.value)),
-            lease: LeaseStatus {
-                database,
-                epoch,
-                holder: *peer,
-                state: if remaining_ms == 0 {
-                    LeaseState::Expired
-                } else {
-                    LeaseState::Held
-                },
-                expires_at: self.state.lease_expires_at,
-                remaining_ms,
-            },
-        }])
-    }
-    async fn save_notice(
-        &mut self,
-        session: &SessionKey,
-        notice: &StoredNotice<FixtureProtocol>,
-    ) -> Result<(), StoreError> {
-        self.state.notices.push((
-            session.peer,
-            session.session_id,
-            notice.position,
-            serde_json::to_vec(&notice.body).map_err(store_error)?,
-        ));
-        write_state(self.transaction, &self.state)
-            .await
-            .map_err(store_error)
-    }
-    async fn notices_after(
-        &mut self,
-        session: &SessionKey,
-        after: NoticePosition,
-    ) -> Result<Vec<StoredNotice<FixtureProtocol>>, StoreError> {
-        self.state
-            .notices
-            .iter()
-            .filter(|(peer, id, position, _)| {
-                *peer == session.peer && *id == session.session_id && *position > after
-            })
-            .map(|(_, _, position, body)| {
-                Ok(StoredNotice {
-                    position: *position,
-                    body: serde_json::from_slice(body).map_err(store_error)?,
-                })
-            })
-            .collect()
-    }
+}
+
+pub async fn read_sessions(connection: &mut TursoConnection) -> TestResult<Vec<SessionRecord>> {
+    let rows = sqlx_turso::query_as!(
+        FixtureRow,
+        r#"SELECT record AS "record!: String" FROM _fleet_sync_sessions ORDER BY peer, session_id"#
+    )
+    .fetch_all(connection)
+    .await?;
+    rows.into_iter()
+        .map(|row| serde_json::from_str(&row.record).map_err(Into::into))
+        .collect()
 }
 
 #[derive(Clone)]

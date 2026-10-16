@@ -22,6 +22,8 @@ pub struct HostDatabase {
     pub registrations: BTreeMap<ConnectionId, ConnectionRegistration>,
     pub sockets: BTreeMap<ConnectionId, SocketPeer>,
     pub drop_next_answer: bool,
+    pub unreadable_copy: bool,
+    pub fail_next_welcome: bool,
     pub hold_next_close: bool,
     pub held_closes: Vec<HeldClose>,
 }
@@ -52,6 +54,8 @@ impl FixtureHost {
                 registrations: BTreeMap::new(),
                 sockets: BTreeMap::new(),
                 drop_next_answer: false,
+                unreadable_copy: false,
+                fail_next_welcome: false,
                 hold_next_close: false,
                 held_closes: vec![],
             })),
@@ -76,7 +80,7 @@ impl FixtureHost {
             state,
             registrations,
         };
-        let effects = match input {
+        let effects: Vec<SessionEffect<FixtureProtocol>> = match input {
             RuleInput::Opened if scope.state.revoked => vec![
                 SessionEffect::Send {
                     connection: binding.connection,
@@ -186,6 +190,23 @@ impl FixtureHost {
     pub async fn dispatch(&self, effects: Vec<SessionEffect<FixtureProtocol>>) -> TestResult {
         for effect in effects {
             let (connection, command) = match effect {
+                SessionEffect::Welcome {
+                    connection,
+                    peer,
+                    session_id,
+                } => {
+                    let command = match self.gather_databases(peer).await {
+                        Ok(databases) => SocketCommand::Send(
+                            serde_json::to_vec(&ServerFrame::<FixtureProtocol>::Welcome {
+                                session_id,
+                                databases,
+                            })?
+                            .into(),
+                        ),
+                        Err(_) => SocketCommand::Drop,
+                    };
+                    (connection, command)
+                }
                 SessionEffect::Send { connection, frame } => (
                     connection,
                     SocketCommand::Send(serde_json::to_vec(&frame)?.into()),
@@ -211,8 +232,56 @@ impl FixtureHost {
         Ok(())
     }
 
+    // Registry/copy stand-ins are host-owned reads; session SQL owns no copy state.
+    async fn gather_databases(&self, peer: PeerId) -> TestResult<Vec<DatabaseStatus>> {
+        let mut host = self.database.lock().await;
+        if std::mem::take(&mut host.fail_next_welcome) {
+            return Err("injected registry gather failure".into());
+        }
+        let state = read_state(&mut host.connection).await?;
+        let database = DatabaseId::new(uuid::Uuid::from_u128(10))?;
+        let epoch = Epoch::new(1)?;
+        let remaining_ms = u64::try_from(
+            state
+                .lease_expires_at
+                .unix_millis()
+                .saturating_sub(state.now.unix_millis())
+                .max(0),
+        )?;
+        let mut databases = vec![DatabaseStatus::Ready {
+            database,
+            acked: ReplicationPosition::new(epoch, CommitSequence::new(state.value)),
+            lease: LeaseStatus {
+                database,
+                epoch,
+                holder: peer,
+                state: if remaining_ms == 0 {
+                    LeaseState::Expired
+                } else {
+                    LeaseState::Held
+                },
+                expires_at: state.lease_expires_at,
+                remaining_ms,
+            },
+        }];
+        if host.unreadable_copy {
+            databases.push(DatabaseStatus::Unavailable {
+                database: DatabaseId::new(uuid::Uuid::from_u128(11))?,
+                lease: None,
+                reason: CopyUnavailableReason::Damaged {
+                    detail: "injected unreadable copy".into(),
+                },
+            });
+        }
+        Ok(databases)
+    }
+
     pub async fn control(&self, request: ControlRequest) -> TestResult<FixtureSnapshot> {
         match request {
+            ControlRequest::SetUnreadableCopy { unreadable } => {
+                self.database.lock().await.unreadable_copy = unreadable
+            }
+            ControlRequest::FailNextWelcome => self.database.lock().await.fail_next_welcome = true,
             ControlRequest::DropNextAnswer => self.database.lock().await.drop_next_answer = true,
             ControlRequest::HoldNextClose => {
                 self.close_held.send_replace(false);
@@ -272,7 +341,7 @@ impl FixtureHost {
         Ok(FixtureSnapshot {
             value: state.value,
             receipt_count: state.receipts.len(),
-            sessions: state.sessions,
+            sessions: read_sessions(&mut database.connection).await?,
             registrations: database
                 .registrations
                 .iter()

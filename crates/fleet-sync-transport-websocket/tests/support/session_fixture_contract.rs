@@ -42,8 +42,6 @@ pub struct IncrementReceipt {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FixtureState {
-    pub sessions: Vec<SessionRecord>,
-    pub notices: Vec<(PeerId, SessionId, NoticePosition, Vec<u8>)>,
     pub receipts: Vec<IncrementReceipt>,
     pub value: u64,
     pub now: SyncTime,
@@ -53,8 +51,6 @@ pub struct FixtureState {
 impl Default for FixtureState {
     fn default() -> Self {
         Self {
-            sessions: vec![],
-            notices: vec![],
             receipts: vec![],
             value: 0,
             now: SyncTime::from_unix_millis(0),
@@ -74,6 +70,8 @@ impl Default for FixtureState {
 pub enum ControlRequest {
     Snapshot,
     DropNextAnswer,
+    SetUnreadableCopy { unreadable: bool },
+    FailNextWelcome,
     AdvanceClock { now: SyncTime },
     SetLease { expires_at: SyncTime },
     Revoke,

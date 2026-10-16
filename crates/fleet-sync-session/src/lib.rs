@@ -12,3 +12,13 @@ pub use session_notices::*;
 pub use session_rules::*;
 mod session_client;
 pub use session_client::*;
+
+mod checked_session_queries;
+mod session_storage;
+pub use durable_steps::storage::TransactionScope;
+pub static SESSION_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
+#[cfg(test)]
+mod rule_lifecycle_tests;
+#[cfg(test)]
+mod rule_test_support;

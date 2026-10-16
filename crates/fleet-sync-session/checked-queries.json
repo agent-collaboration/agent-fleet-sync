@@ -1,0 +1,12 @@
+{
+  "migrations": ["migrations"],
+  "output": "src/checked_session_queries.rs",
+  "metadata": "checked-query-metadata.json",
+  "queries": [
+    {"name":"load_session","sql":"sql/load_session.sql","row":"StoredSessionRow","result":"optional","parameters":[{"name":"peer","kind":"text","nullable":false},{"name":"session_id","kind":"text","nullable":false}]},
+    {"name":"sessions_for_peer","sql":"sql/sessions_for_peer.sql","row":"StoredSessionRow","result":"many","parameters":[{"name":"peer","kind":"text","nullable":false}]},
+    {"name":"save_session","sql":"sql/save_session.sql","row":null,"result":"execute","parameters":[{"name":"peer","kind":"text","nullable":false},{"name":"session_id","kind":"text","nullable":false},{"name":"record","kind":"text","nullable":false}]},
+    {"name":"save_notice","sql":"sql/save_notice.sql","row":null,"result":"execute","parameters":[{"name":"peer","kind":"text","nullable":false},{"name":"session_id","kind":"text","nullable":false},{"name":"position","kind":"text","nullable":false},{"name":"body","kind":"text","nullable":false}]},
+    {"name":"notices_after","sql":"sql/notices_after.sql","row":"StoredNoticeRow","result":"many","parameters":[{"name":"peer","kind":"text","nullable":false},{"name":"session_id","kind":"text","nullable":false}]}
+  ]
+}

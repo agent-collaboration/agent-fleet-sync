@@ -334,6 +334,48 @@ async fn localhost_session_journey_uses_two_processes_and_real_websockets() -> T
         "OBS replacement closes old socket; delayed old close is ignored; repeat Hello preserves attachment and reads new position and lease"
     );
 
+    control(
+        &mut admin,
+        ControlRequest::SetUnreadableCopy { unreadable: true },
+    )
+    .await?;
+    match hello(&mut replacement, original_id).await? {
+        ServerFrame::Welcome { databases, .. } => {
+            assert_eq!(databases.len(), 2);
+            assert_status(&databases[..1], 8, 2_000);
+            assert!(matches!(
+                databases.get(1),
+                Some(DatabaseStatus::Unavailable { .. })
+            ));
+        }
+        _ => return Err("unreadable copy prevented Welcome".into()),
+    }
+    control(
+        &mut admin,
+        ControlRequest::SetUnreadableCopy { unreadable: false },
+    )
+    .await?;
+    control(&mut admin, ControlRequest::FailNextWelcome).await?;
+    let retry: ClientFrame<FixtureProtocol> = ClientFrame::Hello {
+        session_id: original_id,
+        schema_support: SchemaSupport { max_version: 1 },
+    };
+    replacement.send(serde_json::to_vec(&retry)?.into()).await?;
+    assert!(matches!(
+        timeout(Duration::from_secs(5), replacement.receive()).await?,
+        None | Some(Err(_))
+    ));
+    replacement = connect(&process, "session", "Bearer fixture").await?;
+    assert_welcome(
+        hello(&mut replacement, original_id).await?,
+        original_id,
+        8,
+        2_000,
+    );
+    println!(
+        "OBS unreadable copy is contained; failed Welcome gather closes the socket; next Hello gathers afresh"
+    );
+
     replacement.send(Bytes::from_static(b"not JSON")).await?;
     assert!(matches!(
         server_frame(&mut replacement).await?,

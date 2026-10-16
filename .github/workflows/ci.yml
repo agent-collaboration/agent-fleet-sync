@@ -39,7 +39,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --target wasm32-unknown-unknown -p sqlx-durable-object -p sqlx-durable-object-core -p probe-core -p probe-worker --locked
+      - run: cargo check --target wasm32-unknown-unknown -p sqlx-durable-object -p sqlx-durable-object-core -p probe-core -p probe-worker -p runtime-primitives -p durable-steps -p fleet-sync-protocol -p fleet-sync-session --locked
       - run: cargo check --target wasm32-unknown-unknown -p durable-steps-worker --locked
       - run: cargo check --target wasm32-unknown-unknown -p durable-steps --no-default-features --locked
       - run: |

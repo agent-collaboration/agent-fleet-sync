@@ -11,6 +11,9 @@ description = "Runtime-independent session rules and transport-neutral client"
 bytes = "1.11.1"
 fleet-sync-protocol = { path = "../fleet-sync-protocol" }
 runtime-primitives = { path = "../runtime-primitives" }
+durable-steps = { path = "../durable-steps" }
+sqlx-core = { workspace = true, features = ["migrate"] }
+sqlx = { workspace = true, features = ["migrate", "macros"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -19,6 +22,10 @@ url.workspace = true
 [dev-dependencies]
 tokio.workspace = true
 uuid = { version = "1.26.0", default-features = false, features = ["serde"] }
+sqlx-turso.workspace = true
+
+[build-dependencies]
+fleet-sync-query-gen = { path = "../fleet-sync-query-gen" }
 
 [lints]
 workspace = true

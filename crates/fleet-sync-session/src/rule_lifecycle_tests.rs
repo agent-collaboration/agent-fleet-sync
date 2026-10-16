@@ -1,8 +1,7 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use crate::rule_test_support::*;
+use crate::*;
 use fleet_sync_protocol::*;
-use fleet_sync_session::*;
-use support::*;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -14,7 +13,7 @@ async fn every_connection_close_preserves_the_session_and_notice_history() {
         CloseCause::MalformedFrame,
         CloseCause::PeerRevoked,
     ] {
-        let mut scope = MemoryScope::default();
+        let mut scope = SqlScope::new().await;
         let connection = binding(2);
         let id = session(3);
         attach(&mut scope, &connection, id).await;
@@ -22,7 +21,7 @@ async fn every_connection_close_preserves_the_session_and_notice_history() {
             peer: connection.peer,
             session_id: id,
         };
-        publish_notice(
+        publish_notice::<_, NoConsumer>(
             &mut scope,
             &key,
             Notice::LeaseChanged {
@@ -31,29 +30,29 @@ async fn every_connection_close_preserves_the_session_and_notice_history() {
         )
         .await
         .unwrap();
-        connection_closed(&mut scope, &connection, cause, now(5))
+        connection_closed::<_, NoConsumer>(&mut scope, &connection, cause, now(5))
             .await
             .unwrap();
         assert_eq!(
-            scope.sessions.get(&key).unwrap().state,
+            scope.record(&key).await.state,
             SessionState::Detached { since: now(5) }
         );
         assert_eq!(
-            notices_after(&mut scope, &key, NoticePosition::default())
+            notices_after::<_, NoConsumer>(&mut scope, &key, NoticePosition::default())
                 .await
                 .unwrap()
                 .len(),
             1
         );
         attach(&mut scope, &binding(5), id).await;
-        assert_eq!(scope.sessions.len(), 1);
-        assert_eq!(scope.sessions.get(&key).unwrap().notice_head.value(), 1);
+        assert_eq!(scope.records().await.len(), 1);
+        assert_eq!(scope.record(&key).await.notice_head.value(), 1);
     }
 }
 
 #[tokio::test]
 async fn replacement_ignores_old_frames_hello_and_late_close() {
-    let mut scope = MemoryScope::default();
+    let mut scope = SqlScope::new().await;
     let first = binding(2);
     let next = binding(3);
     let id = session(4);
@@ -61,7 +60,7 @@ async fn replacement_ignores_old_frames_hello_and_late_close() {
     let effects = attach(&mut scope, &next, id).await;
     assert!(effects.iter().any(|effect| matches!(effect, SessionEffect::Close { connection, reason: CloseReason::ConnectionReplaced } if *connection == first.connection)));
     assert!(
-        frame_received(&mut scope, &first, &hello(id, 1), now(2))
+        frame_received::<_, NoConsumer>(&mut scope, &first, &hello(id, 1), now(2))
             .await
             .unwrap()
             .is_empty()
@@ -71,7 +70,7 @@ async fn replacement_ignores_old_frames_hello_and_late_close() {
         body: OperationRequest::Consumer(()),
     };
     assert!(
-        frame_received(
+        frame_received::<_, NoConsumer>(
             &mut scope,
             &first,
             &serde_json::to_vec(&request).unwrap(),
@@ -81,17 +80,16 @@ async fn replacement_ignores_old_frames_hello_and_late_close() {
         .unwrap()
         .is_empty()
     );
-    connection_closed(&mut scope, &first, CloseCause::Dropped, now(3))
+    connection_closed::<_, NoConsumer>(&mut scope, &first, CloseCause::Dropped, now(3))
         .await
         .unwrap();
     assert_eq!(
         scope
-            .sessions
-            .get(&SessionKey {
+            .record(&SessionKey {
                 peer: next.peer,
                 session_id: id
             })
-            .unwrap()
+            .await
             .state,
         SessionState::Active {
             connection: next.connection
@@ -100,34 +98,31 @@ async fn replacement_ignores_old_frames_hello_and_late_close() {
 }
 
 #[tokio::test]
-async fn repeat_hello_changes_no_session_or_attachment_and_reads_fresh_status() {
-    let mut scope = MemoryScope::default();
+async fn repeat_hello_changes_no_session_or_attachment_and_requests_a_fresh_welcome() {
+    let mut scope = SqlScope::new().await;
     let connection = binding(2);
     let id = session(3);
     attach(&mut scope, &connection, id).await;
-    let sessions = scope.sessions.clone();
+    let sessions = scope.records().await;
     let registrations = scope.registrations.clone();
-    let database = DatabaseId::new(Uuid::from_u128(4)).unwrap();
-    let acked = ReplicationPosition::new(Epoch::new(2).unwrap(), CommitSequence::new(9));
-    scope.statuses = vec![DatabaseStatus::NeedsSnapshot { database, acked }];
-    let effects = frame_received(&mut scope, &connection, &hello(id, 1), now(2))
+    let effects = frame_received::<_, NoConsumer>(&mut scope, &connection, &hello(id, 1), now(2))
         .await
         .unwrap();
-    assert_eq!(scope.sessions, sessions);
+    assert_eq!(scope.records().await, sessions);
     assert_eq!(scope.registrations, registrations);
     assert!(
-        matches!(effects.as_slice(), [SessionEffect::Send { frame: ServerFrame::Welcome { databases, .. }, .. }] if databases == &scope.statuses)
+        matches!(effects.as_slice(), [SessionEffect::Welcome { connection: target, peer, session_id }] if *target == connection.connection && *peer == connection.peer && *session_id == id)
     );
 }
 
 #[tokio::test]
 async fn expired_and_malformed_connections_detach_instead_of_ending() {
     for expired in [false, true] {
-        let mut scope = MemoryScope::default();
+        let mut scope = SqlScope::new().await;
         let connection = binding(2);
         let id = session(3);
         attach(&mut scope, &connection, id).await;
-        let effects = frame_received(
+        let effects = frame_received::<_, NoConsumer>(
             &mut scope,
             &connection,
             b"not json",
@@ -151,12 +146,11 @@ async fn expired_and_malformed_connections_detach_instead_of_ending() {
             ) && !expired));
         assert!(matches!(
             scope
-                .sessions
-                .get(&SessionKey {
+                .record(&SessionKey {
                     peer: connection.peer,
                     session_id: id
                 })
-                .unwrap()
+                .await
                 .state,
             SessionState::Detached { .. }
         ));
@@ -165,7 +159,7 @@ async fn expired_and_malformed_connections_detach_instead_of_ending() {
 
 #[tokio::test]
 async fn new_session_and_revocation_are_terminal_and_ended_ids_never_resume() {
-    let mut scope = MemoryScope::default();
+    let mut scope = SqlScope::new().await;
     let first = binding(2);
     let second = binding(3);
     let old_id = session(4);
@@ -174,12 +168,11 @@ async fn new_session_and_revocation_are_terminal_and_ended_ids_never_resume() {
     attach(&mut scope, &second, new_id).await;
     assert_eq!(
         scope
-            .sessions
-            .get(&SessionKey {
+            .record(&SessionKey {
                 peer: first.peer,
                 session_id: old_id
             })
-            .unwrap()
+            .await
             .state,
         SessionState::Ended {
             reason: EndReason::NewSession
@@ -195,20 +188,20 @@ async fn new_session_and_revocation_are_terminal_and_ended_ids_never_resume() {
     )));
     assert_eq!(
         scope
-            .sessions
-            .get(&SessionKey {
+            .record(&SessionKey {
                 peer: second.peer,
                 session_id: new_id
             })
-            .unwrap()
+            .await
             .state,
         SessionState::Active {
             connection: second.connection
         }
     );
-    let revoked = end_sessions(&mut scope, &first.peer, EndReason::PeerRevoked, now(3))
-        .await
-        .unwrap();
+    let revoked =
+        end_sessions::<_, NoConsumer>(&mut scope, &first.peer, EndReason::PeerRevoked, now(3))
+            .await
+            .unwrap();
     assert!(revoked.iter().any(|effect| matches!(
         effect,
         SessionEffect::Close {
@@ -228,7 +221,7 @@ async fn new_session_and_revocation_are_terminal_and_ended_ids_never_resume() {
 
 #[tokio::test]
 async fn a_connection_attaches_once_and_both_operation_directions_use_the_binding() {
-    let mut scope = MemoryScope::default();
+    let mut scope = SqlScope::new().await;
     let connection = binding(2);
     let id = session(3);
     attach(&mut scope, &connection, id).await;
@@ -237,7 +230,7 @@ async fn a_connection_attaches_once_and_both_operation_directions_use_the_bindin
         frame,
         body: OperationRequest::Consumer(()),
     };
-    let effects = frame_received(
+    let effects = frame_received::<_, NoConsumer>(
         &mut scope,
         &connection,
         &serde_json::to_vec(&request).unwrap(),
@@ -253,7 +246,7 @@ async fn a_connection_attaches_once_and_both_operation_directions_use_the_bindin
         body: ClientAnswer::Consumer(()),
     };
     assert!(matches!(
-        frame_received(
+        frame_received::<_, NoConsumer>(
             &mut scope,
             &connection,
             &serde_json::to_vec(&answer).unwrap(),
@@ -264,9 +257,10 @@ async fn a_connection_attaches_once_and_both_operation_directions_use_the_bindin
         .as_slice(),
         [SessionEffect::RouteAnswer { .. }]
     ));
-    let changed = frame_received(&mut scope, &connection, &hello(session(5), 1), now(2))
-        .await
-        .unwrap();
+    let changed =
+        frame_received::<_, NoConsumer>(&mut scope, &connection, &hello(session(5), 1), now(2))
+            .await
+            .unwrap();
     assert!(changed.iter().any(|effect| matches!(
         effect,
         SessionEffect::Close {
@@ -274,12 +268,12 @@ async fn a_connection_attaches_once_and_both_operation_directions_use_the_bindin
             ..
         }
     )));
-    assert_eq!(scope.sessions.len(), 1);
+    assert_eq!(scope.records().await.len(), 1);
 }
 
 #[tokio::test]
 async fn equal_session_ids_on_different_peers_do_not_share_state() {
-    let mut scope = MemoryScope::default();
+    let mut scope = SqlScope::new().await;
     let first = binding(2);
     let second = ConnectionBinding {
         peer: PeerId::new(Uuid::from_u128(9)).unwrap(),
@@ -287,21 +281,102 @@ async fn equal_session_ids_on_different_peers_do_not_share_state() {
     };
     attach(&mut scope, &first, session(4)).await;
     attach(&mut scope, &second, session(4)).await;
-    end_sessions(&mut scope, &first.peer, EndReason::PeerRevoked, now(2))
+    end_sessions::<_, NoConsumer>(&mut scope, &first.peer, EndReason::PeerRevoked, now(2))
         .await
         .unwrap();
-    assert_eq!(scope.sessions.len(), 2);
+    assert_eq!(scope.records().await.len(), 1);
     assert_eq!(
         scope
-            .sessions
-            .get(&SessionKey {
+            .record(&SessionKey {
                 peer: second.peer,
                 session_id: session(4)
             })
-            .unwrap()
+            .await
             .state,
         SessionState::Active {
             connection: second.connection
         }
     );
+}
+
+#[tokio::test]
+async fn rollback_discards_session_notices_and_staged_registrations_before_effects_run() {
+    let mut scope = SqlScope::new().await;
+    let connection = binding(2);
+    let id = session(3);
+    let key = SessionKey {
+        peer: connection.peer,
+        session_id: id,
+    };
+    let published_registrations = scope.registrations.clone();
+    let effects = attach(&mut scope, &connection, id).await;
+    assert!(matches!(
+        effects.as_slice(),
+        [SessionEffect::Welcome { .. }]
+    ));
+    publish_notice::<_, NoConsumer>(
+        &mut scope,
+        &key,
+        Notice::LeaseChanged {
+            database: DatabaseId::new(Uuid::from_u128(4)).unwrap(),
+        },
+    )
+    .await
+    .unwrap();
+    let SqlScope {
+        pool, transaction, ..
+    } = scope;
+    transaction.rollback().await.unwrap();
+    // The host publishes neither staged registration edits nor effects on rollback.
+    let mut reopened = SqlScope {
+        transaction: pool.begin().await.unwrap(),
+        pool,
+        registrations: published_registrations,
+    };
+    assert!(
+        crate::session_storage::load_session(&mut reopened, &key)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        notices_after::<_, NoConsumer>(&mut reopened, &key, NoticePosition::default())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(reopened.registration(&connection.connection), None);
+}
+
+#[tokio::test]
+async fn notice_positions_keep_the_full_u64_range_and_refuse_overflow() {
+    let mut scope = SqlScope::new().await;
+    let connection = binding(2);
+    let id = session(3);
+    attach(&mut scope, &connection, id).await;
+    let key = SessionKey {
+        peer: connection.peer,
+        session_id: id,
+    };
+    let mut record = scope.record(&key).await;
+    record.notice_head = NoticePosition::new(u64::MAX - 1);
+    crate::session_storage::save_session(&mut scope, &record)
+        .await
+        .unwrap();
+    let notice = || Notice::LeaseChanged {
+        database: DatabaseId::new(Uuid::from_u128(4)).unwrap(),
+    };
+    publish_notice::<_, NoConsumer>(&mut scope, &key, notice())
+        .await
+        .unwrap();
+    let history =
+        notices_after::<_, NoConsumer>(&mut scope, &key, NoticePosition::new(u64::MAX - 1))
+            .await
+            .unwrap();
+    assert_eq!(history.first().unwrap().position.value(), u64::MAX);
+    assert!(matches!(
+        publish_notice::<_, NoConsumer>(&mut scope, &key, notice()).await,
+        Err(SessionError::NoticePositionExhausted)
+    ));
+    assert_eq!(scope.record(&key).await.notice_head.value(), u64::MAX);
 }

@@ -1,0 +1,20 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT record AS \"record!: String\" FROM _fleet_sync_sessions ORDER BY peer, session_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "record!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "66d8d46cf25f084310287113836c05b297cc3fccf459557a701b20454832251d"
+}
