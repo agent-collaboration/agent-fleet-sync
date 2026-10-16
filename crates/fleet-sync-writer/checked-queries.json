@@ -1,0 +1,10 @@
+{
+  "migrations": ["migrations"],
+  "output": "src/checked_queries.rs",
+  "metadata": "checked-query-metadata.json",
+  "queries": [
+    {"name":"read_table_columns","sql":"sql/read_table_columns.sql","row":"StoredColumnRow","result":"many","parameters":[{"name":"table","kind":"text","nullable":false}]},
+    {"name":"read_foreign_keys","sql":"sql/read_foreign_keys.sql","row":"StoredForeignKeyRow","result":"many","parameters":[{"name":"table","kind":"text","nullable":false}]},
+    {"name":"read_schema_entries","sql":"sql/read_schema_entries.sql","row":"StoredSchemaEntryRow","result":"many","parameters":[]}
+  ]
+}

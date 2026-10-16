@@ -10,7 +10,9 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+durable-steps = { path = "../durable-steps" }
 either.workspace = true
+fleet-sync-lease = { path = "../fleet-sync-lease" }
 fleet-sync-protocol = { path = "../fleet-sync-protocol" }
 futures-core.workspace = true
 futures-util.workspace = true
@@ -27,4 +29,7 @@ turso_parser.workspace = true
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[build-dependencies]
+fleet-sync-query-gen = { path = "../fleet-sync-query-gen", default-features = false }
 

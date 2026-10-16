@@ -3,6 +3,7 @@
 //! Consumer hosts supply admission, copy calls, time and the transaction scope.
 
 mod checked_queries;
+mod lease_holder;
 mod lease_values;
 mod workflow_values;
 pub use fleet_sync_protocol::ActorRef;
@@ -17,6 +18,7 @@ pub use fleet_sync_protocol::{
     Epoch, HolderChangeAnswer, HolderChangeRefusal, HolderChangeRequest, LeaseRefusal, LeaseState,
     LeaseStatus, RenewAnswer, RenewRequest, RenewResult, ReplicationPosition, SyncTime, TransferId,
 };
+pub use lease_holder::{HolderError, LeaseHolder};
 pub use lease_values::{LeasePolicy, RegistryConfig, WriterState};
 
 pub use registry_contract::{GateFailure, HolderChangeGate, LeaseError, LifecycleGate};

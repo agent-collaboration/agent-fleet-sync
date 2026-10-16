@@ -872,8 +872,11 @@ dependencies = [
 name = "fleet-sync-writer"
 version = "0.1.0"
 dependencies = [
+ "durable-steps",
  "either",
+ "fleet-sync-lease",
  "fleet-sync-protocol",
+ "fleet-sync-query-gen",
  "futures-core",
  "futures-util",
  "runtime-primitives",
