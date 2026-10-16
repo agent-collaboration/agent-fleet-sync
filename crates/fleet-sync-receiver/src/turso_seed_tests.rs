@@ -230,13 +230,13 @@ async fn copy_issues_rising_generations_and_repeat_attempt_does_not_replace_newe
         CopyStatusAnswer::NotInitialized
     );
     assert_eq!(
-        seed_complete(&mut TursoScope(&mut transaction), &done).await?,
+        complete_seed(&mut TursoScope(&mut transaction), &done).await?,
         SeedAnswer::Published {
             position: position()?
         }
     );
     assert_eq!(
-        seed_complete(&mut TursoScope(&mut transaction), &done).await?,
+        complete_seed(&mut TursoScope(&mut transaction), &done).await?,
         SeedAnswer::Published {
             position: position()?
         }
@@ -298,7 +298,7 @@ async fn digest_refusal_rolls_back_created_schema_and_preserves_staging_for_corr
     )];
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     assert_eq!(
-        seed_complete(&mut TursoScope(&mut transaction), &bad)
+        complete_seed(&mut TursoScope(&mut transaction), &bad)
             .await
             .err(),
         Some(ReceiverError::SeedRefused {
@@ -324,7 +324,7 @@ async fn digest_refusal_rolls_back_created_schema_and_preserves_staging_for_corr
         SeedPageAnswer::AlreadyStaged
     );
     assert_eq!(
-        seed_complete(&mut TursoScope(&mut transaction), &done).await?,
+        complete_seed(&mut TursoScope(&mut transaction), &done).await?,
         SeedAnswer::Published {
             position: position()?
         }
@@ -347,7 +347,7 @@ async fn missing_pages_changed_page_and_expected_position_are_refused_without_pu
     .await?;
     let (page, mut done) = snapshot(seed)?;
     assert_eq!(
-        seed_complete(&mut TursoScope(&mut transaction), &done).await?,
+        complete_seed(&mut TursoScope(&mut transaction), &done).await?,
         SeedAnswer::PositionMismatch {
             expected,
             offered: position()?
@@ -355,7 +355,7 @@ async fn missing_pages_changed_page_and_expected_position_are_refused_without_pu
     );
     done.position = expected;
     assert_eq!(
-        seed_complete(&mut TursoScope(&mut transaction), &done).await?,
+        complete_seed(&mut TursoScope(&mut transaction), &done).await?,
         SeedAnswer::Incomplete { missing: vec![0] }
     );
     assert_eq!(
@@ -371,4 +371,101 @@ async fn missing_pages_changed_page_and_expected_position_are_refused_without_pu
     );
     transaction.commit().await?;
     Ok(())
+}
+
+#[tokio::test]
+async fn retired_marker_answers_without_any_other_replication_bookkeeping() -> TestResult {
+    let mut connection = setup(None).await?;
+    let request = RetireCopy {
+        database: database()?,
+        expect_fence: Epoch::new(1)?,
+        expect_acked: ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(0)),
+    };
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    assert_eq!(
+        retire_copy(
+            &mut TursoScope(&mut transaction),
+            &request,
+            SyncTime::from_unix_millis(101)
+        )
+        .await?,
+        RetireCopyAnswer::Retired
+    );
+    sqlx_core::raw_sql::raw_sql("DROP TABLE _fleet_sync_receipts; DROP TABLE _fleet_sync_staged_parts; DROP TABLE _fleet_sync_fence_receipts; DROP TABLE _fleet_sync_schema_steps; DROP TABLE _fleet_sync_seed; DROP TABLE _fleet_sync_seed_pages; DROP TABLE _fleet_sync_seed_attempts; DROP TABLE _fleet_sync_creation; DROP TABLE _fleet_sync_copy_tables; DROP TABLE _fleet_sync_hook_migrations;").execute(&mut *transaction).await?;
+    transaction.commit().await?;
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    let mut scope = TursoScope(&mut transaction);
+    assert_eq!(copy_status(&mut scope).await?, CopyStatusAnswer::Retired);
+    assert_eq!(
+        create_copy(
+            &mut scope,
+            &CreateCopy {
+                database: database()?,
+                epoch: Epoch::new(1)?,
+                holder: None,
+                origin: CopyOrigin::Empty
+            }
+        )
+        .await?,
+        CreateCopyAnswer::Retired
+    );
+    let (page, done) = snapshot(SeedId { generation: 1 })?;
+    assert_eq!(seed_page(&mut scope, &page).await?, SeedPageAnswer::Retired);
+    assert_eq!(complete_seed(&mut scope, &done).await?, SeedAnswer::Retired);
+    assert_eq!(
+        seed_begin(&mut scope, database()?, Uuid::from_u128(2201))
+            .await
+            .err(),
+        Some(ReceiverError::Retired)
+    );
+    assert_eq!(
+        snapshot_manifest(&mut scope, position()?).await?,
+        SnapshotManifestAnswer::Retired
+    );
+    assert_eq!(
+        snapshot_page(&mut scope, None).await.err(),
+        Some(ReceiverError::Retired)
+    );
+    assert_eq!(
+        retire_copy(&mut scope, &request, SyncTime::from_unix_millis(999)).await?,
+        RetireCopyAnswer::Retired
+    );
+    transaction.commit().await?;
+    Ok(())
+}
+
+struct NoHook;
+impl ReceiverHook<TursoScope<'_>> for NoHook {
+    type Protocol = NoConsumer;
+    type FollowUp = ();
+    async fn on_applied(
+        &self,
+        _: &mut TursoScope<'_>,
+        _: &AppliedPiece<'_, ()>,
+    ) -> Result<Vec<()>, HookRefusal> {
+        Ok(Vec::new())
+    }
+    async fn follow_up(
+        &self,
+        _: &(),
+        _: durable_steps::CallId,
+    ) -> Result<FollowUpDone, FollowUpFailure> {
+        Ok(FollowUpDone)
+    }
+}
+// This host has no follow-ups; translate the rule decision into its wire answer.
+async fn complete_seed(
+    scope: &mut TursoScope<'_>,
+    done: &SeedComplete,
+) -> Result<SeedAnswer, ReceiverError> {
+    match seed_complete(scope, done, &NoHook).await? {
+        SeedDecision::Published {
+            position,
+            follow_ups,
+        } => {
+            assert!(follow_ups.is_empty());
+            Ok(SeedAnswer::Published { position })
+        }
+        SeedDecision::Answer(answer) => Ok(answer),
+    }
 }

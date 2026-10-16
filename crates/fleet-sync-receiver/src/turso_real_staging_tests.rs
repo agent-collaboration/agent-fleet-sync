@@ -222,11 +222,8 @@ async fn split_piece_and_seed_json_keep_sensitive_finite_bits_and_infinities_aft
             .collect(),
     };
     let mut transaction = target.begin_with("BEGIN IMMEDIATE").await?;
-    assert_eq!(
-        seed_complete(&mut TursoScope(&mut transaction), &complete).await?,
-        SeedAnswer::Published {
-            position: position(2)?
-        }
+    assert!(
+        matches!(seed_complete(&mut TursoScope(&mut transaction), &complete, &Hook { refuse: false }).await?, SeedDecision::Published { position: actual, follow_ups } if actual == position(2)? && follow_ups.is_empty())
     );
     transaction.commit().await?;
     assert_values(&mut target).await?;

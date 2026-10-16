@@ -127,12 +127,16 @@ where
 /// Publish a complete seed atomically. A SeedRefused error requires host rollback.
 // Explicit Send is required by borrowed-scope host dispatch.
 #[allow(clippy::manual_async_fn)]
-pub fn seed_complete<'scope, S>(
+pub fn seed_complete<'scope, S, H>(
     scope: &'scope mut S,
     done: &'scope SeedComplete,
-) -> impl std::future::Future<Output = Result<SeedAnswer, ReceiverError>> + Send + 'scope
+    hook: &'scope H,
+) -> impl std::future::Future<Output = Result<crate::SeedDecision<H::FollowUp>, ReceiverError>>
++ Send
++ 'scope
 where
     S: TransactionScope + 'scope,
+    H: crate::ReceiverHook<S>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'value> String:
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
@@ -149,16 +153,16 @@ where
             .await?
             .ok_or(ReceiverError::NotInitialized)?;
         if matches!(copy, CopyRecord::Retired { .. }) {
-            return Ok(SeedAnswer::Retired);
+            return Ok(crate::SeedDecision::Answer(SeedAnswer::Retired));
         }
         if copy.database() != done.database {
             return Err(ReceiverError::NotInitialized);
         }
         let Some(mut seed) = SeedStorage(scope).load().await? else {
-            return Ok(SeedAnswer::StaleSeed);
+            return Ok(crate::SeedDecision::Answer(SeedAnswer::StaleSeed));
         };
         if seed.seed != done.seed {
-            return Ok(SeedAnswer::StaleSeed);
+            return Ok(crate::SeedDecision::Answer(SeedAnswer::StaleSeed));
         }
         if let Some(published) = seed.published {
             if published != *done {
@@ -166,9 +170,9 @@ where
                     field: "completed seed identity has different contents".into(),
                 });
             }
-            return Ok(SeedAnswer::Published {
+            return Ok(crate::SeedDecision::Answer(SeedAnswer::Published {
                 position: published.position,
-            });
+            }));
         }
         let CopyRecord::Seeding {
             mut status,
@@ -182,10 +186,10 @@ where
         if let Some(expected) = expected_position
             && expected != done.position
         {
-            return Ok(SeedAnswer::PositionMismatch {
+            return Ok(crate::SeedDecision::Answer(SeedAnswer::PositionMismatch {
                 expected,
                 offered: done.position,
-            });
+            }));
         }
         if done.position.epoch != status.fence {
             return Err(ReceiverError::InvalidInput {
@@ -197,7 +201,9 @@ where
             .filter(|index| !pages.iter().any(|page| page.page == *index))
             .collect::<Vec<_>>();
         if !missing.is_empty() {
-            return Ok(SeedAnswer::Incomplete { missing });
+            return Ok(crate::SeedDecision::Answer(SeedAnswer::Incomplete {
+                missing,
+            }));
         }
         if pages.len()
             != usize::try_from(done.pages).map_err(|_| ReceiverError::InvalidInput {
@@ -216,11 +222,22 @@ where
         CopyStorage(scope)
             .save(&CopyRecord::Following(status))
             .await?;
+        let installed = crate::InstalledSnapshot {
+            database: done.database,
+            position: done.position,
+            schema: done.schema.clone(),
+        };
+        let follow_ups = crate::run_snapshot_hook(scope, hook, &installed)
+            .await
+            .map_err(|refusal| ReceiverError::SeedRefused {
+                answer: SeedAnswer::Hook(refusal),
+            })?;
         seed.published = Some(done.clone());
         SeedStorage(scope).save(&seed).await?;
         SeedStorage(scope).drop_pages().await?;
-        Ok(SeedAnswer::Published {
+        Ok(crate::SeedDecision::Published {
             position: done.position,
+            follow_ups,
         })
     }
 }

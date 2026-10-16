@@ -81,7 +81,33 @@ async fn reopened_copy_keeps_old_fence_receipts_and_cutoffs_after_later_fences()
     drop(connection);
     let mut connection = TursoConnectOptions::new().filename(&path).connect().await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
-    let next = request(512, 3, 2, third)?;
+    let later_position = ReplicationPosition::new(Epoch::new(2)?, CommitSequence::new(1));
+    let later = Piece::<()>::new(PieceContents {
+        database: database()?,
+        epoch: Epoch::new(2)?,
+        continues_from: position(0)?,
+        through: later_position,
+        transactions: vec![ReplicatedTransaction::Rows {
+            commit_id: CommitSequence::new(1),
+            rows: vec![RowChange::upsert(
+                "records",
+                vec![SqlValue::Integer(8)],
+                vec![SqlValue::Integer(8), SqlValue::Text("later epoch".into())],
+            )?],
+        }],
+        part: None,
+        annotation: None,
+    })?;
+    apply_piece(
+        &mut TursoScope(&mut transaction),
+        &later,
+        &second,
+        &Hook { refuse: false },
+        SyncTime::from_unix_millis(2),
+    )
+    .await?;
+    let mut next = request(512, 3, 2, third)?;
+    next.expect.acked = later_position;
     assert!(
         matches!(fence(&mut TursoScope(&mut transaction),&next).await?,FenceResult::Fenced{new_epoch,..} if new_epoch==Epoch::new(3)?)
     );

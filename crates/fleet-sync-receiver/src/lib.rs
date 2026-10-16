@@ -18,6 +18,8 @@ mod schema_reads;
 mod seed_publication;
 mod seed_rules;
 mod seed_storage;
+mod snapshot_follow_up;
+mod snapshot_hooks;
 mod snapshot_manifest;
 mod snapshot_reads;
 mod sql_transport;
@@ -29,10 +31,12 @@ pub use fence_rules::fence;
 pub use fleet_sync_protocol::{CopyRole, CopyStatus};
 pub use hook_migrations::initialize_hook;
 pub use receiver_contract::{
-    AppliedPiece, ApplyDecision, ApplyFailure, FollowUpDone, FollowUpFailure, ReceiverError,
-    ReceiverHook,
+    AppliedPiece, ApplyDecision, ApplyFailure, FollowUpDone, FollowUpFailure, InstalledSnapshot,
+    ReceiverError, ReceiverHook, SeedDecision,
 };
 pub use seed_rules::{seed_begin, seed_complete, seed_page};
+pub use snapshot_follow_up::{admit_snapshot_follow_ups, snapshot_follow_up_key};
+pub use snapshot_hooks::run_snapshot_hook;
 pub use snapshot_manifest::snapshot_manifest;
 pub use snapshot_reads::snapshot_page;
 pub use sql_transport::StoreError;
@@ -48,7 +52,11 @@ mod turso_rule_tests;
 mod turso_seed_tests;
 
 #[cfg(test)]
+mod turso_follow_up_fixture;
+#[cfg(test)]
 mod turso_follow_up_tests;
+#[cfg(test)]
+mod turso_seed_hook_tests;
 
 #[cfg(test)]
 mod turso_capacity_tests;

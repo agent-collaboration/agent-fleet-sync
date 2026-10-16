@@ -1,7 +1,6 @@
-//! Writer lease state and the registry's shared values.
+//! Writer lease values and SQL-backed registry rules and durable operations.
 //!
-//! The registry rules and durable lifecycle operations are still being implemented.
-//! The holder implementation lives beside these values and shares protocol types.
+//! Consumer hosts supply admission, copy calls, time and the transaction scope.
 
 mod checked_queries;
 mod lease_values;
@@ -85,6 +84,8 @@ mod turso_copy_fixture;
 mod turso_change_race_tests;
 #[cfg(test)]
 mod turso_change_tests;
+#[cfg(test)]
+mod turso_epoch_proof_tests;
 #[cfg(test)]
 mod turso_floor_repair_tests;
 

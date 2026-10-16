@@ -286,3 +286,62 @@ async fn a_mixed_case_reserved_row_target_cannot_change_copy_bookkeeping() -> Te
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn absent_copy_and_future_epoch_are_distinct_refusals_with_no_mutation() -> TestResult {
+    let mut connection = connection().await?;
+    let future = Piece::<()>::new(PieceContents {
+        database: database()?,
+        epoch: Epoch::new(2)?,
+        continues_from: position(0)?,
+        through: ReplicationPosition::new(Epoch::new(2)?, CommitSequence::new(1)),
+        transactions: vec![ReplicatedTransaction::Rows {
+            commit_id: CommitSequence::new(1),
+            rows: vec![RowChange::upsert(
+                "records",
+                vec![SqlValue::Integer(1)],
+                vec![SqlValue::Integer(1), SqlValue::Text("future".into())],
+            )?],
+        }],
+        part: None,
+        annotation: None,
+    })?;
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    assert_eq!(
+        apply_piece(
+            &mut TursoScope(&mut transaction),
+            &future,
+            &writer()?,
+            &Hook { refuse: false },
+            SyncTime::from_unix_millis(1)
+        )
+        .await
+        .err(),
+        Some(ApplyFailure::Refused(PieceRefusal::NotWriter {
+            current: Some(Epoch::new(1)?)
+        }))
+    );
+    transaction.rollback().await?;
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    sqlx_core::query::query::<Turso>("DELETE FROM _fleet_sync_copy")
+        .execute(&mut *transaction)
+        .await?;
+    assert_eq!(
+        apply_piece(
+            &mut TursoScope(&mut transaction),
+            &piece(1, 0)?,
+            &writer()?,
+            &Hook { refuse: false },
+            SyncTime::from_unix_millis(1)
+        )
+        .await
+        .err(),
+        Some(ApplyFailure::Refused(PieceRefusal::NotInitialized))
+    );
+    transaction.rollback().await?;
+    assert_eq!(
+        counts(&mut connection).await?,
+        ("0".into(), "0".into(), "1".into())
+    );
+    Ok(())
+}

@@ -15,12 +15,36 @@ pub struct AppliedPiece<'piece, A> {
     pub annotation: Option<&'piece A>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InstalledSnapshot {
+    pub database: DatabaseId,
+    pub position: ReplicationPosition,
+    pub schema: fleet_sync_protocol::SchemaIdentity,
+}
+
+#[derive(Debug)]
+pub enum SeedDecision<TFollowUp> {
+    Published {
+        position: ReplicationPosition,
+        follow_ups: Vec<TFollowUp>,
+    },
+    Answer(fleet_sync_protocol::SeedAnswer),
+}
+
 pub trait ReceiverHook<S: TransactionScope>: Send + Sync + 'static {
     type Protocol: ConsumerProtocol;
     type FollowUp: Serialize + DeserializeOwned + Send + Sync;
     /// Local tables initialized by the host before any piece is applied.
     fn local_migrations(&self) -> &'static [sqlx_core::migrate::Migration] {
         &[]
+    }
+    /// Rebuild derived local state after snapshot rows are installed in this transaction.
+    fn on_snapshot_installed(
+        &self,
+        _scope: &mut S,
+        _installed: &InstalledSnapshot,
+    ) -> impl Future<Output = Result<Vec<Self::FollowUp>, HookRefusal>> + Send {
+        async { Ok(Vec::new()) }
     }
     fn on_applied(
         &self,

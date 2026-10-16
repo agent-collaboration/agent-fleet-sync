@@ -128,8 +128,7 @@ pub(super) async fn seed_import(host: &Arc<TestHost>) -> TestResult<ReplicationP
         schema,
         table_digests: vec![(TableName::new("records")?, digest.finish())],
     };
-    if fleet_sync_receiver::seed_complete(&mut scope, &done).await?
-        != (SeedAnswer::Published { position })
+    if !matches!(fleet_sync_receiver::seed_complete(&mut scope, &done, &EmptyHook).await?, fleet_sync_receiver::SeedDecision::Published { position: actual, follow_ups } if actual == position && follow_ups.is_empty())
     {
         return Err("seed not published".into());
     }
