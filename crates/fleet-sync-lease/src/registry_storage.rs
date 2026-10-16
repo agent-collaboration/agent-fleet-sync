@@ -288,6 +288,32 @@ where
         .await?;
         Ok(())
     }
+    pub(crate) async fn repair_transfer_epoch(
+        &mut self,
+        attempt: TransferId,
+        epoch: Epoch,
+    ) -> Result<(), LeaseError> {
+        let mut record = self
+            .transfer(attempt)
+            .await?
+            .ok_or_else(|| conflict("missing transfer reservation"))?;
+        if record.outcome.is_some()
+            || record
+                .intent
+                .new_epoch
+                .is_none_or(|previous| epoch <= previous)
+        {
+            return Err(conflict("transfer reservation must advance while active"));
+        }
+        record.intent.new_epoch = Some(epoch);
+        checked_queries::repair_transfer_epoch(
+            self.0,
+            encode(&record.intent)?,
+            attempt.as_uuid().to_string(),
+        )
+        .await?;
+        Ok(())
+    }
     pub(crate) async fn lifecycle(
         &mut self,
         attempt: RequestId,

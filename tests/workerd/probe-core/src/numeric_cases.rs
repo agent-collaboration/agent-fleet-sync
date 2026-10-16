@@ -46,6 +46,8 @@ where
                 ("two53", ExactCell::Integer(9_007_199_254_740_992)),
                 ("two53-plus-one", ExactCell::Integer(9_007_199_254_740_993)),
                 ("real-one", ExactCell::Real(1.0)),
+                ("positive-infinity", ExactCell::Real(f64::INFINITY)),
+                ("negative-infinity", ExactCell::Real(f64::NEG_INFINITY)),
                 ("null", ExactCell::Null),
                 (
                     "text",
@@ -53,6 +55,7 @@ where
                 ),
                 ("blob", ExactCell::Blob(vec![0, 255, 128, 1])),
             ];
+            let sample_count = samples.len();
             for (name, expected) in &samples {
                 let name = (*name).to_owned();
                 match expected {
@@ -135,7 +138,7 @@ where
                 return Err(ProbeError::Rejected);
             }
             Ok(format!(
-                "9 exact values/classes passed: {}; raw bool(2)={accepts_two} (domain must reject)",
+                "{sample_count} exact values/classes passed: {}; raw bool(2)={accepts_two} (domain must reject)",
                 observations.join("; ")
             ))
         })

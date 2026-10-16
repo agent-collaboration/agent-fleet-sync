@@ -812,8 +812,10 @@ name = "fleet-sync-receiver"
 version = "0.1.0"
 dependencies = [
  "durable-steps",
+ "either",
  "fleet-sync-protocol",
  "fleet-sync-query-gen",
+ "futures-util",
  "runtime-primitives",
  "serde",
  "serde_json",

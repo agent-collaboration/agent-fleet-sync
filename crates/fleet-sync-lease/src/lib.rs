@@ -61,6 +61,7 @@ mod change_completion;
 mod holder_change_rules;
 pub use holder_change_rules::holder_change;
 
+mod floor_repair;
 mod holder_change_task;
 mod settle_reservation_task;
 pub use holder_change_task::HolderChangeTask;
@@ -84,6 +85,16 @@ mod turso_copy_fixture;
 mod turso_change_race_tests;
 #[cfg(test)]
 mod turso_change_tests;
+#[cfg(test)]
+mod turso_floor_repair_tests;
 
 #[cfg(test)]
 mod turso_claim_recovery_tests;
+#[cfg(test)]
+mod turso_claim_replay_tests;
+#[cfg(test)]
+mod turso_move_refusal_tests;
+#[cfg(test)]
+mod turso_registry_integrity_tests;
+#[cfg(test)]
+mod turso_retirement_recovery_tests;

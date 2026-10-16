@@ -31,11 +31,11 @@ where
         CheckedChange::Answer(answer) => return Ok(answer),
         CheckedChange::Continue { intent, holder } => (intent, holder),
     };
-    let new_epoch = intent.new_epoch.ok_or_else(|| LeaseError::Corrupt {
+    let mut new_epoch = intent.new_epoch.ok_or_else(|| LeaseError::Corrupt {
         field: "reserved transfer epoch".into(),
     })?;
     let database = change_checks::database(request);
-    let expect = match request {
+    let mut expect = match request {
         HolderChangeRequest::Move {
             attempt,
             from_epoch,
@@ -242,7 +242,7 @@ where
     if let Some(answer) = change_completion::outcome::<C, D>(ctx, request, "before_fence").await? {
         return settle_claim::<C, D>(ctx, request, answer).await;
     }
-    let fenced = ctx
+    let mut fenced = ctx
         .call(
             step("fence")?,
             CopyFence {
@@ -258,6 +258,37 @@ where
             },
         )
         .await?;
+    if let FenceResult::FenceNotAdvanced { current_epoch } = fenced {
+        match crate::floor_repair::repair::<C, D>(ctx, request, current_epoch, expect.acked).await?
+        {
+            crate::floor_repair::RepairedFence::Answer(answer) => {
+                return settle_claim::<C, D>(ctx, request, answer).await;
+            }
+            crate::floor_repair::RepairedFence::Reserved {
+                epoch,
+                expect: repaired,
+            } => {
+                new_epoch = epoch;
+                expect = repaired;
+            }
+        }
+        fenced = ctx
+            .call(
+                step("fence:2")?,
+                CopyFence {
+                    copy: config.authoritative_receiver,
+                },
+                FenceRequest {
+                    database,
+                    transfer_id: change_checks::attempt(request),
+                    new_epoch,
+                    expect: expect.clone(),
+                    target_schema_max: config.target_schema_max,
+                    holder: change_checks::target(request),
+                },
+            )
+            .await?;
+    }
     let refusal = match &fenced {
         FenceResult::Fenced {
             old_epoch,
@@ -271,9 +302,8 @@ where
             }
             None
         }
-        FenceResult::FenceNotAdvanced { .. } | FenceResult::PreviewStale { .. } => {
-            Some(HolderChangeRefusal::PreviewStale)
-        }
+        FenceResult::FenceNotAdvanced { .. } => Some(HolderChangeRefusal::EpochUnprovable),
+        FenceResult::PreviewStale { .. } => Some(HolderChangeRefusal::PreviewStale),
         FenceResult::SchemaTooNew { store, supported } => Some(HolderChangeRefusal::SchemaTooNew {
             store: store.clone(),
             supported: Some(*supported),
@@ -284,7 +314,7 @@ where
     let answer = if let Some(reason) = refusal {
         change_completion::refuse::<C, D>(ctx, request, "fence_refused", reason).await?
     } else {
-        change_completion::grant::<C, D>(ctx, request, fenced, config).await?
+        change_completion::grant::<C, D>(ctx, request, fenced, expect, config).await?
     };
     settle_claim::<C, D>(ctx, request, answer).await
 }

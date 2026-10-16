@@ -21,6 +21,8 @@ uuid = { version = "1.26.0", default-features = false, features = ["serde"] }
 fleet-sync-query-gen = { path = "../fleet-sync-query-gen" }
 
 [dev-dependencies]
+either.workspace = true
+futures-util.workspace = true
 durable-steps = { path = "../durable-steps", features = ["turso"] }
 runtime-primitives.workspace = true
 tempfile = "3.27.0"

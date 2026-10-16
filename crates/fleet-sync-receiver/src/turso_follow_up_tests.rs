@@ -53,7 +53,7 @@ impl ReceiverHook<TursoScope<'_, TestHost>> for Hook {
             .execute(scope.executor())
             .await
             .map_err(|error| HookRefusal {
-                code: "storage".into(),
+                code: fixture_refusal_code("storage"),
                 detail: error.to_string(),
             })?;
         Ok(vec!["notice".into()])
@@ -345,4 +345,10 @@ impl ReceiverHook<TursoScope<'_, TestHost>> for SchemaHook {
     async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }
+}
+
+// These are fixed valid fixture literals; an invalid code is a fixture authoring error.
+#[allow(clippy::expect_used)]
+fn fixture_refusal_code(code: &str) -> HookRefusalCode {
+    HookRefusalCode::new(code).expect("valid fixture refusal code")
 }

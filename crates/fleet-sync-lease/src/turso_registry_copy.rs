@@ -34,6 +34,11 @@ impl TestHost {
         request: serde_json::Value,
         call: CallId,
     ) -> Result<serde_json::Value, CallFailure> {
+        if kind == "fleet-sync.copy-retire" && self.retire_unreachable.load(Ordering::SeqCst) {
+            return Err(CallFailure::NotSent {
+                reason: NotSentReason::Unreachable { last_seen: None },
+            });
+        }
         if kind == "fleet-sync.copy-status" && self.status_unreachable.load(Ordering::SeqCst) {
             return Err(CallFailure::NotSent {
                 reason: NotSentReason::Unreachable { last_seen: None },
@@ -68,6 +73,11 @@ impl TestHost {
             }
         }
         if kind == "fleet-sync.copy-fence" {
+            if self.fence_unreachable.load(Ordering::SeqCst) {
+                return Err(CallFailure::NotSent {
+                    reason: NotSentReason::Unreachable { last_seen: None },
+                });
+            }
             let fence = decode::<FenceRequest>(request.clone())?;
             let gate = self
                 .fence_gates
@@ -147,6 +157,12 @@ impl TestHost {
         if kind == "fleet-sync.copy-create" && self.lose_create.swap(false, Ordering::SeqCst) {
             return Err(CallFailure::AnswerLost);
         }
+        if kind == "fleet-sync.copy-fence" && self.lose_fence.swap(false, Ordering::SeqCst) {
+            return Err(CallFailure::AnswerLost);
+        }
+        if kind == "fleet-sync.copy-retire" && self.lose_retire.swap(false, Ordering::SeqCst) {
+            return Err(CallFailure::AnswerLost);
+        }
         Ok(answer)
     }
     async fn released(
@@ -176,18 +192,22 @@ impl TestHost {
                     .map_err(lost)?
             }
         } else {
-            let answer = match status {
-                CopyStatusAnswer::Status(status) if status.fence == request.epoch => {
-                    ReleaseAnswer::Released {
-                        final_position: status.acked,
+            let answer = if let Some(answer) = self.release_answer.lock().await.clone() {
+                answer
+            } else {
+                match status {
+                    CopyStatusAnswer::Status(status) if status.fence == request.epoch => {
+                        ReleaseAnswer::Released {
+                            final_position: status.acked,
+                        }
                     }
+                    CopyStatusAnswer::Status(status) => {
+                        ReleaseAnswer::ReleaseRefused(ReleaseRefusal::Superseded {
+                            current: status.fence,
+                        })
+                    }
+                    _ => return Err(CallFailure::AnswerLost),
                 }
-                CopyStatusAnswer::Status(status) => {
-                    ReleaseAnswer::ReleaseRefused(ReleaseRefusal::Superseded {
-                        current: status.fence,
-                    })
-                }
-                _ => return Err(CallFailure::AnswerLost),
             };
             sqlx_core::query::query::<Turso>(
                 "INSERT INTO releases(call,request,answer) VALUES(?1,?2,?3)",

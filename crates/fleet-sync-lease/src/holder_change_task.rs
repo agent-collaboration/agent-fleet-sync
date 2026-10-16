@@ -5,7 +5,7 @@ use crate::{
     registry_storage::RegistryStorage,
 };
 use durable_steps::{
-    AtomicStore, BoxFuture, JournalScope, OperationContext, OperationFailure, RequestKey,
+    AtomicStore, BoxFuture, JournalScope, OperationContext, OperationFailure, RequestKey, Resume,
     StoreError, Task, storage::TransactionScope,
 };
 use fleet_sync_protocol::*;
@@ -50,6 +50,37 @@ where
         holder_change::<C, D>(ctx, request, &self.config)
             .await
             .map_err(Into::into)
+    }
+    fn before_resume<'s, 't>(
+        &'s self,
+        scope: &'s mut S::Scope<'t>,
+        key: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Resume<Self::Output>, StoreError>> {
+        Box::pin(async move {
+            let Some(id) = uuid::Uuid::parse_str(key.as_str())
+                .ok()
+                .and_then(|id| TransferId::new(id).ok())
+            else {
+                return Ok(Resume::Continue);
+            };
+            let Some(record) = RegistryStorage(scope)
+                .transfer(id)
+                .await
+                .map_err(storage_error)?
+            else {
+                return Ok(Resume::Continue);
+            };
+            // Only a takeover's persisted supersession bypasses pending calls. In
+            // particular, a committed claim grant still has to settle its gate.
+            match record.outcome {
+                Some(
+                    answer @ HolderChangeAnswer::Refused(HolderChangeRefusal::Superseded { .. }),
+                ) if matches!(record.intent.request, HolderChangeRequest::Move { .. }) => {
+                    Ok(Resume::Finish(answer))
+                }
+                _ => Ok(Resume::Continue),
+            }
+        })
     }
     fn on_failed<'s, 't>(
         &'s self,

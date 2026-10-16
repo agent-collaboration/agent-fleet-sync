@@ -120,6 +120,7 @@ pub(crate) async fn grant<C, D>(
     ctx: &mut C,
     request: &HolderChangeRequest,
     fenced: FenceResult,
+    expect: FenceExpectation,
     config: &RegistryConfig,
 ) -> Result<HolderChangeAnswer, LeaseError>
 where
@@ -172,7 +173,7 @@ where
                         field: "grant requires successful fence".into(),
                     }));
                 };
-                if reserved != new_epoch {
+                if reserved != new_epoch || old_epoch != expect.epoch || start != expect.acked {
                     return Err(step_error(LeaseError::Corrupt {
                         field: "grant epoch differs from reserved epoch".into(),
                     }));
@@ -197,8 +198,7 @@ where
                         HolderChangeRequest::Move { from_epoch, .. }
                             if existing
                                 .as_ref()
-                                .is_none_or(|lease| lease.epoch != *from_epoch)
-                                || old_epoch != *from_epoch =>
+                                .is_none_or(|lease| lease.epoch != *from_epoch) =>
                         {
                             Some(HolderChangeRefusal::PreviewStale)
                         }
@@ -206,7 +206,6 @@ where
                             if existing
                                 .as_ref()
                                 .is_none_or(|lease| lease.holder != preview.holder)
-                                || old_epoch != preview.fence
                                 || start != preview.acked =>
                         {
                             Some(HolderChangeRefusal::PreviewStale)

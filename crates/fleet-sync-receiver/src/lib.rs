@@ -51,9 +51,17 @@ mod turso_seed_tests;
 mod turso_follow_up_tests;
 
 #[cfg(test)]
+mod turso_capacity_tests;
+#[cfg(test)]
 mod turso_copy_identity_tests;
 #[cfg(test)]
+mod turso_fence_integrity_tests;
+#[cfg(test)]
 mod turso_hook_migration_tests;
+#[cfg(test)]
+mod turso_integrity_tests;
+#[cfg(test)]
+mod turso_real_staging_tests;
 #[cfg(test)]
 mod turso_rule_fixture;
 #[cfg(test)]

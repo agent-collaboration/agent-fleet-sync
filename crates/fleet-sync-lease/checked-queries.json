@@ -323,6 +323,24 @@
           "nullable": false
         }
       ]
+    },
+    {
+      "name": "repair_transfer_epoch",
+      "sql": "sql/repair_transfer_epoch.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": [
+        {
+          "name": "intent",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
     }
   ]
 }

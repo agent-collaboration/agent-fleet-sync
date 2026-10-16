@@ -31,7 +31,7 @@ let before;
 try {
   await runtime.ready;
   const suite = await request(runtime,"/suite");
-  if (!suite.includes("9 exact values/classes passed")) throw new Error("scenario failed");
+  if (!suite.includes("11 exact values/classes passed")) throw new Error("scenario failed");
   const effect = await request(runtime,"/effect");
   if (effect !== "effect observed after durable commit: http-committed") throw new Error("effect order failed");
   const rejected = await request(runtime,"/effect",503);

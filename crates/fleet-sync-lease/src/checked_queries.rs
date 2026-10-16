@@ -510,3 +510,24 @@ where
             .transpose()
     }
 }
+pub(crate) fn repair_transfer_epoch<S>(
+    scope: &mut S,
+    intent: String,
+    attempt: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/repair_transfer_epoch.sql"
+        )))
+        .bind(intent)
+        .bind(attempt);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}

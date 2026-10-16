@@ -59,12 +59,12 @@ impl ReceiverHook<TursoScope<'_>> for Hook {
             .execute(scope.executor())
             .await
             .map_err(|error| HookRefusal {
-                code: "storage".into(),
+                code: fixture_refusal_code("storage"),
                 detail: error.to_string(),
             })?;
         if self.refuse {
             return Err(HookRefusal {
-                code: "policy".into(),
+                code: fixture_refusal_code("policy"),
                 detail: "refused after writing".into(),
             });
         }
@@ -112,7 +112,12 @@ pub(super) fn piece(commit: u64, from: u64) -> TestResult<Piece> {
     })?)
 }
 pub(super) async fn connection() -> TestResult<TursoConnection> {
-    let mut connection = TursoConnectOptions::new().connect().await?;
+    connection_with_options(TursoConnectOptions::new()).await
+}
+pub(super) async fn connection_with_options(
+    options: TursoConnectOptions,
+) -> TestResult<TursoConnection> {
+    let mut connection = options.connect().await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     sqlx_core::raw_sql::raw_sql(concat!(
         include_str!("../migrations/0001_copy_rules.sql"),
@@ -181,4 +186,10 @@ pub(super) async fn counts(
         row.try_get("hooks")?,
         row.try_get("receipts")?,
     ))
+}
+
+// These are fixed valid fixture literals; an invalid code is a fixture authoring error.
+#[allow(clippy::expect_used)]
+fn fixture_refusal_code(code: &str) -> HookRefusalCode {
+    HookRefusalCode::new(code).expect("valid fixture refusal code")
 }

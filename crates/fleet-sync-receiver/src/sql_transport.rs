@@ -149,7 +149,7 @@ impl SqlRow {
                             field: name.clone(),
                         })?)
                     }
-                    BoundValue::Real(value) if value.is_finite() => SqlValue::Real(value),
+                    BoundValue::Real(value) if !value.is_nan() => SqlValue::Real(value),
                     BoundValue::Real(_) => return Err(StoreError::Corrupt { field: name }),
                     BoundValue::Text(value) => SqlValue::Text(value),
                     BoundValue::Blob(value) => SqlValue::Blob(value),

@@ -50,7 +50,31 @@ pub(super) async fn whole_real_decodes_as_f64(conn: &mut DoConnection) -> Outcom
         .await
         .map_err(fail)?;
 
-    ensure((value - 3.0).abs() < f64::EPSILON, format!("got {value}"))
+    ensure((value - 3.0).abs() < f64::EPSILON, format!("got {value}"))?;
+    reset(conn).await?;
+    for value in [f64::INFINITY, f64::NEG_INFINITY] {
+        sqlx::query("INSERT INTO numbers(value) VALUES(CAST(? AS REAL))")
+            .bind(value)
+            .execute(conn)
+            .await
+            .map_err(fail)?;
+    }
+    let rows = sqlx::query("SELECT value,typeof(value) AS kind FROM numbers ORDER BY value DESC")
+        .fetch_all(conn)
+        .await
+        .map_err(fail)?;
+    ensure(rows.len() == 2, "both infinities stored")?;
+    for (row, expected) in rows.iter().zip([f64::INFINITY, f64::NEG_INFINITY]) {
+        ensure(
+            row.try_get::<String, _>("kind").map_err(fail)? == "real",
+            "infinity storage class",
+        )?;
+        ensure(
+            row.try_get::<f64, _>("value").map_err(fail)? == expected,
+            "infinity exact readback",
+        )?;
+    }
+    Ok(())
 }
 
 // Open question 1: which JavaScript representation Do stores as a BLOB, and

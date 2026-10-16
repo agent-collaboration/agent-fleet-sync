@@ -47,12 +47,18 @@ pub(super) struct TestHost {
     pub lose_create: AtomicBool,
     pub release_unreachable: AtomicBool,
     pub lose_release: AtomicBool,
+    pub release_answer: Mutex<Option<ReleaseAnswer>>,
     pub settlement_unreachable: AtomicBool,
     pub release_observed: Notify,
     pub acked_observed: Notify,
     pub hold_release: AtomicBool,
     pub hold_acked: AtomicBool,
     pub status_unreachable: AtomicBool,
+    pub lose_reservation: AtomicBool,
+    pub fence_unreachable: AtomicBool,
+    pub lose_fence: AtomicBool,
+    pub retire_unreachable: AtomicBool,
+    pub lose_retire: AtomicBool,
     pub fence_gates: Mutex<BTreeMap<TransferId, Arc<crate::turso_registry_copy::FenceGate>>>,
     pub calls: Mutex<Vec<(String, CallId)>>,
 }
@@ -101,12 +107,18 @@ impl TestHost {
             lose_create: AtomicBool::new(false),
             release_unreachable: AtomicBool::new(false),
             lose_release: AtomicBool::new(false),
+            release_answer: Mutex::new(None),
             settlement_unreachable: AtomicBool::new(false),
             release_observed: Notify::new(),
             acked_observed: Notify::new(),
             hold_release: AtomicBool::new(false),
             hold_acked: AtomicBool::new(false),
             status_unreachable: AtomicBool::new(false),
+            lose_reservation: AtomicBool::new(false),
+            fence_unreachable: AtomicBool::new(false),
+            lose_fence: AtomicBool::new(false),
+            retire_unreachable: AtomicBool::new(false),
+            lose_retire: AtomicBool::new(false),
             fence_gates: Mutex::new(BTreeMap::new()),
             calls: Mutex::new(Vec::new()),
         }))
@@ -167,12 +179,15 @@ impl Host for TestHost {
             }
             "fleet-sync.claim-reservation" => {
                 let request: fleet_sync_protocol::ClaimReservation = decode(request)?;
-                encode(
-                    self.gate
-                        .reserve(&request.change, call)
-                        .await
-                        .map_err(lost)?,
-                )?
+                let answer = self
+                    .gate
+                    .reserve(&request.change, call)
+                    .await
+                    .map_err(lost)?;
+                if self.lose_reservation.swap(false, Ordering::SeqCst) {
+                    return Err(CallFailure::AnswerLost);
+                }
+                encode(answer)?
             }
             "fleet-sync.claim-settlement" => {
                 if self.settlement_unreachable.load(Ordering::SeqCst) {
@@ -324,5 +339,15 @@ impl<T: Task, const VERSION: u32> Task for VersionedTask<T, VERSION> {
         failure: &'s durable_steps::OperationFailure,
     ) -> durable_steps::BoxFuture<'s, Result<(), durable_steps::StoreError>> {
         self.0.on_failed(scope, key, failure)
+    }
+    fn before_resume<'s, 't>(
+        &'s self,
+        scope: &'s mut <Self::Store as AtomicStore>::Scope<'t>,
+        key: &'s RequestKey,
+    ) -> durable_steps::BoxFuture<
+        's,
+        Result<durable_steps::Resume<Self::Output>, durable_steps::StoreError>,
+    > {
+        self.0.before_resume(scope, key)
     }
 }

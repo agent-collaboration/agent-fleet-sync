@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "../../Cargo.lock": "0b74ec492576d5a4eb36b47f8b04882452cf473e19d3def7aeb20e775ab85eda",
+    "../../Cargo.lock": "6d7e3a20a7f643a3f21cf80311da382db6325c712153aadbc48fc656e0b43c66",
     "../../rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "../fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "../fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
@@ -49,7 +49,7 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "cc0d00073f4a260d3ac784940f3dd3b7f36203ebd9310aaf81d67688c03e7280",
+    "checked-queries.json": "5422744106abb70a26c94a0df0eb8809b41ce69a6a26630cd7d10818c4a7a385",
     "migrations/0001_registry_rules.sql": "36df9f576906fe7af85d23ef33173c287873a52f83b52f6a2ac58415d19362ca",
     "sql/active_lifecycle.sql": "64bc3b0185802ec8bbea6de02e9c919033177065c9bf7858eaac9e53db149ced",
     "sql/active_transfer.sql": "b470ec59359105858f4982d733bd12543bcf5212c2fc1f30058dd2531773309c",
@@ -61,6 +61,7 @@
     "sql/read_preview.sql": "03783b07995797fdc8c3cce98c5aba00bd174e16f572b43f9bbd6c7641b162ab",
     "sql/read_renewal.sql": "b642f0498c8a5da61fa27928c70c88bc43aa716ceb4562a24b7270cd79571dcc",
     "sql/read_transfer.sql": "9a77765bc6cd9252524105c6e9bfb781be9f2907cd2aa856d8b61f78eb42407d",
+    "sql/repair_transfer_epoch.sql": "ed1c291c5575c97d9aa5494a98d8476a7d5df0e2f4de0e06917ee881b0f40257",
     "sql/write_database.sql": "f8755bcccae7ac8d48e3a6cc358c9d770d5dde979968deaab3027b48c1b4b644",
     "sql/write_floor.sql": "95b08bb73896095a54e86b1b9aa0022b13c7069e2971ae3cd184b472a2f3ce03",
     "sql/write_history.sql": "13c58c2ebd6bef8dffed52fadf717b8f9102434576d9c0251fc995ed94a2f9dd",
@@ -69,7 +70,7 @@
     "sql/write_preview.sql": "3394d8da7cef6adb1f85433dfd713e70a7e41a2132b8eeeb98815744b251f28a",
     "sql/write_renewal.sql": "c24b06a98fc0e0d1542af9d711fad9a1e9be335d85a0853114383947b4d69e4e",
     "sql/write_transfer.sql": "36cb611ddb484c599bf36a9b45249757dbe873a483ac7d55c7863cf8233054be",
-    "src/checked_queries.rs": "89aa5c8721f96d8da2e4029242424f0f62ee500b2e987b5a238cf57ee5105146"
+    "src/checked_queries.rs": "53caf04013450d30e28335d4fbbb3c2c7eacd0edd7d8936fed6b3e69cf74538b"
   },
   "queries": [
     {
@@ -269,6 +270,11 @@
           "type_source": "driver"
         }
       ]
+    },
+    {
+      "name": "repair_transfer_epoch",
+      "bind_slots": 2,
+      "columns": []
     }
   ]
 }

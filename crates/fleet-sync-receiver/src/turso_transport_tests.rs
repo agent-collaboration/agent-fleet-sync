@@ -93,6 +93,80 @@ async fn integer_real_text_blob_and_null_keep_exact_values_and_storage_classes()
 }
 
 #[tokio::test]
+async fn positive_and_negative_infinity_remain_real_through_row_apply_and_exact_readback()
+-> TestResult {
+    let mut connection = connection().await?;
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    let mut scope = TursoScope(&mut transaction);
+    let columns = [
+        TableColumn {
+            name: "id".into(),
+            key_order: 1,
+        },
+        TableColumn {
+            name: "real_value".into(),
+            key_order: 0,
+        },
+        TableColumn {
+            name: "text_value".into(),
+            key_order: 0,
+        },
+        TableColumn {
+            name: "blob_value".into(),
+            key_order: 0,
+        },
+        TableColumn {
+            name: "null_value".into(),
+            key_order: 0,
+        },
+    ];
+    for (id, value) in [(1, f64::INFINITY), (2, f64::NEG_INFINITY)] {
+        let change = RowChange::upsert(
+            "exact_values",
+            vec![SqlValue::Integer(id)],
+            vec![
+                SqlValue::Integer(id),
+                SqlValue::Real(value),
+                SqlValue::Null,
+                SqlValue::Null,
+                SqlValue::Null,
+            ],
+        )?;
+        plan_row_change(&columns, &change)?
+            .execute(&mut scope)
+            .await?;
+    }
+    let rows = BoundStatement::query(
+        "SELECT real_value FROM exact_values ORDER BY id",
+        Vec::new(),
+        vec!["real_value".into()],
+    )
+    .fetch_rows(&mut scope)
+    .await?;
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.value("real_value").cloned())
+            .collect::<Result<Vec<_>, _>>()?,
+        vec![
+            SqlValue::Real(f64::INFINITY),
+            SqlValue::Real(f64::NEG_INFINITY)
+        ]
+    );
+    transaction.commit().await?;
+    let rows = sqlx_core::query::query::<Turso>(
+        "SELECT typeof(real_value) AS storage_class,real_value FROM exact_values ORDER BY id",
+    )
+    .fetch_all(&mut connection)
+    .await?;
+    assert_eq!(rows.len(), 2);
+    for (row, expected) in rows.iter().zip([f64::INFINITY, f64::NEG_INFINITY]) {
+        assert_eq!(row.try_get::<String, _>("storage_class")?, "real");
+        assert_eq!(row.try_get::<f64, _>("real_value")?, expected);
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn composite_upsert_and_delete_use_declared_primary_key_order_on_turso() -> TestResult {
     let mut connection = connection().await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;

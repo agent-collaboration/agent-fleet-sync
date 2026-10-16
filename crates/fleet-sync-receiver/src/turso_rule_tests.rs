@@ -235,6 +235,46 @@ async fn split_transaction_stays_invisible_until_final_and_failed_final_discards
         ("0".into(), "0".into(), "1".into())
     );
     let mut broken = last.clone();
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    assert!(matches!(
+        apply_piece(
+            &mut TursoScope(&mut transaction),
+            first,
+            &writer()?,
+            &Hook { refuse: true },
+            SyncTime::from_unix_millis(100)
+        )
+        .await?,
+        ApplyDecision::PartStaged { index: 0, .. }
+    ));
+    transaction.commit().await?;
+    let mut changed = first.clone();
+    changed.transactions = vec![ReplicatedTransaction::Rows {
+        commit_id: position(1)?.sequence,
+        rows: vec![RowChange::upsert(
+            "records",
+            vec![SqlValue::Integer(1)],
+            vec![
+                SqlValue::Integer(1),
+                SqlValue::Text("changed staged row".into()),
+            ],
+        )?],
+    }];
+    changed.digest = changed.recomputed_digest()?;
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    assert_eq!(
+        apply_piece(
+            &mut TursoScope(&mut transaction),
+            &changed,
+            &writer()?,
+            &Hook { refuse: false },
+            SyncTime::from_unix_millis(100)
+        )
+        .await
+        .err(),
+        Some(ApplyFailure::Refused(PieceRefusal::PieceConflict))
+    );
+    transaction.rollback().await?;
     broken.transactions = vec![ReplicatedTransaction::Rows {
         commit_id: position(1)?.sequence,
         rows: Vec::new(),

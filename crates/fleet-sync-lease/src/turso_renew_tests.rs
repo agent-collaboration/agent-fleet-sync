@@ -83,6 +83,54 @@ async fn setup() -> TestResult<TursoConnection> {
     transaction.commit().await?;
     Ok(connection)
 }
+
+#[tokio::test]
+async fn renewal_replay_never_extends_expiry_and_an_expired_current_holder_can_renew_the_same_epoch()
+-> TestResult {
+    let mut connection = setup().await?;
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    let first = renew(
+        &mut TursoScope(&mut transaction),
+        &request(100, 1)?,
+        &holder(1)?,
+        now(100),
+        &policy(),
+    )
+    .await?;
+    assert!(
+        matches!(first,RenewAnswer::Renewed{recorded:RenewResult{expires_at,..},replayed:false,..} if expires_at==now(300))
+    );
+    transaction.commit().await?;
+    for elapsed in [0, 1, 50, 199, 200, 201, 1000, 86_400_000, i64::MAX - 100] {
+        let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+        let replay = renew(
+            &mut TursoScope(&mut transaction),
+            &request(100, 1)?,
+            &holder(1)?,
+            now(100 + elapsed),
+            &policy(),
+        )
+        .await?;
+        assert!(
+            matches!(replay,RenewAnswer::Renewed{recorded:RenewResult{epoch,expires_at},current:LeaseStatus{expires_at:current,..},replayed:true,..} if epoch==Epoch::new(1)? && expires_at==now(300) && current==now(300))
+        );
+        transaction.commit().await?;
+    }
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    let fresh = renew(
+        &mut TursoScope(&mut transaction),
+        &request(101, 1)?,
+        &holder(1)?,
+        now(1000),
+        &policy(),
+    )
+    .await?;
+    assert!(
+        matches!(fresh,RenewAnswer::Renewed{recorded:RenewResult{epoch,expires_at},replayed:false,..} if epoch==Epoch::new(1)? && expires_at==now(1200))
+    );
+    transaction.commit().await?;
+    Ok(())
+}
 #[tokio::test]
 async fn replay_preserves_recorded_answer_but_returns_current_lease_after_later_renewal_and_takeover()
 -> TestResult {

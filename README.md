@@ -34,7 +34,7 @@ node -e "require('node:fs').copyFileSync('tests/workerd/shim.mjs', 'tests/worker
 node tests/workerd/run-workerd.mjs
 ```
 
-The imported journey uses real SQLite-backed Durable Objects under Miniflare/workerd. It checks commit, rollback, read-own-writes, overlapping transactions, nine exact values and storage classes, effect ordering and state across a runtime restart. Integer fidelity uses decimal casts and tagged reads; arbitrary raw i64 binds outside JavaScript's safe range remain refused. Dropping the transaction future can still commit on the Worker; portable rollback-on-drop is not claimed.
+The imported journey uses real SQLite-backed Durable Objects under Miniflare/workerd. It checks commit, rollback, read-own-writes, overlapping transactions, eleven exact values and storage classes, including positive and negative infinity, effect ordering and state across a runtime restart. Integer fidelity uses decimal casts and tagged reads; arbitrary raw i64 binds outside JavaScript's safe range remain refused. Dropping the transaction future can still commit on the Worker; portable rollback-on-drop is not claimed.
 
 ## Provenance and license
 

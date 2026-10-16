@@ -4,9 +4,10 @@ use crate::{
     turso_change_tests::register_first, turso_registry_copy::FenceGate, turso_registry_fixture::*,
     *,
 };
-use durable_steps::{OperationState, RequestKey, Uuid};
+use durable_steps::{AtomicStore, JournalScope, OperationState, RequestKey, Uuid};
 use fleet_sync_protocol::*;
 use sqlx_turso::Turso;
+use std::sync::atomic::Ordering;
 use std::{sync::Arc, time::Duration};
 
 async fn saved_answer(
@@ -20,6 +21,120 @@ async fn saved_answer(
 }
 fn transfer(value: u128) -> TestResult<TransferId> {
     Ok(TransferId::new(Uuid::from_u128(value))?)
+}
+
+#[tokio::test]
+async fn superseded_move_finishes_after_reopen_without_resending_its_unanswered_call() -> TestResult
+{
+    for waiting_for_release in [true, false] {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("registry.db");
+        let host = TestHost::open(directory.path(), false).await?;
+        let store = open_store(&path, Arc::clone(&host), true).await?;
+        let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
+        register_first(&engine).await?;
+        let preview = task_answer::<PreviewTakeoverTask<TestStore, Turso>>(
+            &engine,
+            &RequestKey::new("pending-call-preview")?,
+            PreviewTakeover {
+                database: database()?,
+            },
+        )
+        .await?;
+        let move_id = transfer(801)?;
+        let takeover_id = transfer(802)?;
+        let request = HolderChangeRequest::Move {
+            attempt: move_id,
+            database: database()?,
+            from_epoch: Epoch::new(1)?,
+            to: peer(2)?,
+        };
+        let key = holder_change_request_key(move_id)?;
+        let admitted = store
+            .transaction(move |scope| {
+                Box::pin(async move {
+                    scope
+                        .admit::<HolderChangeTask<TestStore, Turso>>(&key, &request)
+                        .await
+                        .map_err(storage)
+                })
+            })
+            .await?;
+        host.hold_release
+            .store(waiting_for_release, Ordering::SeqCst);
+        host.hold_acked
+            .store(!waiting_for_release, Ordering::SeqCst);
+        let observed = if waiting_for_release {
+            &host.release_observed
+        } else {
+            &host.acked_observed
+        };
+        let mut drive = Box::pin(engine.drive_due());
+        tokio::select! {
+            result = &mut drive => return Err(format!("pending call returned unexpectedly: {result:?}").into()),
+            result = tokio::time::timeout(Duration::from_secs(5), observed.notified()) => result?,
+        }
+        drop(drive);
+        let answer = task_answer::<HolderChangeTask<TestStore, Turso>>(
+            &engine,
+            &holder_change_request_key(takeover_id)?,
+            HolderChangeRequest::Takeover {
+                attempt: takeover_id,
+                database: database()?,
+                preview,
+                to: peer(3)?,
+            },
+        )
+        .await?;
+        assert!(
+            matches!(answer, HolderChangeAnswer::Granted { epoch, .. } if epoch == Epoch::new(3)?)
+        );
+        let kind = if waiting_for_release {
+            "fleet-sync.holder-release"
+        } else {
+            "fleet-sync.copy-acknowledged"
+        };
+        let calls_before = host
+            .calls
+            .lock()
+            .await
+            .iter()
+            .filter(|(actual, _)| actual == kind)
+            .count();
+        assert_eq!(calls_before, 1);
+        drop(engine);
+        drop(store);
+        host.advance();
+        host.hold_release.store(false, Ordering::SeqCst);
+        host.release_unreachable.store(true, Ordering::SeqCst);
+        host.hold_acked.store(false, Ordering::SeqCst);
+        let store = open_store(&path, Arc::clone(&host), false).await?;
+        let resumed = crate::turso_registry_fixture::engine(Arc::clone(&store), Arc::clone(&host))?;
+        let report = tokio::time::timeout(Duration::from_secs(5), resumed.drive_due()).await??;
+        assert_eq!(report.completed, vec![admitted.id()]);
+        assert_eq!(
+            saved_answer(&resumed, admitted.id()).await?,
+            HolderChangeAnswer::Refused(HolderChangeRefusal::Superseded { by: takeover_id })
+        );
+        assert_eq!(
+            host.calls
+                .lock()
+                .await
+                .iter()
+                .filter(|(actual, _)| actual == kind)
+                .count(),
+            calls_before
+        );
+        assert_eq!(
+            scalar(
+                &store,
+                "SELECT CAST(count(*) AS TEXT) AS value FROM _fleet_sync_epoch_history"
+            )
+            .await?,
+            "2"
+        );
+    }
+    Ok(())
 }
 
 #[tokio::test]

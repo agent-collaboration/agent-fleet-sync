@@ -168,5 +168,14 @@ mod tests {
             SqlRow::from_transport(vec![("record_value".into(), BoundValue::Real(f64::NAN))])
                 .is_err()
         );
+        for value in ["", "not an integer", "1.5", "9223372036854775808"] {
+            assert!(
+                SqlRow::from_transport(vec![(
+                    "record_value".into(),
+                    BoundValue::IntegerText(value.into())
+                )])
+                .is_err()
+            );
+        }
     }
 }
