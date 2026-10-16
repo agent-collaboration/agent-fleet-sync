@@ -869,6 +869,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "fleet-sync-writer"
+version = "0.1.0"
+dependencies = [
+ "either",
+ "fleet-sync-protocol",
+ "futures-core",
+ "futures-util",
+ "runtime-primitives",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "sqlx-core",
+ "sqlx-turso",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "turso",
+ "turso_parser",
+]
+
+[[package]]
 name = "flume"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
