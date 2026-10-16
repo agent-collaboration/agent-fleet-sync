@@ -45,17 +45,55 @@ fn server_release_and_client_answer_use_the_canonical_call_identity() {
 
 #[test]
 fn peer_session_lease_frames_exclude_administrative_operations() {
-    for kind in [
-        "move",
-        "takeover",
-        "previewTakeover",
-        "import",
-        "retire",
-        "retirement",
-    ] {
-        let wire = serde_json::json!({"kind":"lease","value":{"kind":kind,"value":{}}});
-        assert!(serde_json::from_value::<OperationRequest>(wire).is_err());
+    let database = DatabaseId::new(Uuid::from_u128(1)).unwrap();
+    let attempt = TransferId::new(Uuid::from_u128(2)).unwrap();
+    let target = PeerId::new(Uuid::from_u128(3)).unwrap();
+    let position = ReplicationPosition::new(Epoch::new(1).unwrap(), CommitSequence::new(7));
+    let retirement = Retirement {
+        attempt: RequestId::new(Uuid::from_u128(4)).unwrap(),
+        database,
+        expect_fence: Epoch::new(1).unwrap(),
+        expect_acked: position,
+    };
+    let administrative = [
+        serde_json::to_value(HolderChangeRequest::Move {
+            attempt,
+            database,
+            from_epoch: Epoch::new(1).unwrap(),
+            to: target,
+        })
+        .unwrap(),
+        serde_json::to_value(HolderChangeRequest::Takeover {
+            attempt,
+            database,
+            preview: TakeoverPreview {
+                token: PreviewToken::new("preview-token").unwrap(),
+                fence: Epoch::new(1).unwrap(),
+                acked: position,
+                holder: target,
+                last_seen: None,
+            },
+            to: target,
+        })
+        .unwrap(),
+        serde_json::json!({"kind":"previewTakeover","value": PreviewTakeover { database }}),
+        serde_json::json!({"kind":"import","value": Import { attempt: RequestId::new(Uuid::from_u128(5)).unwrap(), database, digest: ImportDigest::new("a".repeat(64)).unwrap() }}),
+        serde_json::json!({"kind":"retire","value":retirement}),
+        serde_json::json!({"kind":"retirement","value":retirement}),
+    ];
+    for body in administrative {
+        let kind = body["kind"].clone();
+        let wire = serde_json::json!({"kind":"lease","value":body});
+        assert!(
+            serde_json::from_value::<OperationRequest>(wire).is_err(),
+            "peer session admitted {kind}"
+        );
     }
+    let claim = serde_json::json!({"kind":"lease","value":{"kind":"claim","value":{"attempt":"00000000-0000-0000-0000-000000000006","database":"00000000-0000-0000-0000-000000000001"}}});
+    assert!(matches!(
+        serde_json::from_value::<OperationRequest>(claim).unwrap(),
+        OperationRequest::Lease(LeaseRequest::Claim { .. })
+    ));
     let shell: OperationRequest = OperationRequest::Delivery(DeliveryRequest::Fetch {
         stream: DeliveryStream::Controls,
         after: u64::MAX,

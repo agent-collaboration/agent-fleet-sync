@@ -104,7 +104,15 @@ pub struct AwaitAcked {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Acked {
-    pub through: ReplicationPosition,
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum AwaitAckedAnswer {
+    Acked { through: ReplicationPosition },
+    NotInitialized,
+    Retired,
 }

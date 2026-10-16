@@ -4,6 +4,7 @@
 //! Operation identities belong to their owners; frame IDs only correlate replies.
 
 mod crate_call_frame;
+mod gate_message;
 mod holder_change_message;
 mod lease_message;
 mod lifecycle_message;
@@ -20,6 +21,7 @@ mod snapshot_page;
 mod transaction_part;
 
 pub use crate_call_frame::*;
+pub use gate_message::*;
 pub use holder_change_message::*;
 pub use lease_message::*;
 pub use lifecycle_message::*;

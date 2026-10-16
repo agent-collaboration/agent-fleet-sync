@@ -156,7 +156,7 @@ pub enum ReplicationAnswer {
     SeedPage(SeedPageAnswer),
     SeedComplete(SeedAnswer),
     SnapshotPage(SnapshotRead),
-    CopyStatus(Option<CopyStatus>),
+    CopyStatus(CopyStatusAnswer),
 }
 
 #[derive(Serialize, Deserialize)]

@@ -192,6 +192,7 @@ pub struct CreateCopy {
 pub enum CreateCopyAnswer {
     CopyCreated,
     AlreadyCreated,
+    Retired,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -211,6 +212,7 @@ pub struct RetireCopy {
 )]
 pub enum RetireCopyAnswer {
     Retired,
+    NotInitialized,
     Mismatch {
         fence: Epoch,
         acked: ReplicationPosition,
@@ -344,4 +346,17 @@ pub struct CopyStatus {
     pub start: ReplicationPosition,
     pub acked: ReplicationPosition,
     pub schema: SchemaIdentity,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "camelCase",
+    deny_unknown_fields
+)]
+pub enum CopyStatusAnswer {
+    Status(CopyStatus),
+    NotInitialized,
+    Retired,
 }

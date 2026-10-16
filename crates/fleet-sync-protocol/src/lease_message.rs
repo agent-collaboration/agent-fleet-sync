@@ -80,9 +80,10 @@ pub enum RenewAnswer {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TakeoverPreview {
     pub token: crate::PreviewToken,
-    pub holder: PeerId,
+    pub fence: Epoch,
     pub acked: ReplicationPosition,
-    pub expires_at: SyncTime,
+    pub holder: PeerId,
+    pub last_seen: Option<SyncTime>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

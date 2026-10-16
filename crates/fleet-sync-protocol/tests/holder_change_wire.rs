@@ -20,3 +20,17 @@ fn release_refusal_and_fence_results_keep_their_typed_details() {
     );
     assert!(serde_json::from_str::<FenceResult>(r#"{"kind":"fenced","value":{"oldEpoch":0,"newEpoch":2,"start":{"epoch":1,"sequence":0}}}"#).is_err());
 }
+
+#[test]
+fn takeover_preview_carries_content_fence_and_optional_last_seen_without_clock_expiry() {
+    for last_seen in [serde_json::Value::Null, serde_json::json!(1234)] {
+        let wire = serde_json::json!({
+            "token": "preview-token", "fence": 2,
+            "acked": {"epoch": 2, "sequence": 7},
+            "holder": "00000000-0000-0000-0000-000000000003",
+            "lastSeen": last_seen
+        });
+        let preview: TakeoverPreview = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(preview).unwrap(), wire);
+    }
+}
