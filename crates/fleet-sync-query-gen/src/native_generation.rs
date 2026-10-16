@@ -114,11 +114,17 @@ pub async fn generate_manifest(path: impl AsRef<Path>, check: bool) -> Result<()
                 actual,
             });
         }
+        connection
+            .prepare(AssertSqlSafe(sql.clone()).into_sql_str())
+            .await
+            .map_err(|error| GenerateError::Sql(error.to_string()))?;
         let description = connection
             .describe(AssertSqlSafe(sql).into_sql_str())
             .await
             .map_err(|error| GenerateError::Sql(error.to_string()))?;
-        if description.columns().is_empty() != (query.result == QueryResult::Execute) {
+        if query.result != QueryResult::Exists
+            && description.columns().is_empty() != (query.result == QueryResult::Execute)
+        {
             return Err(GenerateError::Manifest(format!(
                 "{} result mode disagrees with its described columns",
                 query.name
@@ -127,6 +133,10 @@ pub async fn generate_manifest(path: impl AsRef<Path>, check: bool) -> Result<()
         let mut columns = Vec::new();
         let mut column_names = BTreeSet::new();
         for (index, column) in description.columns().iter().enumerate() {
+            // Existence calls intentionally decode no result metadata or values.
+            if query.result == QueryResult::Exists {
+                break;
+            }
             validate_identifier(column.name())?;
             if !column_names.insert(column.name()) {
                 return Err(GenerateError::Manifest(format!(

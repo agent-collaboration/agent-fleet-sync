@@ -1,6 +1,7 @@
 //! Describe exact SQL once, then build portable calls over a borrowed SQLx scope.
 //! Build scripts use only the lightweight hash verifier; the native CLI alone
-//! depends on Turso. Unknown column types are refused, never overridden.
+//! depends on Turso. Typed results refuse unknown column types; existence calls
+//! decode no columns.
 
 mod source_freshness;
 mod source_manifest;

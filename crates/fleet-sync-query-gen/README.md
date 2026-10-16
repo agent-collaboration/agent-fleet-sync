@@ -12,7 +12,9 @@ cargo test -p fleet-sync-query-gen --features native
 
 On macOS, an inherited Homebrew C compiler may need to be replaced for the command with `CC=/usr/bin/clang CXX=/usr/bin/clang++`.
 
-Each consumer supplies a manifest like [the executable test corpus](checked-test-queries.json). Paths are relative to its package. Migrations build a fresh native schema; query files contain exactly the statements used by the generated functions. Results are `many`, `optional`, `one`, or `execute`. Parameter kinds are `text`, `integer`, `real`, and `blob`, with explicit nullability. These are bind types, not result-type overrides.
+Each consumer supplies a manifest like [the executable test corpus](checked-test-queries.json). Paths are relative to its package. Migrations build a fresh native schema; query files contain exactly the statements used by the generated functions. Results are `many`, `optional`, `one`, `execute`, or `exists`. Parameter kinds are `text`, `integer`, `real`, and `blob`, with explicit nullability. These are bind types, not result-type overrides.
+
+An `exists` query declares `row: null` and returns `bool` from row presence. It still prepares and describes the exact statement against the migrated schema, but accepts empty or unknown result metadata and decodes no columns. This permits direct PRAGMA statements; misspelled tables in queries still fail generation. Preparation does not certify engine feature support: Turso 0.8.1 silently treats unsupported `PRAGMA foreign_key_check` as a no-op, so this mode alone cannot establish an FK-validation gate.
 
 Project plain columns, or use the two expression families proved from the parser AST: `typeof(x)` yields TEXT, and `CAST(x AS INTEGER | REAL | TEXT | BLOB)` yields that storage class. Other unnamed types are refused. Metadata records whether a type came from the driver or one of those AST rules. Exact integer reads across the Durable Object driver use `typeof(col), CAST(col AS TEXT)`; domain decoding checks the class before parsing the decimal value.
 

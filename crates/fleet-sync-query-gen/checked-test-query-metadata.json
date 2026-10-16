@@ -42,20 +42,22 @@
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
     "Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
-    "checked-test-queries.json": "e3a2358c0b84bbd8de68e487253e1a5a81ae8c82c9b3582146d89d7a1333867b",
+    "checked-test-queries.json": "ea06ddb37d585b1326d091dbcc79921ac77fcff248584d66d8fbc3fc0d84fee0",
     "src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
-    "src/lib.rs": "f25862b2c8e6238b8801cb9f716e664355dd2b4105e221edfcf4a3e037f6c703",
+    "src/lib.rs": "e2c75aea7e0202d0ad0a71394dba18ec229ee625a43ff180f9388702242cb477",
     "src/main.rs": "528bf0583d11bde8fc4b7c0d5a2ea21bde8380e452c0c123a22929dfa5635cfd",
-    "src/native_generation.rs": "3e69ed84a4a362a461498ec0bb763c2a2e83cc82a43ebab70d21b848922a9f4d",
-    "src/query_render.rs": "2fb89bbe4cc41d1bb59b8ba8efaded8e7eea8d41f2a9b914da4e8864f8e52c24",
+    "src/native_generation.rs": "c27944fb2f548a37c68c75fd33cef7cd32a4e9c7fa5170acc4f8ddd5c4394883",
+    "src/query_render.rs": "f0774c13b73fe7272baab2325588afd0e64b10bf97e73fc474b296501f65da4b",
     "src/source_freshness.rs": "caf2814c7255afdb3fc3714f3c6bb093702a6cfd3ca9d26c01896c75824f9583",
-    "src/source_manifest.rs": "11ccfd69dddfaf28dabf727263a7bfc9b94b7f571c319e1e92ff414d1168df2d",
+    "src/source_manifest.rs": "770e53cb230b27d44731507738e08f7217dba8fc230617d97bda765c78be8ad8",
     "tests/fixtures/corpus/migrations/1_example.sql": "26762d56152ae5fb189c13af92c7fe1442f0a1968a58377574b7a3db7c4c9126",
+    "tests/fixtures/corpus/sql/example_exists.sql": "a2ba185d36daff4b42d158d5ce50479c38354cedc29022528586b08d73074d6d",
+    "tests/fixtures/corpus/sql/foreign_key_violation_exists.sql": "e3fd8d224f00d7b14a429afba11cee22726fae1ff2e70fa80306be4bb54f82a5",
     "tests/fixtures/corpus/sql/insert_example.sql": "cad98e89f8040e3498a497a5f3643b9882a210914b26622c09f8e8b2391bd244",
     "tests/fixtures/corpus/sql/read_exact_integer.sql": "77e8bcb6503bf883856b19375be8723156ec870b01a2dd8997c6f74b79e4ea01",
     "tests/fixtures/corpus/sql/read_example.sql": "2744afc0b72b6ee90b8e237c6bc330e7341320aa817059197da916ff69b2d1d5",
     "tests/fixtures/corpus/sql/read_examples.sql": "340ec09522eb926035c180643fa18ef892916b61a03dc23a2c56d3da4aca0a3c",
-    "tests/support/checked_test_queries.rs": "51880d57fdd50064f0039c2fa593f724ddff6055f3cae110f863ac6a29a3b6af"
+    "tests/support/checked_test_queries.rs": "5bbabfacf9ae39401910d8d7db5012a424c4125a137721ee8ea75a971aaebc98"
   },
   "queries": [
     {
@@ -150,6 +152,16 @@
           "type_source": "cast"
         }
       ]
+    },
+    {
+      "name": "example_exists",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "foreign_key_violation_exists",
+      "bind_slots": 0,
+      "columns": []
     }
   ]
 }

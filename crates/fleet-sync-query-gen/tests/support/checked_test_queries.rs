@@ -129,3 +129,30 @@ where
         })
         .transpose()
 }
+pub(crate) async fn example_exists<S>(
+    scope: &mut S,
+    record_id: String,
+) -> Result<bool, sqlx_core::Error>
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    let statement = query::<S::Database>(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/corpus/sql/example_exists.sql"
+    )))
+    .bind(record_id);
+    Ok(statement.fetch_optional(scope.executor()).await?.is_some())
+}
+pub(crate) async fn foreign_key_violation_exists<S>(scope: &mut S) -> Result<bool, sqlx_core::Error>
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    let statement = query::<S::Database>(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/corpus/sql/foreign_key_violation_exists.sql"
+    )));
+    Ok(statement.fetch_optional(scope.executor()).await?.is_some())
+}

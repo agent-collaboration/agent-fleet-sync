@@ -68,3 +68,23 @@ fn independent_table_digests_match_and_column_or_row_reordering_changes_them() {
     assert_ne!(rows_reordered.finish(), expected);
     assert_ne!(TableDigestBuilder::new().finish(), expected);
 }
+
+#[test]
+fn copy_origin_distinguishes_expected_registration_position_from_unpositioned_import() {
+    let position = ReplicationPosition::new(Epoch::new(1).unwrap(), CommitSequence::new(8));
+    for expected_position in [Some(position), None] {
+        let origin = CopyOrigin::AwaitingSeed { expected_position };
+        let wire = serde_json::to_value(&origin).unwrap();
+        assert_eq!(wire["kind"], "awaitingSeed");
+        assert!(wire["value"].get("expectedPosition").is_some());
+        assert_eq!(serde_json::from_value::<CopyOrigin>(wire).unwrap(), origin);
+    }
+    let answer = SeedAnswer::PositionMismatch {
+        expected: position,
+        offered: ReplicationPosition::new(Epoch::new(1).unwrap(), CommitSequence::new(9)),
+    };
+    assert_eq!(
+        serde_json::from_value::<SeedAnswer>(serde_json::to_value(&answer).unwrap()).unwrap(),
+        answer
+    );
+}

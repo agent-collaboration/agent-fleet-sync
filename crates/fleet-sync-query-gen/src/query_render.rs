@@ -67,6 +67,7 @@ pub(crate) fn render_queries(
         }
         let return_type = match query.result {
             QueryResult::Execute => "()".into(),
+            QueryResult::Exists => "bool".into(),
             QueryResult::Many => format!(
                 "Vec<{}>",
                 row_type.ok_or_else(|| GenerateError::Manifest("row type missing".into()))?
@@ -113,6 +114,8 @@ pub(crate) fn render_queries(
         }
         generated.push_str(";\n");
         match query.result {
+            QueryResult::Exists => generated
+                .push_str("    Ok(statement.fetch_optional(scope.executor()).await?.is_some())\n"),
             QueryResult::Execute => {
                 generated.push_str("    statement.execute(scope.executor()).await?;\n    Ok(())\n")
             }

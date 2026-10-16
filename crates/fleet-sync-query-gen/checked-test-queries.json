@@ -1,20 +1,90 @@
 {
-  "migrations": ["tests/fixtures/corpus/migrations"],
+  "migrations": [
+    "tests/fixtures/corpus/migrations"
+  ],
   "output": "tests/support/checked_test_queries.rs",
   "metadata": "checked-test-query-metadata.json",
   "queries": [
-    { "name": "insert_example", "sql": "tests/fixtures/corpus/sql/insert_example.sql", "row": null, "result": "execute", "parameters": [
-      { "name": "record_id", "kind": "text", "nullable": false },
-      { "name": "amount", "kind": "integer", "nullable": false },
-      { "name": "ratio", "kind": "real", "nullable": false },
-      { "name": "payload", "kind": "blob", "nullable": false }
-    ] },
-    { "name": "read_examples", "sql": "tests/fixtures/corpus/sql/read_examples.sql", "row": "StoredExampleRow", "result": "many", "parameters": [] },
-    { "name": "read_example", "sql": "tests/fixtures/corpus/sql/read_example.sql", "row": "StoredExampleRow", "result": "optional", "parameters": [
-      { "name": "record_id", "kind": "text", "nullable": false }
-    ] },
-    { "name": "read_exact_integer", "sql": "tests/fixtures/corpus/sql/read_exact_integer.sql", "row": "StoredExactIntegerRow", "result": "optional", "parameters": [
-      { "name": "record_id", "kind": "text", "nullable": false }
-    ] }
+    {
+      "name": "insert_example",
+      "sql": "tests/fixtures/corpus/sql/insert_example.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "record_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "amount",
+          "kind": "integer",
+          "nullable": false
+        },
+        {
+          "name": "ratio",
+          "kind": "real",
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "kind": "blob",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_examples",
+      "sql": "tests/fixtures/corpus/sql/read_examples.sql",
+      "row": "StoredExampleRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "read_example",
+      "sql": "tests/fixtures/corpus/sql/read_example.sql",
+      "row": "StoredExampleRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "record_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_exact_integer",
+      "sql": "tests/fixtures/corpus/sql/read_exact_integer.sql",
+      "row": "StoredExactIntegerRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "record_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "example_exists",
+      "sql": "tests/fixtures/corpus/sql/example_exists.sql",
+      "row": null,
+      "result": "exists",
+      "parameters": [
+        {
+          "name": "record_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "foreign_key_violation_exists",
+      "sql": "tests/fixtures/corpus/sql/foreign_key_violation_exists.sql",
+      "row": null,
+      "result": "exists",
+      "parameters": []
+    }
   ]
 }

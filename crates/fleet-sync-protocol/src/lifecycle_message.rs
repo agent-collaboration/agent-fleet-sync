@@ -88,9 +88,19 @@ pub enum SeedPageAnswer {
     deny_unknown_fields
 )]
 pub enum SeedAnswer {
-    Published { position: ReplicationPosition },
-    Incomplete { missing: Vec<u32> },
-    DigestMismatch { table: TableName },
+    Published {
+        position: ReplicationPosition,
+    },
+    PositionMismatch {
+        expected: ReplicationPosition,
+        offered: ReplicationPosition,
+    },
+    Incomplete {
+        missing: Vec<u32>,
+    },
+    DigestMismatch {
+        table: TableName,
+    },
     SchemaMismatch,
     Retired,
     StaleSeed,
@@ -155,12 +165,27 @@ pub enum Origin {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum CopyOrigin {
+    Empty,
+    AwaitingSeed {
+        expected_position: Option<ReplicationPosition>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCopy {
     pub database: DatabaseId,
     pub epoch: Epoch,
     pub holder: Option<PeerId>,
-    pub origin: Origin,
+    pub origin: CopyOrigin,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]

@@ -57,6 +57,7 @@ pub enum QueryResult {
     Optional,
     One,
     Execute,
+    Exists,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -123,7 +124,7 @@ pub(crate) fn read_manifest(path: &Path) -> Result<QueryManifest, GenerateError>
             (Some(row), QueryResult::Many | QueryResult::One | QueryResult::Optional) => {
                 validate_identifier(row)?
             }
-            (None, QueryResult::Execute) => {}
+            (None, QueryResult::Execute | QueryResult::Exists) => {}
             _ => {
                 return Err(GenerateError::Manifest(format!(
                     "{} has an inconsistent row/result shape",

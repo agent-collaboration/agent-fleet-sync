@@ -45,6 +45,9 @@ async fn generated_calls_compile_and_preserve_values_in_the_callers_transaction(
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     let mut scope = BorrowedScope(&mut transaction);
     checked::insert_example(&mut scope, "exact".into(), i64::MAX, 1.25, vec![0, 255]).await?;
+    assert!(checked::example_exists(&mut scope, "exact".into()).await?);
+    assert!(!checked::example_exists(&mut scope, "missing".into()).await?);
+    assert!(!checked::foreign_key_violation_exists(&mut scope).await?);
     let inside = checked::read_example(&mut scope, "exact".into())
         .await?
         .ok_or("missing uncommitted record")?;

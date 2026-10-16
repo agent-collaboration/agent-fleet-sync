@@ -164,3 +164,32 @@ async fn closed_typeof_and_cast_expressions_are_checked_without_result_overrides
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn existence_mode_prepares_exact_sql_without_interpreting_columns() -> TestResult {
+    let temporary = tempfile::tempdir()?;
+    let manifest = corpus(temporary.path(), "PRAGMA foreign_key_check", vec![])?;
+    let mut specification: QueryManifest = serde_json::from_slice(&fs::read(&manifest)?)?;
+    let query = specification.queries.first_mut().ok_or("missing query")?;
+    query.result = QueryResult::Exists;
+    query.row = None;
+    fs::write(&manifest, serde_json::to_vec_pretty(&specification)?)?;
+    generate_manifest(&manifest, false).await?;
+    let generated = fs::read_to_string(temporary.path().join("src/checked_queries.rs"))?;
+    assert!(generated.contains("Result<bool, sqlx_core::Error>"));
+    assert!(!generated.contains("try_get"));
+    fs::write(
+        temporary.path().join("sql/read_example.sql"),
+        "SELECT NULL FROM example",
+    )?;
+    generate_manifest(&manifest, false).await?;
+    fs::write(
+        temporary.path().join("sql/read_example.sql"),
+        "SELECT NULL FROM misspelled_example",
+    )?;
+    assert!(matches!(
+        generate_manifest(&manifest, false).await,
+        Err(GenerateError::Sql(_))
+    ));
+    Ok(())
+}
