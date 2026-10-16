@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "INSERT INTO writer_epochs (epoch, project_id, holder, start_position) VALUES (?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "a6461fa0807932de3aa618caa4016fc2c2906f6b0ba241f29be896ba2a1bd89b"
+}

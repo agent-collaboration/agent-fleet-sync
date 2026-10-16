@@ -1,0 +1,28 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT sequence AS \"sequence!: i64\", body AS \"body!: String\"\n           FROM records ORDER BY sequence",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sequence!: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "body!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "7307f8148989f0decf866477fa80f78e67e02eae38a3a72afba7c1ca552bacc2"
+}

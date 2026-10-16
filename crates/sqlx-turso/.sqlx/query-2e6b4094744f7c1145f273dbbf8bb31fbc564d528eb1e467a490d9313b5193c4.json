@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "INSERT INTO events (position, epoch, kind, subject_id, request_id, router_time, payload)\n         VALUES (?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "2e6b4094744f7c1145f273dbbf8bb31fbc564d528eb1e467a490d9313b5193c4"
+}

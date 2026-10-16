@@ -1,0 +1,28 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT task_id AS \"task_id!: String\", dependency_id AS \"dependency_id!: String\"\n               FROM task_dependencies ORDER BY task_id, dependency_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "task_id!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "dependency_id!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "5028a688b439e2d034ead68bd12ddd5d28ec7102eefdbd9e46f14e988337fef4"
+}

@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "INSERT INTO task_dependencies (task_id, dependency_id) VALUES (?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "68765bdb489bd2c368d7971f14f1de3bda06ff07a371d2d76f73836336489828"
+}

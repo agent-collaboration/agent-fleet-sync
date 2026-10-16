@@ -1,0 +1,7 @@
+error: error returned from database: Parse error: no such column: missing_column
+ --> tests/checked_query_diagnostics/fail/unknown_column.rs:2:18
+  |
+2 |     let _query = sqlx_turso::query!("SELECT missing_column");
+  |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `sqlx_turso::query` (in Nightly builds, run with -Z macro-backtrace for more info)

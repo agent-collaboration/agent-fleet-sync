@@ -1,0 +1,5 @@
+/target/
+/node_modules/
+/tmp/
+/tests/workerd/build/
+/tests/workerd/workerd-state/

@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "INSERT INTO milestones (id, project_id, is_default, status, revision) VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "518c3aa510136c1856badb74cd08b3b97d30ad225835ee0b63d389064e543fee"
+}

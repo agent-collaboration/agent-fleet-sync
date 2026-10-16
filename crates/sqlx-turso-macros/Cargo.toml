@@ -1,0 +1,28 @@
+[package]
+name = "sqlx-turso-macros"
+description = "Checked query macros for the sqlx-turso driver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+proc-macro = true
+# No unit tests here; the facade's integration tests exercise the macros. An empty proc-macro
+# test harness links libstd dynamically and fails to load under the signing test runner.
+test = false
+doctest = false
+
+[features]
+chrono = ["sqlx-turso-core/chrono"]
+
+[dependencies]
+proc-macro-crate.workspace = true
+proc-macro2.workspace = true
+quote.workspace = true
+sqlx-macros-core = { workspace = true, features = ["macros", "_rt-tokio", "sqlx-toml"] }
+sqlx-turso-core = { workspace = true, features = ["macros", "runtime-tokio"] }
+syn.workspace = true

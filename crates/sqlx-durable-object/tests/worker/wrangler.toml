@@ -1,0 +1,18 @@
+# Served by `wrangler dev --local`: the Durable Object's storage is local
+# SQLite, and no Cloudflare account is involved.
+name = "sqlx-durable-object-test"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-01-01"
+
+[build]
+command = "worker-build --release"
+
+[[durable_objects.bindings]]
+name = "TEST"
+class_name = "TestObject"
+
+# `new_sqlite_classes`, not `new_classes`: only a SQLite-backed Durable Object
+# has SQL storage.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["TestObject"]

@@ -1,0 +1,20 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT revision AS \"revision!: i64\" FROM tasks WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "revision!: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4e9967358853b305f53066877ce3de0551710180da27190260dc8a463a28685f"
+}

@@ -1,0 +1,17 @@
+[package]
+name = "probe-core"
+version = "0.1.0"
+edition.workspace = true
+[lints]
+workspace = true
+[dependencies]
+axum = { version = "0.8", default-features = false }
+sqlx-core.workspace = true
+futures-core.workspace = true
+futures-util = { workspace = true, features = ["async-await", "std"] }
+futures-channel = "0.3"
+thiserror = "2"
+
+[build-dependencies]
+sha2 = "0.10"
+serde_json.workspace = true

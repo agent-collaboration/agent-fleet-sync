@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "INSERT INTO project (id, status, revision) VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "7364b143360ab7fa8e332a89bb3eb357330ac275def9bb3edd0229d9a6640063"
+}
