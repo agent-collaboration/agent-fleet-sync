@@ -17,6 +17,7 @@ worker.workspace = true
 wasm-bindgen.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+uuid = { version = "1.26.0", default-features = false }
 
 [lints]
 workspace = true

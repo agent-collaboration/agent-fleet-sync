@@ -635,6 +635,7 @@ dependencies = [
  "sqlx",
  "sqlx-core",
  "sqlx-durable-object",
+ "uuid",
  "wasm-bindgen",
  "worker",
 ]

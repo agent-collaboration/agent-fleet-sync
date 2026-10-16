@@ -22,7 +22,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
   test:
     runs-on: ubuntu-latest
     steps:
@@ -30,6 +30,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-features --locked
+      - run: node tests/durable-steps/check-query-metadata.mjs
   wasm32:
     runs-on: ubuntu-latest
     steps:
@@ -39,3 +40,11 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --target wasm32-unknown-unknown -p sqlx-durable-object -p sqlx-durable-object-core -p probe-core -p probe-worker --locked
+      - run: cargo check --target wasm32-unknown-unknown -p durable-steps-worker --locked
+      - run: cargo check --target wasm32-unknown-unknown -p durable-steps --no-default-features --locked
+      - run: |
+          cargo tree --target wasm32-unknown-unknown -p durable-steps --no-default-features --edges normal > core-dependencies.txt
+          if grep -q tokio core-dependencies.txt; then
+            cat core-dependencies.txt
+            exit 1
+          fi

@@ -1,7 +1,11 @@
 #[path = "../../../../crates/durable-steps/tests/conformance/mod.rs"]
 mod conformance;
+#[path = "../../journey_task.rs"]
+mod journey_task;
+mod journey_worker;
 #[path = "../../../../crates/durable-steps/tests/support/mod.rs"]
 mod support;
+pub use journey_worker::{JourneyObject, ReceiverObject};
 
 use conformance::BusinessScope;
 use durable_steps::{
@@ -137,8 +141,15 @@ fn worker_error(error: impl std::fmt::Display) -> worker::Error {
 
 #[event(fetch)]
 async fn fetch(request: Request, env: Env, _context: Context) -> worker::Result<Response> {
-    let namespace = env.durable_object("STEPS")?;
-    let object = env.var("STEPS_OBJECT_NAME")?.to_string();
+    let journey = request.path().starts_with("/journey/");
+    let namespace = env.durable_object(if journey { "JOURNEY" } else { "STEPS" })?;
+    let object = env
+        .var(if journey {
+            "JOURNEY_OBJECT_NAME"
+        } else {
+            "STEPS_OBJECT_NAME"
+        })?
+        .to_string();
     namespace
         .id_from_name(&object)?
         .get_stub()?

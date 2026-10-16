@@ -218,6 +218,10 @@ where
         repeated == id && invocations.load(Ordering::SeqCst) == 2,
         "compact finished row answers repeats",
     )?;
+    check(
+        matches!(reopened.start::<Parent<S>>(&key("parent"), 8).await, Err(StartRefusal::RequestConflict { existing }) if existing == id),
+        "compact finished row rejects changed input by its retained digest",
+    )?;
     store
         .transaction(move |scope| {
             Box::pin(async move {

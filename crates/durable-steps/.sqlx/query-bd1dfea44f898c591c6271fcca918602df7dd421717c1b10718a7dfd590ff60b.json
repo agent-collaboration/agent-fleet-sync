@@ -1,0 +1,28 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT request AS \"request!: i64\", answer AS \"answer!: i64\" FROM journey_receipts WHERE call_id = ?\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "request!: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "answer!: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "bd1dfea44f898c591c6271fcca918602df7dd421717c1b10718a7dfd590ff60b"
+}

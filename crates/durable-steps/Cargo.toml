@@ -33,3 +33,7 @@ tempfile = "3.27.0"
 
 [lints]
 workspace = true
+
+[[example]]
+name = "native_journey"
+required-features = ["turso"]

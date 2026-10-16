@@ -2,10 +2,12 @@ one-way, lease-based replication, durable steps and delivery for fleets of agent
 
 # agent-fleet-sync
 
-The repository foundation contains the owned SQLx drivers for Turso and Cloudflare Durable Object SQL. Replication, durable steps, sessions and delivery will build on these drivers.
+The repository contains owned SQLx drivers and durable operations for Turso and Cloudflare Durable Object SQL. Replication, sessions and delivery build on these foundations.
 
 - `sqlx-turso`, `sqlx-turso-core`, `sqlx-turso-macros`: native Turso 0.8.1, checked queries and migrations.
 - `sqlx-durable-object`, `sqlx-durable-object-core`: SQLx over Durable Object SQLite, without owned unsafe code.
+- `runtime-primitives`: shared time, call identity, backoff and earlier-only wake scheduling; Tokio timer and Durable Object alarm adapters behind features.
+- `durable-steps`: a runtime-free execution core, atomic local steps and receipted calls, with volatile, Turso and Durable Object stores. See [its conformance and recovery journeys](tests/durable-steps/README.md).
 
 ## Checks
 
@@ -13,7 +15,7 @@ Rust 1.98.1, rustfmt and Clippy are selected by `rust-toolchain.toml`. All works
 
 ```sh
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 cargo check --target wasm32-unknown-unknown -p sqlx-durable-object -p sqlx-durable-object-core -p probe-core -p probe-worker
 ```
