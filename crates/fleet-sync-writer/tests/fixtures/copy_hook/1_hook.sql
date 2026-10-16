@@ -1,0 +1,1 @@
+CREATE TABLE hook_calls(position TEXT NOT NULL PRIMARY KEY);

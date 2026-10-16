@@ -112,7 +112,7 @@ async fn lost_final_answer_replays_parts_without_repeating_rows_hooks_or_bookkee
             11
         );
         assert_eq!(
-            query::<Turso>("SELECT position FROM _fleet_sync_test_hooks")
+            query::<Turso>("SELECT position FROM hook_calls")
                 .fetch_all(&mut *connection)
                 .await?
                 .len(),
@@ -443,7 +443,7 @@ async fn a_refusing_copy_changes_nothing_and_does_not_stop_another_copy_or_write
                 .is_none()
         );
         assert!(
-            query::<Turso>("SELECT position FROM _fleet_sync_test_hooks")
+            query::<Turso>("SELECT position FROM hook_calls")
                 .fetch_all(&mut *connection)
                 .await?
                 .is_empty()

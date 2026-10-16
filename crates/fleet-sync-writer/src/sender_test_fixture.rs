@@ -4,15 +4,14 @@ use crate::*;
 use durable_steps::{CallId, Uuid};
 use fleet_sync_lease::{LeasePolicy, WriterState};
 use fleet_sync_protocol::{
-    CopyOrigin, CopyRole, CreateCopy, Epoch, LeaseState, LeaseStatus, NoConsumer, PeerId, Piece,
-    ReceiverId, ReplicationAnswer, TableName,
+    CopyOrigin, CopyRole, CreateCopy, Epoch, HookRefusalCode, LeaseState, LeaseStatus, NoConsumer,
+    PeerId, Piece, ReceiverId, ReplicationAnswer, TableName,
 };
 use fleet_sync_receiver::{
     AppliedPiece, ApplyDecision, ApplyFailure, FollowUpDone, FollowUpFailure, ReceiverHook,
 };
 use sqlx_core::{
     connection::{ConnectOptions, Connection},
-    executor::Executor,
     migrate::Migrator,
     query::query,
 };
@@ -30,6 +29,7 @@ use tokio::sync::Mutex;
 pub(super) type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 static MIGRATIONS: Migrator = sqlx::migrate!("./tests/fixtures/regular");
 static LOCAL: Migrator = sqlx::migrate!("./tests/fixtures/sender_local");
+static HOOK: Migrator = sqlx::migrate!("./tests/fixtures/copy_hook");
 static TABLES: LazyLock<Result<Vec<TableName>, fleet_sync_protocol::TextValueError>> =
     LazyLock::new(|| {
         ["text_records", "composite_records", "integer_records"]
@@ -84,26 +84,31 @@ impl CaptureBookkeeping for Marks {
 
 pub(super) struct CopyHook {
     pub refuse: AtomicBool,
+    storage_code: HookRefusalCode,
+    policy_code: HookRefusalCode,
 }
 impl ReceiverHook<WriterScope<'_>> for CopyHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
+    fn local_migrations(&self) -> &'static [Migration] {
+        HOOK.iter().as_slice()
+    }
     async fn on_applied(
         &self,
         scope: &mut WriterScope<'_>,
         applied: &AppliedPiece<'_, ()>,
     ) -> Result<Vec<()>, fleet_sync_protocol::HookRefusal> {
-        query::<Turso>("INSERT INTO _fleet_sync_test_hooks(position) VALUES(?)")
+        query::<Turso>("INSERT INTO hook_calls(position) VALUES(?)")
             .bind(applied.through.sequence.value().to_string())
             .execute(&mut *scope.0)
             .await
             .map_err(|error| fleet_sync_protocol::HookRefusal {
-                code: "fixture_storage".into(),
+                code: self.storage_code.clone(),
                 detail: error.to_string(),
             })?;
         if self.refuse.load(Ordering::SeqCst) {
             return Err(fleet_sync_protocol::HookRefusal {
-                code: "fixture_refused".into(),
+                code: self.policy_code.clone(),
                 detail: "refused after hook write".into(),
             });
         }
@@ -314,9 +319,12 @@ impl SenderFixture {
             migrations
                 .run_direct(None, &mut *transaction, false)
                 .await?;
-            (&mut *transaction)
-                .execute("CREATE TABLE _fleet_sync_test_hooks(position TEXT PRIMARY KEY)")
-                .await?;
+            let hook = CopyHook {
+                refuse: AtomicBool::new(false),
+                storage_code: HookRefusalCode::new("fixture_storage")?,
+                policy_code: HookRefusalCode::new("fixture_refused")?,
+            };
+            fleet_sync_receiver::initialize_hook(&mut WriterScope(&mut transaction), &hook).await?;
             fleet_sync_receiver::create_copy(
                 &mut WriterScope(&mut transaction),
                 &CreateCopy {
@@ -332,9 +340,7 @@ impl SenderFixture {
                 copy,
                 CopyFile {
                     connection: Mutex::new(Some(connection)),
-                    hook: CopyHook {
-                        refuse: AtomicBool::new(false),
-                    },
+                    hook,
                 },
             );
         }

@@ -10,7 +10,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-durable-steps = { path = "../durable-steps" }
+durable-steps = { path = "../durable-steps", features = ["turso"] }
 either.workspace = true
 fleet-sync-lease = { path = "../fleet-sync-lease" }
 fleet-sync-protocol = { path = "../fleet-sync-protocol" }

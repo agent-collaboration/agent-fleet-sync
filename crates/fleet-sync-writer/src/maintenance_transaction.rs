@@ -15,7 +15,7 @@ use std::fmt;
 /// Borrowed capture-off bookkeeping scope. Its transaction and commit remain
 /// with the sender; consumer SQL cannot mutate replicated or engine tables.
 pub struct MaintenanceTransaction<'connection> {
-    connection: &'connection mut TursoConnection,
+    pub(crate) connection: &'connection mut TursoConnection,
     statements: StatementGuard,
 }
 impl fmt::Debug for MaintenanceTransaction<'_> {

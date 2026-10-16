@@ -850,6 +850,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "fleet-sync-tokio-runner"
+version = "0.1.0"
+dependencies = [
+ "durable-steps",
+ "fleet-sync-protocol",
+ "fleet-sync-session",
+ "runtime-primitives",
+ "serde",
+ "serde_json",
+ "sqlx-core",
+ "sqlx-turso",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "fleet-sync-transport-websocket"
 version = "0.1.0"
 dependencies = [
