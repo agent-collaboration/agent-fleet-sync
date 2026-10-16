@@ -8,7 +8,7 @@ use runtime_primitives::{
 use std::{
     future::{Future, poll_fn},
     task::Poll,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 struct TestClock {
@@ -101,13 +101,19 @@ async fn an_idle_wait_is_signalled_and_overdue_work_fires_immediately()
 }
 
 #[test]
-fn native_clock_and_id_source_use_wall_time_and_distinct_uuid_v7s() {
-    let before = SystemClock.now();
+fn native_clock_and_id_source_use_wall_time_and_distinct_uuid_v7s()
+-> Result<(), Box<dyn std::error::Error>> {
+    let before = i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis())?;
+    let observed = SystemClock.now().unix_millis();
+    let after = i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis())?;
+    assert!(
+        (before..=after).contains(&observed),
+        "clock {observed} outside independent wall-time bracket {before}..={after}"
+    );
     let first = UuidV7Ids.new_id();
     let second = UuidV7Ids.new_id();
-    let after = SystemClock.now();
-    assert!(after >= before);
     assert_ne!(first, second);
     assert_eq!(first.get_version_num(), 7);
     assert_eq!(second.get_version_num(), 7);
+    Ok(())
 }
