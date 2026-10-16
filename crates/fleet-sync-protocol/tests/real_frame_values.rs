@@ -84,3 +84,30 @@ fn real_frame_json_preserves_named_edges_and_200000_generated_bit_patterns() {
     assert_eq!((bit_mismatches, frame_decode_failures), (0, 0));
     assert!(serde_json::to_vec(&snapshot_frame(&[f64::NAN.to_bits()])).is_err());
 }
+
+#[test]
+fn real_decode_rejects_map_infinities_directly_and_inside_frames() {
+    let mut accepted_shapes = Vec::new();
+    for (marker, value) in [
+        ("positiveInfinity", f64::INFINITY),
+        ("negativeInfinity", f64::NEG_INFINITY),
+    ] {
+        let mut object = serde_json::Map::new();
+        object.insert(marker.into(), serde_json::Value::Null);
+        let object = serde_json::Value::Object(object);
+        let scalar = serde_json::json!({"kind":"real","value":object.clone()});
+        if serde_json::from_slice::<SqlValue>(&serde_json::to_vec(&scalar).unwrap()).is_ok() {
+            accepted_shapes.push(format!("scalar {marker}"));
+        }
+
+        let mut frame = serde_json::to_value(snapshot_frame(&[value.to_bits()])).unwrap();
+        *frame
+            .pointer_mut("/value/body/value/value/value/rows/0/0/value")
+            .unwrap() = object;
+        if serde_json::from_slice::<ServerFrame>(&serde_json::to_vec(&frame).unwrap()).is_ok() {
+            accepted_shapes.push(format!("frame {marker}"));
+        }
+    }
+
+    assert!(accepted_shapes.is_empty(), "accepted: {accepted_shapes:?}");
+}

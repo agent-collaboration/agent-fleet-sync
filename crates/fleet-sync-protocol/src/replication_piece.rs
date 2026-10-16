@@ -28,12 +28,29 @@ enum SqlRealWire {
     Infinity(SqlRealInfinityWire),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 enum SqlRealInfinityWire {
     #[serde(rename = "positiveInfinity")]
     Positive,
     #[serde(rename = "negativeInfinity")]
     Negative,
+}
+
+impl<'de> Deserialize<'de> for SqlRealInfinityWire {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let marker = String::deserialize(deserializer)?;
+        match marker.as_str() {
+            "positiveInfinity" => Ok(Self::Positive),
+            "negativeInfinity" => Ok(Self::Negative),
+            _ => Err(D::Error::unknown_variant(
+                &marker,
+                &["positiveInfinity", "negativeInfinity"],
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
