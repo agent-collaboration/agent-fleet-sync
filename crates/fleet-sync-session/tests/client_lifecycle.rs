@@ -263,14 +263,17 @@ async fn answers_correlate_by_frame_and_bidirectional_requests_share_the_transpo
         &send,
         ServerFrame::Request {
             frame: frame_id(12),
-            body: (),
+            body: ServerRequest::Consumer(()),
         },
     )
     .await;
     assert!(
         matches!(event(&mut client, &host).await, ClientEvent::Request { frame, .. } if frame == frame_id(12))
     );
-    client.send_answer(frame_id(12), (), &host).await.unwrap();
+    client
+        .send_answer(frame_id(12), ClientAnswer::Consumer(()), &host)
+        .await
+        .unwrap();
     assert!(
         matches!(serde_json::from_slice::<ClientFrame>(&read_bytes(&mut read).await).unwrap(), ClientFrame::Answer { frame, .. } if frame == frame_id(12))
     );

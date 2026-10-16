@@ -3,6 +3,7 @@
 //! Each transport carries the same JSON bytes in one ordered binary message.
 //! Operation identities belong to their owners; frame IDs only correlate replies.
 
+mod crate_call_frame;
 mod holder_change_message;
 mod lease_message;
 mod lifecycle_message;
@@ -18,6 +19,7 @@ mod session_frame;
 mod snapshot_page;
 mod transaction_part;
 
+pub use crate_call_frame::*;
 pub use holder_change_message::*;
 pub use lease_message::*;
 pub use lifecycle_message::*;
@@ -26,7 +28,7 @@ pub use replication_ids::*;
 pub use replication_piece::*;
 pub use replication_position::*;
 pub use reserved_namespace::*;
-pub use runtime_primitives::SyncTime;
+pub use runtime_primitives::{CallId, OperationId, StepName, SyncTime};
 pub use schema_admission::*;
 pub use schema_fingerprint::*;
 pub use session_frame::*;

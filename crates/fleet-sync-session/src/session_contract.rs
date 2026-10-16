@@ -137,7 +137,7 @@ pub enum SessionEffect<P: ConsumerProtocol = NoConsumer> {
     RouteAnswer {
         session: SessionKey,
         frame: FrameId,
-        answer: P::ClientAnswer,
+        answer: ClientAnswer<P>,
     },
 }
 

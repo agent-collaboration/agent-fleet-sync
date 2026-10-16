@@ -171,6 +171,7 @@ pub enum ReplicationAnswer {
 pub enum OperationRequest<P: ConsumerProtocol = NoConsumer> {
     Replication(ReplicationRequest<P::Annotation>),
     Lease(LeaseRequest),
+    Delivery(DeliveryRequest),
     Consumer(P::Request),
 }
 
@@ -186,10 +187,9 @@ pub enum OperationRequest<P: ConsumerProtocol = NoConsumer> {
 pub enum OperationAnswer<P: ConsumerProtocol = NoConsumer> {
     Replication(ReplicationAnswer),
     Lease(LeaseAnswer),
+    Delivery(DeliveryAnswer),
     Consumer(P::Answer),
 }
-
-pub type ClientAnswer<P> = <P as ConsumerProtocol>::ClientAnswer;
 
 #[derive(Serialize, Deserialize)]
 #[serde(
@@ -274,7 +274,7 @@ pub enum ServerFrame<P: ConsumerProtocol = NoConsumer> {
     },
     Request {
         frame: FrameId,
-        body: P::ServerRequest,
+        body: ServerRequest<P>,
     },
     Notice {
         position: NoticePosition,

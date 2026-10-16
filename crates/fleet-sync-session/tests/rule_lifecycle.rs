@@ -248,7 +248,10 @@ async fn a_connection_attaches_once_and_both_operation_directions_use_the_bindin
     assert!(
         matches!(effects.as_slice(), [SessionEffect::Route { session, frame: routed, .. }] if session.peer == connection.peer && session.session_id == id && *routed == frame)
     );
-    let answer: ClientFrame = ClientFrame::Answer { frame, body: () };
+    let answer: ClientFrame = ClientFrame::Answer {
+        frame,
+        body: ClientAnswer::Consumer(()),
+    };
     assert!(matches!(
         frame_received(
             &mut scope,

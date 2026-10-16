@@ -56,7 +56,7 @@ pub enum ClientEvent<P: ConsumerProtocol = NoConsumer> {
     },
     Request {
         frame: FrameId,
-        body: P::ServerRequest,
+        body: ServerRequest<P>,
     },
     Notice {
         position: NoticePosition,
@@ -204,7 +204,7 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
     pub async fn send_answer<H: Clock + WakeScheduler>(
         &mut self,
         frame: FrameId,
-        body: P::ClientAnswer,
+        body: ClientAnswer<P>,
         host: &H,
     ) -> Result<(), ClientError> {
         let encoded = serde_json::to_vec(&ClientFrame::<P>::Answer { frame, body })
