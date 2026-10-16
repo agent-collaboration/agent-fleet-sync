@@ -14,9 +14,10 @@ All commands ran from the repository root with Rust/Cargo 1.98.1. On macOS, nati
 | `cargo check --target wasm32-unknown-unknown -p sqlx-durable-object -p sqlx-durable-object-core -p probe-core -p probe-worker --locked` | 0 | DO libraries and the journey compile for wasm |
 | `cargo build --target wasm32-unknown-unknown -p probe-worker --locked` | 0 | Built the Worker exercised below |
 | `wasm-bindgen --target bundler --no-typescript --out-dir tests/workerd/build --out-name index target/wasm32-unknown-unknown/debug/probe_worker.wasm` | 0 | Bundled with wasm-bindgen CLI 0.2.129 |
+| `npx --yes pnpm@12.11.2 install --frozen-lockfile` | 0 | Reproducible pinned Miniflare/workerd dependencies |
 | `node tests/workerd/run-workerd.mjs` | 0 | Real local workerd journey, Miniflare 4.20260730.0 / workerd 1.20260730.1 |
 
-The Turso portion includes 98 ordinary tests and 5 doctests. Its diagnostic test runs two valid and two compile-fail cases against the engine, including missing-column and multi-column scalar rejection. The diagnostic child process repeats its parent test name in the output; it is counted once. All nine Turso engine packages resolve to 0.8.1, and the driver graph rejects SQLite/libSQL engines. The DO portion adds 27 unit tests and one facade test.
+The Turso portion includes 98 ordinary tests and 1 doctest. Its diagnostic test runs two valid and two compile-fail cases against the engine, including missing-column and multi-column scalar rejection. The diagnostic child process repeats its parent test name in the output; it is counted once. All nine Turso engine packages resolve to 0.8.1, and the driver graph rejects SQLite/libSQL engines. The DO portion adds 27 unit tests, one facade test and 4 doctests.
 
 ## Workerd observations
 
@@ -35,3 +36,5 @@ The tests are imported behavior checks, with their existing driver expectations 
 The wasm dependency graph has featureless Tokio through workers-rs, with no Tokio runtime feature. Cargo emits nonfatal diagnostics while scanning template manifests in the pinned workers-rs Git checkout; successful command exits above are checked separately.
 
 Raw DO i64 binds beyond JavaScript's safe range remain refused. Dropping a waiting transaction future on Worker can still commit: this run observed `callback_still_alive=true` and `cancel_prefix_committed=true`. Portable rollback-on-drop, hosted eviction/hibernation, deployment and later milestones remain unverified. Standalone checked-query metadata regeneration tooling is not packaged in this foundation.
+
+The first independent observation reproduced a frozen pnpm install failure because package-manager metadata had been added after lockfile generation. Regenerating the lockfile metadata fixed that setup defect; the exact frozen command then exited 0. Runtime dependency versions did not change.

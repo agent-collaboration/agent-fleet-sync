@@ -25,6 +25,7 @@ The checked-query fixtures and offline metadata are imported with the Turso driv
 Install the wasm target, wasm-bindgen CLI **0.2.129**, Node.js, and the pinned package dependencies, then run:
 
 ```sh
+npx --yes pnpm@12.11.2 install --frozen-lockfile
 cargo build --target wasm32-unknown-unknown -p probe-worker
 wasm-bindgen --target bundler --no-typescript --out-dir tests/workerd/build --out-name index target/wasm32-unknown-unknown/debug/probe_worker.wasm
 node -e "require('node:fs').copyFileSync('tests/workerd/shim.mjs', 'tests/workerd/build/shim.mjs')"
