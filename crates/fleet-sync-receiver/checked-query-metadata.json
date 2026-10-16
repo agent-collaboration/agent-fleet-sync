@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "../../Cargo.lock": "e16830145f354fd27dce7ba3b5b9cb9feed912aabdcc8e2f221e4b30501a51f9",
+    "../../Cargo.lock": "0b74ec492576d5a4eb36b47f8b04882452cf473e19d3def7aeb20e775ab85eda",
     "../../rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "../fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "../fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
@@ -49,11 +49,12 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "d71d57855532ea37b8f92c00c53c7452f081b17860c01b32e75485c95c71098c",
-    "migrations/0001_copy_rules.sql": "7c2c8be901a7a201611cd52468f653ab36a65aa5e94d94d18fa6523b5960dfb2",
+    "checked-queries.json": "ff4308ba2d5f2f5ab0c76746d46e7676407057a0b107fddf0a530f8c1d02ece7",
+    "migrations/0001_copy_rules.sql": "3e6e6233512d8fa0e3e4150a0a8861c856d3d35a6e4f181e8bea2ea7d7395db5",
     "sql/drop_parts.sql": "1e9b957ad66ac0c9fe34732322431b167dcd9f0c8d319c7976f2a2bc04b1bbbc",
     "sql/drop_seed_pages.sql": "0e30e843bd90a7b2386f84cef9e78a0c5eb11e9eeb5ee52b07eefa6fc9dcfd1e",
     "sql/read_copy.sql": "c792d6ad745e9f0063ca16578d81eeaf43ceef22997b2304542397f513a9e405",
+    "sql/read_creation.sql": "b244300fe028cbc187dfe0b20f7a48b781c9349b5c5dbef81efd6b5d9ac07c33",
     "sql/read_epoch_fence.sql": "f44e3cd0e5a3a25eeee8715305db9a9d0e0fa7e0a78c64bf3c32121f76d63871",
     "sql/read_fence_receipt.sql": "bde95c4e455efd2ddd0b1f20468d6987067931a1bca91b6bcb76d1bd1ae13ce8",
     "sql/read_parts.sql": "2fe22ce90680daad8cb3383c1b56df163c14c99dd133035f1dd5c448ed8b46ac",
@@ -66,6 +67,7 @@
     "sql/read_seed_pages.sql": "62e5a03f04136dd683c5d3d53e95015c2aea01f1d59e545186325348529505c9",
     "sql/read_table_columns.sql": "4f65f1232345bc456070539e0051ef892bbdeb04bf0bca73c011bbccea2f59d9",
     "sql/write_copy.sql": "cfac4e7193c23ffbf5f54b56819616552bbb4a2e5e54a3ac393c662cf395bdcb",
+    "sql/write_creation.sql": "1f459ccb509d1a52e09df02494b92c27980795632d509711881f07c338e8fd6d",
     "sql/write_fence_receipt.sql": "96763c9ef34e03898784cbb4a3b256c18c6e5590460fcd77bf6c08131c8922cd",
     "sql/write_part.sql": "bda6c2e03a637c6b7b98df8bf004384031e849d4495899e70df3278e2f9cbad3",
     "sql/write_receipt.sql": "225f5f8d4f331869b557dea5aea1d5ff0ef8a3dbec7a6e6e13ab1c70c11e0d1a",
@@ -73,7 +75,7 @@
     "sql/write_seed.sql": "1760686d585a282c49d7eee530ebe6bcd883d49623d339587ba861adfb372783",
     "sql/write_seed_attempt.sql": "6b7bb9dd642308388c49521b264703c0291d95870d6c172caece780aecd583eb",
     "sql/write_seed_page.sql": "2f10b3342821b1a27f8683e064f8445dd16f74c761b5d095a0c56e0f991c95d8",
-    "src/checked_queries.rs": "aca5349efcb7267155aaf3ab0cdadbf515c585e42ef7c3abe9f6fc5221391ee4"
+    "src/checked_queries.rs": "5452befc83498b58ad3a90d38586341578d021b511df361c87815fd155c7bb47"
   },
   "queries": [
     {
@@ -392,6 +394,24 @@
     {
       "name": "drop_seed_pages",
       "bind_slots": 0,
+      "columns": []
+    },
+    {
+      "name": "read_creation",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "request",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_creation",
+      "bind_slots": 1,
       "columns": []
     }
   ]

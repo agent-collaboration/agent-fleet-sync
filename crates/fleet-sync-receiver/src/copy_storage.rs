@@ -70,6 +70,24 @@ where
         Ok(())
     }
 
+    pub(crate) async fn creation(
+        &mut self,
+    ) -> Result<Option<fleet_sync_protocol::CreateCopy>, StoreError> {
+        checked_queries::read_creation(self.0)
+            .await
+            .map_err(crate::sql_transport::sql_error)?
+            .map(|row| decode_record(row.request, "original copy creation"))
+            .transpose()
+    }
+    pub(crate) async fn save_creation(
+        &mut self,
+        request: &fleet_sync_protocol::CreateCopy,
+    ) -> Result<(), StoreError> {
+        checked_queries::write_creation(self.0, encode_record(request)?)
+            .await
+            .map_err(crate::sql_transport::sql_error)
+    }
+
     pub(crate) async fn receipt<A>(
         &mut self,
         piece: &Piece<A>,

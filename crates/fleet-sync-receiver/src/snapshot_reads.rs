@@ -1,6 +1,6 @@
 use crate::{
     BoundStatement, ReceiverError, StoreError, bound_sql::quoted_identifier,
-    copy_lifecycle::copy_status, row_apply::primary_columns, schema_reads::SchemaReads,
+    copy_lifecycle::following_status, row_apply::primary_columns, schema_reads::SchemaReads,
 };
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::{SnapshotCursor, SnapshotPage, SnapshotRead};
@@ -28,7 +28,7 @@ where
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    let status = copy_status(scope).await?;
+    let status = following_status(scope).await?;
     if cursor
         .as_ref()
         .is_some_and(|cursor| cursor.position != status.acked)

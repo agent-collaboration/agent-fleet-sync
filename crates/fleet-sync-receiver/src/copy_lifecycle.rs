@@ -28,12 +28,22 @@ where
 {
     if let Some(copy) = CopyStorage(scope).load().await? {
         if matches!(copy, CopyRecord::Retired(_)) {
-            return Err(ReceiverError::Retired);
+            return Ok(CreateCopyAnswer::Retired);
         }
         if copy.status().database != request.database {
             return Err(ReceiverError::InvalidInput {
                 field: "copy already belongs to another database".into(),
             });
+        }
+        let original =
+            CopyStorage(scope)
+                .creation()
+                .await?
+                .ok_or_else(|| crate::StoreError::Corrupt {
+                    field: "original copy creation".into(),
+                })?;
+        if original != *request {
+            return Ok(CreateCopyAnswer::CreationConflict { existing: original });
         }
         return Ok(CreateCopyAnswer::AlreadyCreated);
     }
@@ -63,12 +73,13 @@ where
             expected_position,
         },
     };
+    CopyStorage(scope).save_creation(request).await?;
     CopyStorage(scope).save(&record).await?;
     Ok(CreateCopyAnswer::CopyCreated)
 }
 
 /// Read copy authority and position. A seed becomes readable only after publication.
-pub async fn copy_status<S>(scope: &mut S) -> Result<CopyStatus, ReceiverError>
+pub(crate) async fn following_status<S>(scope: &mut S) -> Result<CopyStatus, ReceiverError>
 where
     S: TransactionScope,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
@@ -82,6 +93,28 @@ where
         Some(CopyRecord::Following(status)) => Ok(status),
         Some(CopyRecord::Retired(_)) => Err(ReceiverError::Retired),
         _ => Err(ReceiverError::NotInitialized),
+    }
+}
+
+/// Return terminal domain answers to the host without turning them into transport failures.
+pub async fn copy_status<S>(
+    scope: &mut S,
+) -> Result<fleet_sync_protocol::CopyStatusAnswer, ReceiverError>
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String:
+        Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
+    for<'value> Option<String>:
+        Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+{
+    use fleet_sync_protocol::CopyStatusAnswer;
+    match following_status(scope).await {
+        Ok(status) => Ok(CopyStatusAnswer::Status(status)),
+        Err(ReceiverError::NotInitialized) => Ok(CopyStatusAnswer::NotInitialized),
+        Err(ReceiverError::Retired) => Ok(CopyStatusAnswer::Retired),
+        Err(error) => Err(error),
     }
 }
 
@@ -101,12 +134,11 @@ where
     for<'value> Vec<u8>: Type<S::Database> + Encode<'value, S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    let copy = CopyStorage(scope)
-        .load()
-        .await?
-        .ok_or(ReceiverError::NotInitialized)?;
+    let Some(copy) = CopyStorage(scope).load().await? else {
+        return Ok(RetireCopyAnswer::NotInitialized);
+    };
     if copy.status().database != request.database {
-        return Err(ReceiverError::NotInitialized);
+        return Ok(RetireCopyAnswer::NotInitialized);
     }
     if matches!(copy, CopyRecord::Retired(_)) {
         return Ok(RetireCopyAnswer::Retired);

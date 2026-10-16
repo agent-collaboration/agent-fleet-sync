@@ -39,3 +39,4 @@ CREATE TABLE _fleet_sync_seed_attempts (
     attempt TEXT PRIMARY KEY,
     record TEXT NOT NULL
 );
+CREATE TABLE _fleet_sync_creation (singleton INTEGER PRIMARY KEY, request TEXT NOT NULL);

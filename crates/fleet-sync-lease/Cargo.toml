@@ -11,6 +11,21 @@ description = "Shared lease values, writer state and runtime-independent registr
 durable-steps = { path = "../durable-steps" }
 fleet-sync-protocol = { path = "../fleet-sync-protocol" }
 serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sqlx-core.workspace = true
+uuid = { version = "1.26.0", default-features = false, features = ["serde"] }
+
+[build-dependencies]
+fleet-sync-query-gen = { path = "../fleet-sync-query-gen" }
+
+[dev-dependencies]
+durable-steps = { path = "../durable-steps", features = ["turso"] }
+fleet-sync-receiver = { path = "../fleet-sync-receiver" }
+sqlx-turso.workspace = true
+tokio.workspace = true
+runtime-primitives.workspace = true
+tempfile = "3.27.0"
 
 [lints]
 workspace = true

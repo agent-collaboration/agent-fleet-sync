@@ -324,6 +324,26 @@
       "row": null,
       "result": "execute",
       "parameters": []
+    },
+    {
+      "name": "read_creation",
+      "sql": "sql/read_creation.sql",
+      "row": "StoredCreationRow",
+      "result": "optional",
+      "parameters": []
+    },
+    {
+      "name": "write_creation",
+      "sql": "sql/write_creation.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "request",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
     }
   ]
 }

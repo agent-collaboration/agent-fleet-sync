@@ -1,0 +1,274 @@
+{
+  "producer": "owned sqlx-turso / Turso 0.8.1 describe",
+  "sources": {
+    "../../Cargo.lock": "0b74ec492576d5a4eb36b47f8b04882452cf473e19d3def7aeb20e775ab85eda",
+    "../../rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
+    "../fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
+    "../fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
+    "../fleet-sync-query-gen/src/lib.rs": "e2c75aea7e0202d0ad0a71394dba18ec229ee625a43ff180f9388702242cb477",
+    "../fleet-sync-query-gen/src/main.rs": "528bf0583d11bde8fc4b7c0d5a2ea21bde8380e452c0c123a22929dfa5635cfd",
+    "../fleet-sync-query-gen/src/native_generation.rs": "c27944fb2f548a37c68c75fd33cef7cd32a4e9c7fa5170acc4f8ddd5c4394883",
+    "../fleet-sync-query-gen/src/query_render.rs": "2584f37650c8355b5537362ff5f66c8cf6a3955eb7a903faa5c5887ec26c880a",
+    "../fleet-sync-query-gen/src/source_freshness.rs": "caf2814c7255afdb3fc3714f3c6bb093702a6cfd3ca9d26c01896c75824f9583",
+    "../fleet-sync-query-gen/src/source_manifest.rs": "770e53cb230b27d44731507738e08f7217dba8fc230617d97bda765c78be8ad8",
+    "../sqlx-durable-object-core/Cargo.toml": "5af0f7433ff001c4f2347d0575306bb35da43f53b3b75ae4c0fb2c3a0b5e308f",
+    "../sqlx-durable-object-core/src/arguments.rs": "d278847139d6d4824d9b59f4c50302b8aad641a549ddbfefa1eba55b499d876f",
+    "../sqlx-durable-object-core/src/error.rs": "1c1484a9714c5bf4bca07d8faf45413841d86f0bcd1c65dda44bafc362ee8bac",
+    "../sqlx-durable-object-core/src/js.rs": "9d378f69957d33b00899aab643949289c03cf8e8aeca11765e10b2cc2d7ac75d",
+    "../sqlx-durable-object-core/src/lib.rs": "9999b4dc08263e6973533c0fb3d2c22098d5c2a17976004611cd9ef92841b8b1",
+    "../sqlx-durable-object-core/src/result.rs": "e6270a449b469a264a23887d10ce45895c5c41ee1ffde021720039c50c38bec5",
+    "../sqlx-durable-object-core/src/row.rs": "aaaef6370ba64a5fe8566290810c754d7f11f473331b0629dc9b91670933e100",
+    "../sqlx-durable-object-core/src/types.rs": "84425dc4a133ef25cd744cc46a9e928c63f872606ac9dc2b993ecb9d6feb4fcc",
+    "../sqlx-durable-object-core/src/value.rs": "dc1bc27ef0a4785e9482165e99ee9d32493bfe72f571460fe259bf6196a86aa6",
+    "../sqlx-turso-core/Cargo.toml": "2d685e3a229aff285704b4780ba37d5d772f89cfb906251cc66b88fa48c3bcc2",
+    "../sqlx-turso-core/src/arguments.rs": "2e214b64e40073fd62a89dba7bc6366fdca122286a20ed111d9f8d377e5fc1c7",
+    "../sqlx-turso-core/src/busy_wait.rs": "f01bae51ff7bfedd300a4f9f045fe0387ea2d216d85ee40919aa659516ce1131",
+    "../sqlx-turso-core/src/column.rs": "dde96c83bcb2f2d578c6d2d4270e939a363bbae1be7b269ab8bb53392e47583e",
+    "../sqlx-turso-core/src/connect_options/connection_url.rs": "f40f8cf73e0ead3b7f20de49d898a4a22b6338c304b7c21debbcf8a01ca45f8a",
+    "../sqlx-turso-core/src/connect_options/database_target.rs": "647fca5781f5d97c223dd070b14b9e08f5a3e18d74dfdd4940d6d5c5c719a0e6",
+    "../sqlx-turso-core/src/connect_options/mod.rs": "1be1d10d656dd84f80bbb9a1ea9fe88c6d16b6306b3063165e6db777d5443b10",
+    "../sqlx-turso-core/src/connection.rs": "3eb15124599cb87165dcdbd7c9e0561addddc9579c3284329ac8c25aea40a447",
+    "../sqlx-turso-core/src/database.rs": "1481a6b9bedcea3f81fdac90a110f9c593b6b94ae196a0fe37f051f5d330842a",
+    "../sqlx-turso-core/src/engine_connection.rs": "91d64d3b8e0ec07abf8d6d1d16310506283051966c5b7fae0394e11130e2e8d7",
+    "../sqlx-turso-core/src/error.rs": "4fbd8608ea66f26480ef8b8a0b83d9aae4ce9f0c899f1c65f9376eef558fbf72",
+    "../sqlx-turso-core/src/executor/mod.rs": "29ede1d4fb81163501e19a6feb9cd3f889f1edac1fadb084b670e1e1aab1f8b6",
+    "../sqlx-turso-core/src/executor/row_stream.rs": "cc02a018fad63c961dbce3fd4f1cbdc59a4821ca9ee46df2b5b78f3e9e77aaae",
+    "../sqlx-turso-core/src/executor/sql_inspection.rs": "a7b0d62d2bb195d55fab72b31e3b4cc30353386fe463b43f7d202fc243997483",
+    "../sqlx-turso-core/src/executor/statement_cache_tests.rs": "d686b473b73e7639fc558b5f78655c2f0599fa2c133d00e0cded39d42df5b773",
+    "../sqlx-turso-core/src/executor/tests.rs": "53c1ffbc57a6429c59f9f11acad298abd8bc424590ac12503a9c8c3528afb27e",
+    "../sqlx-turso-core/src/lib.rs": "f0da5e065281a17a747ebb85aaf11d1d0523a7298fe59263c6369fbcef09713a",
+    "../sqlx-turso-core/src/macro_type_checking.rs": "4a0f7c3ceefbf5dcf7a05575279e8692ff86add417d5ac62bffe59adaff233cb",
+    "../sqlx-turso-core/src/migrate.rs": "79da6a2d3a1b00a1c172d6d28c013a70a8b5501441b83202c4fc8f9d7e7db9a2",
+    "../sqlx-turso-core/src/query_result.rs": "3ebd80e5a95d06d69f38de951d1c1679099a60425df2fbfde120e343a3692bf1",
+    "../sqlx-turso-core/src/row.rs": "a67a21ef3e0f8037660503506686bc4d03d9ba0f332a1c9f49bc0fc73cb78b4e",
+    "../sqlx-turso-core/src/statement.rs": "bbea36292812b48828b3735cad8fdab043b6358c104f3a7cf898f132391d6c05",
+    "../sqlx-turso-core/src/transaction.rs": "c3a9ca7860989bda222a6e5b24e05cc0c453b99cca702d5bb3a0f2c0c2f961b5",
+    "../sqlx-turso-core/src/type_info.rs": "9f8614c7345b1c03416ab476e595f2d0e161daa6843ab63e8017cf35cd4bf9e6",
+    "../sqlx-turso-core/src/value/chrono_codecs.rs": "b717597e96f5e3e34ed5d69fd5a42f8d5c5e72b6ede10edfe34a8414e78aa13f",
+    "../sqlx-turso-core/src/value/mod.rs": "97e4830a0064bdef3a054a806960bc01014fedaaec8e0f8ff2dbdaf57e059458",
+    "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
+    "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
+    "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
+    "checked-queries.json": "cc0d00073f4a260d3ac784940f3dd3b7f36203ebd9310aaf81d67688c03e7280",
+    "migrations/0001_registry_rules.sql": "36df9f576906fe7af85d23ef33173c287873a52f83b52f6a2ac58415d19362ca",
+    "sql/active_lifecycle.sql": "64bc3b0185802ec8bbea6de02e9c919033177065c9bf7858eaac9e53db149ced",
+    "sql/active_transfer.sql": "b470ec59359105858f4982d733bd12543bcf5212c2fc1f30058dd2531773309c",
+    "sql/read_database.sql": "a4bbb901cb140530037a78b7523f4809e40cb4b1c191f12044bbd449dfb94573",
+    "sql/read_floor.sql": "ae9cfc61011a959ed812863fef30b179195e1515349fc13c6ffc3a03449adf9c",
+    "sql/read_history.sql": "d8ffe715ed13f4527185a81e60e55e99d44225c42df99347d33eca9d10118c57",
+    "sql/read_lease.sql": "d58a0d085190d36f4f8e42da1809fb09c9d7f1be916765ab1b6d34750b79f138",
+    "sql/read_lifecycle.sql": "e2b8fd8ab65e8b824f84d0af28659249c4d53d52f07b50635245bdaec32d690d",
+    "sql/read_preview.sql": "03783b07995797fdc8c3cce98c5aba00bd174e16f572b43f9bbd6c7641b162ab",
+    "sql/read_renewal.sql": "b642f0498c8a5da61fa27928c70c88bc43aa716ceb4562a24b7270cd79571dcc",
+    "sql/read_transfer.sql": "9a77765bc6cd9252524105c6e9bfb781be9f2907cd2aa856d8b61f78eb42407d",
+    "sql/write_database.sql": "f8755bcccae7ac8d48e3a6cc358c9d770d5dde979968deaab3027b48c1b4b644",
+    "sql/write_floor.sql": "95b08bb73896095a54e86b1b9aa0022b13c7069e2971ae3cd184b472a2f3ce03",
+    "sql/write_history.sql": "13c58c2ebd6bef8dffed52fadf717b8f9102434576d9c0251fc995ed94a2f9dd",
+    "sql/write_lease.sql": "db1e2823b9cb4fefbf39b483b7acee673e390b0f0db3f8a52eecebb5207583f0",
+    "sql/write_lifecycle.sql": "605edb5321dc5f6aea118bb1ffb025419258e83aac3cafcafeecbdb0f1751121",
+    "sql/write_preview.sql": "3394d8da7cef6adb1f85433dfd713e70a7e41a2132b8eeeb98815744b251f28a",
+    "sql/write_renewal.sql": "c24b06a98fc0e0d1542af9d711fad9a1e9be335d85a0853114383947b4d69e4e",
+    "sql/write_transfer.sql": "36cb611ddb484c599bf36a9b45249757dbe873a483ac7d55c7863cf8233054be",
+    "src/checked_queries.rs": "89aa5c8721f96d8da2e4029242424f0f62ee500b2e987b5a238cf57ee5105146"
+  },
+  "queries": [
+    {
+      "name": "read_database",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_database",
+      "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "read_lease",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_lease",
+      "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "read_floor",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "epoch",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_floor",
+      "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "read_renewal",
+      "bind_slots": 2,
+      "columns": [
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_renewal",
+      "bind_slots": 3,
+      "columns": []
+    },
+    {
+      "name": "read_history",
+      "bind_slots": 2,
+      "columns": [
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_history",
+      "bind_slots": 3,
+      "columns": []
+    },
+    {
+      "name": "read_transfer",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "intent",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "outcome",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_transfer",
+      "bind_slots": 4,
+      "columns": []
+    },
+    {
+      "name": "read_lifecycle",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "intent",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "outcome",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_lifecycle",
+      "bind_slots": 4,
+      "columns": []
+    },
+    {
+      "name": "active_transfer",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "intent",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "outcome",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "read_preview",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_preview",
+      "bind_slots": 3,
+      "columns": []
+    },
+    {
+      "name": "active_lifecycle",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "intent",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "outcome",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    }
+  ]
+}

@@ -765,7 +765,17 @@ version = "0.1.0"
 dependencies = [
  "durable-steps",
  "fleet-sync-protocol",
+ "fleet-sync-query-gen",
+ "fleet-sync-receiver",
+ "runtime-primitives",
  "serde",
+ "serde_json",
+ "sqlx-core",
+ "sqlx-turso",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

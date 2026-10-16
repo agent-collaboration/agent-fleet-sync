@@ -626,3 +626,51 @@ where
         Ok(())
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct StoredCreationRow {
+    pub request: Option<String>,
+}
+pub(crate) fn read_creation<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Option<StoredCreationRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_creation.sql"
+        )));
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(StoredCreationRow {
+                    request: row.try_get("request")?,
+                })
+            })
+            .transpose()
+    }
+}
+pub(crate) fn write_creation<S>(
+    scope: &mut S,
+    request: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_creation.sql"
+        )))
+        .bind(request);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}

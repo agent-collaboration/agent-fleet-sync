@@ -44,3 +44,8 @@ mod turso_seed_tests;
 
 #[cfg(test)]
 mod turso_follow_up_tests;
+
+#[cfg(test)]
+mod turso_copy_identity_tests;
+#[cfg(test)]
+mod turso_rule_fixture;

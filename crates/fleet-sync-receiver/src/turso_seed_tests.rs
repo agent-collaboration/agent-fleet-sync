@@ -12,6 +12,12 @@ use sqlx_turso::{Turso, TursoConnectOptions, TursoConnection};
 use uuid::Uuid;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+fn ready_status(answer: CopyStatusAnswer) -> TestResult<CopyStatus> {
+    match answer {
+        CopyStatusAnswer::Status(status) => Ok(status),
+        answer => Err(format!("copy is not following: {answer:?}").into()),
+    }
+}
 struct TursoScope<'a>(&'a mut TursoConnection);
 impl TransactionScope for TursoScope<'_> {
     type Database = Turso;
@@ -147,8 +153,8 @@ async fn copy_issues_rising_generations_and_repeat_attempt_does_not_replace_newe
         SeedPageAnswer::AlreadyStaged
     );
     assert_eq!(
-        copy_status(&mut TursoScope(&mut transaction)).await.err(),
-        Some(ReceiverError::NotInitialized)
+        copy_status(&mut TursoScope(&mut transaction)).await?,
+        CopyStatusAnswer::NotInitialized
     );
     assert_eq!(
         seed_complete(&mut TursoScope(&mut transaction), &done).await?,
@@ -166,7 +172,7 @@ async fn copy_issues_rising_generations_and_repeat_attempt_does_not_replace_newe
         seed_page(&mut TursoScope(&mut transaction), &second_page).await?,
         SeedPageAnswer::NotSeedable
     );
-    let copy = copy_status(&mut TursoScope(&mut transaction)).await?;
+    let copy = ready_status(copy_status(&mut TursoScope(&mut transaction)).await?)?;
     assert_eq!(copy.acked, position()?);
     assert_eq!(copy.holder, None);
     assert_eq!(copy.fence, Epoch::new(1)?);
@@ -237,8 +243,8 @@ async fn digest_refusal_rolls_back_created_schema_and_preserves_staging_for_corr
     assert_eq!(row.try_get::<String, _>("tables")?, "0");
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     assert_eq!(
-        copy_status(&mut TursoScope(&mut transaction)).await.err(),
-        Some(ReceiverError::NotInitialized)
+        copy_status(&mut TursoScope(&mut transaction)).await?,
+        CopyStatusAnswer::NotInitialized
     );
     assert_eq!(
         seed_page(&mut TursoScope(&mut transaction), &page).await?,

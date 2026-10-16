@@ -3,10 +3,52 @@
 //! The registry rules and durable lifecycle operations are still being implemented.
 //! The holder implementation lives beside these values and shares protocol types.
 
+mod checked_queries;
 mod lease_values;
+mod registry_contract;
+mod registry_records;
+mod registry_storage;
 
 pub use fleet_sync_protocol::{
     Epoch, HolderChangeAnswer, HolderChangeRefusal, HolderChangeRequest, LeaseRefusal, LeaseState,
     LeaseStatus, RenewAnswer, RenewRequest, RenewResult, ReplicationPosition, SyncTime, TransferId,
 };
 pub use lease_values::{LeasePolicy, RegistryConfig, WriterState};
+
+pub use registry_contract::{GateFailure, HolderChangeGate, LeaseError, LifecycleGate};
+pub use registry_records::DatabaseLifecycle;
+
+mod renew_rules;
+pub use renew_rules::{database_lifecycle, lease_status, renew};
+
+#[cfg(test)]
+mod turso_renew_tests;
+
+mod call_targets;
+pub use call_targets::*;
+
+mod operation_support;
+pub use operation_support::lifecycle_request_key;
+
+pub use fleet_sync_protocol::{GateAnswer, SettleOutcome};
+
+mod registration_rules;
+pub use registration_rules::register;
+
+mod registration_task;
+pub use registration_task::RegistrationTask;
+
+mod import_rules;
+mod import_task;
+pub use import_rules::import;
+pub use import_task::ImportTask;
+
+mod retirement_rules;
+mod retirement_task;
+pub use retirement_rules::retire;
+pub use retirement_task::RetirementTask;
+
+mod preview_rules;
+mod preview_task;
+pub use preview_rules::preview_takeover;
+pub use preview_task::PreviewTakeoverTask;
