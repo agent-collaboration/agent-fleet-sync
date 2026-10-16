@@ -1,7 +1,7 @@
 use super::{BusinessScope, key, step};
 use durable_steps::{
     AtomicStore, BoxFuture, CallResult, CallTarget, JournalScope, OperationContext,
-    OperationFailure, RequestKey, StepError, StoreError, Task,
+    OperationFailure, RequestKey, Resume, StepError, StoreError, Task,
 };
 use std::{
     marker::PhantomData,
@@ -88,6 +88,7 @@ impl<S: AtomicStore> Task for OldVersion<S> {
 }
 pub struct NewVersion<S> {
     pub fail_hook: Arc<AtomicBool>,
+    pub resume_invocations: Arc<AtomicU64>,
     pub store: PhantomData<fn() -> S>,
 }
 impl<S: AtomicStore> Task for NewVersion<S>
@@ -99,6 +100,14 @@ where
     type Store = S;
     type Input = u64;
     type Output = ();
+    fn before_resume<'s, 't>(
+        &'s self,
+        _scope: &'s mut S::Scope<'t>,
+        _request: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Resume<()>, StoreError>> {
+        self.resume_invocations.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(Resume::Continue) })
+    }
     async fn run<C: OperationContext<Store = S>>(
         &self,
         _ctx: &mut C,

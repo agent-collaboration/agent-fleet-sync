@@ -3,6 +3,7 @@
 
 mod call_cases;
 mod resume_cases;
+mod resume_rollback_case;
 mod resume_token_case;
 mod task_cases;
 mod task_fixtures;
@@ -71,6 +72,9 @@ where
     passed.push("resume hook finishes unanswered calls with normal retention");
     resume_cases::continue_replays(Arc::clone(&store), Arc::clone(&host)).await?;
     passed.push("resume hook Continue preserves normal replay");
+    resume_rollback_case::finish_rolls_back_with_hook_writes(Arc::clone(&store), Arc::clone(&host))
+        .await?;
+    passed.push("resume hook writes and Finish roll back together before retry");
     resume_token_case::stale_hook_is_not_invoked(store, host).await?;
     passed.push("stale drive cannot invoke the resume hook");
     Ok(passed)

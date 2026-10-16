@@ -263,8 +263,10 @@ where
         })
         .await?;
     let mut engine = Engine::new(Arc::clone(&store), Arc::clone(&host));
+    let resume_invocations = Arc::new(AtomicU64::new(0));
     engine.register(NewVersion::<S> {
         fail_hook: Arc::new(AtomicBool::new(true)),
+        resume_invocations: Arc::clone(&resume_invocations),
         store: PhantomData,
     })?;
     engine.register(Child::<S>(PhantomData))?;
@@ -306,6 +308,10 @@ where
     check(
         matches!(report.failed.as_slice(), [(failed, OperationFailure::VersionMismatch { recorded:0, registered:1 })] if *failed == id),
         "version mismatch is terminal typed failure",
+    )?;
+    check(
+        resume_invocations.load(Ordering::SeqCst) == 0,
+        "version mismatch must precede even synchronous resume-hook invocation",
     )?;
     store
         .transaction(move |scope| {

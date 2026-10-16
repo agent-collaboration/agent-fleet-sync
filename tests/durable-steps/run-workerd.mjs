@@ -27,7 +27,7 @@ try {
       const body = await response.text();
       console.log(JSON.stringify({ path, status: response.status, body }));
       assert.equal(response.status, 200);
-      if (path === "/suite") assert.equal(JSON.parse(body).length, 14);
+      if (path === "/suite") assert.equal(JSON.parse(body).length, 15);
       else assert.ok(Number(JSON.parse(body)) > Date.now());
     } finally { await runtime.dispose(); }
   }
