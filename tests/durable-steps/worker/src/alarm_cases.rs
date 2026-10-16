@@ -42,8 +42,9 @@ pub async fn overlapping_wakes(
         // The same exclusion must work within a caller-owned transaction.
         state.storage().delete_alarm().await?;
         store
-            .transaction(move |_scope| {
+            .transaction(move |scope| {
                 Box::pin(async move {
+                    scope.write_counter("alarm-concurrent-pair", 1).await?;
                     let (one, two) = join(first.wake_at(first_at), second.wake_at(second_at)).await;
                     one.map_err(StoreError::backend)?;
                     two.map_err(StoreError::backend)?;
@@ -61,6 +62,38 @@ pub async fn overlapping_wakes(
                     "transaction_late_then_early"
                 } else {
                     "transaction_early_then_late"
+                },
+            )
+            .await?,
+        );
+
+        state.storage().delete_alarm().await?;
+        let one = store.transaction(move |scope| {
+            Box::pin(async move {
+                scope.write_counter("alarm-transaction-one", 1).await?;
+                scope.ensure_wake(first_at).await?;
+                Ok(())
+            })
+        });
+        let two = store.transaction(move |scope| {
+            Box::pin(async move {
+                scope.write_counter("alarm-transaction-two", 1).await?;
+                scope.ensure_wake(second_at).await?;
+                Ok(())
+            })
+        });
+        let (one, two) = join(one, two).await;
+        one.map_err(worker_error)?;
+        two.map_err(worker_error)?;
+        observations.push(
+            observe(
+                state,
+                earlier,
+                later,
+                if late_first {
+                    "transactions_late_then_early"
+                } else {
+                    "transactions_early_then_late"
                 },
             )
             .await?,

@@ -32,7 +32,9 @@ try {
         const observations = JSON.parse(body);
         assert.deepEqual(observations.map(({ order }) => order), [
           "late_then_early", "transaction_late_then_early",
+          "transactions_late_then_early",
           "early_then_late", "transaction_early_then_late",
+          "transactions_early_then_late",
           "transaction_then_external", "external_then_transaction",
         ]);
         for (const { earlier, later, actual } of observations) {
