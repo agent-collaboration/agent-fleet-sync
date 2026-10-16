@@ -47,7 +47,7 @@
     "src/lib.rs": "e2c75aea7e0202d0ad0a71394dba18ec229ee625a43ff180f9388702242cb477",
     "src/main.rs": "528bf0583d11bde8fc4b7c0d5a2ea21bde8380e452c0c123a22929dfa5635cfd",
     "src/native_generation.rs": "c27944fb2f548a37c68c75fd33cef7cd32a4e9c7fa5170acc4f8ddd5c4394883",
-    "src/query_render.rs": "f0774c13b73fe7272baab2325588afd0e64b10bf97e73fc474b296501f65da4b",
+    "src/query_render.rs": "2584f37650c8355b5537362ff5f66c8cf6a3955eb7a903faa5c5887ec26c880a",
     "src/source_freshness.rs": "caf2814c7255afdb3fc3714f3c6bb093702a6cfd3ca9d26c01896c75824f9583",
     "src/source_manifest.rs": "770e53cb230b27d44731507738e08f7217dba8fc230617d97bda765c78be8ad8",
     "tests/fixtures/corpus/migrations/1_example.sql": "26762d56152ae5fb189c13af92c7fe1442f0a1968a58377574b7a3db7c4c9126",
@@ -57,7 +57,7 @@
     "tests/fixtures/corpus/sql/read_exact_integer.sql": "77e8bcb6503bf883856b19375be8723156ec870b01a2dd8997c6f74b79e4ea01",
     "tests/fixtures/corpus/sql/read_example.sql": "2744afc0b72b6ee90b8e237c6bc330e7341320aa817059197da916ff69b2d1d5",
     "tests/fixtures/corpus/sql/read_examples.sql": "340ec09522eb926035c180643fa18ef892916b61a03dc23a2c56d3da4aca0a3c",
-    "tests/support/checked_test_queries.rs": "5bbabfacf9ae39401910d8d7db5012a424c4125a137721ee8ea75a971aaebc98"
+    "tests/support/checked_test_queries.rs": "a07c33cf65af49a0ee030220b07fd7b4f46a151b64db2664ae383627be5e157e"
   },
   "queries": [
     {

@@ -22,4 +22,6 @@ Unknown nullability stays optional, and domain decoding checks required fields. 
 
 Consumers add this crate as a build dependency without the `native` feature and call `fleet_sync_query_gen::verify_manifest("checked-queries.json")` from `build.rs`. That verifies the SQL, migration set, manifest, generator, owned drivers, toolchain, lockfile, and generated source hashes. A new migration or a modified generated file fails the check. There is no environment switch that bypasses it; regenerate with the standalone CLI when inputs change.
 
+Generated functions return an explicit `Future + Send`: this preserves borrowed-scope calls inside spawned Tokio hosts, where inferred async-function futures hit a Rust GAT lifetime-generality error. The executable corpus includes that host path.
+
 The native tests cover real description, generated execution with exact values and rollback, bind arity, unknown types, and freshness failures. Their starting references were the receiver's query-generator prototype and the one-core probe's generator.

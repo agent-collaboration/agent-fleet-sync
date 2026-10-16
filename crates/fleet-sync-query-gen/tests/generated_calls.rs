@@ -41,6 +41,12 @@ async fn generated_calls_compile_and_preserve_values_in_the_callers_transaction(
         .run_direct(None, &mut *transaction, false)
         .await?;
     transaction.commit().await?;
+    // A Tokio host must be able to borrow its transaction inside a Send task.
+    let mut connection = tokio::spawn(async move {
+        checked::read_examples(&mut BorrowedScope(&mut connection)).await?;
+        Ok::<_, sqlx_core::Error>(connection)
+    })
+    .await??;
 
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     let mut scope = BorrowedScope(&mut transaction);
