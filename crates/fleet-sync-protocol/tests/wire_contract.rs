@@ -54,8 +54,54 @@ fn exact_sql_storage_classes_and_integer_boundaries_cross_json() {
         assert_eq!(serde_json::to_string(&value).unwrap(), json);
         assert_eq!(serde_json::from_str::<SqlValue>(json).unwrap(), value);
     }
-    assert!(serde_json::to_vec(&SqlValue::Real(f64::INFINITY)).is_err());
+    assert!(serde_json::to_vec(&SqlValue::Real(f64::NAN)).is_err());
     assert!(serde_json::from_str::<SqlValue>(r#"{"kind":"blob","value":"??=="}"#).is_err());
+}
+
+#[test]
+fn sql_real_infinities_and_negative_zero_preserve_their_exact_wire_values() {
+    for (value, wire) in [
+        (
+            f64::INFINITY,
+            r#"{"kind":"real","value":"positiveInfinity"}"#,
+        ),
+        (
+            f64::NEG_INFINITY,
+            r#"{"kind":"real","value":"negativeInfinity"}"#,
+        ),
+        (-0.0, r#"{"kind":"real","value":-0.0}"#),
+    ] {
+        let encoded = serde_json::to_string(&SqlValue::Real(value)).unwrap();
+        let decoded: SqlValue = serde_json::from_str(wire).unwrap();
+
+        assert_eq!(encoded, wire);
+        assert!(
+            matches!(decoded, SqlValue::Real(decoded) if decoded.to_bits() == value.to_bits()),
+            "real storage class or bits changed: {wire}"
+        );
+    }
+
+    for marker in ["positiveInfinity", "negativeInfinity"] {
+        let text_wire = serde_json::json!({"kind":"text","value":marker});
+        assert_eq!(
+            serde_json::from_value::<SqlValue>(text_wire).unwrap(),
+            SqlValue::Text(marker.into())
+        );
+    }
+}
+
+#[test]
+fn sql_real_decode_rejects_nan_and_undeclared_special_values() {
+    for wire in [
+        r#"{"kind":"real","value":"NaN"}"#,
+        r#"{"kind":"real","value":NaN}"#,
+        r#"{"kind":"real","value":null}"#,
+        r#"{"kind":"real","value":"Infinity"}"#,
+        r#"{"kind":"real","value":"-Infinity"}"#,
+        r#"{"kind":"real","value":1e400}"#,
+    ] {
+        assert!(serde_json::from_str::<SqlValue>(wire).is_err(), "{wire}");
+    }
 }
 
 #[test]

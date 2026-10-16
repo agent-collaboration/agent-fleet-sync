@@ -45,3 +45,15 @@ fn release_supersession_and_request_conflicts_are_typed_answers() {
         assert_eq!(serde_json::to_value(answer).unwrap(), wire);
     }
 }
+
+#[test]
+fn holder_change_epoch_unprovable_round_trips_as_a_typed_refusal() {
+    let refusal_wire = r#"{"kind":"epochUnprovable"}"#;
+    let answer_wire = r#"{"kind":"refused","value":{"kind":"epochUnprovable"}}"#;
+
+    let refusal: HolderChangeRefusal = serde_json::from_str(refusal_wire).unwrap();
+    let answer: HolderChangeAnswer = serde_json::from_str(answer_wire).unwrap();
+
+    assert_eq!(serde_json::to_string(&refusal).unwrap(), refusal_wire);
+    assert_eq!(serde_json::to_string(&answer).unwrap(), answer_wire);
+}

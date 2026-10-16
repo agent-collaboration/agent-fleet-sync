@@ -138,6 +138,7 @@ pub enum HolderChangeRefusal {
     AlreadyHeld,
     NotFound,
     Unavailable,
+    EpochUnprovable,
     Superseded {
         by: TransferId,
     },

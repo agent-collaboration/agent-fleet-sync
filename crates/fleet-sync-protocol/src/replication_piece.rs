@@ -16,15 +16,33 @@ use crate::{
 enum SqlValueWire {
     Null,
     Integer(i64),
-    Real(f64),
+    Real(SqlRealWire),
     Text(String),
     Blob(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+enum SqlRealWire {
+    Number(f64),
+    Infinity(SqlRealInfinityWire),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+enum SqlRealInfinityWire {
+    #[serde(rename = "positiveInfinity")]
+    Positive,
+    #[serde(rename = "negativeInfinity")]
+    Negative,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SqlValue {
     Null,
     Integer(i64),
+    /// Finite values use JSON numbers, including `-0.0`. Infinities use the same
+    /// `{"kind":"real"}` tag with `"value":"positiveInfinity"` or
+    /// `"value":"negativeInfinity"`. NaN is rejected: SQLite stores it as NULL.
     Real(f64),
     Text(String),
     Blob(Vec<u8>),
@@ -45,10 +63,19 @@ impl Serialize for SqlValue {
             Self::Null => SqlValueWire::Null,
             Self::Integer(value) => SqlValueWire::Integer(*value),
             Self::Real(value) => {
-                if !value.is_finite() {
-                    return Err(serde::ser::Error::custom("SQL real must be finite"));
+                if value.is_nan() {
+                    return Err(serde::ser::Error::custom("SQL real must not be NaN"));
                 }
-                SqlValueWire::Real(*value)
+                let real = if value.is_infinite() {
+                    SqlRealWire::Infinity(if value.is_sign_positive() {
+                        SqlRealInfinityWire::Positive
+                    } else {
+                        SqlRealInfinityWire::Negative
+                    })
+                } else {
+                    SqlRealWire::Number(*value)
+                };
+                SqlValueWire::Real(real)
             }
             Self::Text(value) => SqlValueWire::Text(value.clone()),
             Self::Blob(value) => SqlValueWire::Blob(encode_base64(value)),
@@ -65,7 +92,20 @@ impl<'de> Deserialize<'de> for SqlValue {
         match SqlValueWire::deserialize(deserializer)? {
             SqlValueWire::Null => Ok(Self::Null),
             SqlValueWire::Integer(value) => Ok(Self::Integer(value)),
-            SqlValueWire::Real(value) => Ok(Self::Real(value)),
+            SqlValueWire::Real(SqlRealWire::Number(value)) => {
+                if !value.is_finite() {
+                    return Err(D::Error::custom(
+                        "SQL real numbers must be finite; infinities use named wire values",
+                    ));
+                }
+                Ok(Self::Real(value))
+            }
+            SqlValueWire::Real(SqlRealWire::Infinity(SqlRealInfinityWire::Positive)) => {
+                Ok(Self::Real(f64::INFINITY))
+            }
+            SqlValueWire::Real(SqlRealWire::Infinity(SqlRealInfinityWire::Negative)) => {
+                Ok(Self::Real(f64::NEG_INFINITY))
+            }
             SqlValueWire::Text(value) => Ok(Self::Text(value)),
             SqlValueWire::Blob(value) => decode_base64(&value)
                 .map(Self::Blob)
