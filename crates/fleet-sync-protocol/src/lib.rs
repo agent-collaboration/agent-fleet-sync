@@ -3,6 +3,7 @@
 //! Each transport carries the same JSON bytes in one ordered binary message.
 //! Operation identities belong to their owners; frame IDs only correlate replies.
 
+mod holder_change_message;
 mod lease_message;
 mod piece_digest;
 mod replication_ids;
@@ -16,6 +17,7 @@ mod session_frame;
 mod snapshot_page;
 mod transaction_part;
 
+pub use holder_change_message::*;
 pub use lease_message::*;
 pub use piece_digest::*;
 pub use replication_ids::*;
