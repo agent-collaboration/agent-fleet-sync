@@ -40,7 +40,8 @@ uuid_id!(
     ConnectionId,
     FrameId,
     RequestId,
-    TransferId
+    TransferId,
+    SeedId
 );
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]

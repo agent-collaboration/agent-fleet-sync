@@ -77,10 +77,10 @@ pub enum RenewAnswer {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TakeoverPreview {
+    pub token: crate::PreviewToken,
     pub holder: PeerId,
-    pub epoch: Epoch,
     pub acked: ReplicationPosition,
-    pub schema: SchemaIdentity,
+    pub expires_at: SyncTime,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -132,7 +132,6 @@ pub enum HolderChangeRefusal {
     AlreadyHeld,
     NotFound,
     Unavailable,
-    HolderUnreachable,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -153,6 +152,13 @@ pub enum HolderChangeAnswer {
         transfer: TransferId,
     },
     Refused(HolderChangeRefusal),
+    HolderUnreachable {
+        last_seen: Option<SyncTime>,
+    },
+    Retired,
+    Failed {
+        reason: crate::FailureCode,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
