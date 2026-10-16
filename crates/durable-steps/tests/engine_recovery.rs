@@ -3,8 +3,8 @@
 mod support;
 
 use durable_steps::{
-    AtomicStore, CallReplay, CallTarget, Engine, Host, JournalScope, OperationContext,
-    OperationFailure, OperationState, RequestKey, StepError, StepName, StoreError, Task,
+    AtomicStore, CallTarget, Engine, Host, JournalScope, OperationContext, OperationFailure,
+    OperationState, RequestKey, StepError, StepName, StoreError, Task,
     volatile_store::{VolatileScope, VolatileStore},
 };
 use futures_executor::block_on;
@@ -145,15 +145,12 @@ fn generic_parent_rolls_back_business_child_and_step_then_commits_and_reopens() 
     })
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 struct DoubleTarget;
 impl CallTarget for DoubleTarget {
     const KIND: &'static str = "double";
-    const REPLAY: CallReplay = CallReplay::Deduplicated;
     type Request = u64;
     type Answer = u64;
-    fn address(&self) -> &str {
-        "test-receiver"
-    }
 }
 
 #[derive(Clone)]

@@ -1,10 +1,9 @@
 use crate::{
-    AtomicStore, CallFailure, CallId, CallReplay, CallTarget, Host, JournalScope, OperationContext,
-    OperationFailure, OperationId, StepError, StepName, StoreError,
+    AtomicStore, CallResult, CallTarget, Host, JournalScope, OperationContext, OperationFailure,
+    OperationId, StepError, StepName, StoreError,
     storage::{JournalStorage, StepRecord, StepState},
 };
 use serde::{Serialize, de::DeserializeOwned};
-use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -15,6 +14,7 @@ pub(crate) struct EngineContext<'engine, S: AtomicStore, H: Host> {
     pub token: Uuid,
     pub position: u64,
     pub failure: Option<OperationFailure>,
+    pub wake_failure: Option<crate::WakeFailure>,
 }
 
 fn rollback(error: StepError) -> StoreError {
@@ -23,7 +23,7 @@ fn rollback(error: StepError) -> StoreError {
     }
 }
 
-fn step_error(error: StoreError) -> StepError {
+pub(crate) fn step_error(error: StoreError) -> StepError {
     match error {
         StoreError::StepRollback { failure } => match *failure {
             OperationFailure::Retry { after_ms } => StepError::Retry {
@@ -36,13 +36,13 @@ fn step_error(error: StoreError) -> StepError {
     }
 }
 
-fn invalid_payload(error: impl std::fmt::Display) -> StoreError {
+pub(crate) fn invalid_payload(error: impl std::fmt::Display) -> StoreError {
     rollback(StepError::Failed(OperationFailure::InvalidPayload {
         message: error.to_string(),
     }))
 }
 
-fn changed_step(
+pub(crate) fn changed_step(
     position: u64,
     expected: impl Into<String>,
     found: impl Into<String>,
@@ -54,7 +54,7 @@ fn changed_step(
     }))
 }
 
-async fn validate_name<S: JournalStorage>(
+pub(crate) async fn validate_name<S: JournalStorage>(
     scope: &mut S,
     id: OperationId,
     position: u64,
@@ -79,12 +79,6 @@ async fn validate_name<S: JournalStorage>(
         }
     }
     Ok(())
-}
-
-enum CallPreparation {
-    Replay(Vec<u8>),
-    Dispatch,
-    Uncertain,
 }
 
 impl<S: AtomicStore, H: Host> OperationContext for EngineContext<'_, S, H> {
@@ -141,6 +135,10 @@ impl<S: AtomicStore, H: Host> OperationContext for EngineContext<'_, S, H> {
             })
             .await
             .map_err(step_error);
+        let result = match result {
+            Ok(output) => self.rearm().await.map(|()| output),
+            Err(error) => Err(error),
+        };
         self.record_result(&result);
         result
     }
@@ -151,164 +149,50 @@ impl<S: AtomicStore, H: Host> OperationContext for EngineContext<'_, S, H> {
         target: C,
         request: C::Request,
     ) -> Result<C::Answer, StepError> {
-        let id = self.operation;
-        let token = self.token;
-        let position = self.position;
-        let address = format!("{}:{}", C::KIND, target.address());
-        let digest =
-            Sha256::digest(crate::canonical_payload::encode(&request).map_err(|error| {
-                StepError::Failed(OperationFailure::InvalidPayload {
-                    message: error.to_string(),
-                })
-            })?)
-            .to_vec();
-        let step_name = name.clone();
-        let expected_address = address.clone();
-        let expected_digest = digest.clone();
-        let preparation = self
-            .store
-            .transaction(move |scope| {
-                Box::pin(async move {
-                    scope.check_token(id, token).await?;
-                    validate_name(scope, id, position, &step_name).await?;
-                    match scope.step(id, position).await? {
-                        Some(saved) => match saved.state {
-                            StepState::CallPending {
-                                target,
-                                request_digest,
-                                replay,
-                            } if target == expected_address
-                                && request_digest == expected_digest
-                                && replay == C::REPLAY =>
-                            {
-                                Ok(if replay == CallReplay::NeverRepeat {
-                                    CallPreparation::Uncertain
-                                } else {
-                                    CallPreparation::Dispatch
-                                })
-                            }
-                            StepState::CallDone {
-                                target,
-                                request_digest,
-                                replay,
-                                output,
-                            } if target == expected_address
-                                && request_digest == expected_digest
-                                && replay == C::REPLAY =>
-                            {
-                                Ok(CallPreparation::Replay(output))
-                            }
-                            _ => Err(changed_step(
-                                position,
-                                "recorded call identity/content",
-                                "changed call identity/content",
-                            )),
-                        },
-                        None => {
-                            scope
-                                .save_step(
-                                    StepRecord {
-                                        operation: id,
-                                        position,
-                                        name: step_name,
-                                        state: StepState::CallPending {
-                                            target: expected_address,
-                                            request_digest: expected_digest,
-                                            replay: C::REPLAY,
-                                        },
-                                    },
-                                    token,
-                                )
-                                .await?;
-                            Ok(CallPreparation::Dispatch)
-                        }
-                    }
-                })
-            })
+        let result = self
+            .execute_call(name, target, request, None)
             .await
-            .map_err(step_error);
-
-        let result = match preparation {
-            Err(error) => Err(error),
-            Ok(CallPreparation::Uncertain) => Err(StepError::Failed(OperationFailure::Uncertain {
-                step: name,
-            })),
-            Ok(CallPreparation::Replay(output)) => {
-                serde_json::from_slice(&output).map_err(|error| {
-                    StepError::Failed(OperationFailure::InvalidPayload {
-                        message: error.to_string(),
-                    })
-                })
-            }
-            Ok(CallPreparation::Dispatch) => {
-                match self
-                    .host
-                    .dispatch(
-                        target,
-                        request,
-                        CallId {
-                            operation: id,
-                            step: name.clone(),
-                        },
-                    )
-                    .await
-                {
-                    Ok(answer) => {
-                        let output = serde_json::to_vec(&answer).map_err(|error| {
-                            StepError::Failed(OperationFailure::InvalidPayload {
-                                message: error.to_string(),
-                            })
-                        })?;
-                        self.store
-                            .transaction(move |scope| {
-                                Box::pin(async move {
-                                    scope.check_token(id, token).await?;
-                                    scope
-                                        .save_step(
-                                            StepRecord {
-                                                operation: id,
-                                                position,
-                                                name,
-                                                state: StepState::CallDone {
-                                                    target: address,
-                                                    request_digest: digest,
-                                                    replay: C::REPLAY,
-                                                    output,
-                                                },
-                                            },
-                                            token,
-                                        )
-                                        .await
-                                })
-                            })
-                            .await
-                            .map_err(StepError::Storage)
-                            .map(|()| answer)
-                    }
-                    Err(CallFailure::Refused { reason }) => {
-                        Err(StepError::Failed(OperationFailure::Refused {
-                            code: "call_refused".into(),
-                            detail: reason,
-                        }))
-                    }
-                    Err(CallFailure::AnswerLost) if C::REPLAY == CallReplay::NeverRepeat => {
-                        Err(StepError::Failed(OperationFailure::Uncertain {
-                            step: name,
-                        }))
-                    }
-                    Err(CallFailure::AnswerLost) => Err(StepError::Retry {
-                        after: std::time::Duration::ZERO,
-                    }),
-                    Err(CallFailure::Retry { after }) => Err(StepError::Retry { after }),
-                }
-            }
-        };
+            .and_then(|result| match result {
+                CallResult::Answered(answer) => Ok(answer),
+                CallResult::NeverSent { .. } => Err(StepError::Storage(StoreError::Corrupt {
+                    field: "call_result".into(),
+                    message: "ordinary call gave up".into(),
+                })),
+            });
+        self.record_result(&result);
+        result
+    }
+    async fn call_or_give_up<C: CallTarget>(
+        &mut self,
+        name: StepName,
+        target: C,
+        request: C::Request,
+        unsent_for: std::time::Duration,
+    ) -> Result<CallResult<C::Answer>, StepError> {
+        let result = self
+            .execute_call(name, target, request, Some(unsent_for))
+            .await;
         self.record_result(&result);
         result
     }
 }
 
 impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
+    async fn rearm(&mut self) -> Result<(), StepError> {
+        let earliest = self
+            .store
+            .transaction(|scope| Box::pin(async move { scope.earliest().await }))
+            .await?;
+        if let Some(at) = earliest {
+            self.wake_failure = self
+                .host
+                .wake_at(at)
+                .await
+                .err()
+                .or(self.wake_failure.take());
+        }
+        Ok(())
+    }
     fn record_result<T>(&mut self, result: &Result<T, StepError>) {
         match result {
             Ok(_) => self.position += 1,

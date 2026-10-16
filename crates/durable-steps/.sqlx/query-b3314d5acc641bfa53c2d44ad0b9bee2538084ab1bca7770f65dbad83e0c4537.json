@@ -1,0 +1,20 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT COUNT(*) AS \"count!: i64\" FROM _fleet_sync_steps WHERE operation_id = ?\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!: i64",
+        "type_info": {
+          "name": "NULL"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b3314d5acc641bfa53c2d44ad0b9bee2538084ab1bca7770f65dbad83e0c4537"
+}

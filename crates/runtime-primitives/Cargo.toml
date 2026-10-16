@@ -10,12 +10,15 @@ description = "Shared clock, identifiers, wake scheduling and bounded backoff"
 [features]
 default = []
 tokio = ["dep:tokio", "uuid/v7", "uuid/std"]
+durable-object = ["dep:worker", "dep:chrono"]
 
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true
 uuid = { version = "1.26.0", default-features = false, features = ["serde"] }
 tokio = { version = "1.48.0", default-features = false, features = ["sync", "time"], optional = true }
+worker = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true

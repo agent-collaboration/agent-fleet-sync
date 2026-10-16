@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "DELETE FROM _fleet_sync_steps WHERE operation_id = ?\n",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "7e5c419aeaf79c9c43123bddab40f910c714343cb80ae63ed68c0df32a294292"
+}

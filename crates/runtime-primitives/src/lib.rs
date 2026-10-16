@@ -15,6 +15,10 @@ pub use call_identity::{CallId, InvalidName, OperationId, StepName};
 mod tokio_adapters;
 #[cfg(feature = "tokio")]
 pub use tokio_adapters::{SystemClock, TokioWakeTimer, UuidV7Ids};
+#[cfg(feature = "durable-object")]
+mod alarm_owner;
+#[cfg(feature = "durable-object")]
+pub use alarm_owner::AlarmOwner;
 
 /// UTC wall-clock time in milliseconds since the Unix epoch.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]

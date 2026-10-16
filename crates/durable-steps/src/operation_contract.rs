@@ -1,16 +1,17 @@
 use crate::{
-    Admitted, CallFailure, CallId, CallReplay, OperationFailure, OperationId, RequestKey,
+    Admitted, CallFailure, CallId, CallResult, OperationFailure, OperationId, RequestKey,
     StartRefusal, StepError, StepName, StoreError, SyncTime, storage::JournalStorage,
 };
 use runtime_primitives::{Clock, IdSource, WakeScheduler};
 use serde::{Serialize, de::DeserializeOwned};
-use std::{future::Future, pin::Pin};
+use std::{future::Future, pin::Pin, time::Duration};
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 pub trait Task: Send + Sync + 'static {
     const KIND: &'static str;
     const VERSION: u32;
+    const KEEP_RESULT: bool = true;
     type Store: AtomicStore;
     type Input: Serialize + DeserializeOwned + Send + Sync;
     type Output: Serialize + DeserializeOwned + Send;
@@ -19,6 +20,14 @@ pub trait Task: Send + Sync + 'static {
         ctx: &mut C,
         input: &Self::Input,
     ) -> impl Future<Output = Result<Self::Output, OperationFailure>> + Send;
+    fn on_failed<'s, 't>(
+        &'s self,
+        _scope: &'s mut <Self::Store as AtomicStore>::Scope<'t>,
+        _request_key: &'s RequestKey,
+        _failure: &'s OperationFailure,
+    ) -> BoxFuture<'s, Result<(), StoreError>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 pub trait OperationContext: Send {
@@ -45,6 +54,13 @@ pub trait OperationContext: Send {
         target: C,
         request: C::Request,
     ) -> impl Future<Output = Result<C::Answer, StepError>> + Send;
+    fn call_or_give_up<C: CallTarget>(
+        &mut self,
+        step: StepName,
+        target: C,
+        request: C::Request,
+        unsent_for: Duration,
+    ) -> impl Future<Output = Result<CallResult<C::Answer>, StepError>> + Send;
 }
 
 pub trait AtomicStore: Send + Sync + 'static {
@@ -66,13 +82,12 @@ pub trait JournalScope: Send {
     fn ensure_wake(&mut self, at: SyncTime) -> impl Future<Output = Result<(), StoreError>> + Send;
 }
 
-/// A typed boundary call. NeverRepeat targets leave an uncertain result after a lost answer.
-pub trait CallTarget: Send + Sync + 'static {
+/// A typed boundary call, routed by the host from its serialized value.
+pub trait CallTarget: Serialize + DeserializeOwned + Send + Sync + 'static {
     const KIND: &'static str;
-    const REPLAY: CallReplay;
-    type Request: Serialize + Send + Sync;
+    const DEDUPLICATES: bool = true;
+    type Request: Serialize + DeserializeOwned + Send;
     type Answer: Serialize + DeserializeOwned + Send;
-    fn address(&self) -> &str;
 }
 
 pub trait Host: Clock + IdSource + WakeScheduler + Send + Sync + 'static {

@@ -1,0 +1,20 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT value AS \"value!: i64\" FROM conformance_counters WHERE name = ?\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "18d9ad51af256261ef13bcb302c91bf496eb6d260e7db0723a391aa54b6239bf"
+}

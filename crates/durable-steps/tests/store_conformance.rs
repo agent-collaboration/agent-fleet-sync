@@ -4,7 +4,7 @@ mod support;
 
 use durable_steps::{
     AtomicStore, CallReplay, DriveLease, JournalScope, OperationContext, OperationFailure,
-    OperationState, RequestKey, StartRefusal, StoreError, SyncTime, Task, storage::JournalStorage,
+    RequestKey, StartRefusal, StoreError, SyncTime, Task, storage::JournalStorage,
     volatile_store::VolatileStore,
 };
 use futures_executor::block_on;
@@ -50,7 +50,7 @@ fn admission_keeps_exact_integer_input_and_distinguishes_adjacent_large_values()
             .id();
         store.transaction(move |scope| Box::pin(async move {
             let recorded = scope.operation(id).await?.ok_or(StoreError::MissingOperation { id })?;
-            assert_eq!(serde_json::from_slice::<u64>(&recorded.input).map_err(StoreError::backend)?, 9_007_199_254_740_993);
+            assert_eq!(serde_json::from_slice::<u64>(&match recorded.execution { durable_steps::storage::OperationExecution::Running { input, .. } => input, _ => return Err(StoreError::Aborted { reason: "unexpected terminal".into() }) }).map_err(StoreError::backend)?, 9_007_199_254_740_993);
             let conflict = scope.admit::<EmptyTask>(&key("exact-input"), &9_007_199_254_740_992).await;
             assert!(matches!(conflict, Err(StartRefusal::RequestConflict { existing }) if existing == id));
             Ok(())
@@ -237,7 +237,13 @@ fn replaced_drive_token_cannot_change_the_operation() -> Result<(), Box<dyn std:
             .transaction(move |scope| {
                 Box::pin(async move {
                     scope
-                        .set_state(id, old, OperationState::Completed { result: vec![] })
+                        .finish(
+                            id,
+                            old,
+                            durable_steps::storage::OperationOutcome::Completed { result: vec![] },
+                            SyncTime::from_unix_millis(2_000),
+                            true,
+                        )
                         .await
                 })
             })

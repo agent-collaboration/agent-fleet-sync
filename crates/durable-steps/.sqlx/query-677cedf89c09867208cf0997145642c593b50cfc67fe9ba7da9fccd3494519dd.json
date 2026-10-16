@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "INSERT INTO conformance_counters(name, value) VALUES (?, ?)\nON CONFLICT(name) DO UPDATE SET value = excluded.value\n",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "677cedf89c09867208cf0997145642c593b50cfc67fe9ba7da9fccd3494519dd"
+}

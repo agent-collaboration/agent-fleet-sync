@@ -189,12 +189,25 @@ pub struct OperationStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq, Error)]
 pub enum CallFailure {
-    #[error("call can retry after {after:?}")]
-    Retry { after: Duration },
+    #[error("call was not sent: {reason}")]
+    NotSent { reason: NotSentReason },
     #[error("call answer was lost")]
     AnswerLost,
-    #[error("call refused: {reason}")]
-    Refused { reason: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "result", content = "answer", rename_all = "snake_case")]
+pub enum CallResult<TAnswer> {
+    Answered(TAnswer),
+    NeverSent { last_seen: Option<SyncTime> },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Error)]
+pub enum NotSentReason {
+    #[error("receiver unreachable (last seen {last_seen:?})")]
+    Unreachable { last_seen: Option<SyncTime> },
+    #[error("receiver overloaded")]
+    Overloaded,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

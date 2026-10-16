@@ -7,6 +7,11 @@ license.workspace = true
 publish.workspace = true
 description = "Runtime-independent durable local steps and receipted boundary calls"
 
+[features]
+default = []
+turso = ["dep:sqlx", "dep:sqlx-turso", "dep:tokio", "runtime-primitives/tokio"]
+durable-object = ["dep:sqlx", "dep:sqlx-durable-object", "dep:worker", "runtime-primitives/durable-object"]
+
 [dependencies]
 futures-util.workspace = true
 serde.workspace = true
@@ -16,9 +21,15 @@ runtime-primitives.workspace = true
 sqlx-core.workspace = true
 sha2 = "0.10.9"
 uuid = { version = "1.26.0", default-features = false, features = ["serde"] }
+sqlx = { workspace = true, features = ["derive", "migrate", "macros"], optional = true }
+sqlx-turso = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+sqlx-durable-object = { path = "../sqlx-durable-object", optional = true }
+worker = { workspace = true, optional = true }
 
 [dev-dependencies]
 futures-executor = "0.3.34"
+tempfile = "3.27.0"
 
 [lints]
 workspace = true

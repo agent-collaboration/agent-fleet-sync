@@ -1,12 +1,11 @@
 use durable_steps::{CallFailure, CallId, CallTarget, Host, SyncTime, Uuid, WakeFailure};
 use runtime_primitives::{Clock, IdSource, WakeScheduler};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
     },
-    time::Duration,
 };
 
 struct ReceiverReceipt {
@@ -21,6 +20,9 @@ pub struct TestHost {
     pub effects: AtomicU64,
     pub lose_answers: AtomicU64,
     pub retry_calls: AtomicBool,
+    pub hang_after_effect: AtomicBool,
+    pub failures: Mutex<VecDeque<CallFailure>>,
+    pub wakes: Mutex<Vec<SyncTime>>,
     receiver: Mutex<BTreeMap<String, ReceiverReceipt>>,
 }
 
@@ -33,6 +35,9 @@ impl TestHost {
             effects: AtomicU64::new(0),
             lose_answers: AtomicU64::new(0),
             retry_calls: AtomicBool::new(false),
+            hang_after_effect: AtomicBool::new(false),
+            failures: Mutex::new(VecDeque::new()),
+            wakes: Mutex::new(Vec::new()),
             receiver: Mutex::new(BTreeMap::new()),
         })
     }
@@ -60,9 +65,13 @@ impl Host for TestHost {
         call: CallId,
     ) -> Result<C::Answer, CallFailure> {
         self.deliveries.fetch_add(1, Ordering::SeqCst);
+        let scripted = self.failures.lock().map_err(refused)?.pop_front();
+        if let Some(failure) = scripted {
+            return Err(failure);
+        }
         if self.retry_calls.load(Ordering::SeqCst) {
-            return Err(CallFailure::Retry {
-                after: Duration::from_millis(10),
+            return Err(CallFailure::NotSent {
+                reason: durable_steps::NotSentReason::Unreachable { last_seen: None },
             });
         }
         let key = serde_json::to_string(&call).map_err(refused)?;
@@ -88,6 +97,9 @@ impl Host for TestHost {
                 output
             }
         };
+        if self.hang_after_effect.load(Ordering::SeqCst) {
+            std::future::pending::<()>().await;
+        }
         if self
             .lose_answers
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
@@ -101,13 +113,17 @@ impl Host for TestHost {
     }
 }
 
-fn refused(error: impl std::fmt::Display) -> CallFailure {
-    CallFailure::Refused {
-        reason: error.to_string(),
-    }
+fn refused(_error: impl std::fmt::Display) -> CallFailure {
+    CallFailure::AnswerLost
 }
 impl WakeScheduler for TestHost {
-    async fn wake_at(&self, _at: SyncTime) -> Result<(), WakeFailure> {
+    async fn wake_at(&self, at: SyncTime) -> Result<(), WakeFailure> {
+        self.wakes
+            .lock()
+            .map_err(|error| WakeFailure::Unavailable {
+                message: error.to_string(),
+            })?
+            .push(at);
         Ok(())
     }
 }

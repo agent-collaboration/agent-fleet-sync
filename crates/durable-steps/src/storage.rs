@@ -24,11 +24,66 @@ pub trait TransactionScope: Send {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OperationRecord {
-    pub status: OperationStatus,
+    pub id: OperationId,
+    pub kind: String,
     pub version: u32,
     pub request_key: RequestKey,
-    pub input: Vec<u8>,
     pub input_digest: Vec<u8>,
+    pub execution: OperationExecution,
+}
+
+/// Inputs exist only while running. Finished rows contain no input or steps.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum OperationExecution {
+    Running {
+        input: Vec<u8>,
+        next_attempt_at: SyncTime,
+        attempt: u32,
+        drive: Option<DriveLease>,
+    },
+    Completed {
+        result: Vec<u8>,
+        finished_at: SyncTime,
+    },
+    Failed {
+        reason: crate::OperationFailure,
+        finished_at: SyncTime,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OperationOutcome {
+    Completed { result: Vec<u8> },
+    Failed { reason: crate::OperationFailure },
+}
+
+impl OperationRecord {
+    pub fn status(&self) -> OperationStatus {
+        let state = match &self.execution {
+            OperationExecution::Running {
+                next_attempt_at,
+                attempt,
+                drive,
+                ..
+            } => OperationState::Running {
+                next_attempt_at: *next_attempt_at,
+                attempt: *attempt,
+                drive: drive.clone(),
+            },
+            OperationExecution::Completed { result, .. } => OperationState::Completed {
+                result: result.clone(),
+            },
+            OperationExecution::Failed { reason, .. } => OperationState::Failed {
+                reason: reason.clone(),
+            },
+        };
+        OperationStatus {
+            id: self.id,
+            kind: self.kind.clone(),
+            state,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -38,16 +93,39 @@ pub enum StepState {
         output: Vec<u8>,
     },
     CallPending {
-        target: String,
-        request_digest: Vec<u8>,
-        replay: CallReplay,
+        intent: CallIntent,
+        attempt: CallAttempt,
     },
     CallDone {
-        target: String,
-        request_digest: Vec<u8>,
-        replay: CallReplay,
+        intent: CallIntent,
+        attempt: CallAttempt,
         output: Vec<u8>,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CallIntent {
+    pub target: String,
+    pub request_digest: Vec<u8>,
+    pub replay: CallReplay,
+    pub unsent_for: Option<std::time::Duration>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CallAttempt {
+    pub first_attempt_at: SyncTime,
+    pub last_seen: Option<SyncTime>,
+    pub reach: CallReach,
+}
+
+/// Dispatching is committed before sending. On recovery its unanswered attempt
+/// may have reached the receiver, even if the host never returned AnswerLost.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CallReach {
+    NeverSent,
+    Dispatching,
+    MayHaveReached,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -78,11 +156,20 @@ pub trait JournalStorage: Send {
         id: OperationId,
         token: Uuid,
     ) -> impl Future<Output = Result<(), StoreError>> + Send;
-    fn set_state(
+    fn retry(
         &mut self,
         id: OperationId,
         token: Uuid,
-        state: OperationState,
+        next_attempt_at: SyncTime,
+        attempt: u32,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
+    fn finish(
+        &mut self,
+        id: OperationId,
+        token: Uuid,
+        outcome: OperationOutcome,
+        at: SyncTime,
+        keep_result: bool,
     ) -> impl Future<Output = Result<(), StoreError>> + Send;
     fn step(
         &mut self,

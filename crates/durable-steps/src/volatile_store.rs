@@ -1,9 +1,9 @@
 //! Volatile conformance store. Reopening this handle never proves process durability.
 
 use crate::{
-    Admitted, AtomicStore, BoxFuture, DriveLease, Host, JournalScope, OperationId, OperationState,
-    OperationStatus, RequestKey, StartRefusal, StoreError, SyncTime, Task,
-    storage::{JournalStorage, OperationRecord, StepRecord},
+    Admitted, AtomicStore, BoxFuture, DriveLease, Host, JournalScope, OperationId, RequestKey,
+    StartRefusal, StoreError, SyncTime, Task,
+    storage::{JournalStorage, OperationExecution, OperationOutcome, OperationRecord, StepRecord},
 };
 use futures_util::lock::Mutex;
 use serde::{Serialize, de::DeserializeOwned};
@@ -133,19 +133,17 @@ impl<H: Host> JournalScope for VolatileScope<'_, H> {
         self.state.operations.insert(
             id,
             OperationRecord {
-                status: OperationStatus {
-                    id,
-                    kind: T::KIND.into(),
-                    state: OperationState::Running {
-                        next_attempt_at: now,
-                        attempt: 0,
-                        drive: None,
-                    },
-                },
+                id,
+                kind: T::KIND.into(),
                 version: T::VERSION,
                 request_key: request_key.clone(),
-                input: canonical,
                 input_digest: digest,
+                execution: OperationExecution::Running {
+                    input: canonical,
+                    next_attempt_at: now,
+                    attempt: 0,
+                    drive: None,
+                },
             },
         );
         self.state.requests.insert(lookup, id);
@@ -169,15 +167,15 @@ impl<H: Host> JournalStorage for VolatileScope<'_, H> {
             .state
             .operations
             .values()
-            .filter_map(|record| match &record.status.state {
-                OperationState::Running {
+            .filter_map(|record| match &record.execution {
+                OperationExecution::Running {
                     next_attempt_at,
                     drive,
                     ..
                 } if *next_attempt_at <= now
                     && drive.as_ref().is_none_or(|lease| lease.until <= now) =>
                 {
-                    Some(record.status.id)
+                    Some(record.id)
                 }
                 _ => None,
             })
@@ -195,8 +193,8 @@ impl<H: Host> JournalStorage for VolatileScope<'_, H> {
             .operations
             .get_mut(&id)
             .ok_or(StoreError::MissingOperation { id })?;
-        match &mut record.status.state {
-            OperationState::Running {
+        match &mut record.execution {
+            OperationExecution::Running {
                 next_attempt_at,
                 drive,
                 ..
@@ -215,28 +213,82 @@ impl<H: Host> JournalStorage for VolatileScope<'_, H> {
             .state
             .operations
             .get(&id)
-            .map(|record| &record.status.state)
+            .map(|record| &record.execution)
         {
-            Some(OperationState::Running {
+            Some(OperationExecution::Running {
                 drive: Some(lease), ..
             }) if lease.token == token => Ok(()),
             _ => Err(StoreError::StaleDriveToken { id }),
         }
     }
 
-    async fn set_state(
+    async fn retry(
         &mut self,
         id: OperationId,
         token: Uuid,
-        state: OperationState,
+        next: SyncTime,
+        attempt: u32,
+    ) -> Result<(), StoreError> {
+        self.check_token(id, token).await?;
+        let record = self
+            .state
+            .operations
+            .get_mut(&id)
+            .ok_or(StoreError::MissingOperation { id })?;
+        match &mut record.execution {
+            OperationExecution::Running {
+                next_attempt_at,
+                attempt: current,
+                drive,
+                ..
+            } => {
+                *next_attempt_at = next;
+                *current = attempt;
+                *drive = None;
+                Ok(())
+            }
+            _ => Err(StoreError::StaleDriveToken { id }),
+        }
+    }
+
+    async fn finish(
+        &mut self,
+        id: OperationId,
+        token: Uuid,
+        outcome: OperationOutcome,
+        at: SyncTime,
+        keep_result: bool,
     ) -> Result<(), StoreError> {
         self.check_token(id, token).await?;
         self.state
-            .operations
-            .get_mut(&id)
-            .ok_or(StoreError::MissingOperation { id })?
-            .status
-            .state = state;
+            .steps
+            .retain(|(operation, _), _| *operation != id);
+        if keep_result {
+            let record = self
+                .state
+                .operations
+                .get_mut(&id)
+                .ok_or(StoreError::MissingOperation { id })?;
+            record.execution = match outcome {
+                OperationOutcome::Completed { result } => OperationExecution::Completed {
+                    result,
+                    finished_at: at,
+                },
+                OperationOutcome::Failed { reason } => OperationExecution::Failed {
+                    reason,
+                    finished_at: at,
+                },
+            };
+        } else {
+            let record = self
+                .state
+                .operations
+                .remove(&id)
+                .ok_or(StoreError::MissingOperation { id })?;
+            self.state
+                .requests
+                .remove(&(record.kind, record.request_key));
+        }
         Ok(())
     }
 
@@ -281,8 +333,8 @@ impl<H: Host> JournalStorage for VolatileScope<'_, H> {
             .state
             .operations
             .values()
-            .filter_map(|record| match &record.status.state {
-                OperationState::Running {
+            .filter_map(|record| match &record.execution {
+                OperationExecution::Running {
                     next_attempt_at,
                     drive,
                     ..

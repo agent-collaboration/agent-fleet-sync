@@ -1,0 +1,124 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT operation_id AS \"operation_id!\", kind AS \"kind!\", kind_version AS \"kind_version!: i64\",\n       request_key AS \"request_key!\", input, input_digest AS \"input_digest!\", state AS \"state!\",\n       result, failure, finished_at AS \"finished_at?: i64\", next_attempt_at AS \"next_attempt_at?: i64\", attempt AS \"attempt!: i64\",\n       drive_token, drive_until AS \"drive_until?: i64\"\nFROM _fleet_sync_operations WHERE operation_id = ?\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "operation_id!",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind!",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "kind_version!: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "request_key!",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "input",
+        "type_info": {
+          "name": "BLOB"
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "input_digest!",
+        "type_info": {
+          "name": "BLOB"
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "state!",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "result",
+        "type_info": {
+          "name": "BLOB"
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "failure",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "finished_at?: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "next_attempt_at?: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "attempt!: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "drive_token",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "drive_until?: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "e755e2582d874265f0c8c48f9bf83d9d17e925e8e27e38ae3abc52ca21c3e55f"
+}
