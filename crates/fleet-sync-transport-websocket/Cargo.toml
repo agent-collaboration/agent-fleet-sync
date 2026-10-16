@@ -20,6 +20,9 @@ runtime-primitives = { path = "../runtime-primitives", features = ["tokio"] }
 serde.workspace = true
 serde_json.workspace = true
 uuid = { version = "1.26.0", default-features = false, features = ["v7", "serde"] }
+sqlx = { workspace = true, features = ["migrate", "macros"] }
+sqlx-turso.workspace = true
+tempfile = "3.27.0"
 
 [lints]
 workspace = true

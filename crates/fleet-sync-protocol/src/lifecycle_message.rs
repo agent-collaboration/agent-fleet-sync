@@ -76,6 +76,7 @@ pub enum SeedPageAnswer {
     SeedConflict,
     NotSeedable,
     Retired,
+    StaleSeed,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -92,6 +93,52 @@ pub enum SeedAnswer {
     DigestMismatch { table: TableName },
     SchemaMismatch,
     Retired,
+    StaleSeed,
+}
+
+impl PageDigest {
+    pub fn of(page: &SnapshotPage) -> Result<Self, DigestError> {
+        Self::of_canonical(page)
+    }
+}
+
+/// Hash rows in declared primary-key order, retaining each row's declared column order.
+/// Streaming uses the same canonical JSON array encoding as `PieceDigest`.
+pub struct TableDigestBuilder {
+    hasher: sha2::Sha256,
+    has_rows: bool,
+}
+impl TableDigestBuilder {
+    pub fn new() -> Self {
+        use sha2::Digest;
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(b"[");
+        Self {
+            hasher,
+            has_rows: false,
+        }
+    }
+    pub fn push_row(&mut self, row: &[SqlValue]) -> Result<(), DigestError> {
+        use sha2::Digest;
+        let encoded =
+            serde_json::to_vec(row).map_err(|error| DigestError::Encoding(error.to_string()))?;
+        if self.has_rows {
+            self.hasher.update(b",");
+        }
+        self.hasher.update(encoded);
+        self.has_rows = true;
+        Ok(())
+    }
+    pub fn finish(mut self) -> TableDigest {
+        use sha2::Digest;
+        self.hasher.update(b"]");
+        TableDigest(PieceDigest::from_sha256(self.hasher.finalize()))
+    }
+}
+impl Default for TableDigestBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

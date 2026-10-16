@@ -27,10 +27,44 @@ fn incomplete_seed_and_failed_holder_change_have_typed_outcomes() {
     assert!(
         matches!(failure, HolderChangeAnswer::Failed { reason } if reason.as_str() == "versionMismatch")
     );
-    let unavailable: HolderChangeAnswer =
-        serde_json::from_str(r#"{"kind":"holderUnreachable","value":{"lastSeen":null}}"#).unwrap();
+    let unavailable: HolderChangeAnswer = serde_json::from_str(
+        r#"{"kind":"refused","value":{"kind":"holderUnreachable","value":{"lastSeen":null}}}"#,
+    )
+    .unwrap();
     assert!(matches!(
         unavailable,
-        HolderChangeAnswer::HolderUnreachable { last_seen: None }
+        HolderChangeAnswer::Refused(HolderChangeRefusal::HolderUnreachable { last_seen: None })
     ));
+}
+
+#[test]
+fn independent_table_digests_match_and_column_or_row_reordering_changes_them() {
+    let rows = [
+        vec![SqlValue::Text("first".into()), SqlValue::Integer(i64::MAX)],
+        vec![
+            SqlValue::Text("second".into()),
+            SqlValue::Blob(vec![0, 255]),
+        ],
+    ];
+    let mut writer = TableDigestBuilder::new();
+    let mut copy = TableDigestBuilder::new();
+    for row in &rows {
+        writer.push_row(row).unwrap();
+        copy.push_row(row).unwrap();
+    }
+    let expected = writer.finish();
+    assert_eq!(copy.finish(), expected);
+    let mut columns_reordered = TableDigestBuilder::new();
+    for row in &rows {
+        columns_reordered
+            .push_row(&row.iter().cloned().rev().collect::<Vec<_>>())
+            .unwrap();
+    }
+    assert_ne!(columns_reordered.finish(), expected);
+    let mut rows_reordered = TableDigestBuilder::new();
+    for row in rows.iter().rev() {
+        rows_reordered.push_row(row).unwrap();
+    }
+    assert_ne!(rows_reordered.finish(), expected);
+    assert_ne!(TableDigestBuilder::new().finish(), expected);
 }

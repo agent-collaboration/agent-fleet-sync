@@ -40,9 +40,14 @@ uuid_id!(
     ConnectionId,
     FrameId,
     RequestId,
-    TransferId,
-    SeedId
+    TransferId
 );
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SeedId {
+    pub generation: u64,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("epoch must be at least 1")]

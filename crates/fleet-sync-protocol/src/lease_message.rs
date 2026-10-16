@@ -54,6 +54,8 @@ pub enum LeaseRefusal {
     },
     NoAuthoritativeCopy,
     EpochUnprovable,
+    NotRegistered,
+    Retired,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -132,6 +134,13 @@ pub enum HolderChangeRefusal {
     AlreadyHeld,
     NotFound,
     Unavailable,
+    Superseded {
+        by: TransferId,
+    },
+    HolderUnreachable {
+        last_seen: Option<SyncTime>,
+    },
+    Retired,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -152,10 +161,6 @@ pub enum HolderChangeAnswer {
         transfer: TransferId,
     },
     Refused(HolderChangeRefusal),
-    HolderUnreachable {
-        last_seen: Option<SyncTime>,
-    },
-    Retired,
     Failed {
         reason: crate::FailureCode,
     },
@@ -170,8 +175,12 @@ pub enum HolderChangeAnswer {
     deny_unknown_fields
 )]
 pub enum LeaseRequest {
+    Register(crate::Registration),
     Renew(RenewRequest),
-    HolderChange(HolderChangeRequest),
+    Claim {
+        attempt: RequestId,
+        database: DatabaseId,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -183,6 +192,7 @@ pub enum LeaseRequest {
     deny_unknown_fields
 )]
 pub enum LeaseAnswer {
+    Register(crate::RegistrationAnswer),
     Renew(RenewAnswer),
-    HolderChange(HolderChangeAnswer),
+    Claim(HolderChangeAnswer),
 }

@@ -773,6 +773,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "fleet-sync-query-gen"
+version = "0.1.0"
+dependencies = [
+ "durable-steps",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx-core",
+ "sqlx-turso",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "turso_parser",
+]
+
+[[package]]
 name = "fleet-sync-session"
 version = "0.1.0"
 dependencies = [
@@ -798,6 +814,9 @@ dependencies = [
  "runtime-primitives",
  "serde",
  "serde_json",
+ "sqlx",
+ "sqlx-turso",
+ "tempfile",
  "tokio",
  "tokio-tungstenite",
  "uuid",

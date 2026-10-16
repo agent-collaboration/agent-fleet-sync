@@ -75,9 +75,18 @@ pub enum DatabaseStatus {
 )]
 pub enum ReplicationRequest<A = ()> {
     Piece(Piece<A>),
-    Snapshot {
+    SeedBegin {
+        database: DatabaseId,
+        attempt: uuid::Uuid,
+    },
+    SeedPage(Box<SeedPage>),
+    SeedComplete(SeedComplete),
+    SnapshotPage {
         database: DatabaseId,
         cursor: Option<SnapshotCursor>,
+    },
+    CopyStatus {
+        database: DatabaseId,
     },
 }
 
@@ -116,6 +125,7 @@ pub enum PieceRefusal {
     },
     NotInitialized,
     CopyFull,
+    Retired,
     Hook(HookRefusal),
 }
 
@@ -140,7 +150,13 @@ pub enum ReplicationAnswer {
         acked: ReplicationPosition,
     },
     Refused(PieceRefusal),
-    Snapshot(SnapshotRead),
+    SeedStarted {
+        seed: SeedId,
+    },
+    SeedPage(SeedPageAnswer),
+    SeedComplete(SeedAnswer),
+    SnapshotPage(SnapshotRead),
+    CopyStatus(Option<CopyStatus>),
 }
 
 #[derive(Serialize, Deserialize)]

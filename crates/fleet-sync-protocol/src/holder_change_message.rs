@@ -44,6 +44,7 @@ pub enum FenceResult {
         supported: u64,
     },
     NotInitialized,
+    Retired,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

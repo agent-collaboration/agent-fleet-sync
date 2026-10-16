@@ -54,16 +54,9 @@ impl PieceDigest {
     ) -> Result<Self, DigestError> {
         let encoded = serde_json::to_vec(content)
             .map_err(|error| DigestError::Encoding(error.to_string()))?;
-        let hash = Sha256::digest(encoded);
-        let mut hexadecimal = String::with_capacity(64);
-        const DIGITS: &[u8; 16] = b"0123456789abcdef";
-        for byte in hash {
-            for nibble in [byte >> 4, byte & 15] {
-                if let Some(character) = DIGITS.get(usize::from(nibble)) {
-                    hexadecimal.push(char::from(*character));
-                }
-            }
-        }
-        Ok(Self(hexadecimal))
+        Ok(Self::from_sha256(Sha256::digest(encoded)))
+    }
+    pub(crate) fn from_sha256(hash: sha2::digest::Output<Sha256>) -> Self {
+        Self(format!("{hash:x}"))
     }
 }
