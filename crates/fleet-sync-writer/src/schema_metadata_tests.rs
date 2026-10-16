@@ -136,7 +136,8 @@ async fn table_layout_keeps_declared_column_and_key_order_distinct() -> TestResu
     connection
         .execute("CREATE TABLE ordered_keys(b INTEGER NOT NULL,label TEXT,a TEXT NOT NULL,PRIMARY KEY(a,b))")
         .await?;
-    let layout = read_layout(&mut connection, &TableName::new("ordered_keys")?).await?;
+    let layout = read_layout(&mut connection, &TableName::new("ORDERED_KEYS")?).await?;
+    assert_eq!(layout.name(), "ordered_keys");
     assert_eq!(layout.columns(), ["b", "label", "a"]);
     assert_eq!(layout.primary_key(), [2, 0]);
     Ok(())

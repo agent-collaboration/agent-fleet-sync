@@ -27,7 +27,7 @@ where
             transaction.commit().await?;
             return Ok(Vec::new());
         }
-        let head = sender_storage::capture_head(&mut transaction, &record).await?;
+        let head = crate::capture_stream::capture_head(&mut transaction, &record).await?;
         let mut events = Vec::new();
         for copy in &mut copies {
             if copy.needs_snapshot {

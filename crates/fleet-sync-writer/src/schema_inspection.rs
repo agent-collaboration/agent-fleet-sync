@@ -100,16 +100,16 @@ pub(crate) async fn read_layout(
     }
     let primary_key = keys.into_values().collect::<Vec<_>>();
     let entries = schema_entries(connection).await?;
-    let statement = entries
+    let entry = entries
         .iter()
         .find(|(entry, _)| {
             entry.kind == SchemaObjectKind::Table && entry.name.eq_ignore_ascii_case(table.as_str())
         })
-        .map(|(entry, _)| entry.sql.as_str())
+        .map(|(entry, _)| entry)
         .ok_or_else(|| OpenError::corrupt("schema.table_sql"))?;
     // Use the pinned engine's own lowering: INTEGER PRIMARY KEY DESC and
     // WITHOUT ROWID must not receive the rowid-alias exemption by type alone.
-    let definition = turso::core::schema::BTreeTable::from_sql(statement, 0)
+    let definition = turso::core::schema::BTreeTable::from_sql(&entry.sql, 0)
         .map_err(|_| OpenError::corrupt("schema.table_sql"))?;
     let integer_primary_key = definition.get_rowid_alias_column().map(|(index, _)| index);
     if integer_primary_key.is_some_and(|index| {
@@ -133,7 +133,7 @@ pub(crate) async fn read_layout(
         }
     }
     TableLayout::new(
-        table.as_str().into(),
+        entry.name.clone(),
         columns,
         primary_key,
         integer_primary_key,

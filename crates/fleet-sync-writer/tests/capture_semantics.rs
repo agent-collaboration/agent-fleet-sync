@@ -224,3 +224,56 @@ fn corrupt_images_and_invalid_catalogs_fail_closed() -> TestResult {
     ));
     Ok(())
 }
+
+#[tokio::test]
+async fn native_infinities_remain_reals_and_native_nan_is_captured_as_null() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("real-values.db");
+    let database = turso::Builder::new_local(path.to_str().ok_or("path")?)
+        .build()
+        .await?;
+    let connection = database.connect()?;
+    connection
+        .execute(
+            "CREATE TABLE records(id INTEGER PRIMARY KEY,value REAL)",
+            (),
+        )
+        .await?;
+    connection
+        .execute("PRAGMA capture_data_changes_conn('full')", ())
+        .await?;
+    for (id, value) in [(1, f64::INFINITY), (2, f64::NEG_INFINITY), (3, f64::NAN)] {
+        connection
+            .execute("INSERT INTO records VALUES(?,?)", (id, value))
+            .await?;
+    }
+    connection
+        .execute("INSERT INTO records VALUES(4,1e999)", ())
+        .await?;
+    let table = TableLayout::new(
+        "records".into(),
+        vec!["id".into(), "value".into()],
+        vec![0],
+        Some(0),
+    )?;
+    let mut capture=connection.query("SELECT before,after FROM turso_cdc WHERE table_name='records' AND change_type=1 ORDER BY change_id",()).await?;
+    let mut values = Vec::new();
+    while let Some(row) = capture.next().await? {
+        let normalized = normalize_capture_change(
+            &table,
+            CaptureChange::Insert {
+                before: row.get::<Option<Vec<u8>>>(0)?,
+                after: row.get::<Option<Vec<u8>>>(1)?,
+            },
+        )?;
+        for change in normalized {
+            if let RowChange::Upsert { values: row, .. } = change {
+                values.push(row.get(1).cloned().ok_or("no real column")?);
+            }
+        }
+    }
+    assert!(
+        matches!(values.as_slice(),[SqlValue::Real(positive),SqlValue::Real(negative),SqlValue::Null,SqlValue::Real(overflow)] if *positive==f64::INFINITY && *negative==f64::NEG_INFINITY && *overflow==f64::INFINITY)
+    );
+    Ok(())
+}

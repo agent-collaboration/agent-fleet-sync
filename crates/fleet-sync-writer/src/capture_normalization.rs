@@ -28,8 +28,8 @@ pub enum CaptureError {
     RowShape { table: String },
     #[error("insert has no supported after image for table {table}")]
     MissingInsertImage { table: String },
-    #[error("capture contains a non-finite real")]
-    NonFiniteReal,
+    #[error("capture contains a NaN real")]
+    NaNReal,
 }
 
 pub fn normalize_capture_change(
@@ -97,8 +97,8 @@ pub(crate) fn decode_image(image: &[u8]) -> Result<Vec<SqlValue>, CaptureError> 
             ValueRef::Numeric(Numeric::Integer(value)) => SqlValue::Integer(value),
             ValueRef::Numeric(Numeric::Float(value)) => {
                 let value = f64::from(value);
-                if !value.is_finite() {
-                    return Err(CaptureError::NonFiniteReal);
+                if value.is_nan() {
+                    return Err(CaptureError::NaNReal);
                 }
                 SqlValue::Real(value)
             }

@@ -9,6 +9,7 @@ mod maintenance_transaction;
 mod migration_execution;
 mod migration_inspection;
 mod migration_ownership;
+mod native_rows;
 mod piece_builder;
 mod read_pool;
 mod replicated_database;
@@ -20,11 +21,13 @@ mod sender_contract;
 mod sender_retention;
 mod sender_runner;
 mod sender_storage;
+mod snapshot_schema;
 mod statement_guard;
 mod write_transaction;
 mod writer_error;
 mod writer_file_record;
 mod writer_scope;
+mod writer_snapshot;
 
 pub use capture_normalization::{CaptureChange, CaptureError, normalize_capture_change};
 pub use maintenance_transaction::MaintenanceTransaction;
@@ -42,6 +45,7 @@ pub use sender_storage::SenderCopyStatus;
 pub use statement_guard::{StatementForm, StatementGuard, StatementRefusal};
 pub use write_transaction::WriteTransaction;
 pub use writer_error::{OpenError, SchemaForm, WriteRefusal};
+pub use writer_snapshot::WriterSnapshot;
 
 #[cfg(test)]
 mod capture_stream_tests;
@@ -54,3 +58,6 @@ mod schema_metadata_tests;
 mod sender_test_fixture;
 #[cfg(test)]
 mod sender_tests;
+
+#[cfg(test)]
+mod writer_snapshot_tests;

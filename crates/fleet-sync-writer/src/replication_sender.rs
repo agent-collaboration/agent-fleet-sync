@@ -81,7 +81,7 @@ where
             .await?
             .ok_or_else(|| OpenError::corrupt("writer.record"))?;
         if start < record.start
-            || start > sender_storage::capture_head(&mut transaction, &record).await?
+            || start > crate::capture_stream::capture_head(&mut transaction, &record).await?
         {
             return Err(SenderError::Invalid {
                 field: "copy.start",
@@ -310,7 +310,8 @@ where
             }
             ReplicationAnswer::Refused(PieceRefusal::Gap { acked }) => {
                 if acked < status.start
-                    || acked > sender_storage::capture_head(&mut transaction, &record).await?
+                    || acked
+                        > crate::capture_stream::capture_head(&mut transaction, &record).await?
                 {
                     return Err(SenderError::Invalid {
                         field: "answer.gap",
@@ -335,7 +336,7 @@ where
                 true
             }
             ReplicationAnswer::Refused(PieceRefusal::StaleEpoch { newer, ended_at }) => {
-                let head = sender_storage::capture_head(&mut transaction, &record).await?;
+                let head = crate::capture_stream::capture_head(&mut transaction, &record).await?;
                 if newer <= record.epoch || ended_at > head {
                     return Err(SenderError::Invalid {
                         field: "answer.stale_epoch",

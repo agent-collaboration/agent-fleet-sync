@@ -90,31 +90,6 @@ pub(crate) async fn assign(
     Ok(())
 }
 
-pub(crate) async fn capture_head(
-    connection: &mut TursoConnection,
-    record: &WriterFileRecord,
-) -> Result<ReplicationPosition, SenderError> {
-    let head = checked_queries::read_capture_head(&mut WriterScope(connection)).await?;
-    let marker = match (head.marker, head.marker_class.as_deref()) {
-        (None, Some("null")) => 0,
-        (Some(value), Some("integer")) => value
-            .parse::<u64>()
-            .map_err(|_| OpenError::corrupt("capture.head"))?,
-        _ => return Err(OpenError::corrupt("capture.head").into()),
-    };
-    if marker < record.retained_change_id {
-        return Err(OpenError::corrupt("capture.head").into());
-    }
-    Ok(if marker == 0 {
-        record.start
-    } else {
-        ReplicationPosition::new(
-            record.epoch,
-            fleet_sync_protocol::CommitSequence::new(marker),
-        )
-    })
-}
-
 pub(crate) async fn rejected_tails(
     connection: &mut TursoConnection,
 ) -> Result<Vec<RejectedTail>, SenderError> {

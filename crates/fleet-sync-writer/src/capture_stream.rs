@@ -277,3 +277,28 @@ pub(crate) async fn read_window(
         }
     }
 }
+
+pub(crate) async fn capture_head(
+    connection: &mut TursoConnection,
+    record: &WriterFileRecord,
+) -> Result<ReplicationPosition, OpenError> {
+    let head = checked_queries::read_capture_head(&mut WriterScope(connection)).await?;
+    let marker = match (head.marker, head.marker_class.as_deref()) {
+        (None, Some("null")) => 0,
+        (Some(value), Some("integer")) => value
+            .parse::<u64>()
+            .map_err(|_| OpenError::corrupt("capture.head"))?,
+        _ => return Err(OpenError::corrupt("capture.head")),
+    };
+    if marker < record.retained_change_id {
+        return Err(OpenError::corrupt("capture.head"));
+    }
+    Ok(if marker == 0 {
+        record.start
+    } else {
+        ReplicationPosition::new(
+            record.epoch,
+            fleet_sync_protocol::CommitSequence::new(marker),
+        )
+    })
+}
