@@ -1,3 +1,4 @@
+mod alarm_cases;
 #[path = "../../../../crates/durable-steps/tests/conformance/mod.rs"]
 mod conformance;
 #[path = "../../journey_task.rs"]
@@ -56,6 +57,7 @@ pub struct StepsObject {
     state: State,
     store: Arc<DurableObjectStore<TestHost>>,
     host: Arc<TestHost>,
+    alarm: AlarmOwner,
 }
 impl DurableObject for StepsObject {
     fn new(state: State, _env: Env) -> Self {
@@ -69,9 +71,14 @@ impl DurableObject for StepsObject {
         let store = Arc::new(DurableObjectStore::new(
             DoConnection::new(state.storage()),
             Arc::clone(&host),
-            alarm,
+            alarm.clone(),
         ));
-        Self { state, store, host }
+        Self {
+            state,
+            store,
+            host,
+            alarm,
+        }
     }
     async fn fetch(&self, request: Request) -> worker::Result<Response> {
         self.store.migrate().await.map_err(worker_error)?;
@@ -80,6 +87,16 @@ impl DurableObject for StepsObject {
             Ok(())
         })).await.map_err(worker_error)?;
         match request.path().as_str() {
+            "/alarm-concurrent" => {
+                let observations = alarm_cases::overlapping_wakes(
+                    &self.state,
+                    &self.alarm,
+                    Arc::clone(&self.store),
+                    self.host.now(),
+                )
+                .await?;
+                Response::from_json(&observations)
+            }
             "/suite" => {
                 let passed = conformance::run(Arc::clone(&self.store), Arc::clone(&self.host))
                     .await

@@ -629,6 +629,7 @@ name = "durable-steps-worker"
 version = "0.1.0"
 dependencies = [
  "durable-steps",
+ "futures-util",
  "runtime-primitives",
  "serde",
  "serde_json",
@@ -1979,6 +1980,7 @@ name = "runtime-primitives"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "futures-util",
  "serde",
  "serde_json",
  "thiserror",

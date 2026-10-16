@@ -1,5 +1,6 @@
 use crate::{SyncTime, WakeFailure, WakeScheduler};
 use chrono::{DateTime, Utc};
+use futures_util::lock::Mutex;
 use std::{future::Future, sync::Arc};
 use worker::{
     ScheduledTime, Storage,
@@ -13,13 +14,13 @@ use worker::{
 /// with the deadline. After an alarm fires, each owner requests its next wake.
 #[derive(Clone)]
 pub struct AlarmOwner {
-    storage: Arc<SendWrapper<Storage>>,
+    storage: Arc<Mutex<SendWrapper<Storage>>>,
 }
 
 impl AlarmOwner {
     pub fn new(storage: Storage) -> Self {
         Self {
-            storage: Arc::new(SendWrapper::new(storage)),
+            storage: Arc::new(Mutex::new(SendWrapper::new(storage))),
         }
     }
 }
@@ -27,7 +28,10 @@ impl AlarmOwner {
 impl WakeScheduler for AlarmOwner {
     fn wake_at(&self, at: SyncTime) -> impl Future<Output = Result<(), WakeFailure>> + Send {
         SendFuture::new(async move {
-            let existing = self.storage.get_alarm().await.map_err(unavailable)?;
+            // Same-event futures bypass the platform's input gate. Hold one
+            // shared async guard across the read/compare/set, including clones.
+            let storage = self.storage.lock().await;
+            let existing = storage.get_alarm().await.map_err(unavailable)?;
             if existing.is_some_and(|current| current <= at.unix_millis()) {
                 return Ok(());
             }
@@ -35,7 +39,7 @@ impl WakeScheduler for AlarmOwner {
                 .ok_or(WakeFailure::InvalidDeadline { at })?;
             // workers-rs interprets an integer as a relative delay. DateTime's
             // conversion selects its absolute Date path, within exact ms range.
-            self.storage
+            storage
                 .set_alarm(ScheduledTime::from(absolute))
                 .await
                 .map_err(unavailable)

@@ -19,15 +19,27 @@ function options(name) {
   };
 }
 try {
-  for (const path of ["/suite", "/alarm-atomic"]) {
+  for (const path of ["/suite", "/alarm-atomic", "/alarm-concurrent"]) {
     const runtime = new Miniflare(options(randomUUID()));
     try {
       await runtime.ready;
-      const response = await runtime.dispatchFetch(`http://steps.local${path}`);
+      const response = await runtime.dispatchFetch(`http://steps.local${path}`, { signal: AbortSignal.timeout(15_000) });
       const body = await response.text();
       console.log(JSON.stringify({ path, status: response.status, body }));
       assert.equal(response.status, 200);
       if (path === "/suite") assert.equal(JSON.parse(body).length, 15);
+      else if (path === "/alarm-concurrent") {
+        const observations = JSON.parse(body);
+        assert.deepEqual(observations.map(({ order }) => order), [
+          "late_then_early", "transaction_late_then_early",
+          "early_then_late", "transaction_early_then_late",
+          "transaction_then_external", "external_then_transaction",
+        ]);
+        for (const { earlier, later, actual } of observations) {
+          assert.ok(earlier < later);
+          assert.equal(actual, earlier);
+        }
+      }
       else assert.ok(Number(JSON.parse(body)) > Date.now());
     } finally { await runtime.dispose(); }
   }
