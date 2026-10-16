@@ -1,14 +1,14 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "../../Cargo.lock": "6b2d623e17c74d9002134b025a87feeec529be7839ba9046a40b31cf80c21797",
+    "../../Cargo.lock": "6432fbdab2cb36628145510606d6e016da578ecad402864de5adc6aa925b4dd3",
     "../../rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "../fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "../fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "../fleet-sync-query-gen/src/lib.rs": "e2c75aea7e0202d0ad0a71394dba18ec229ee625a43ff180f9388702242cb477",
     "../fleet-sync-query-gen/src/main.rs": "528bf0583d11bde8fc4b7c0d5a2ea21bde8380e452c0c123a22929dfa5635cfd",
     "../fleet-sync-query-gen/src/native_generation.rs": "c27944fb2f548a37c68c75fd33cef7cd32a4e9c7fa5170acc4f8ddd5c4394883",
-    "../fleet-sync-query-gen/src/query_render.rs": "f0774c13b73fe7272baab2325588afd0e64b10bf97e73fc474b296501f65da4b",
+    "../fleet-sync-query-gen/src/query_render.rs": "2584f37650c8355b5537362ff5f66c8cf6a3955eb7a903faa5c5887ec26c880a",
     "../fleet-sync-query-gen/src/source_freshness.rs": "caf2814c7255afdb3fc3714f3c6bb093702a6cfd3ca9d26c01896c75824f9583",
     "../fleet-sync-query-gen/src/source_manifest.rs": "770e53cb230b27d44731507738e08f7217dba8fc230617d97bda765c78be8ad8",
     "../sqlx-durable-object-core/Cargo.toml": "5af0f7433ff001c4f2347d0575306bb35da43f53b3b75ae4c0fb2c3a0b5e308f",
@@ -73,7 +73,7 @@
     "sql/write_seed.sql": "1760686d585a282c49d7eee530ebe6bcd883d49623d339587ba861adfb372783",
     "sql/write_seed_attempt.sql": "6b7bb9dd642308388c49521b264703c0291d95870d6c172caece780aecd583eb",
     "sql/write_seed_page.sql": "2f10b3342821b1a27f8683e064f8445dd16f74c761b5d095a0c56e0f991c95d8",
-    "src/checked_queries.rs": "7bdd8f9f21edad100da3a20af2f28df852771a3b44013588e9ada77ac82eb0db"
+    "src/checked_queries.rs": "aca5349efcb7267155aaf3ab0cdadbf515c585e42ef7c3abe9f6fc5221391ee4"
   },
   "queries": [
     {

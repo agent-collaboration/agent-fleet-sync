@@ -1,4 +1,4 @@
-use fleet_sync_protocol::{Epoch, ReplicationPosition, SyncTime, TransferId};
+use fleet_sync_protocol::{Epoch, ReceiverId, ReplicationPosition, SyncTime, TransferId};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -41,4 +41,14 @@ pub enum WriterState {
     Superseded {
         current: Epoch,
     },
+}
+
+/// Host configuration for the registry's authoritative copy and call policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RegistryConfig {
+    pub lease: LeasePolicy,
+    pub authoritative_receiver: ReceiverId,
+    pub target_schema_max: u64,
+    pub release_unsent_for: Duration,
 }

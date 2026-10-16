@@ -1,4 +1,6 @@
 //! Seed generation, staging and atomic publication on the owned native driver.
+// Result propagates fixture/storage failures; assertions identify contract violations.
+#![allow(clippy::panic_in_result_fn)]
 use crate::*;
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::*;

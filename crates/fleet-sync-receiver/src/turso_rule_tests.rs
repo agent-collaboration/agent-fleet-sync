@@ -1,4 +1,6 @@
 //! Rule outcomes and rollback over the real Turso transaction boundary.
+// Result propagates fixture/storage failures; assertions identify contract violations.
+#![allow(clippy::panic_in_result_fn)]
 use crate::*;
 use durable_steps::{CallId, storage::TransactionScope};
 use fleet_sync_protocol::*;

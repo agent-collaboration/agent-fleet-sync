@@ -1,5 +1,6 @@
 //! Replication copy rules; the host owns transactions and carries out effects after commit.
 
+mod apply_follow_up;
 mod apply_rules;
 mod bound_sql;
 mod checked_queries;
@@ -18,6 +19,7 @@ mod seed_storage;
 mod snapshot_reads;
 mod sql_transport;
 
+pub use apply_follow_up::{ApplyFollowUp, FollowUpCall, FollowUpInput, admit_follow_ups};
 pub use apply_rules::{apply_piece, discard_staged_parts};
 pub use copy_lifecycle::{copy_status, create_copy, retire_copy};
 pub use fence_rules::fence;
@@ -39,3 +41,6 @@ mod turso_rule_tests;
 
 #[cfg(test)]
 mod turso_seed_tests;
+
+#[cfg(test)]
+mod turso_follow_up_tests;

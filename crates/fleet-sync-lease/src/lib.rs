@@ -9,4 +9,4 @@ pub use fleet_sync_protocol::{
     Epoch, HolderChangeAnswer, HolderChangeRefusal, HolderChangeRequest, LeaseRefusal, LeaseState,
     LeaseStatus, RenewAnswer, RenewRequest, RenewResult, ReplicationPosition, SyncTime, TransferId,
 };
-pub use lease_values::{LeasePolicy, WriterState};
+pub use lease_values::{LeasePolicy, RegistryConfig, WriterState};

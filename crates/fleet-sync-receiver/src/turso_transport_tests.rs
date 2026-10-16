@@ -1,4 +1,6 @@
 //! The dynamic row boundary against the owned SQLx Turso driver, inside real transactions.
+// Result propagates fixture/storage failures; assertions identify contract violations.
+#![allow(clippy::panic_in_result_fn)]
 use crate::{
     BoundStatement, StoreError,
     row_apply::{TableColumn, plan_row_change},
