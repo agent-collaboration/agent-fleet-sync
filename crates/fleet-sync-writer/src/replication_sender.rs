@@ -358,19 +358,19 @@ where
                         events.push(ReplicationEvents::RejectedTail(tail));
                     }
                 }
-                transaction.commit().await?;
-                control
-                    .holder
-                    .observe_renewal(
-                        RenewAnswer::Refused(LeaseRefusal::StaleEpoch {
+                let observation = crate::writer_authority::save_observation(
+                    &mut transaction,
+                    crate::writer_authority::AuthorityObservation::Renewal {
+                        answer: RenewAnswer::Refused(LeaseRefusal::StaleEpoch {
                             current_epoch: newer,
                             epoch_ended_at: ended_at,
                         }),
-                        self.database.clock.now(),
-                    )
-                    .map_err(|_| SenderError::Invalid {
-                        field: "holder.stale_epoch",
-                    })?;
+                        request_started: self.database.clock.now(),
+                    },
+                )
+                .await?;
+                transaction.commit().await?;
+                observation.restore(&mut control.holder, record.epoch)?;
                 events.push(ReplicationEvents::LeaseChanged(
                     control
                         .holder
@@ -384,8 +384,7 @@ where
             ReplicationAnswer::Refused(
                 reason @ (PieceRefusal::Retired | PieceRefusal::NotWriter { .. }),
             ) => {
-                transaction.commit().await?;
-                if status.role == CopyRole::Authoritative {
+                let observation = if status.role == CopyRole::Authoritative {
                     let refusal = match &reason {
                         PieceRefusal::Retired => LeaseRefusal::Retired,
                         PieceRefusal::NotWriter { current } => {
@@ -397,12 +396,22 @@ where
                             });
                         }
                     };
-                    control
-                        .holder
-                        .observe_renewal(RenewAnswer::Refused(refusal), self.database.clock.now())
-                        .map_err(|_| SenderError::Invalid {
-                            field: "holder.refusal",
-                        })?;
+                    Some(
+                        crate::writer_authority::save_observation(
+                            &mut transaction,
+                            crate::writer_authority::AuthorityObservation::Renewal {
+                                answer: RenewAnswer::Refused(refusal),
+                                request_started: self.database.clock.now(),
+                            },
+                        )
+                        .await?,
+                    )
+                } else {
+                    None
+                };
+                transaction.commit().await?;
+                if let Some(observation) = observation {
+                    observation.restore(&mut control.holder, record.epoch)?;
                 }
                 return Err(SenderError::Refused { copy, reason });
             }

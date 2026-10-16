@@ -224,6 +224,35 @@
           "nullable": false
         }
       ]
+    },
+    {
+      "name": "read_releases",
+      "sql": "sql/read_releases.sql",
+      "row": "StoredReleaseRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "write_release",
+      "sql": "sql/write_release.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "database_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "call_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
     }
   ]
 }

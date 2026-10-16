@@ -49,8 +49,8 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "8e5662e5f63241b07145c65ed623865300238542269d285cd341a75dc4a8bbcd",
-    "migrations/0001_writer_bookkeeping.sql": "4202f8eaaf326395e2f393904c7b4ac46bb61ae1de1ae0fd36eb3b94812fc1f4",
+    "checked-queries.json": "201ee1d9ff756bba7c795382dfbc2987e49603f7e34e537992d614aa734ae6a3",
+    "migrations/0001_writer_bookkeeping.sql": "b21f22f18dbb1544d0964ac419ba309db198b365f72d1acd74f3e665ae133bda",
     "query-schema/99990001_capture_query_schema.sql": "1e1ee98953e04f6edcd18b85abc33326819a0e0210f3fc42717e4cd30e4b1c98",
     "sql/delete_rejected_tail.sql": "0de2677b858fc5052ee8bcf70581bfd4b80659215aa10eda7861fc7304266c37",
     "sql/prune_capture.sql": "dae53de9d01be7b35bfe30848e8277de952923ec5166a0c2dff0b612131e68b3",
@@ -61,6 +61,7 @@
     "sql/read_copies.sql": "043e8d18c84ffa88fd83b5e4b2d5f95855fa1570f5abc805d4b0efe7f7d2d312",
     "sql/read_foreign_keys.sql": "7ecca70236bf3d19a579874c974a159bd9ed565aa2523e305c8b8870a4d22387",
     "sql/read_rejected_tails.sql": "a99bff59e8094ff8a11c529a9097e46566c9e0349a647fdb9d1dc35936d925ea",
+    "sql/read_releases.sql": "274425ccc08d444224b2ed343eab6c77bfdcd5041eae0e014ecf83b18195f273",
     "sql/read_schema_entries.sql": "770651a8f1a53c6a4889f5f13b257dcf222d3bff6fb72b0dc0f8aefbd2159cff",
     "sql/read_schema_steps.sql": "3c0aa81957437cc9bf14b9c229ceb1f9eb15d6f74139839a84898ce67992e70d",
     "sql/read_table_columns.sql": "fd86e2739bc2c7aaf8e54a230d92da3b6610e9ff838fc0b12a12927ae9af1ebb",
@@ -68,9 +69,10 @@
     "sql/write_capture_assignment.sql": "82b8febda2827ace8217d55c8856954781f18dd9c3ac9fc1cc00c87b03cc3c37",
     "sql/write_copy.sql": "b0f854058fe943e5a51bf367905113d4836e2f9fa47a5b14d1226444378f1b32",
     "sql/write_rejected_tail.sql": "e9477f19242ed9480bce76ead2f9146d86bd16f49b1e8a582bd2bf7d04eaa848",
+    "sql/write_release.sql": "3d870ecf5b0fb14556afbf069454a0fa7e0f94e53afc68bc1bcf44bc6d6bcd67",
     "sql/write_schema_step.sql": "25bf187503cdca23522d2da0d086a329b812bf5c06e904308956aa8a2f8687cc",
     "sql/write_writer.sql": "2897299ed63abcbcf3162c1bd725e8ff664020aa9a384d7820028341460282bf",
-    "src/checked_queries.rs": "e6b3706ba4d27c2e47f91bf11fda94471fc361c45ad6425d9f9013d44f8c5807"
+    "src/checked_queries.rs": "32631e1b648b486788e282fe89c6babcae3fa3921ccbb3bab1996373eda9cec3"
   },
   "queries": [
     {
@@ -648,6 +650,59 @@
     {
       "name": "delete_rejected_tail",
       "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "read_releases",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "database_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "database_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "call_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "call_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "record_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "write_release",
+      "bind_slots": 3,
       "columns": []
     }
   ]

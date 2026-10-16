@@ -37,6 +37,11 @@ async fn inspect_present_tables(
 impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
     pub async fn migrate(&self) -> Result<(), OpenError> {
         let mut control = self.control.lock().await;
+        {
+            let mut connection = self.maintenance.acquire().await?;
+            crate::writer_authority::restore_authority(&mut connection, &mut control.holder)
+                .await?;
+        }
         let offered = self
             .schema
             .migrations()

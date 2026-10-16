@@ -24,8 +24,11 @@ mod sender_storage;
 mod snapshot_schema;
 mod statement_guard;
 mod write_transaction;
+mod writer_authority;
 mod writer_error;
 mod writer_file_record;
+mod writer_release;
+mod writer_release_record;
 mod writer_scope;
 mod writer_snapshot;
 
@@ -59,5 +62,7 @@ mod sender_test_fixture;
 #[cfg(test)]
 mod sender_tests;
 
+#[cfg(test)]
+mod writer_release_tests;
 #[cfg(test)]
 mod writer_snapshot_tests;

@@ -152,7 +152,21 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                 Some(record) if record.database != database || record.peer != holder.peer() => {
                     return Err(OpenError::corrupt("writer.identity"));
                 }
-                Some(_) => {}
+                Some(record) => {
+                    let epoch = match holder.writer_state(clock.now()) {
+                        Ok(
+                            WriterState::Seeding { epoch }
+                            | WriterState::Writing { epoch }
+                            | WriterState::Paused { epoch, .. }
+                            | WriterState::Draining { epoch, .. }
+                            | WriterState::Released { epoch, .. },
+                        ) => Some(epoch),
+                        _ => None,
+                    };
+                    if epoch.is_some_and(|epoch| epoch != record.epoch) {
+                        return Err(OpenError::corrupt("writer.epoch"));
+                    }
+                }
                 None => {
                     let epoch = match holder
                         .writer_state(clock.now())
@@ -221,19 +235,29 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         if self.writer.is_closed() {
             return Err(WriteRefusal::Closed);
         }
-        WriteTransaction::begin(
-            &self.writer,
-            self.control.clone().lock_owned().await,
-            self.clock.clone(),
-        )
-        .await
+        let mut control = self.control.clone().lock_owned().await;
+        {
+            let mut connection = self
+                .maintenance
+                .acquire()
+                .await
+                .map_err(WriteRefusal::from_sqlx)?;
+            crate::writer_authority::restore_authority(&mut connection, &mut control.holder)
+                .await
+                .map_err(|error| WriteRefusal::Storage {
+                    message: error.to_string(),
+                })?;
+        }
+        WriteTransaction::begin(&self.writer, control, self.clock.clone()).await
     }
-    pub async fn writer_state(&self) -> Result<WriterState, fleet_sync_lease::HolderError> {
-        self.control
-            .lock()
-            .await
+    pub async fn writer_state(&self) -> Result<WriterState, OpenError> {
+        let mut control = self.control.lock().await;
+        let mut connection = self.maintenance.acquire().await?;
+        crate::writer_authority::restore_authority(&mut connection, &mut control.holder).await?;
+        control
             .holder
             .writer_state(self.clock.now())
+            .map_err(|error| OpenError::Holder { error })
     }
     pub async fn close(&self) {
         self.writer.close().await;

@@ -594,3 +594,65 @@ where
         Ok(())
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct StoredReleaseRow {
+    pub database_id: Option<String>,
+    pub database_class: Option<String>,
+    pub call_id: Option<String>,
+    pub call_class: Option<String>,
+    pub record: Option<String>,
+    pub record_class: Option<String>,
+}
+pub(crate) fn read_releases<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<StoredReleaseRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_releases.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredReleaseRow {
+                    database_id: row.try_get("database_id")?,
+                    database_class: row.try_get("database_class")?,
+                    call_id: row.try_get("call_id")?,
+                    call_class: row.try_get("call_class")?,
+                    record: row.try_get("record")?,
+                    record_class: row.try_get("record_class")?,
+                })
+            })
+            .collect()
+    }
+}
+pub(crate) fn write_release<S>(
+    scope: &mut S,
+    database_id: String,
+    call_id: String,
+    record: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_release.sql"
+        )))
+        .bind(database_id)
+        .bind(call_id)
+        .bind(record);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}

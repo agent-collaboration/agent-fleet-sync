@@ -17,6 +17,7 @@ pub(crate) struct WriterFileRecord {
     pub retained_after: ReplicationPosition,
     pub retained_change_id: u64,
     pub retained_layout: Vec<crate::TableLayout>,
+    pub authority: Option<crate::writer_authority::AuthorityObservation>,
 }
 
 impl WriterFileRecord {
@@ -33,6 +34,7 @@ impl WriterFileRecord {
             retained_after: start,
             retained_change_id: 0,
             retained_layout: Vec::new(),
+            authority: None,
         }
     }
 }

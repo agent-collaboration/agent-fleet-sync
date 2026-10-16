@@ -11,7 +11,8 @@ CREATE TABLE _fleet_sync_capture_bookkeeping (
     record TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_release (
-    database_id TEXT PRIMARY KEY,
+    database_id TEXT NOT NULL,
+    call_id TEXT PRIMARY KEY,
     record TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_rejected_tails (

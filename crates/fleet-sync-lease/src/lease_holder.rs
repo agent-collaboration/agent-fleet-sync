@@ -34,6 +34,10 @@ enum WriteActivity {
 #[derive(Clone, Debug)]
 enum HolderAuthority {
     Provisional,
+    Draining {
+        epoch: Epoch,
+        transfer: TransferId,
+    },
     Seeding {
         epoch: Epoch,
     },
@@ -93,6 +97,10 @@ impl LeaseHolder {
     pub fn writer_state(&self, now: SyncTime) -> Result<WriterState, HolderError> {
         Ok(match &self.authority {
             HolderAuthority::Provisional => WriterState::Provisional,
+            HolderAuthority::Draining { epoch, transfer } => WriterState::Draining {
+                epoch: *epoch,
+                transfer: *transfer,
+            },
             HolderAuthority::Seeding { epoch } => WriterState::Seeding { epoch: *epoch },
             HolderAuthority::Lease { cached, activity } => match activity {
                 WriteActivity::Seeding => WriterState::Seeding {
@@ -133,6 +141,19 @@ impl LeaseHolder {
         match &self.authority {
             HolderAuthority::Lease { cached, .. } => Some(cached.renew_at),
             _ => None,
+        }
+    }
+
+    /// A registry or copy proved an epoch above this writer file's epoch.
+    /// Learning that fact cannot restore any authority for the old file.
+    pub fn observe_supersession(&mut self, current: Epoch) {
+        if self.known_epoch().is_none_or(|known| current >= known)
+            && !matches!(
+                self.authority,
+                HolderAuthority::Rejected { .. } | HolderAuthority::Refused(LeaseRefusal::Retired)
+            )
+        {
+            self.authority = HolderAuthority::Superseded { current };
         }
     }
 
@@ -210,6 +231,9 @@ impl LeaseHolder {
             return Ok(());
         }
         let activity = match &self.authority {
+            HolderAuthority::Draining { transfer, .. } => WriteActivity::Draining {
+                transfer: *transfer,
+            },
             HolderAuthority::Seeding { .. } => WriteActivity::Seeding,
             HolderAuthority::Lease { activity, .. } => activity.clone(),
             _ => WriteActivity::Writing,
@@ -233,9 +257,9 @@ impl LeaseHolder {
 
     fn known_epoch(&self) -> Option<Epoch> {
         match &self.authority {
-            HolderAuthority::Seeding { epoch } | HolderAuthority::Released { epoch, .. } => {
-                Some(*epoch)
-            }
+            HolderAuthority::Seeding { epoch }
+            | HolderAuthority::Draining { epoch, .. }
+            | HolderAuthority::Released { epoch, .. } => Some(*epoch),
             HolderAuthority::Lease { cached, .. } => Some(cached.epoch),
             HolderAuthority::Superseded { current } => Some(*current),
             HolderAuthority::Refused(LeaseRefusal::NotWriter {
@@ -248,10 +272,43 @@ impl LeaseHolder {
     }
 
     pub fn reject_registration(&mut self, reason: GateReason) -> Result<(), HolderError> {
+        if matches!(&self.authority, HolderAuthority::Rejected { reason: existing } if *existing == reason)
+        {
+            return Ok(());
+        }
         if !matches!(self.authority, HolderAuthority::Provisional) {
             return Err(HolderError::InvalidTransition);
         }
         self.authority = HolderAuthority::Rejected { reason };
+        Ok(())
+    }
+
+    /// Restore committed release state before admitting work. A newer known
+    /// epoch or a retirement refusal always outranks an old release record.
+    pub fn restore_release(
+        &mut self,
+        epoch: Epoch,
+        transfer: TransferId,
+        final_position: Option<ReplicationPosition>,
+    ) -> Result<(), HolderError> {
+        if final_position.is_some_and(|position| position.epoch != epoch) {
+            return Err(HolderError::LeaseMismatch);
+        }
+        if self.known_epoch().is_some_and(|known| known > epoch)
+            || matches!(
+                self.authority,
+                HolderAuthority::Rejected { .. } | HolderAuthority::Refused(LeaseRefusal::Retired)
+            )
+        {
+            return Ok(());
+        }
+        self.authority = match final_position {
+            Some(final_position) => HolderAuthority::Released {
+                epoch,
+                final_position,
+            },
+            None => HolderAuthority::Draining { epoch, transfer },
+        };
         Ok(())
     }
 

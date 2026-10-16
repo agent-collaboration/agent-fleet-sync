@@ -35,6 +35,10 @@ pub enum SchemaForm {
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum OpenError {
+    #[error("writer authority refused: {error}")]
+    Holder {
+        error: fleet_sync_lease::HolderError,
+    },
     #[error("captured transaction is invalid: {error}")]
     Capture { error: crate::CaptureError },
     #[error("migration write refused: {refusal}")]
