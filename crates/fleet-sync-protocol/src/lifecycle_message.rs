@@ -104,6 +104,7 @@ pub enum SeedAnswer {
     SchemaMismatch,
     Retired,
     StaleSeed,
+    Hook(HookRefusal),
 }
 
 impl PageDigest {

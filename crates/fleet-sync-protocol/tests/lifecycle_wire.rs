@@ -88,3 +88,25 @@ fn copy_origin_distinguishes_expected_registration_position_from_unpositioned_im
         answer
     );
 }
+
+#[test]
+fn seed_hook_refusal_preserves_the_typed_reason_on_the_wire() {
+    let seed_wire =
+        r#"{"kind":"hook","value":{"code":"snapshotRejected","detail":"local rebuild failed"}}"#;
+    let replication_wire = r#"{"kind":"seedComplete","value":{"kind":"hook","value":{"code":"snapshotRejected","detail":"local rebuild failed"}}}"#;
+
+    let seed: SeedAnswer = serde_json::from_str(seed_wire).unwrap();
+    let replication: ReplicationAnswer = serde_json::from_str(replication_wire).unwrap();
+
+    assert_eq!(serde_json::to_string(&seed).unwrap(), seed_wire);
+    assert_eq!(
+        serde_json::to_string(&replication).unwrap(),
+        replication_wire
+    );
+    assert!(
+        serde_json::from_str::<SeedAnswer>(
+            r#"{"kind":"hook","value":{"code":"","detail":"local rebuild failed"}}"#
+        )
+        .is_err()
+    );
+}
