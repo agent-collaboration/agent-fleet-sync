@@ -1,5 +1,7 @@
+use crate::migration_ownership::{MigrationKind, validate_ownership};
 use crate::{OpenError, SchemaForm, TableLayout};
-use std::collections::HashMap;
+use fleet_sync_protocol::{SchemaEntry, TableName};
+use std::collections::{BTreeMap, HashMap};
 use turso_parser::{
     ast::{Cmd, InsertBody, Stmt, UpsertDo},
     parser::Parser,
@@ -23,6 +25,8 @@ pub enum StatementForm {
     TransactionControl,
     #[error("consumer writes cannot change protected table {table}")]
     ProtectedTable { table: String },
+    #[error("capture-off bookkeeping cannot change replicated table {table}")]
+    ReplicatedTableOnMaintenance { table: String },
     #[error("statement form is not admitted")]
     UnsupportedStatement,
 }
@@ -44,7 +48,15 @@ pub struct StatementGuard {
 struct CheckedProfiles {
     read: Result<(), StatementRefusal>,
     write: Result<(), StatementRefusal>,
-    migration: Result<Vec<String>, OpenError>,
+    maintenance: Result<(), StatementRefusal>,
+    migration: Result<Vec<MigrationStatement>, OpenError>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct MigrationStatement {
+    pub sql: String,
+    pub command: Cmd,
+    pub inspection: crate::migration_inspection::MigrationInspection,
 }
 
 impl StatementGuard {
@@ -55,16 +67,56 @@ impl StatementGuard {
         }
     }
 
+    pub(crate) fn layouts(&self) -> &[TableLayout] {
+        &self.tables
+    }
+
     pub fn check(&mut self, sql: &str) -> Result<(), StatementRefusal> {
         self.checked_profiles(sql).write.clone()
+    }
+
+    pub(crate) fn check_maintenance(&mut self, sql: &str) -> Result<(), StatementRefusal> {
+        self.checked_profiles(sql).maintenance.clone()
     }
 
     pub fn check_read(&mut self, sql: &str) -> Result<(), StatementRefusal> {
         self.checked_profiles(sql).read.clone()
     }
 
-    pub(crate) fn migration_statements(&mut self, sql: &str) -> Result<Vec<String>, OpenError> {
-        self.checked_profiles(sql).migration.clone()
+    pub(crate) fn migration_statements(
+        &mut self,
+        sql: &str,
+        declared: &[TableName],
+        catalog: &[(SchemaEntry, String)],
+        kind: MigrationKind,
+    ) -> Result<Vec<String>, OpenError> {
+        let mut views = BTreeMap::new();
+        for (entry, _) in catalog
+            .iter()
+            .filter(|(entry, _)| entry.kind == fleet_sync_protocol::SchemaObjectKind::View)
+        {
+            let parsed = self
+                .checked_profiles(&entry.sql)
+                .migration
+                .as_ref()
+                .map_err(Clone::clone)?;
+            if let Some(statement) = parsed.first() {
+                views.insert(
+                    entry.name.to_ascii_lowercase(),
+                    statement.inspection.clone(),
+                );
+            }
+        }
+        let statements = self
+            .checked_profiles(sql)
+            .migration
+            .as_ref()
+            .map_err(Clone::clone)?;
+        validate_ownership(statements, declared, catalog, views, kind)?;
+        Ok(statements
+            .iter()
+            .map(|statement| statement.sql.clone())
+            .collect())
     }
 
     fn checked_profiles(&mut self, sql: &str) -> &CheckedProfiles {
@@ -74,6 +126,7 @@ impl StatementGuard {
                 Err(error) => CheckedProfiles {
                     read: Err(error.clone()),
                     write: Err(error.clone()),
+                    maintenance: Err(error.clone()),
                     migration: Err(OpenError::SchemaUnsupported {
                         form: SchemaForm::InvalidMigration {
                             statement: sql.into(),
@@ -98,6 +151,7 @@ fn check_statements(
     let mut profiles = CheckedProfiles {
         read: Ok(()),
         write: Ok(()),
+        maintenance: Ok(()),
         migration: Ok(Vec::new()),
     };
     let mut statement_start = 0;
@@ -121,22 +175,34 @@ fn check_statements(
                         detail: error.to_string(),
                     },
                 });
-            } else if let Some(function) =
-                crate::migration_determinism::nondeterministic_function(&command)
-            {
-                profiles.migration = Err(OpenError::SchemaUnsupported {
-                    form: SchemaForm::NonDeterministicMigration {
-                        statement: statement_sql.into(),
-                        function,
-                    },
-                });
             } else if let Ok(statements) = &mut profiles.migration {
-                statements.push(statement_sql.to_owned());
+                statements.push(MigrationStatement {
+                    sql: statement_sql.to_owned(),
+                    inspection: crate::migration_inspection::inspect(&command),
+                    command: command.clone(),
+                });
             }
         }
         let Cmd::Stmt(statement) = &command else {
+            profiles.read = Err(refuse(StatementForm::WriteOnReader));
+            profiles.write = Err(refuse(StatementForm::UnsupportedStatement));
+            profiles.maintenance = Err(refuse(StatementForm::UnsupportedStatement));
             continue;
         };
+        let target = match statement {
+            Stmt::Insert { tbl_name, .. } | Stmt::Delete { tbl_name, .. } => Some(tbl_name),
+            Stmt::Update(update) => Some(&update.tbl_name),
+            _ => None,
+        };
+        if let Some(target) = target
+            && tables
+                .iter()
+                .any(|table| table.name().eq_ignore_ascii_case(target.name.as_str()))
+        {
+            profiles.maintenance = Err(refuse(StatementForm::ReplicatedTableOnMaintenance {
+                table: target.name.as_str().into(),
+            }));
+        }
         let read_only = matches!(statement, Stmt::Select(_))
             || matches!(statement,Stmt::Pragma {name,body} if read_pragma(name.name.as_str(),body.is_some()));
         if !read_only && profiles.read.is_ok() {
@@ -204,18 +270,20 @@ fn check_statements(
                         .iter()
                         .flat_map(|assignment| &assignment.col_names)
                         .any(|column| table.is_primary_key_column(column.as_str()))
+                    && profiles.write.is_ok()
                 {
-                    if profiles.write.is_ok() {
-                        profiles.write = Err(StatementRefusal {
-                            form: StatementForm::KeyChangingUpsert {
-                                table: table.name().to_owned(),
-                            },
-                        });
-                    }
+                    profiles.write = Err(StatementRefusal {
+                        form: StatementForm::KeyChangingUpsert {
+                            table: table.name().to_owned(),
+                        },
+                    });
                 }
                 clause = upsert.next.as_deref();
             }
         }
+    }
+    if profiles.write.is_err() {
+        profiles.maintenance = profiles.write.clone();
     }
     Ok(profiles)
 }

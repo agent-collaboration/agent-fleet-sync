@@ -1,6 +1,7 @@
 use crate::{
     OpenError, ReplicatedDatabase, ReplicatedSchema, SchemaForm, StatementGuard, checked_queries,
     foreign_key_integrity::reject_orphans,
+    migration_ownership::MigrationKind,
     schema_inspection::{inspect_replicated_tables, schema_entries},
     writer_scope::WriterScope,
 };
@@ -106,9 +107,16 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                     .admit(self.clock.now())
                     .map_err(|refusal| OpenError::WriteRefused { refusal })?;
             }
-            let statements = control
-                .statements
-                .migration_statements(migration.sql.as_str())?;
+            let catalog = {
+                let mut connection = self.maintenance.acquire().await?;
+                schema_entries(&mut connection).await?
+            };
+            let statements = control.statements.migration_statements(
+                migration.sql.as_str(),
+                self.schema.replicated_tables(),
+                &catalog,
+                MigrationKind::Replicated,
+            )?;
             let mut connection = self.writer.acquire().await?;
             connection.execute("PRAGMA foreign_keys=OFF").await?;
             let prefix = offered
@@ -142,6 +150,23 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         reject_orphans(&mut connection, self.schema.replicated_tables()).await?;
         control.statements = StatementGuard::new(layouts);
         let local = self.schema.local_migrations().to_vec();
+        let catalog = schema_entries(&mut connection).await?;
+        let mut previous_local = 0;
+        for migration in &local {
+            if migration.version <= previous_local
+                || migration.no_tx
+                || !migration.migration_type.is_up_migration()
+            {
+                return Err(OpenError::SchemaUnsupported { form: SchemaForm::InvalidMigration { statement: migration.sql.as_str().into(), detail: "local migrations must have increasing positive versions and use an owned transaction".into() } });
+            }
+            previous_local = migration.version;
+            control.statements.migration_statements(
+                migration.sql.as_str(),
+                self.schema.replicated_tables(),
+                &catalog,
+                MigrationKind::Local,
+            )?;
+        }
         let mut local_transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
         let mut local_migrator = Migrator::with_migrations(local);
         local_migrator.dangerous_set_table_name("_fleet_sync_local_migrations");

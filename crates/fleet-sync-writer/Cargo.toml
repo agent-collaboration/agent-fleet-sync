@@ -28,6 +28,7 @@ turso.workspace = true
 turso_parser.workspace = true
 
 [dev-dependencies]
+fleet-sync-receiver = { path = "../fleet-sync-receiver" }
 tempfile = "3.27.0"
 
 [build-dependencies]

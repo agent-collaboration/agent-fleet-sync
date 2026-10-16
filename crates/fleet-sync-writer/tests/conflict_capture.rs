@@ -40,12 +40,12 @@ async fn capture_changes(
 async fn replace_captures_each_implicit_delete_in_all_eighteen_conflicts() -> TestResult {
     for (declaration, key_indices, integer_alias) in [
         (
-            "key_text TEXT PRIMARY KEY,key_number INTEGER,slot TEXT UNIQUE",
+            "key_text TEXT NOT NULL PRIMARY KEY,key_number INTEGER,slot TEXT UNIQUE",
             vec![0],
             None,
         ),
         (
-            "key_text TEXT,key_number INTEGER,slot TEXT UNIQUE,PRIMARY KEY(key_text,key_number)",
+            "key_text TEXT NOT NULL,key_number INTEGER NOT NULL,slot TEXT UNIQUE,PRIMARY KEY(key_text,key_number)",
             vec![0, 1],
             None,
         ),
@@ -131,13 +131,13 @@ async fn pinned_upsert_reproduction_detects_when_the_upstream_workaround_can_be_
 -> TestResult {
     for (key_declaration, key_indices, assignment, expected_key) in [
         (
-            "key_text TEXT PRIMARY KEY,key_number INTEGER,slot TEXT UNIQUE",
+            "key_text TEXT NOT NULL PRIMARY KEY,key_number INTEGER,slot TEXT UNIQUE",
             vec![0],
             "key_text=excluded.key_text",
             vec![SqlValue::Text("c".into())],
         ),
         (
-            "key_text TEXT,key_number INTEGER,slot TEXT UNIQUE,PRIMARY KEY(key_text,key_number)",
+            "key_text TEXT NOT NULL,key_number INTEGER NOT NULL,slot TEXT UNIQUE,PRIMARY KEY(key_text,key_number)",
             vec![0, 1],
             "key_number=excluded.key_number",
             vec![SqlValue::Text("a".into()), SqlValue::Integer(30)],

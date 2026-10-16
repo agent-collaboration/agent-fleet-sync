@@ -1,8 +1,37 @@
-//! Inspect parsed expressions, so identifiers and quoted SQL text never become function calls.
+//! Walk parsed migrations for physical table dependencies and nondeterministic calls.
+use std::collections::BTreeSet;
 use turso_parser::ast::*;
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct MigrationInspection {
+    pub nondeterministic: Option<String>,
+    pub tables: Vec<(Option<String>, String)>,
+}
+impl MigrationInspection {
+    fn table(
+        &mut self,
+        schema: Option<&Name>,
+        name: &Name,
+        ctes: &BTreeSet<String>,
+        cte_allowed: bool,
+    ) {
+        if schema.is_none() && cte_allowed && ctes.contains(&name.as_str().to_ascii_lowercase()) {
+            return;
+        }
+        self.tables.push((
+            schema.map(|name| name.as_str().into()),
+            name.as_str().into(),
+        ));
+    }
+    fn function(&mut self, name: &str) {
+        self.nondeterministic.get_or_insert_with(|| name.into());
+    }
+}
 
 enum MigrationNode<'sql> {
     Statement(&'sql Stmt),
+    RestoreCtes(BTreeSet<String>),
+    Reference(&'sql Name),
     Expression(&'sql Expr),
     Select(&'sql Select),
     From(&'sql FromClause),
@@ -11,15 +40,28 @@ enum MigrationNode<'sql> {
     Window(&'sql Window),
 }
 
-pub(crate) fn nondeterministic_function(command: &Cmd) -> Option<String> {
+pub(crate) fn inspect(command: &Cmd) -> MigrationInspection {
+    let mut inspection = MigrationInspection::default();
+    let mut ctes = BTreeSet::new();
     let Cmd::Stmt(statement) = command else {
-        return None;
+        return inspection;
     };
     let mut pending = vec![MigrationNode::Statement(statement)];
     while let Some(node) = pending.pop() {
         match node {
-            MigrationNode::Statement(statement) => push_statement(statement, &mut pending),
+            MigrationNode::RestoreCtes(previous) => ctes = previous,
+            MigrationNode::Reference(name) => inspection.table(None, name, &ctes, false),
+            MigrationNode::Statement(statement) => {
+                let with = match statement {
+                    Stmt::Insert { with, .. } | Stmt::Delete { with, .. } => with.as_ref(),
+                    Stmt::Update(update) => update.with.as_ref(),
+                    _ => None,
+                };
+                enter_with(with, &mut ctes, &mut pending);
+                push_statement(statement, &mut pending);
+            }
             MigrationNode::Select(select) => {
+                enter_with(select.with.as_ref(), &mut ctes, &mut pending);
                 push_with(&select.with, &mut pending);
                 push_select_core(&select.body.select, &mut pending);
                 for compound in &select.body.compounds {
@@ -41,7 +83,9 @@ pub(crate) fn nondeterministic_function(command: &Cmd) -> Option<String> {
                 }
             }
             MigrationNode::Table(table) => match table {
-                SelectTable::Table(..) => {}
+                SelectTable::Table(name, ..) => {
+                    inspection.table(name.db_name.as_ref(), &name.name, &ctes, true)
+                }
                 SelectTable::Select(select, _) => pending.push(MigrationNode::Select(select)),
                 SelectTable::Sub(from, _) => pending.push(MigrationNode::From(from)),
                 SelectTable::TableCall(_, arguments, _) => {
@@ -59,8 +103,10 @@ pub(crate) fn nondeterministic_function(command: &Cmd) -> Option<String> {
                         ColumnConstraint::PrimaryKey { .. }
                         | ColumnConstraint::NotNull { .. }
                         | ColumnConstraint::Unique(_)
-                        | ColumnConstraint::Collate { .. }
-                        | ColumnConstraint::ForeignKey { .. } => {}
+                        | ColumnConstraint::Collate { .. } => {}
+                        ColumnConstraint::ForeignKey { clause, .. } => {
+                            pending.push(MigrationNode::Reference(&clause.tbl_name))
+                        }
                     }
                 }
             }
@@ -91,11 +137,11 @@ pub(crate) fn nondeterministic_function(command: &Cmd) -> Option<String> {
                         name.as_str(),
                         "random" | "randomblob" | "changes" | "last_insert_rowid"
                     ) {
-                        return Some(name);
+                        inspection.function(&name);
                     }
                     if matches!(name.as_str(),"date"|"time"|"datetime"|"julianday"|"unixepoch"|"strftime")
                         && (args.is_empty() || (name=="strftime" && args.len()==1) || args.iter().any(|argument|matches!(argument.as_ref(),Expr::Literal(Literal::String(value)) if is_now_literal(value))))
-                    {return Some(name);}
+                    {inspection.function(&name);}
                     push_expressions(args, &mut pending);
                     push_sorted(order_by, &mut pending);
                     push_sorted(within_group, &mut pending);
@@ -106,14 +152,14 @@ pub(crate) fn nondeterministic_function(command: &Cmd) -> Option<String> {
                         name.as_str().to_ascii_lowercase().as_str(),
                         "random" | "randomblob" | "changes" | "last_insert_rowid"
                     ) {
-                        return Some(name.as_str().to_ascii_lowercase());
+                        inspection.function(&name.as_str().to_ascii_lowercase());
                     }
                     push_function_tail(filter_over, &mut pending);
                 }
-                Expr::Literal(Literal::CurrentDate) => return Some("current_date".into()),
-                Expr::Literal(Literal::CurrentTime) => return Some("current_time".into()),
+                Expr::Literal(Literal::CurrentDate) => inspection.function("current_date"),
+                Expr::Literal(Literal::CurrentTime) => inspection.function("current_time"),
                 Expr::Literal(Literal::CurrentTimestamp) => {
-                    return Some("current_timestamp".into());
+                    inspection.function("current_timestamp");
                 }
                 Expr::Between {
                     lhs, start, end, ..
@@ -160,7 +206,10 @@ pub(crate) fn nondeterministic_function(command: &Cmd) -> Option<String> {
                 Expr::InSelect { lhs, rhs, .. } => {
                     pending.extend([MigrationNode::Expression(lhs), MigrationNode::Select(rhs)])
                 }
-                Expr::InTable { lhs, args, .. } => {
+                Expr::InTable { lhs, rhs, args, .. } => {
+                    if args.is_empty() {
+                        inspection.table(rhs.db_name.as_ref(), &rhs.name, &ctes, true);
+                    }
                     pending.push(MigrationNode::Expression(lhs));
                     push_expressions(args, &mut pending);
                 }
@@ -192,7 +241,22 @@ pub(crate) fn nondeterministic_function(command: &Cmd) -> Option<String> {
             },
         }
     }
-    None
+    inspection
+}
+
+fn enter_with<'sql>(
+    with: Option<&'sql With>,
+    ctes: &mut BTreeSet<String>,
+    pending: &mut Vec<MigrationNode<'sql>>,
+) {
+    if let Some(with) = with {
+        pending.push(MigrationNode::RestoreCtes(ctes.clone()));
+        ctes.extend(
+            with.ctes
+                .iter()
+                .map(|entry| entry.tbl_name.as_str().to_ascii_lowercase()),
+        );
+    }
 }
 
 fn is_now_literal(value: &str) -> bool {
@@ -202,54 +266,6 @@ fn is_now_literal(value: &str) -> bool {
         .unwrap_or(value)
         .replace("''", "'")
         .eq_ignore_ascii_case("now")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::nondeterministic_function;
-    fn inspect(sql: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
-        let command = turso_parser::parser::Parser::new(sql.as_bytes())
-            .next_cmd()?
-            .ok_or("no command")?;
-        Ok(nondeterministic_function(&command))
-    }
-
-    #[test]
-    #[allow(clippy::panic_in_result_fn)]
-    fn finds_calls_in_defaults_ctes_subqueries_and_upserts()
-    -> Result<(), Box<dyn std::error::Error>> {
-        for sql in [
-            "CREATE TABLE data(id TEXT PRIMARY KEY DEFAULT(randomblob(16)))",
-            "ALTER TABLE data ADD COLUMN created TEXT DEFAULT CURRENT_TIMESTAMP",
-            "INSERT INTO data VALUES(random())",
-            "UPDATE data SET id=lower(hex(randomblob(8)))",
-            "WITH source AS(SELECT changes()) INSERT INTO data SELECT * FROM source",
-            "INSERT INTO data SELECT (SELECT last_insert_rowid())",
-            "INSERT INTO data VALUES('x') ON CONFLICT DO UPDATE SET id=random()",
-            "CREATE VIEW recent AS SELECT datetime('now')",
-            "INSERT INTO data VALUES(strftime('%Y','NOW'))",
-            "INSERT INTO data VALUES(datetime())",
-        ] {
-            assert!(inspect(sql)?.is_some(), "{sql}");
-        }
-        Ok(())
-    }
-
-    #[test]
-    #[allow(clippy::panic_in_result_fn)]
-    fn identifiers_literals_and_fixed_times_are_not_calls() -> Result<(), Box<dyn std::error::Error>>
-    {
-        for sql in [
-            "CREATE TABLE random(id TEXT PRIMARY KEY,payload TEXT DEFAULT 'random()')",
-            "INSERT INTO random VALUES('randomblob()','CURRENT_TIMESTAMP')",
-            "UPDATE data SET id=datetime('2020-01-01')",
-            "CREATE VIEW named AS SELECT id AS random FROM random",
-            "INSERT INTO data VALUES(date('now'''))",
-        ] {
-            assert_eq!(inspect(sql)?, None, "{sql}");
-        }
-        Ok(())
-    }
 }
 
 fn push_expressions<'sql>(expressions: &'sql [Box<Expr>], pending: &mut Vec<MigrationNode<'sql>>) {
@@ -365,7 +381,9 @@ fn push_statement<'sql>(statement: &'sql Stmt, pending: &mut Vec<MigrationNode<'
                         }
                         TableConstraint::PrimaryKey { columns, .. }
                         | TableConstraint::Unique { columns, .. } => push_sorted(columns, pending),
-                        TableConstraint::ForeignKey { .. } => {}
+                        TableConstraint::ForeignKey { clause, .. } => {
+                            pending.push(MigrationNode::Reference(&clause.tbl_name))
+                        }
                     }
                 }
             }
@@ -433,5 +451,53 @@ fn push_statement<'sql>(statement: &'sql Stmt, pending: &mut Vec<MigrationNode<'
         }
         // Admission rejects every other statement carrying executable expressions.
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::inspect as inspect_command;
+    fn inspect(sql: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        let command = turso_parser::parser::Parser::new(sql.as_bytes())
+            .next_cmd()?
+            .ok_or("no command")?;
+        Ok(inspect_command(&command).nondeterministic)
+    }
+
+    #[test]
+    #[allow(clippy::panic_in_result_fn)]
+    fn finds_calls_in_defaults_ctes_subqueries_and_upserts()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for sql in [
+            "CREATE TABLE data(id TEXT PRIMARY KEY DEFAULT(randomblob(16)))",
+            "ALTER TABLE data ADD COLUMN created TEXT DEFAULT CURRENT_TIMESTAMP",
+            "INSERT INTO data VALUES(random())",
+            "UPDATE data SET id=lower(hex(randomblob(8)))",
+            "WITH source AS(SELECT changes()) INSERT INTO data SELECT * FROM source",
+            "INSERT INTO data SELECT (SELECT last_insert_rowid())",
+            "INSERT INTO data VALUES('x') ON CONFLICT DO UPDATE SET id=random()",
+            "CREATE VIEW recent AS SELECT datetime('now')",
+            "INSERT INTO data VALUES(strftime('%Y','NOW'))",
+            "INSERT INTO data VALUES(datetime())",
+        ] {
+            assert!(inspect(sql)?.is_some(), "{sql}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[allow(clippy::panic_in_result_fn)]
+    fn identifiers_literals_and_fixed_times_are_not_calls() -> Result<(), Box<dyn std::error::Error>>
+    {
+        for sql in [
+            "CREATE TABLE random(id TEXT PRIMARY KEY,payload TEXT DEFAULT 'random()')",
+            "INSERT INTO random VALUES('randomblob()','CURRENT_TIMESTAMP')",
+            "UPDATE data SET id=datetime('2020-01-01')",
+            "CREATE VIEW named AS SELECT id AS random FROM random",
+            "INSERT INTO data VALUES(date('now'''))",
+        ] {
+            assert_eq!(inspect(sql)?, None, "{sql}");
+        }
+        Ok(())
     }
 }

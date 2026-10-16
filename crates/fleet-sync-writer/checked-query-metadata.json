@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "../../Cargo.lock": "67d5de8a6e75df639b743c49f82328a3854168da92050430d01a56e94e7da59f",
+    "../../Cargo.lock": "7403bd68f4b1e2957b59608b465051a1512395dba12997ecdcedad5f0c6bf257",
     "../../rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "../fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "../fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
@@ -49,20 +49,28 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "4c8cd96523fae802416124fae8e11e17a48c0588995a1355b714859c096b042e",
+    "checked-queries.json": "8e5662e5f63241b07145c65ed623865300238542269d285cd341a75dc4a8bbcd",
     "migrations/0001_writer_bookkeeping.sql": "4202f8eaaf326395e2f393904c7b4ac46bb61ae1de1ae0fd36eb3b94812fc1f4",
     "query-schema/99990001_capture_query_schema.sql": "1e1ee98953e04f6edcd18b85abc33326819a0e0210f3fc42717e4cd30e4b1c98",
-    "sql/prune_capture.sql": "1a30ee5e9032e29a0c26bad86b2f8fe60842b53b7586a6a777498a2199482485",
+    "sql/delete_rejected_tail.sql": "0de2677b858fc5052ee8bcf70581bfd4b80659215aa10eda7861fc7304266c37",
+    "sql/prune_capture.sql": "dae53de9d01be7b35bfe30848e8277de952923ec5166a0c2dff0b612131e68b3",
     "sql/read_applied_migrations.sql": "d28e0c75869577acf37e787e52b1e1213c7f0f5c529ea5b66371c655c86cec48",
-    "sql/read_capture.sql": "ce964afd18720f1c1c173d7d4d4436fa0bf3d44d2ec35d0e91af731c114f6844",
+    "sql/read_capture.sql": "500b858e7d0312b55d556107a7c8d03296edbf75b7f7d5959c9b95103373ff56",
+    "sql/read_capture_assignment.sql": "f976d8be5e478fa71067ad61a5d54679338c89f583467e3db21525fe4b65808e",
+    "sql/read_capture_head.sql": "74dec7c201f33226b62c57978487857d8b7550417709471a93a7dfa08d375e38",
+    "sql/read_copies.sql": "043e8d18c84ffa88fd83b5e4b2d5f95855fa1570f5abc805d4b0efe7f7d2d312",
     "sql/read_foreign_keys.sql": "7ecca70236bf3d19a579874c974a159bd9ed565aa2523e305c8b8870a4d22387",
+    "sql/read_rejected_tails.sql": "a99bff59e8094ff8a11c529a9097e46566c9e0349a647fdb9d1dc35936d925ea",
     "sql/read_schema_entries.sql": "770651a8f1a53c6a4889f5f13b257dcf222d3bff6fb72b0dc0f8aefbd2159cff",
-    "sql/read_schema_steps.sql": "ff7b04e447ac1008cca6a30ed065918a609f748b991e6200421c7d6efc5d8914",
-    "sql/read_table_columns.sql": "f38bc12d08a3c32f08f308624a45ce409e0ce50b1eefa680672cff408416f100",
+    "sql/read_schema_steps.sql": "3c0aa81957437cc9bf14b9c229ceb1f9eb15d6f74139839a84898ce67992e70d",
+    "sql/read_table_columns.sql": "fd86e2739bc2c7aaf8e54a230d92da3b6610e9ff838fc0b12a12927ae9af1ebb",
     "sql/read_writer.sql": "14680aaf3ad3c85a9124ff74018154a54c61081b0664215bea360e65bd9ef83f",
+    "sql/write_capture_assignment.sql": "82b8febda2827ace8217d55c8856954781f18dd9c3ac9fc1cc00c87b03cc3c37",
+    "sql/write_copy.sql": "b0f854058fe943e5a51bf367905113d4836e2f9fa47a5b14d1226444378f1b32",
+    "sql/write_rejected_tail.sql": "e9477f19242ed9480bce76ead2f9146d86bd16f49b1e8a582bd2bf7d04eaa848",
     "sql/write_schema_step.sql": "25bf187503cdca23522d2da0d086a329b812bf5c06e904308956aa8a2f8687cc",
     "sql/write_writer.sql": "2897299ed63abcbcf3162c1bd725e8ff664020aa9a384d7820028341460282bf",
-    "src/checked_queries.rs": "0983b1c617ef7d0966c603034a591c15fd279235267137f3060ec408e8f86a3f"
+    "src/checked_queries.rs": "e6b3706ba4d27c2e47f91bf11fda94471fc361c45ad6425d9f9013d44f8c5807"
   },
   "queries": [
     {
@@ -106,6 +114,20 @@
         },
         {
           "name": "type_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "not_null",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "not_null_class",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -407,7 +429,7 @@
     },
     {
       "name": "read_capture",
-      "bind_slots": 1,
+      "bind_slots": 2,
       "columns": [
         {
           "name": "change_id",
@@ -432,6 +454,20 @@
         },
         {
           "name": "transaction_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "changed_at",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "time_class",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -483,6 +519,134 @@
     },
     {
       "name": "prune_capture",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "read_copies",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "copy_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "id_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "record_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "write_copy",
+      "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "read_capture_assignment",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "record_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "write_capture_assignment",
+      "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "read_capture_head",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "marker",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "marker_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "read_rejected_tails",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "epoch",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "epoch_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "record_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "write_rejected_tail",
+      "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "delete_rejected_tail",
       "bind_slots": 1,
       "columns": []
     }

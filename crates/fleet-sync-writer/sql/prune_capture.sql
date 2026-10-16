@@ -1,1 +1,1 @@
-DELETE FROM turso_cdc WHERE change_id <= ?
+DELETE FROM turso_cdc WHERE change_id < ?

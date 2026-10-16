@@ -69,6 +69,7 @@ pub(crate) async fn read_layout(
     }
     let mut columns = Vec::new();
     let mut declared_types = Vec::new();
+    let mut not_null = Vec::new();
     let mut keys = BTreeMap::new();
     for row in rows {
         let index = unsigned(row.column_index, row.index_class, "column.index")?;
@@ -77,6 +78,11 @@ pub(crate) async fn read_layout(
         }
         columns.push(text(row.column_name, row.name_class, "column.name")?);
         declared_types.push(text(row.declared_type, row.type_class, "column.type")?);
+        let required = unsigned(row.not_null, row.not_null_class, "column.not_null")?;
+        if required > 1 {
+            return Err(OpenError::corrupt("column.not_null"));
+        }
+        not_null.push(required == 1);
         let order = unsigned(row.key_order, row.key_class, "column.key_order")?;
         if order > 0 && keys.insert(order, index).is_some() {
             return Err(OpenError::corrupt("column.key_order"));
@@ -93,15 +99,39 @@ pub(crate) async fn read_layout(
         return Err(OpenError::corrupt("column.key_order"));
     }
     let primary_key = keys.into_values().collect::<Vec<_>>();
-    let integer_primary_key = if primary_key.len() == 1 {
-        primary_key.first().copied().filter(|index| {
-            declared_types
-                .get(*index)
-                .is_some_and(|name| name.eq_ignore_ascii_case("INTEGER"))
+    let entries = schema_entries(connection).await?;
+    let statement = entries
+        .iter()
+        .find(|(entry, _)| {
+            entry.kind == SchemaObjectKind::Table && entry.name.eq_ignore_ascii_case(table.as_str())
         })
-    } else {
-        None
-    };
+        .map(|(entry, _)| entry.sql.as_str())
+        .ok_or_else(|| OpenError::corrupt("schema.table_sql"))?;
+    // Use the pinned engine's own lowering: INTEGER PRIMARY KEY DESC and
+    // WITHOUT ROWID must not receive the rowid-alias exemption by type alone.
+    let definition = turso::core::schema::BTreeTable::from_sql(statement, 0)
+        .map_err(|_| OpenError::corrupt("schema.table_sql"))?;
+    let integer_primary_key = definition.get_rowid_alias_column().map(|(index, _)| index);
+    if integer_primary_key.is_some_and(|index| {
+        declared_types
+            .get(index)
+            .is_none_or(|name| !name.eq_ignore_ascii_case("INTEGER"))
+    }) {
+        return Err(OpenError::corrupt("schema.rowid_alias"));
+    }
+    for index in &primary_key {
+        if Some(*index) != integer_primary_key && not_null.get(*index) != Some(&true) {
+            return Err(OpenError::SchemaUnsupported {
+                form: SchemaForm::NullablePrimaryKey {
+                    table: table.clone(),
+                    column: columns
+                        .get(*index)
+                        .cloned()
+                        .ok_or_else(|| OpenError::corrupt("schema.key_column"))?,
+                },
+            });
+        }
+    }
     TableLayout::new(
         table.as_str().into(),
         columns,

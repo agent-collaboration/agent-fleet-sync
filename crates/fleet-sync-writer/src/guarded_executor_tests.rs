@@ -60,7 +60,7 @@ impl WriterFixture {
                     .foreign_keys(true),
             )
             .await?;
-        writer.execute("CREATE TABLE records(id TEXT PRIMARY KEY,slot TEXT UNIQUE,amount INTEGER); INSERT INTO records VALUES('a','same',1)").await?;
+        writer.execute("CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY,slot TEXT UNIQUE,amount INTEGER); INSERT INTO records VALUES('a','same',1)").await?;
         let reader = ReadPool::new(
             PoolOptions::<Turso>::new()
                 .max_connections(2)
@@ -135,6 +135,8 @@ async fn reader_checks_fetch_prepare_and_batches_before_any_mutation() -> TestRe
         "COMMIT",
         "SAVEPOINT external",
         "SELECT 1; DELETE FROM records",
+        "EXPLAIN SELECT * FROM records",
+        "EXPLAIN UPDATE records SET amount=2",
     ] {
         let error = fixture
             .reader

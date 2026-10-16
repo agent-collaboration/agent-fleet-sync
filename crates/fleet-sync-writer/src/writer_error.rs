@@ -2,6 +2,12 @@ use fleet_sync_protocol::{Epoch, GateReason, SyncTime, TableName, TransferId};
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SchemaForm {
+    #[error("primary-key column {column} of {table:?} permits NULL")]
+    NullablePrimaryKey { table: TableName, column: String },
+    #[error("migration accesses undeclared table {table:?}")]
+    UndeclaredTable { table: TableName },
+    #[error("local migration changes replicated table {table:?}")]
+    ReplicatedTableInLocalMigration { table: TableName },
     #[error("schema version {store} is newer than supported version {supported}")]
     SchemaTooNew { store: u64, supported: u64 },
     #[error("migration statement is not admitted: {statement}: {detail}")]
@@ -29,6 +35,8 @@ pub enum SchemaForm {
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum OpenError {
+    #[error("captured transaction is invalid: {error}")]
+    Capture { error: crate::CaptureError },
     #[error("migration write refused: {refusal}")]
     WriteRefused { refusal: WriteRefusal },
     #[error("existing unmanaged database needs explicit schema-checked adoption")]

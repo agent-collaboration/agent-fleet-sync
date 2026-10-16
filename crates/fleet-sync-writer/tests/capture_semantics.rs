@@ -33,14 +33,14 @@ async fn actual_capture_removes_old_declared_keys_and_preserves_every_storage_cl
 {
     for (declaration, primary_key, integer_primary_key, old_key, new_key) in [
         (
-            "key_text TEXT PRIMARY KEY,key_number INTEGER",
+            "key_text TEXT NOT NULL PRIMARY KEY,key_number INTEGER",
             vec![0],
             None,
             vec![SqlValue::Text("a".into())],
             vec![SqlValue::Text("c".into())],
         ),
         (
-            "key_text TEXT,key_number INTEGER",
+            "key_text TEXT NOT NULL,key_number INTEGER NOT NULL",
             vec![0, 1],
             None,
             vec![SqlValue::Text("a".into()), SqlValue::Integer(10)],

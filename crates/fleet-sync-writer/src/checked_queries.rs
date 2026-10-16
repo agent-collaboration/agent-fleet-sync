@@ -15,6 +15,8 @@ pub(crate) struct StoredColumnRow {
     pub name_class: Option<String>,
     pub declared_type: Option<String>,
     pub type_class: Option<String>,
+    pub not_null: Option<String>,
+    pub not_null_class: Option<String>,
     pub key_order: Option<String>,
     pub key_class: Option<String>,
 }
@@ -45,6 +47,8 @@ where
                     name_class: row.try_get("name_class")?,
                     declared_type: row.try_get("declared_type")?,
                     type_class: row.try_get("type_class")?,
+                    not_null: row.try_get("not_null")?,
+                    not_null_class: row.try_get("not_null_class")?,
                     key_order: row.try_get("key_order")?,
                     key_class: row.try_get("key_class")?,
                 })
@@ -308,6 +312,8 @@ pub(crate) struct StoredCaptureRow {
     pub id_class: Option<String>,
     pub transaction_id: Option<String>,
     pub transaction_class: Option<String>,
+    pub changed_at: Option<String>,
+    pub time_class: Option<String>,
     pub change_kind: Option<String>,
     pub kind_class: Option<String>,
     pub table_name: Option<String>,
@@ -318,6 +324,7 @@ pub(crate) struct StoredCaptureRow {
 pub(crate) fn read_capture<S>(
     scope: &mut S,
     after: i64,
+    limit: i64,
 ) -> impl std::future::Future<Output = Result<Vec<StoredCaptureRow>, sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -332,7 +339,8 @@ where
             env!("CARGO_MANIFEST_DIR"),
             "/sql/read_capture.sql"
         )))
-        .bind(after);
+        .bind(after)
+        .bind(limit);
         let rows = statement.fetch_all(scope.executor()).await?;
         rows.iter()
             .map(|row| {
@@ -341,6 +349,8 @@ where
                     id_class: row.try_get("id_class")?,
                     transaction_id: row.try_get("transaction_id")?,
                     transaction_class: row.try_get("transaction_class")?,
+                    changed_at: row.try_get("changed_at")?,
+                    time_class: row.try_get("time_class")?,
                     change_kind: row.try_get("change_kind")?,
                     kind_class: row.try_get("kind_class")?,
                     table_name: row.try_get("table_name")?,
@@ -367,6 +377,219 @@ where
             "/sql/prune_capture.sql"
         )))
         .bind(through);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredCopyRow {
+    pub copy_id: Option<String>,
+    pub id_class: Option<String>,
+    pub record: Option<String>,
+    pub record_class: Option<String>,
+}
+pub(crate) fn read_copies<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<StoredCopyRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_copies.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredCopyRow {
+                    copy_id: row.try_get("copy_id")?,
+                    id_class: row.try_get("id_class")?,
+                    record: row.try_get("record")?,
+                    record_class: row.try_get("record_class")?,
+                })
+            })
+            .collect()
+    }
+}
+pub(crate) fn write_copy<S>(
+    scope: &mut S,
+    copy_id: String,
+    record: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_copy.sql"
+        )))
+        .bind(copy_id)
+        .bind(record);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredAssignmentRow {
+    pub record: Option<String>,
+    pub record_class: Option<String>,
+}
+pub(crate) fn read_capture_assignment<S>(
+    scope: &mut S,
+    commit_id: String,
+) -> impl std::future::Future<Output = Result<Option<StoredAssignmentRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_capture_assignment.sql"
+        )))
+        .bind(commit_id);
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(StoredAssignmentRow {
+                    record: row.try_get("record")?,
+                    record_class: row.try_get("record_class")?,
+                })
+            })
+            .transpose()
+    }
+}
+pub(crate) fn write_capture_assignment<S>(
+    scope: &mut S,
+    commit_id: String,
+    record: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_capture_assignment.sql"
+        )))
+        .bind(commit_id)
+        .bind(record);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredCaptureHeadRow {
+    pub marker: Option<String>,
+    pub marker_class: Option<String>,
+}
+pub(crate) fn read_capture_head<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<StoredCaptureHeadRow, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_capture_head.sql"
+        )));
+        let row = statement.fetch_one(scope.executor()).await?;
+        Ok(StoredCaptureHeadRow {
+            marker: row.try_get("marker")?,
+            marker_class: row.try_get("marker_class")?,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredRejectedTailRow {
+    pub epoch: Option<String>,
+    pub epoch_class: Option<String>,
+    pub record: Option<String>,
+    pub record_class: Option<String>,
+}
+pub(crate) fn read_rejected_tails<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<StoredRejectedTailRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_rejected_tails.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredRejectedTailRow {
+                    epoch: row.try_get("epoch")?,
+                    epoch_class: row.try_get("epoch_class")?,
+                    record: row.try_get("record")?,
+                    record_class: row.try_get("record_class")?,
+                })
+            })
+            .collect()
+    }
+}
+pub(crate) fn write_rejected_tail<S>(
+    scope: &mut S,
+    epoch: String,
+    record: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_rejected_tail.sql"
+        )))
+        .bind(epoch)
+        .bind(record);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn delete_rejected_tail<S>(
+    scope: &mut S,
+    epoch: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/delete_rejected_tail.sql"
+        )))
+        .bind(epoch);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

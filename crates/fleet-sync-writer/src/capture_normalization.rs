@@ -77,6 +77,16 @@ pub fn normalize_capture_change(
 }
 
 fn decode_row(table: &TableLayout, image: &[u8]) -> Result<Vec<SqlValue>, CaptureError> {
+    let values = decode_image(image)?;
+    if values.len() != table.columns().len() {
+        return Err(CaptureError::RowShape {
+            table: table.name().into(),
+        });
+    }
+    Ok(values)
+}
+
+pub(crate) fn decode_image(image: &[u8]) -> Result<Vec<SqlValue>, CaptureError> {
     let malformed = |error: turso::core::LimboError| CaptureError::InvalidImage {
         detail: error.to_string(),
     };
@@ -94,11 +104,6 @@ fn decode_row(table: &TableLayout, image: &[u8]) -> Result<Vec<SqlValue>, Captur
             }
             ValueRef::Text(value) => SqlValue::Text(value.as_str().into()),
             ValueRef::Blob(value) => SqlValue::Blob(value.to_vec()),
-        });
-    }
-    if values.len() != table.columns().len() {
-        return Err(CaptureError::RowShape {
-            table: table.name().into(),
         });
     }
     Ok(values)

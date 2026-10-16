@@ -62,3 +62,9 @@ Valid children and children with a NULL key are controls for the orphan query.
 Remove the explicit check only after a real-file test shows that the upstream
 PRAGMA finds persisted orphans and the migration proof still rejects an orphan
 before committing. An empty PRAGMA result alone is never that evidence.
+
+## Keep the acknowledged commit marker when pruning
+
+Turso 0.8.1's WAL CDC allocator uses `NewRowid` without an AUTOINCREMENT floor. Deleting the final CDC row allows later capture IDs to restart, including after closing and reopening the file. The capture table's AUTOINCREMENT declaration does not prevent this path.
+
+Retention deletes rows strictly before the acknowledged commit marker. Keeping this one marker preserves the allocation floor without keeping acknowledged row images. `capture_watermark.rs` reproduces ID reuse with an empty table and verifies monotonic IDs with the retained marker across reopen. Remove this workaround when the pinned engine preserves capture allocation after every row is deleted, and update the regression then.

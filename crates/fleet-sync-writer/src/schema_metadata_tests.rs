@@ -21,15 +21,15 @@ async fn explicit_and_implicit_keys_reject_persisted_orphans_without_rejecting_n
     for (parent, child, good_parent, good_child, bad_child, null_child) in [
         (
             "id INTEGER PRIMARY KEY",
-            "id TEXT PRIMARY KEY,parent_id INTEGER REFERENCES parents(id)",
+            "id TEXT NOT NULL PRIMARY KEY,parent_id INTEGER REFERENCES parents(id)",
             "(1)",
             "('good',1)",
             "('orphan',9)",
             "('null',NULL)",
         ),
         (
-            "a TEXT,b INTEGER,PRIMARY KEY(a,b)",
-            "id TEXT PRIMARY KEY,a TEXT,b INTEGER,FOREIGN KEY(a,b) REFERENCES parents(a,b)",
+            "a TEXT NOT NULL,b INTEGER NOT NULL,PRIMARY KEY(a,b)",
+            "id TEXT NOT NULL PRIMARY KEY,a TEXT,b INTEGER,FOREIGN KEY(a,b) REFERENCES parents(a,b)",
             "('x',1)",
             "('good','x',1)",
             "('orphan','x',9)",
@@ -37,7 +37,7 @@ async fn explicit_and_implicit_keys_reject_persisted_orphans_without_rejecting_n
         ),
         (
             "id INTEGER PRIMARY KEY",
-            "id TEXT PRIMARY KEY,parent_id INTEGER REFERENCES parents",
+            "id TEXT NOT NULL PRIMARY KEY,parent_id INTEGER REFERENCES parents",
             "(1)",
             "('good',1)",
             "('orphan',9)",
@@ -100,11 +100,11 @@ async fn implicit_references_without_a_matching_parent_key_fail_closed() -> Test
     for (parent, child) in [
         (
             "id INTEGER",
-            "id TEXT PRIMARY KEY,parent_id INTEGER REFERENCES parents",
+            "id TEXT NOT NULL PRIMARY KEY,parent_id INTEGER REFERENCES parents",
         ),
         (
             "id INTEGER PRIMARY KEY",
-            "id TEXT PRIMARY KEY,a INTEGER,b INTEGER,FOREIGN KEY(a,b) REFERENCES parents",
+            "id TEXT NOT NULL PRIMARY KEY,a INTEGER,b INTEGER,FOREIGN KEY(a,b) REFERENCES parents",
         ),
     ] {
         let mut connection = TursoConnectOptions::new()
@@ -134,7 +134,7 @@ async fn implicit_references_without_a_matching_parent_key_fail_closed() -> Test
 async fn table_layout_keeps_declared_column_and_key_order_distinct() -> TestResult {
     let mut connection = TursoConnectOptions::new().connect().await?;
     connection
-        .execute("CREATE TABLE ordered_keys(b INTEGER,label TEXT,a TEXT,PRIMARY KEY(a,b))")
+        .execute("CREATE TABLE ordered_keys(b INTEGER NOT NULL,label TEXT,a TEXT NOT NULL,PRIMARY KEY(a,b))")
         .await?;
     let layout = read_layout(&mut connection, &TableName::new("ordered_keys")?).await?;
     assert_eq!(layout.columns(), ["b", "label", "a"]);

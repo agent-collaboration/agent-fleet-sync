@@ -11,6 +11,11 @@ use sqlx_core::{
 use sqlx_turso::{Turso, TursoConnection};
 use std::collections::BTreeMap;
 
+struct ForeignKeyGroup {
+    parent: TableName,
+    columns: BTreeMap<usize, (String, String)>,
+}
+
 pub(crate) struct ForeignKey {
     parent: TableName,
     columns: Vec<(String, String)>,
@@ -32,8 +37,7 @@ pub(crate) async fn read_foreign_keys(
     let rows =
         checked_queries::read_foreign_keys(&mut WriterScope(connection), table.as_str().into())
             .await?;
-    let mut grouped: BTreeMap<usize, (TableName, BTreeMap<usize, (String, String)>)> =
-        BTreeMap::new();
+    let mut grouped = BTreeMap::<usize, ForeignKeyGroup>::new();
     for row in rows {
         let id = unsigned(row.foreign_key_id, row.id_class, "foreign_key.id")?;
         let order = unsigned(row.column_order, row.order_class, "foreign_key.order")?;
@@ -74,11 +78,13 @@ pub(crate) async fn read_foreign_keys(
                 },
             });
         }
-        let (recorded_parent, columns) = grouped
-            .entry(id)
-            .or_insert_with(|| (parent.clone(), BTreeMap::new()));
-        if *recorded_parent != parent
-            || columns
+        let group = grouped.entry(id).or_insert_with(|| ForeignKeyGroup {
+            parent: parent.clone(),
+            columns: BTreeMap::new(),
+        });
+        if group.parent != parent
+            || group
+                .columns
                 .insert(order, (child_column, parent_column))
                 .is_some()
         {
@@ -86,7 +92,7 @@ pub(crate) async fn read_foreign_keys(
         }
     }
     let mut foreign_keys = Vec::new();
-    for (parent, columns) in grouped.into_values() {
+    for ForeignKeyGroup { parent, columns } in grouped.into_values() {
         if columns.keys().copied().ne(0..columns.len()) {
             return Err(metadata_error(table, "noncontiguous column order"));
         }
