@@ -14,7 +14,7 @@ tokio = ["dep:tokio", "uuid/v7", "uuid/std"]
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true
-uuid = { version = "1.26.0", default-features = false }
+uuid = { version = "1.26.0", default-features = false, features = ["serde"] }
 tokio = { version = "1.48.0", default-features = false, features = ["sync", "time"], optional = true }
 
 [dev-dependencies]

@@ -5,6 +5,24 @@ use runtime_primitives::{Backoff, SyncTime};
 use std::time::Duration;
 
 #[test]
+fn call_identity_roundtrips_and_rejects_an_empty_step() -> Result<(), Box<dyn std::error::Error>> {
+    use runtime_primitives::{CallId, OperationId, StepName};
+    let call = CallId {
+        operation: OperationId(uuid::Uuid::from_u128(7)),
+        step: StepName::new("page:3")?,
+    };
+    let wire = serde_json::to_string(&call)?;
+    assert_eq!(
+        wire,
+        r#"{"operation":"00000000-0000-0000-0000-000000000007","step":"page:3"}"#
+    );
+    assert_eq!(serde_json::from_str::<CallId>(&wire)?, call);
+    assert!(StepName::new("").is_err());
+    assert!(serde_json::from_str::<StepName>(r#""""#).is_err());
+    Ok(())
+}
+
+#[test]
 fn backoff_keeps_growing_past_a_u32_multiplier() {
     let backoff = Backoff {
         initial: Duration::from_nanos(1),

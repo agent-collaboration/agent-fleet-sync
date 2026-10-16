@@ -8,6 +8,9 @@ use std::{future::Future, time::Duration};
 use thiserror::Error;
 use uuid::Uuid;
 
+mod call_identity;
+pub use call_identity::{CallId, InvalidName, OperationId, StepName};
+
 #[cfg(feature = "tokio")]
 mod tokio_adapters;
 #[cfg(feature = "tokio")]

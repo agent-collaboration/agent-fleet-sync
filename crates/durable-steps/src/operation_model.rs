@@ -3,11 +3,7 @@ use std::time::Duration;
 use thiserror::Error;
 use uuid::Uuid;
 
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("{field} must not be empty")]
-pub struct InvalidName {
-    pub field: &'static str,
-}
+pub use runtime_primitives::{CallId, InvalidName, OperationId, StepName};
 
 macro_rules! validated_name {
     ($name:ident, $field:literal) => {
@@ -42,19 +38,8 @@ macro_rules! validated_name {
 }
 
 validated_name!(RequestKey, "request_key");
-validated_name!(StepName, "step_name");
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct OperationId(pub Uuid);
 
 pub use runtime_primitives::{SyncTime, WakeFailure};
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct CallId {
-    pub operation: OperationId,
-    pub step: StepName,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
