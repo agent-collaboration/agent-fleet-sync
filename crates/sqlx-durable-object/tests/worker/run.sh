@@ -32,4 +32,4 @@ for _ in $(seq 1 60); do
 done
 
 cd ../..
-DO_WORKER_URL="http://localhost:$port" cargo test --test driver -- --nocapture
+DO_WORKER_URL="http://localhost:$port" cargo test --test driver -- --nocapture --ignored
