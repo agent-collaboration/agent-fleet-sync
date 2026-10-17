@@ -61,6 +61,33 @@ pub(crate) async fn key_validation_start(
     }
 }
 
+pub(crate) async fn retained_commit_boundary(
+    connection: &mut TursoConnection,
+    record: &WriterFileRecord,
+    position: ReplicationPosition,
+) -> Result<bool, OpenError> {
+    if position == record.retained_after {
+        return Ok(true);
+    }
+    if position.epoch != record.epoch {
+        return Ok(false);
+    }
+    let Some(previous) = position.sequence.value().checked_sub(1) else {
+        return Ok(false);
+    };
+    let rows = checked_queries::read_capture(
+        &mut WriterScope(connection),
+        i64::try_from(previous).map_err(|_| OpenError::corrupt("snapshot_completion.position"))?,
+        1,
+    )
+    .await?;
+    let Some(row) = rows.into_iter().next() else {
+        return Ok(false);
+    };
+    let row = CaptureRow::try_from(row)?;
+    Ok(row.change_id == position.sequence.value() && row.kind == 2)
+}
+
 /// CDC rows are visible inside the writer transaction. Validate both images,
 /// including inserted-then-deleted rows, before their commit can be accepted.
 pub(crate) async fn validate_pending_keys(

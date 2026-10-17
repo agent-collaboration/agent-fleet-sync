@@ -238,13 +238,7 @@ where
         &self,
         copy: ReceiverId,
     ) -> Result<Vec<ReplicationEvents>, SenderError> {
-        let lock = self
-            .copy_locks
-            .lock()
-            .map_err(|_| SenderError::Invalid { field: "copy.lock" })?
-            .entry(copy)
-            .or_default()
-            .clone();
+        let lock = self.copy_lock(copy)?;
         let _copy_guard = lock.lock().await;
         let mut events = self.enforce_retention().await?;
         let pieces = match self.prepare(copy).await? {
@@ -269,6 +263,19 @@ where
             }
         }
         Ok(events)
+    }
+
+    pub(crate) fn copy_lock(
+        &self,
+        copy: ReceiverId,
+    ) -> Result<Arc<tokio::sync::Mutex<()>>, SenderError> {
+        Ok(self
+            .copy_locks
+            .lock()
+            .map_err(|_| SenderError::Invalid { field: "copy.lock" })?
+            .entry(copy)
+            .or_default()
+            .clone())
     }
 
     async fn answer(

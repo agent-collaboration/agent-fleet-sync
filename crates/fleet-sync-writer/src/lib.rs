@@ -20,6 +20,7 @@ mod schema_layout;
 mod sender_contract;
 mod sender_retention;
 mod sender_runner;
+mod sender_snapshot_recovery;
 mod sender_storage;
 mod snapshot_schema;
 mod statement_guard;
@@ -63,6 +64,8 @@ mod schema_metadata_tests;
 
 #[cfg(test)]
 mod sender_authority_tests;
+#[cfg(test)]
+mod sender_snapshot_recovery_tests;
 #[cfg(test)]
 mod sender_test_fixture;
 #[cfg(test)]

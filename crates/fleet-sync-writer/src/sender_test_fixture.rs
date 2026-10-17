@@ -37,12 +37,23 @@ static TABLES: LazyLock<Result<Vec<TableName>, fleet_sync_protocol::TextValueErr
             .map(TableName::new)
             .collect()
     });
+#[derive(Clone)]
 pub(super) struct SenderSchema {
     tables: &'static [TableName],
+    pub migration_count: Arc<AtomicUsize>,
 }
 impl ReplicatedSchema for SenderSchema {
     fn migrations(&self) -> &'static [Migration] {
-        MIGRATIONS.iter().as_slice()
+        static LATER: LazyLock<Vec<Migration>> = LazyLock::new(|| {
+            use sqlx_core::{migrate::MigrationType, sql_str::SqlSafeStr};
+            let mut migrations = MIGRATIONS.iter().cloned().collect::<Vec<_>>();
+            migrations.push(Migration::new(3,"first recovery".into(),MigrationType::Simple,"ALTER TABLE text_records ADD COLUMN recovered TEXT; UPDATE text_records SET recovered='first recovery'".into_sql_str(),false));
+            migrations.push(Migration::new(4,"second recovery".into(),MigrationType::Simple,"CREATE INDEX recovered_rows ON text_records(recovered); UPDATE text_records SET recovered='second recovery'".into_sql_str(),false));
+            migrations
+        });
+        LATER
+            .get(..self.migration_count.load(Ordering::SeqCst))
+            .unwrap_or_default()
     }
     fn local_migrations(&self) -> &'static [Migration] {
         LOCAL.iter().as_slice()
@@ -120,6 +131,7 @@ impl ReceiverHook<WriterScope<'_>> for CopyHook {
 }
 
 pub(super) struct CopyFile {
+    pub path: std::path::PathBuf,
     pub connection: Mutex<Option<TursoConnection>>,
     pub hook: CopyHook,
 }
@@ -277,6 +289,7 @@ impl SenderFixture {
                 &directory.path().join("writer.db"),
                 SenderSchema {
                     tables: TABLES.as_ref().map_err(Clone::clone)?,
+                    migration_count: Arc::new(AtomicUsize::new(2)),
                 },
                 peer,
                 LeasePolicy {
@@ -339,6 +352,7 @@ impl SenderFixture {
             files.insert(
                 copy,
                 CopyFile {
+                    path: directory.path().join(format!("{}.db", copy.as_uuid())),
                     connection: Mutex::new(Some(connection)),
                     hook,
                 },
@@ -402,5 +416,82 @@ impl SenderFixture {
             }
         }
         Ok(())
+    }
+    pub async fn restart(self) -> TestResult<Self> {
+        let Self {
+            _directory,
+            database,
+            sender,
+            transport,
+            marks,
+            first,
+            second,
+        } = self;
+        let schema = database.schema.clone();
+        let path = database.path().to_owned();
+        let id = database.database();
+        drop(sender);
+        let NativeTransport {
+            mut files, peer, ..
+        } = Arc::try_unwrap(transport).map_err(|_| "transport is still in use")?;
+        database.close().await;
+        drop(database);
+        for file in files.values_mut() {
+            let file = file.connection.get_mut();
+            if let Some(connection) = file.take() {
+                connection.close().await?;
+            }
+        }
+        let database = Arc::new(
+            ReplicatedDatabase::open(
+                &path,
+                id,
+                schema,
+                fleet_sync_lease::LeaseHolder::provisional(
+                    id,
+                    peer,
+                    LeasePolicy {
+                        lease_duration: Duration::from_secs(600),
+                        renew_interval: Duration::from_secs(10),
+                    },
+                ),
+            )
+            .await?,
+        );
+        for file in files.values_mut() {
+            let connection = TursoConnectOptions::new()
+                .filename(&file.path)
+                .foreign_keys(false)
+                .connect()
+                .await?;
+            *file.connection.get_mut() = Some(connection);
+        }
+        let transport = Arc::new(NativeTransport {
+            writer: database.clone(),
+            files,
+            lose_answer: Mutex::new(None),
+            calls: AtomicUsize::new(0),
+            blocked: Mutex::new(None),
+            peer,
+        });
+        let sender = Arc::new(ReplicationSender::new(
+            database.clone(),
+            Arc::new(()),
+            marks.clone(),
+            transport.clone(),
+            SenderOptions {
+                max_part_items: std::num::NonZeroUsize::MIN.saturating_add(1),
+                ..SenderOptions::default()
+            },
+        ));
+        Ok(Self {
+            _directory,
+            database,
+            sender,
+            transport,
+            marks,
+            first,
+            second,
+        })
     }
 }
