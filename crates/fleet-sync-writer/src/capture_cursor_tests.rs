@@ -24,7 +24,7 @@ async fn copy_records(fixture: &SenderFixture) -> TestResult<Vec<String>> {
 #[tokio::test]
 async fn incoherent_and_out_of_range_capture_cursors_refuse_before_idle_prune_or_send() -> TestResult
 {
-    for cursor in [1, u64::MAX] {
+    for (cursor, floor) in [(1, 0), (u64::MAX, 0), (u64::MAX, u64::MAX)] {
         let fixture = SenderFixture::open().await?;
         let before = copy_records(&fixture).await?;
         let calls = fixture.transport.calls.load(Ordering::SeqCst);
@@ -35,19 +35,20 @@ async fn incoherent_and_out_of_range_capture_cursors_refuse_before_idle_prune_or
                 .ok_or("writer missing")?;
             assert_eq!(record.retained_after.sequence.value(), 0);
             record.retained_change_id = cursor;
+            record.retained_after.sequence = CommitSequence::new(floor);
             write_file_record(&mut connection, &record).await?;
             assert!(
                 matches!(
                     read_file_record(&mut connection).await,
-                    Err(OpenError::Corrupt { .. })
+                    Err(OpenError::Corrupt { field }) if field == "writer.capture_cursor"
                 ),
-                "cursor {cursor} decoded"
+                "cursor {cursor} at floor {floor} decoded"
             );
         }
         assert!(
             matches!(
                 fixture.sender.replicate_once(fixture.first).await,
-                Err(SenderError::Storage(OpenError::Corrupt { .. }))
+                Err(SenderError::Storage(OpenError::Corrupt { field })) if field == "writer.capture_cursor"
             ),
             "invalid cursor returned idle success"
         );
@@ -65,7 +66,7 @@ async fn incoherent_and_out_of_range_capture_cursors_refuse_before_idle_prune_or
                 LeaseHolder::provisional(database, PeerId::new(Uuid::from_u128(2))?, policy())
             )
             .await,
-            Err(OpenError::Corrupt { .. })
+            Err(OpenError::Corrupt { field }) if field == "writer.capture_cursor"
         ));
         fixture.close().await?;
     }
