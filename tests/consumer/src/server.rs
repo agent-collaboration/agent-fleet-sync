@@ -75,6 +75,7 @@ pub async fn run_server_with_receiver(directory: &Path, port: u16, receiver: u12
             authoritative_receiver: receiver,
             target_schema_max: 100,
             release_unsent_for: Duration::from_secs(5),
+            move_needs_renewal_within: Some(Duration::from_secs(60)),
         },
         call_timeout: Duration::from_secs(10),
         socket_timeout: Duration::from_secs(5),

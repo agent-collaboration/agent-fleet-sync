@@ -117,11 +117,25 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> NativeWriterRuntime<S, P> {
         call: durable_steps::CallId,
         request: &fleet_sync_protocol::ReleaseRequest,
     ) -> Result<(), StoreError> {
+        #[cfg(feature = "test-support")]
+        let observed_call = call.clone();
         let answer = self
             .database
             .request_release(request, call)
             .await
             .map_err(StoreError::backend)?;
+        #[cfg(feature = "test-support")]
+        self.calls
+            .transport_probe
+            .at(
+                1,
+                crate::WriterTransportObservation::Released {
+                    call: observed_call,
+                    request: request.clone(),
+                    answer: answer.clone(),
+                },
+            )
+            .await;
         self.calls
             .answer_release(frame, answer)
             .await
@@ -136,11 +150,25 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> NativeWriterRuntime<S, P> {
         call: durable_steps::CallId,
         request: &fleet_sync_protocol::WithdrawRelease,
     ) -> Result<(), StoreError> {
+        #[cfg(feature = "test-support")]
+        let observed_call = call.clone();
         let answer = self
             .database
             .withdraw_release(request, call)
             .await
             .map_err(StoreError::backend)?;
+        #[cfg(feature = "test-support")]
+        self.calls
+            .transport_probe
+            .at(
+                2,
+                crate::WriterTransportObservation::Withdrawn {
+                    call: observed_call,
+                    request: request.clone(),
+                    answer,
+                },
+            )
+            .await;
         self.calls
             .answer_withdrawal(frame, answer)
             .await

@@ -1,11 +1,11 @@
 use crate::{ServiceConsumer, ServiceError, ServiceHandle, ServiceObject};
-use durable_steps::RequestKey;
+use durable_steps::{AtomicStore, RequestKey};
 use fleet_sync_lease::{
-    DatabaseLifecycle, HolderChangeTask, ImportTask, PreviewTakeoverTask, RetirementTask,
-    holder_change_request_key, lifecycle_request_key,
+    DatabaseLifecycle, ImportTask, PreviewTakeoverTask, RetirementTask, lifecycle_request_key,
 };
 use fleet_sync_protocol::*;
 use fleet_sync_session::PeerAuthenticator;
+use runtime_primitives::{Clock, WakeScheduler};
 use sqlx_turso::Turso;
 
 /// Seed data supplied through the consumer's authenticated import surface.
@@ -117,32 +117,87 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
     pub async fn holder_change(
         &self,
         request: HolderChangeRequest,
+        requested_by: ActorRef,
     ) -> Result<HolderChangeAnswer, ServiceError> {
-        let (database, attempt) = match &request {
-            HolderChangeRequest::Move {
-                database, attempt, ..
-            }
-            | HolderChangeRequest::Takeover {
-                database, attempt, ..
-            }
-            | HolderChangeRequest::Claim {
-                database, attempt, ..
-            } => (*database, *attempt),
-        };
-        if let Some(answer) = self.state.retirement_holder_answer(database).await? {
-            return Ok(answer);
-        }
-        let key = holder_change_request_key(attempt).map_err(ServiceError::rule)?;
-        match self
+        self.state.holder_change(request, requested_by).await
+    }
+    pub async fn cancel_holder_change(
+        &self,
+        cancel: fleet_sync_lease::CancelHolderChange,
+    ) -> Result<fleet_sync_lease::CancelAnswer, ServiceError> {
+        let now = self.state.registry.host().now();
+        let answer = self
             .state
-            .execute_registry::<HolderChangeTask<ServiceObject, Turso>>(key, request)
+            .registry
+            .transaction(move |scope| {
+                Box::pin(async move {
+                    fleet_sync_lease::cancel_holder_change(scope, &cancel, now)
+                        .await
+                        .map_err(durable_steps::StoreError::backend)
+                })
+            })
+            .await?;
+        if matches!(answer, fleet_sync_lease::CancelAnswer::Accepted { .. }) {
+            self.state
+                .registry
+                .host()
+                .wake_at(now)
+                .await
+                .map_err(ServiceError::rule)?;
+        }
+        Ok(answer)
+    }
+    pub async fn holder_change_view(
+        &self,
+        attempt: TransferId,
+    ) -> Result<Option<fleet_sync_lease::HolderChangeView>, ServiceError> {
+        self.state
+            .registry
+            .rule_transaction(move |scope| {
+                Box::pin(async move {
+                    fleet_sync_lease::holder_change_view(scope, attempt)
+                        .await
+                        .map_err(durable_steps::StoreError::backend)
+                })
+            })
             .await
-        {
-            Ok(answer) => Ok(answer),
-            Err(ServiceError::Pending { .. }) => {
-                Ok(HolderChangeAnswer::Pending { transfer: attempt })
+            .map_err(Into::into)
+    }
+    #[cfg(feature = "test-support")]
+    pub async fn replay_holder_release(
+        &self,
+        holder: PeerId,
+        request: ReleaseRequest,
+        call: durable_steps::CallId,
+    ) -> Result<ReleaseAnswer, ServiceError> {
+        let answer = self
+            .sessions
+            .request_peer(
+                holder,
+                ServerRequest::Crate(ServerCall::Release { call, request }),
+                self.state.options.call_timeout,
+            )
+            .await
+            .map_err(ServiceError::rule)?;
+        match answer {
+            ClientAnswer::Crate(ServerCallAnswer::Release(answer)) => Ok(answer),
+            _ => Err(ServiceError::rule("holder returned another answer kind")),
+        }
+    }
+    #[cfg(feature = "test-support")]
+    pub async fn wait_holder_change_phase(
+        &self,
+        attempt: TransferId,
+        expected: fleet_sync_lease::HolderChangePhase,
+    ) -> Result<fleet_sync_lease::HolderChangeView, ServiceError> {
+        let mut changed = self.state.registry.subscribe_commits();
+        loop {
+            if let Some(view) = self.holder_change_view(attempt).await?
+                && (view.phase == expected || view.outcome.is_some())
+            {
+                return Ok(view);
             }
-            Err(error) => Err(error),
+            changed.changed().await.map_err(ServiceError::rule)?;
         }
     }
     /// Observe an admitted change through its domain record and committed wakes.

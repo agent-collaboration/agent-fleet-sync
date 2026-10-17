@@ -64,7 +64,24 @@ pub enum ControlRequest {
         peer: PeerId,
     },
     HolderChange(HolderChangeRequest),
+    PreviewTakeover {
+        database: DatabaseId,
+        attempt: durable_steps::Uuid,
+    },
     WaitHolderChange(HolderChangeRequest),
+    CancelHolderChange(fleet_sync_lease::CancelHolderChange),
+    HolderChangeView {
+        attempt: TransferId,
+    },
+    WaitHolderChangePhase {
+        attempt: TransferId,
+        phase: fleet_sync_lease::HolderChangePhase,
+    },
+    ReplayHolderRelease {
+        holder: PeerId,
+        request: ReleaseRequest,
+        call: durable_steps::CallId,
+    },
     Revoke {
         peer: PeerId,
     },
@@ -84,6 +101,10 @@ pub enum ControlAnswer {
     CopyStatus(CopyStatusAnswer),
     DatabaseStatuses(Vec<DatabaseStatus>),
     HolderChange(HolderChangeAnswer),
+    TakeoverPreview(TakeoverPreview),
+    Cancel(fleet_sync_lease::CancelAnswer),
+    HolderChangeView(Option<fleet_sync_lease::HolderChangeView>),
+    Release(ReleaseAnswer),
     Error { message: String },
 }
 pub(crate) struct ControlState {
@@ -233,9 +254,43 @@ impl ControlState {
                 ControlRequest::DatabaseStatuses { peer } => {
                     ControlAnswer::DatabaseStatuses(self.service.database_statuses(peer).await?)
                 }
-                ControlRequest::HolderChange(request) => {
-                    ControlAnswer::HolderChange(self.service.holder_change(request).await?)
+                ControlRequest::HolderChange(request) => ControlAnswer::HolderChange(
+                    self.service
+                        .holder_change(request, ActorRef::new("consumer-control")?)
+                        .await?,
+                ),
+                ControlRequest::CancelHolderChange(cancel) => {
+                    ControlAnswer::Cancel(self.service.cancel_holder_change(cancel).await?)
                 }
+                ControlRequest::PreviewTakeover { database, attempt } => {
+                    ControlAnswer::TakeoverPreview(
+                        self.service
+                            .preview_takeover(
+                                durable_steps::RequestKey::new(attempt.to_string())?,
+                                database,
+                            )
+                            .await?,
+                    )
+                }
+                ControlRequest::HolderChangeView { attempt } => {
+                    ControlAnswer::HolderChangeView(self.service.holder_change_view(attempt).await?)
+                }
+                ControlRequest::WaitHolderChangePhase { attempt, phase } => {
+                    ControlAnswer::HolderChangeView(Some(
+                        self.service
+                            .wait_holder_change_phase(attempt, phase)
+                            .await?,
+                    ))
+                }
+                ControlRequest::ReplayHolderRelease {
+                    holder,
+                    request,
+                    call,
+                } => ControlAnswer::Release(
+                    self.service
+                        .replay_holder_release(holder, request, call)
+                        .await?,
+                ),
                 ControlRequest::WaitHolderChange(request) => {
                     ControlAnswer::HolderChange(self.service.wait_holder_change(request).await?)
                 }

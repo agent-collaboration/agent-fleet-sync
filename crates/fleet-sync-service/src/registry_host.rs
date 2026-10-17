@@ -7,7 +7,7 @@ use durable_steps::{
 use fleet_sync_lease::*;
 use fleet_sync_protocol::*;
 use fleet_sync_session::PeerAuthenticator;
-use runtime_primitives::Clock;
+use runtime_primitives::{Clock, WakeScheduler};
 use sqlx_core::migrate::Migrator;
 use sqlx_turso::Turso;
 use std::sync::Arc;
@@ -35,7 +35,14 @@ pub(crate) async fn registry_engine(
     engine.register(ImportTask::<ServiceObject, Turso>::new(config))?;
     engine.register(RetirementTask::<ServiceObject, Turso>::new(config))?;
     engine.register(PreviewTakeoverTask::<ServiceObject, Turso>::new(config))?;
-    engine.register(HolderChangeTask::<ServiceObject, Turso>::new(config))?;
+    let clock: Arc<dyn Clock> = object.host();
+    engine.register(HolderChangeTask::<ServiceObject, Turso>::new(
+        config,
+        clock.clone(),
+    ))?;
+    engine.register(HolderChangeCancelTask::<ServiceObject, Turso>::new(
+        config, clock,
+    ))?;
     engine.register(SettleReservationTask::<ServiceObject>::new())?;
     Ok(engine)
 }
@@ -136,5 +143,64 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             OperationState::Failed { reason } => Err(ServiceError::Operation { failure: reason }),
             OperationState::Running { .. } => Err(ServiceError::Pending { operation }),
         }
+    }
+
+    pub(crate) async fn holder_change(
+        &self,
+        request: HolderChangeRequest,
+        requested_by: ActorRef,
+    ) -> Result<HolderChangeAnswer, ServiceError> {
+        let database = match &request {
+            HolderChangeRequest::Move { database, .. }
+            | HolderChangeRequest::Takeover { database, .. }
+            | HolderChangeRequest::Claim { database, .. } => *database,
+        };
+        if let Some(answer) = self.retirement_holder_answer(database).await? {
+            return Ok(answer);
+        }
+        let now = self.registry.host().now();
+        let admitted_request = request.clone();
+        self.registry
+            .transaction(move |scope| {
+                Box::pin(async move {
+                    admit_holder_change::<ServiceObject, Turso>(
+                        scope,
+                        &admitted_request,
+                        &requested_by,
+                        now,
+                    )
+                    .await
+                    .map_err(StoreError::backend)?;
+                    Ok(())
+                })
+            })
+            .await?;
+        // Admission's committed wake belongs to the service's joined registry
+        // runner. The admin call must not wait behind an unanswered dependency.
+        self.registry
+            .host()
+            .wake_at(now)
+            .await
+            .map_err(ServiceError::rule)?;
+        // The domain outcome can advance after a compact Pending result, when
+        // the withdrawal follow-up completes. Always read that canonical owner.
+        self.registry
+            .rule_transaction(move |scope| {
+                Box::pin(async move {
+                    let attempt = match &request {
+                        HolderChangeRequest::Move { attempt, .. }
+                        | HolderChangeRequest::Takeover { attempt, .. }
+                        | HolderChangeRequest::Claim { attempt, .. } => *attempt,
+                    };
+                    Ok::<_, StoreError>(
+                        holder_change_answer(scope, &request)
+                            .await
+                            .map_err(StoreError::backend)?
+                            .unwrap_or(HolderChangeAnswer::Pending { transfer: attempt }),
+                    )
+                })
+            })
+            .await
+            .map_err(Into::into)
     }
 }

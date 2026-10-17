@@ -245,6 +245,7 @@ pub async fn run_writer(
     }Ok(())}.await;
     stop.send_replace(true);
     runtime.transport().release_seed_page_answer();
+    runtime.transport().release_transport_call();
     database.release_bootstrap_rename();
     while let Some(task) = tasks.join_next().await {
         task??;

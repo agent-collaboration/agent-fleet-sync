@@ -29,6 +29,8 @@ pub struct WriterSessionCalls<S: ReplicatedSchema, P: ConsumerProtocol> {
     installer: OnceLock<Weak<crate::writer_installer::WriterInstaller<S, P>>>,
     #[cfg(feature = "test-support")]
     probe: crate::seed_answer_probe::SeedAnswerProbe,
+    #[cfg(feature = "test-support")]
+    pub(crate) transport_probe: crate::writer_transport_probe::WriterTransportProbe,
 }
 impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterSessionCalls<S, P> {
     pub fn new(
@@ -44,6 +46,8 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterSessionCalls<S, P> {
             installer: OnceLock::new(),
             #[cfg(feature = "test-support")]
             probe: Default::default(),
+            #[cfg(feature = "test-support")]
+            transport_probe: Default::default(),
         }
     }
     pub(crate) fn requests(&self) -> SessionRequests<P> {
@@ -85,6 +89,28 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterSessionCalls<S, P> {
     }
     pub async fn close_seed(&self) {
         self.seed.lock().await.take();
+    }
+    #[cfg(feature = "test-support")]
+    pub fn hold_release_answer(&self) {
+        self.transport_probe.arm(1);
+    }
+    #[cfg(feature = "test-support")]
+    pub fn hold_withdrawal_answer(&self) {
+        self.transport_probe.arm(2);
+    }
+    #[cfg(feature = "test-support")]
+    pub fn hold_piece(&self) {
+        self.transport_probe.arm(3);
+    }
+    #[cfg(feature = "test-support")]
+    pub async fn wait_transport_call(
+        &self,
+    ) -> Result<crate::WriterTransportObservation, durable_steps::StoreError> {
+        self.transport_probe.wait().await
+    }
+    #[cfg(feature = "test-support")]
+    pub fn release_transport_call(&self) {
+        self.transport_probe.release();
     }
     async fn close_seed_generation(&self, generation: Uuid) {
         let mut owner = self.seed.lock().await;
@@ -451,6 +477,16 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> ReplicationTransport<P>
                 message: "receiver has no attached session".into(),
             });
         }
+        #[cfg(feature = "test-support")]
+        self.transport_probe
+            .at(
+                3,
+                crate::WriterTransportObservation::SendingPiece {
+                    receiver,
+                    through: piece.through,
+                },
+            )
+            .await;
         self.replicate(ReplicationRequest::Piece(piece))
             .await
             .map_err(|error| match error {

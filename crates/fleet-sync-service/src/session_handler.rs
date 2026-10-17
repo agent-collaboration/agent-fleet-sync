@@ -1,11 +1,9 @@
-use crate::{ServiceConsumer, ServiceError, ServiceObject, service_state::ServiceState};
+use crate::{ServiceConsumer, ServiceError, service_state::ServiceState};
 use durable_steps::{AtomicStore, StoreError};
-use fleet_sync_lease::{HolderChangeTask, holder_change_request_key};
 use fleet_sync_protocol::*;
 use fleet_sync_session::{PeerAuthenticator, SessionKey};
 use fleet_sync_tokio_runner::{SessionHandler, SessionHostError};
 use runtime_primitives::Clock;
-use sqlx_turso::Turso;
 use std::sync::Weak;
 
 pub(crate) struct ServiceSessionHandler<
@@ -76,17 +74,12 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                         database,
                         claimant: session.peer,
                     };
-                    let key = holder_change_request_key(transfer).map_err(unavailable)?;
-                    match state
-                        .execute_registry::<HolderChangeTask<ServiceObject, Turso>>(key, request)
+                    let requester = ActorRef::new(format!("peer:{}", session.peer.as_uuid()))
+                        .map_err(unavailable)?;
+                    state
+                        .holder_change(request, requester)
                         .await
-                    {
-                        Ok(answer) => answer,
-                        Err(ServiceError::Pending { .. }) => {
-                            HolderChangeAnswer::Pending { transfer }
-                        }
-                        Err(error) => return Err(unavailable(error)),
-                    }
+                        .map_err(unavailable)?
                 };
                 OperationAnswer::Lease(LeaseAnswer::Claim(answer))
             }

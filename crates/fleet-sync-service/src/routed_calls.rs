@@ -110,6 +110,25 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                     _ => Err(CallFailure::AnswerLost),
                 }
             }
+            HolderWithdrawal::KIND => {
+                let target: HolderWithdrawal = decode(target)?;
+                let request: WithdrawRelease = decode(request)?;
+                let answer = self
+                    .sessions()
+                    .map_err(lost)?
+                    .request_peer(
+                        target.holder,
+                        ServerRequest::Crate(ServerCall::WithdrawRelease { call, request }),
+                        self.options.call_timeout,
+                    )
+                    .await?;
+                match answer {
+                    ClientAnswer::Crate(ServerCallAnswer::WithdrawRelease(answer)) => {
+                        encode(answer)
+                    }
+                    _ => Err(CallFailure::AnswerLost),
+                }
+            }
             CopyCreate::KIND => {
                 let target: CopyCreate = decode(target)?;
                 self.local_receiver(target.copy)?;

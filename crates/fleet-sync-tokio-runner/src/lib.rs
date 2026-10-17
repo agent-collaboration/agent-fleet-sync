@@ -49,6 +49,10 @@ mod session_peer_call;
 mod session_socket;
 mod staging_publish;
 pub use install_target::{SnapshotTarget, WriterInstallTarget};
+#[cfg(feature = "test-support")]
+mod writer_transport_probe;
+#[cfg(feature = "test-support")]
+pub use writer_transport_probe::WriterTransportObservation;
 mod staging_store;
 pub use staging_store::{StagedPage, StagedVerification, StagingError, StagingStore};
 #[cfg(test)]

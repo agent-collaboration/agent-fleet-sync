@@ -3,6 +3,7 @@ use fleet_sync_protocol::*;
 use fleet_sync_tokio_runner::{NativeWriterRuntime, SeedPageObservation};
 use fleet_sync_writer::{ReplicatedDatabase, WriteRefusal, WriterRegistrationOutcome};
 use serde::{Deserialize, Serialize};
+use sqlx_core::{query::query, row::Row};
 use std::sync::Arc;
 use tokio::sync::watch;
 
@@ -38,6 +39,15 @@ pub enum WriterCommand {
     HoldBootstrapBeforeRename,
     WaitBootstrapConverted,
     Migrate,
+    HoldReleaseAnswer,
+    HoldWithdrawalAnswer,
+    HoldPiece,
+    WaitTransportCall,
+    ReleaseTransportCall,
+    PruneAcknowledged,
+    WaitSuperseded {
+        current: Epoch,
+    },
     Shutdown,
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -53,6 +63,8 @@ pub enum WriterReply {
     JournalSteps(Vec<durable_steps::storage::StepRecord>),
     Install(fleet_sync_tokio_runner::InstallRecord),
     Converted(fleet_sync_receiver::SnapshotInstall),
+    TransportCall(fleet_sync_tokio_runner::WriterTransportObservation),
+    CaptureRows(u64),
     Error { message: String },
 }
 pub(crate) struct WriterControl {
@@ -86,6 +98,44 @@ impl WriterControl {
                 WriterCommand::Migrate => {
                     self.database.migrate().await?;
                     WriterReply::Position(self.database.snapshot().await?.position())
+                }
+                WriterCommand::HoldReleaseAnswer => {
+                    self.runtime.transport().hold_release_answer();
+                    WriterReply::Ok
+                }
+                WriterCommand::HoldWithdrawalAnswer => {
+                    self.runtime.transport().hold_withdrawal_answer();
+                    WriterReply::Ok
+                }
+                WriterCommand::HoldPiece => {
+                    self.runtime.transport().hold_piece();
+                    WriterReply::Ok
+                }
+                WriterCommand::WaitTransportCall => WriterReply::TransportCall(
+                    self.runtime.transport().wait_transport_call().await?,
+                ),
+                WriterCommand::ReleaseTransportCall => {
+                    self.runtime.transport().release_transport_call();
+                    WriterReply::Ok
+                }
+                WriterCommand::PruneAcknowledged => {
+                    self.sender.replicate_once(self.receiver).await?;
+                    let row = query::<sqlx_turso::Turso>(
+                        "SELECT count(*) AS row_images FROM turso_cdc WHERE change_type!=2",
+                    )
+                    .fetch_one(self.database.reader())
+                    .await?;
+                    WriterReply::CaptureRows(u64::try_from(row.try_get::<i64, _>("row_images")?)?)
+                }
+                WriterCommand::WaitSuperseded { current } => {
+                    let mut changed = self.database.subscribe_authority_changes();
+                    loop {
+                        let state = self.database.writer_state().await?;
+                        if matches!(state, fleet_sync_lease::WriterState::Superseded { current: known } if known>=current) {
+                            break WriterReply::State(state);
+                        }
+                        changed.changed().await?;
+                    }
                 }
                 WriterCommand::JournalSteps { operation } => {
                     WriterReply::JournalSteps(self.runtime.journal_steps(operation).await?)
