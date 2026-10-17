@@ -2,6 +2,23 @@
 use fleet_sync_protocol::*;
 
 #[test]
+fn replicated_autoincrement_is_refused_while_local_schema_and_plain_keys_stay_allowed() {
+    for sql in [
+        "CREATE TABLE records(id INTEGER PRIMARY KEY AUTOINCREMENT,payload TEXT)",
+        "CREATE TABLE records(id INTEGER,payload TEXT,PRIMARY KEY(id AUTOINCREMENT))",
+    ] {
+        admit_schema_statement(sql).unwrap();
+        assert!(admit_replicated_schema_statement(sql).is_err(), "{sql}");
+    }
+    for sql in [
+        "CREATE TABLE records(id INTEGER PRIMARY KEY,payload TEXT)",
+        "CREATE TABLE records(id INTEGER PRIMARY KEY,\"AUTOINCREMENT\" TEXT DEFAULT 'AUTOINCREMENT')",
+    ] {
+        admit_replicated_schema_statement(sql).unwrap();
+    }
+}
+
+#[test]
 fn schema_admission_policy_preserves_allowed_forms_and_nested_namespace_refusals() {
     let protected = |form, name: &str| {
         Err(SchemaAdmissionError {

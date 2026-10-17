@@ -103,6 +103,8 @@ where
             let (_, command) = parsed
                 .pop()
                 .ok_or_else(|| invalid_schema("missing schema statement"))?;
+            fleet_sync_protocol::admit_replicated_schema_command(&command)
+                .map_err(invalid_schema)?;
             let Cmd::Stmt(statement) = command else {
                 return Err(invalid_schema("expected schema statement"));
             };

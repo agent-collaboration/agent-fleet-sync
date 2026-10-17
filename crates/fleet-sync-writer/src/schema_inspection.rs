@@ -146,6 +146,7 @@ pub(crate) async fn inspect_replicated_tables(
     tables: &[TableName],
 ) -> Result<Vec<TableLayout>, OpenError> {
     let entries = schema_entries(connection).await?;
+    reject_autoincrement(&entries, tables)?;
     let mut layouts = Vec::new();
     for table in tables {
         for (entry, owner) in &entries {
@@ -179,4 +180,30 @@ pub(crate) async fn inspect_replicated_tables(
         crate::foreign_key_integrity::read_foreign_keys(connection, table).await?;
     }
     Ok(layouts)
+}
+
+pub(crate) fn reject_autoincrement(
+    entries: &[(fleet_sync_protocol::SchemaEntry, String)],
+    tables: &[TableName],
+) -> Result<(), OpenError> {
+    for (entry, _) in entries.iter().filter(|(entry, _)| {
+        entry.kind == fleet_sync_protocol::SchemaObjectKind::Table
+            && tables
+                .iter()
+                .any(|table| table.as_str().eq_ignore_ascii_case(&entry.name))
+    }) {
+        let command = turso_parser::parser::Parser::new(entry.sql.as_bytes())
+            .next_cmd()
+            .map_err(|_| OpenError::corrupt("schema.sql"))?
+            .ok_or_else(|| OpenError::corrupt("schema.sql"))?;
+        if fleet_sync_protocol::schema_autoincrement_table(&command).is_some() {
+            return Err(OpenError::SchemaUnsupported {
+                form: SchemaForm::Autoincrement {
+                    table: TableName::new(entry.name.clone())
+                        .map_err(|_| OpenError::corrupt("schema.name"))?,
+                },
+            });
+        }
+    }
+    Ok(())
 }

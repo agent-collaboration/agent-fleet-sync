@@ -155,6 +155,17 @@ pub(crate) fn validate_ownership(
     };
     for statement in statements {
         if matches!(kind, MigrationKind::Replicated)
+            && let Some(target) =
+                fleet_sync_protocol::schema_autoincrement_table(&statement.command)
+        {
+            return Err(OpenError::SchemaUnsupported {
+                form: SchemaForm::Autoincrement {
+                    table: TableName::new(target.name.as_str())
+                        .map_err(|_| OpenError::corrupt("migration.table"))?,
+                },
+            });
+        }
+        if matches!(kind, MigrationKind::Replicated)
             && let Some(function) = &statement.inspection.nondeterministic
         {
             return Err(OpenError::SchemaUnsupported {

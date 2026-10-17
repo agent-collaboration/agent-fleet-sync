@@ -47,6 +47,29 @@ pub enum SchemaAdmissionReason {
     StatementCount,
 }
 pub fn admit_schema_statement(sql: &str) -> Result<(), SchemaAdmissionError> {
+    admit_schema_command(&parse_schema_statement(sql)?)
+}
+
+/// Replication adds the allocation-state restriction; local schema admission
+/// continues to allow AUTOINCREMENT without changing any wire form.
+pub fn admit_replicated_schema_statement(sql: &str) -> Result<(), SchemaAdmissionError> {
+    admit_replicated_schema_command(&parse_schema_statement(sql)?)
+}
+
+pub fn admit_replicated_schema_command(
+    command: &turso_parser::ast::Cmd,
+) -> Result<(), SchemaAdmissionError> {
+    admit_schema_command(command)?;
+    if crate::schema_autoincrement_table(command).is_some() {
+        return Err(SchemaAdmissionError {
+            form: statement_form(command),
+            reason: SchemaAdmissionReason::DisallowedForm,
+        });
+    }
+    Ok(())
+}
+
+fn parse_schema_statement(sql: &str) -> Result<turso_parser::ast::Cmd, SchemaAdmissionError> {
     let invalid = |error: turso_parser::error::Error| SchemaAdmissionError {
         form: SchemaStatementForm::InvalidSql,
         reason: SchemaAdmissionReason::InvalidSql {
@@ -67,7 +90,7 @@ pub fn admit_schema_statement(sql: &str) -> Result<(), SchemaAdmissionError> {
             reason: SchemaAdmissionReason::StatementCount,
         });
     }
-    admit_schema_command(&command)
+    Ok(command)
 }
 
 /// Apply schema policy to one parsed command. The caller owns SQL framing;

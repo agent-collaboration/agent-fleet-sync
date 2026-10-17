@@ -42,7 +42,7 @@ where
         }
     }
     for sql in &first.contents.schema_steps {
-        fleet_sync_protocol::admit_schema_statement(sql).map_err(|error| {
+        fleet_sync_protocol::admit_replicated_schema_statement(sql).map_err(|error| {
             ReceiverError::InvalidInput {
                 field: error.to_string(),
             }

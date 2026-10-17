@@ -2,6 +2,10 @@ use fleet_sync_protocol::{Epoch, GateReason, SyncTime, TableName, TransferId};
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SchemaForm {
+    #[error(
+        "replicated table {table:?} uses AUTOINCREMENT, whose allocation state does not replicate"
+    )]
+    Autoincrement { table: TableName },
     #[error("primary-key column {column} of {table:?} permits NULL")]
     NullablePrimaryKey { table: TableName, column: String },
     #[error("migration accesses undeclared table {table:?}")]

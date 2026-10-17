@@ -55,6 +55,8 @@ pub use sql_transport::StoreError;
 use sql_transport::{BoundStatement, BoundValue};
 
 #[cfg(test)]
+mod turso_autoincrement_tests;
+#[cfg(test)]
 mod turso_transport_tests;
 
 #[cfg(test)]

@@ -58,12 +58,16 @@ pub(crate) async fn validate_adoption(
             });
         }
     }
+    crate::schema_inspection::reject_autoincrement(entries, schema.replicated_tables())?;
     for (entry, _) in entries {
         // SQLite's own sequence table is engine metadata. The caller must not
         // supply pre-existing replication/CDC metadata under a reserved name.
         if reserved_namespace(&entry.name)
             && entry.name != "_sqlx_migrations"
             && entry.name != "sqlite_sequence"
+            && !entry
+                .name
+                .starts_with(turso::core::schema::SEQ_BACKING_TABLE_PREFIX)
         {
             return Err(OpenError::ReservedTableName {
                 table: TableName::new(entry.name.clone())
