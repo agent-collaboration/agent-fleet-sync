@@ -25,6 +25,34 @@ pub(crate) fn decode_record<T: DeserializeOwned>(
     })
 }
 
+fn validate_fenced_receipt(
+    request: &fleet_sync_protocol::FenceRequest,
+    result: &fleet_sync_protocol::FenceResult,
+) -> Result<(), StoreError> {
+    let fleet_sync_protocol::FenceResult::Fenced {
+        old_epoch,
+        new_epoch,
+        start,
+    } = result
+    else {
+        return Err(StoreError::Corrupt {
+            field: "fence receipt transition".into(),
+        });
+    };
+    // An idle epoch may end at an inherited position, but never at a future one.
+    if *old_epoch != request.expect.epoch
+        || *new_epoch != request.new_epoch
+        || *start != request.expect.acked
+        || new_epoch <= old_epoch
+        || start.epoch > *old_epoch
+    {
+        return Err(StoreError::Corrupt {
+            field: "fence receipt transition".into(),
+        });
+    }
+    Ok(())
+}
+
 pub(crate) fn piece_identity<A>(piece: &Piece<A>) -> Result<String, StoreError> {
     encode_record(&(
         piece.database,
@@ -227,7 +255,9 @@ where
         if row.request.as_deref() != Some(saved_request.as_str()) {
             return Err(crate::ReceiverError::FenceConflict);
         }
+        let recorded_request = decode_record(row.request, "fence receipt request")?;
         let result = decode_record(row.result, "fence receipt")?;
+        validate_fenced_receipt(&recorded_request, &result)?;
         Ok(Some(result))
     }
 
@@ -272,11 +302,13 @@ where
         else {
             return Ok(None);
         };
+        let request = decode_record(row.request, "epoch fence request")?;
         let holder = row
             .old_holder
             .map(|value| decode_record(Some(value), "epoch holder"))
             .transpose()?;
         let result: fleet_sync_protocol::FenceResult = decode_record(row.result, "epoch fence")?;
+        validate_fenced_receipt(&request, &result)?;
         let fleet_sync_protocol::FenceResult::Fenced {
             old_epoch, start, ..
         } = result

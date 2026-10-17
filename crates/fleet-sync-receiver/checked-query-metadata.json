@@ -67,7 +67,7 @@
     "sql/read_copy.sql": "c792d6ad745e9f0063ca16578d81eeaf43ceef22997b2304542397f513a9e405",
     "sql/read_copy_tables.sql": "450a5674cefb0ec14f4a11ce06a940b795fa8488ffe0c23fd1ac382daea1bbbb",
     "sql/read_creation.sql": "b244300fe028cbc187dfe0b20f7a48b781c9349b5c5dbef81efd6b5d9ac07c33",
-    "sql/read_epoch_fence.sql": "f44e3cd0e5a3a25eeee8715305db9a9d0e0fa7e0a78c64bf3c32121f76d63871",
+    "sql/read_epoch_fence.sql": "f455e28f2ecbde42be7c8cc044dd31b65b51f61efaa5bbaac28fe4dcb477325b",
     "sql/read_fence_receipt.sql": "bde95c4e455efd2ddd0b1f20468d6987067931a1bca91b6bcb76d1bd1ae13ce8",
     "sql/read_hook_migrations.sql": "48772108665c87eb58ddc8cd533860d4fa607be9fa5389ba5e6e6a95bd4b424a",
     "sql/read_parts.sql": "2fe22ce90680daad8cb3383c1b56df163c14c99dd133035f1dd5c448ed8b46ac",
@@ -92,7 +92,7 @@
     "sql/write_seed.sql": "1760686d585a282c49d7eee530ebe6bcd883d49623d339587ba861adfb372783",
     "sql/write_seed_attempt.sql": "6b7bb9dd642308388c49521b264703c0291d95870d6c172caece780aecd583eb",
     "sql/write_seed_page.sql": "2f10b3342821b1a27f8683e064f8445dd16f74c761b5d095a0c56e0f991c95d8",
-    "src/checked_queries.rs": "ad55111d8fad02f5e194b7ea45a8e6aee09d3e2078855e01b42358c068be79a2"
+    "src/checked_queries.rs": "13737154bba43011b9480b988eeec824a18b432b9236dae38b351a1bbae2b8ce"
   },
   "queries": [
     {
@@ -215,6 +215,13 @@
       "name": "read_epoch_fence",
       "bind_slots": 1,
       "columns": [
+        {
+          "name": "request",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
         {
           "name": "old_holder",
           "sql_type": "TEXT",

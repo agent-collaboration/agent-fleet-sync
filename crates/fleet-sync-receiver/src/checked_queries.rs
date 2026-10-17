@@ -302,6 +302,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct StoredEpochFenceRow {
+    pub request: Option<String>,
     pub old_holder: Option<String>,
     pub result: Option<String>,
 }
@@ -326,6 +327,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredEpochFenceRow {
+                    request: row.try_get("request")?,
                     old_holder: row.try_get("old_holder")?,
                     result: row.try_get("result")?,
                 })

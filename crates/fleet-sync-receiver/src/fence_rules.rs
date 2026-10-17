@@ -76,6 +76,7 @@ fn validate_replayed_fence(
     request: &FenceRequest,
     result: &FenceResult,
 ) -> Result<(), StoreError> {
+    // CopyStorage validates the saved request/result tuple before this live-state check.
     let FenceResult::Fenced { new_epoch, .. } = result else {
         return Err(StoreError::Corrupt {
             field: "fence receipt".into(),
