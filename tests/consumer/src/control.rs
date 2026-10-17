@@ -50,6 +50,8 @@ pub enum ControlRequest {
     HoldNextFollowUpBeforeEffect,
     WaitFollowUpBeforeEffect,
     LoseNextClaimSettlementAnswer,
+    HoldNextClaimReserve,
+    WaitClaimReserve,
     WaitClaimSettlement {
         attempt: TransferId,
         count: u64,
@@ -114,6 +116,7 @@ pub enum ControlAnswer {
     Effects(Vec<EffectReceipt>),
     Effect(EffectReceipt),
     FollowUpCall(durable_steps::CallId),
+    ClaimReserveCall(durable_steps::CallId),
     ClaimReceipt(crate::ClaimGateReceipt),
     ClaimReceipts(Vec<crate::ClaimGateReceipt>),
     Retirement(RetirementAnswer),
@@ -266,6 +269,23 @@ impl ControlState {
                         .lose_claim_settlement_answer
                         .store(true, Ordering::SeqCst);
                     ControlAnswer::Ok
+                }
+                ControlRequest::HoldNextClaimReserve => {
+                    self.consumer.claim_reserve_observed.send_replace(None);
+                    self.consumer
+                        .hold_claim_reserve
+                        .store(true, Ordering::SeqCst);
+                    ControlAnswer::Ok
+                }
+                ControlRequest::WaitClaimReserve => {
+                    let mut observed = self.consumer.claim_reserve_observed.subscribe();
+                    let call = loop {
+                        if let Some(call) = observed.borrow().clone() {
+                            break call;
+                        }
+                        observed.changed().await?;
+                    };
+                    ControlAnswer::ClaimReserveCall(call)
                 }
                 ControlRequest::WaitClaimSettlement { attempt, count } => {
                     ControlAnswer::ClaimReceipt(

@@ -19,6 +19,8 @@ pub struct Consumer {
     pub store: ConsumerStore,
     pub hook_failure: AtomicBool,
     pub registration_failure: AtomicBool,
+    pub hold_claim_reserve: AtomicBool,
+    pub claim_reserve_observed: tokio::sync::watch::Sender<Option<CallId>>,
     pub lose_claim_settlement_answer: AtomicBool,
     pub lose_follow_up_answer: AtomicBool,
     pub hold_follow_up_before_effect: AtomicBool,
@@ -32,6 +34,8 @@ impl Consumer {
             store,
             hook_failure: AtomicBool::new(false),
             registration_failure: AtomicBool::new(false),
+            hold_claim_reserve: AtomicBool::new(false),
+            claim_reserve_observed: tokio::sync::watch::channel(None).0,
             lose_claim_settlement_answer: AtomicBool::new(false),
             lose_follow_up_answer: AtomicBool::new(false),
             hold_follow_up_before_effect: AtomicBool::new(false),
@@ -183,6 +187,10 @@ impl HolderChangeGate for Consumer {
         request: &HolderChangeRequest,
         call: CallId,
     ) -> Result<GateAnswer, GateFailure> {
+        if self.hold_claim_reserve.swap(false, Ordering::SeqCst) {
+            self.claim_reserve_observed.send_replace(Some(call.clone()));
+            std::future::pending::<()>().await;
+        }
         self.store
             .reserve_claim(request, call)
             .await

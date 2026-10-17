@@ -9,6 +9,153 @@ use fleet_sync_writer::{ReplicatedDatabase, WriterOptions};
 use std::{path::Path, time::Duration};
 use support::*;
 
+#[tokio::test]
+async fn cancelled_claim_dispatches_terminal_settlement_before_the_reservation_answers()
+-> TestResult {
+    use fleet_sync_lease::{CancelAnswer, CancelHolderChange, CancelReason, HolderChangePhase};
+    let root = tempfile::tempdir()?;
+    let service_path = root.path().join("service");
+    let mut service = ServiceProcess::start(&service_path).await?;
+    let mut control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let (import, _) = import_backup(&service, &mut control, &root.path().join("backup.db")).await?;
+    let database = import.database;
+    control_request(&mut control, ControlRequest::HoldNextClaimReserve).await?;
+    let session = SessionId::new(durable_steps::Uuid::now_v7())?;
+    let mut peer = service.peer(4, session).await?;
+    let attempt = RequestId::new(durable_steps::Uuid::now_v7())?;
+    let transfer = TransferId::new(attempt.as_uuid())?;
+    let claim = LeaseRequest::Claim { attempt, database };
+    assert!(
+        matches!(request(&mut peer, OperationRequest::Lease(claim.clone())).await?, OperationAnswer::Lease(LeaseAnswer::Claim(HolderChangeAnswer::Pending { transfer: current })) if current==transfer)
+    );
+    let reserve_call = match control_request(&mut control, ControlRequest::WaitClaimReserve).await?
+    {
+        ControlAnswer::ClaimReserveCall(call) => call,
+        _ => return Err("consumer reserve was not dispatched".into()),
+    };
+    let pending = match control_request(
+        &mut control,
+        ControlRequest::HolderChangeView { attempt: transfer },
+    )
+    .await?
+    {
+        ControlAnswer::HolderChangeView(Some(view)) => view,
+        _ => return Err("pending claim view missing".into()),
+    };
+    assert_eq!(pending.phase, HolderChangePhase::Requested);
+    assert!(pending.outcome.is_none());
+    assert!(!pending.settlement_owed);
+    let by = ActorRef::new("claim-cancel-admin")?;
+    assert!(matches!(
+        control_request(
+            &mut control,
+            ControlRequest::CancelHolderChange(CancelHolderChange {
+                attempt: transfer,
+                by: by.clone(),
+                reason: CancelReason::new("cancel the unanswered reservation")?,
+            })
+        )
+        .await?,
+        ControlAnswer::Cancel(CancelAnswer::Accepted {
+            phase: HolderChangePhase::Requested,
+            ..
+        })
+    ));
+    let receipt = match control_request(
+        &mut control,
+        ControlRequest::WaitClaimSettlement {
+            attempt: transfer,
+            count: 1,
+        },
+    )
+    .await?
+    {
+        ControlAnswer::ClaimReceipt(receipt) => receipt,
+        _ => return Err("cancelled settlement was not dispatched".into()),
+    };
+    let settlement = receipt.settlement.ok_or("cancelled settlement missing")?;
+    assert_eq!(settlement.outcome, SettleOutcome::Cancelled);
+    assert_ne!(settlement.call, reserve_call);
+    assert!(receipt.reserved_by.is_none());
+    assert_eq!(receipt.reserve_attempts, 0);
+    assert!(
+        matches!(receipt.request, HolderChangeRequest::Claim { attempt: current, database: current_database, claimant } if current==transfer && current_database==database && claimant==PeerId::new(durable_steps::Uuid::from_u128(4))?)
+    );
+    let ended = match control_request(
+        &mut control,
+        ControlRequest::WaitHolderChangeSettled { attempt: transfer },
+    )
+    .await?
+    {
+        ControlAnswer::HolderChangeView(Some(view)) => view,
+        _ => return Err("cancelled claim did not reconcile".into()),
+    };
+    assert!(
+        matches!(ended.outcome, Some(HolderChangeAnswer::Cancelled { by: ref actual }) if *actual==by)
+    );
+    assert!(!ended.settlement_owed);
+    assert!(ended.follow_up_failure.is_none());
+    assert!(
+        matches!(request(&mut peer, OperationRequest::Lease(claim.clone())).await?, OperationAnswer::Lease(LeaseAnswer::Claim(HolderChangeAnswer::Cancelled { by: actual })) if actual==by)
+    );
+    // The actual reserve call is still unanswered when this process dies.
+    service.kill().await?;
+    drop(control);
+    service = ServiceProcess::start(&service_path).await?;
+    control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    peer = service.peer(4, session).await?;
+    assert!(
+        matches!(request(&mut peer, OperationRequest::Lease(claim)).await?, OperationAnswer::Lease(LeaseAnswer::Claim(HolderChangeAnswer::Cancelled { by: actual })) if actual==by)
+    );
+    let restored = match control_request(
+        &mut control,
+        ControlRequest::HolderChangeView { attempt: transfer },
+    )
+    .await?
+    {
+        ControlAnswer::HolderChangeView(Some(view)) => view,
+        _ => return Err("cancelled claim did not survive restart".into()),
+    };
+    assert_eq!(restored.request, ended.request);
+    assert_eq!(restored.requested_by, ended.requested_by);
+    assert_eq!(restored.phase, ended.phase);
+    assert_eq!(restored.history, ended.history);
+    assert_eq!(restored.cancel, ended.cancel);
+    assert_eq!(restored.outcome, ended.outcome);
+    assert!(!restored.settlement_owed);
+    let receipts = match control_request(&mut control, ControlRequest::ClaimReceipts).await? {
+        ControlAnswer::ClaimReceipts(receipts) => receipts,
+        _ => return Err("consumer receipts missing".into()),
+    };
+    assert_eq!(receipts.len(), 1);
+    assert!(
+        matches!(receipts.first(), Some(saved) if saved.settlement.as_ref()==Some(&settlement) && saved.reserved_by.is_none())
+    );
+    let change = HolderChangeRequest::Claim {
+        attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
+        database,
+        claimant: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+    };
+    control_request(&mut control, ControlRequest::HolderChange(change.clone())).await?;
+    let answer =
+        match control_request(&mut control, ControlRequest::WaitHolderChange(change)).await? {
+            ControlAnswer::HolderChange(answer) => answer,
+            _ => return Err("next claim answer missing".into()),
+        };
+    // The cancelled attempt reserved epoch 2 before its external call;
+    // registry epochs are never reused after cancellation.
+    assert!(
+        matches!(answer, HolderChangeAnswer::Granted { epoch, .. } if epoch==Epoch::new(3)?),
+        "{answer:?}"
+    );
+    service.stop(&mut control).await?;
+    Ok(())
+}
+
 async fn import_backup(
     service: &ServiceProcess,
     control: &mut WebSocketConnection,
