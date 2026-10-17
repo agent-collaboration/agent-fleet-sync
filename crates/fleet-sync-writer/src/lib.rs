@@ -15,8 +15,20 @@ mod migration_ownership;
 mod native_rows;
 mod piece_builder;
 mod read_pool;
+mod register_database_task;
+mod registration_bookkeeping;
+mod registration_contract;
+mod renewal_task;
 mod replicated_database;
 mod replicated_schema;
+mod seed_copy_task;
+pub use register_database_task::RegisterDatabase;
+pub use registration_contract::{
+    RegisterDatabaseInput, RegistryRegistration, RegistryRenewal, RenewalCause, SeedCopyInput,
+    SeedCopyRefusal, SeedFile, SeedFileAnswer, SeedFileRequest, WriterRegistrationOutcome,
+};
+pub use renewal_task::{RenewLease, RenewLeaseInput};
+pub use seed_copy_task::SeedCopy;
 mod replication_sender;
 mod schema_inspection;
 mod schema_layout;

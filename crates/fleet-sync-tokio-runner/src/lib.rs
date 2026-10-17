@@ -2,7 +2,15 @@
 
 mod call_host;
 mod client_pump;
+#[cfg(feature = "test-support")]
+mod seed_answer_probe;
+mod writer_runtime;
+#[cfg(feature = "test-support")]
+pub use seed_answer_probe::SeedPageObservation;
+mod writer_session_calls;
 pub use client_pump::{SessionPump, SessionRequests};
+pub use writer_runtime::{NativeWriterRuntime, NativeWriterStore, WriterHost};
+pub use writer_session_calls::WriterSessionCalls;
 mod checked_native_queries;
 mod install_calls;
 mod install_contract;

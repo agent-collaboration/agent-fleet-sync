@@ -58,20 +58,131 @@ impl<S: ReplicatedSchema, H: Host> AtomicStore for WriterJournalStore<S, H> {
             + Send
             + 'static,
     {
+        self.rule_transaction(run).await
+    }
+}
+
+impl<S: ReplicatedSchema, H: Host> WriterJournalStore<S, H> {
+    #[cfg(feature = "test-support")]
+    pub async fn journal_steps(
+        &self,
+        operation: durable_steps::OperationId,
+    ) -> Result<Vec<durable_steps::storage::StepRecord>, StoreError> {
+        use durable_steps::storage::JournalStorage;
+        self.transaction(move |scope| {
+            Box::pin(async move {
+                let mut journal = scope.journal();
+                let count = journal.step_count(operation).await?;
+                let mut steps = Vec::new();
+                for position in 0..count {
+                    if let Some(step) = journal.step(operation, position).await? {
+                        steps.push(step);
+                    }
+                }
+                Ok(steps)
+            })
+        })
+        .await
+    }
+
+    pub async fn start_registration(
+        &self,
+        receiver: fleet_sync_protocol::ReceiverId,
+    ) -> Result<durable_steps::OperationId, StartRefusal> {
+        let key = crate::registration_bookkeeping::registration_key()?;
+        let operation = self
+            .rule_transaction(move |scope| {
+                Box::pin(async move {
+                    let input = scope
+                        .registration_input(receiver)
+                        .await
+                        .map_err(StoreError::backend)?;
+                    Ok::<_, StartRefusal>(
+                        scope
+                            .admit::<crate::RegisterDatabase<S, H>>(&key, &input)
+                            .await?
+                            .id(),
+                    )
+                })
+            })
+            .await?;
+        self.host
+            .wake_at(self.host.now())
+            .await
+            .map_err(StoreError::backend)?;
+        Ok(operation)
+    }
+    pub async fn ensure_renewal(
+        &self,
+        receiver: fleet_sync_protocol::ReceiverId,
+    ) -> Result<(), StoreError> {
+        self.transaction(move |scope| {
+            Box::pin(async move {
+                scope
+                    .ensure_renewal::<S>(receiver)
+                    .await
+                    .map_err(StoreError::backend)
+            })
+        })
+        .await?;
+        self.host
+            .wake_at(self.host.now())
+            .await
+            .map_err(StoreError::backend)
+    }
+    pub async fn prompt_renewal(
+        &self,
+        receiver: fleet_sync_protocol::ReceiverId,
+    ) -> Result<durable_steps::OperationId, StartRefusal> {
+        let key = crate::registration_bookkeeping::renewal_key(self.host.new_id())?;
+        let operation = self
+            .rule_transaction(move |scope| {
+                Box::pin(async move {
+                    Ok::<_, StartRefusal>(
+                        scope
+                            .admit::<crate::RenewLease<S, H>>(
+                                &key,
+                                &crate::RenewLeaseInput {
+                                    receiver,
+                                    force: true,
+                                },
+                            )
+                            .await?
+                            .id(),
+                    )
+                })
+            })
+            .await?;
+        self.host
+            .wake_at(self.host.now())
+            .await
+            .map_err(StoreError::backend)?;
+        Ok(operation)
+    }
+    pub async fn rule_transaction<T, E, F>(&self, run: F) -> Result<T, E>
+    where
+        T: Send + 'static,
+        E: From<StoreError> + Send + 'static,
+        F: for<'scope, 'transaction> FnOnce(
+                &'scope mut WriterJournalScope<'transaction, H>,
+            ) -> BoxFuture<'scope, Result<T, E>>
+            + Send
+            + 'static,
+    {
         let mut control = self.database.control.lock().await;
         let mut connection = self
             .database
             .maintenance
             .acquire()
             .await
-            .map_err(StoreError::backend)?;
+            .map_err(|error| E::from(StoreError::backend(error)))?;
         let mut transaction = connection
             .begin_with("BEGIN IMMEDIATE")
             .await
-            .map_err(StoreError::backend)?;
+            .map_err(|error| E::from(StoreError::backend(error)))?;
         restore_authority(&mut transaction, &mut control.holder)
             .await
-            .map_err(StoreError::backend)?;
+            .map_err(|error| E::from(StoreError::backend(error)))?;
         let mut scope = WriterJournalScope {
             maintenance: MaintenanceTransaction::new(
                 &mut transaction,
@@ -85,14 +196,20 @@ impl<S: ReplicatedSchema, H: Host> AtomicStore for WriterJournalStore<S, H> {
                 let mut next_holder = control.holder.clone();
                 restore_authority(&mut transaction, &mut next_holder)
                     .await
-                    .map_err(StoreError::backend)?;
-                transaction.commit().await.map_err(StoreError::backend)?;
+                    .map_err(|error| E::from(StoreError::backend(error)))?;
+                transaction
+                    .commit()
+                    .await
+                    .map_err(|error| E::from(StoreError::backend(error)))?;
                 control.holder = next_holder;
                 self.database.authority_changes.send_replace(());
                 Ok(value)
             }
             Err(error) => {
-                transaction.rollback().await.map_err(StoreError::backend)?;
+                transaction
+                    .rollback()
+                    .await
+                    .map_err(|error| E::from(StoreError::backend(error)))?;
                 Err(error)
             }
         }

@@ -10,6 +10,11 @@ use sqlx_turso::TursoConnection;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct WriterFileRecord {
+    pub origin: WriterFileOrigin,
+    pub registration_attempt: Option<fleet_sync_protocol::RequestId>,
+    pub registration_failure: Option<durable_steps::OperationFailure>,
+    pub renewal_operation: Option<crate::renewal_task::RenewalOperation>,
+    pub renewal_failure: Option<durable_steps::OperationFailure>,
     pub database: DatabaseId,
     pub peer: PeerId,
     pub epoch: Epoch,
@@ -21,6 +26,13 @@ pub(crate) struct WriterFileRecord {
     pub epoch_ended_at: Option<ReplicationPosition>,
     pub registration: crate::writer_registration_state::RegistrationState,
 }
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum WriterFileOrigin {
+    Created,
+    Adopted,
+    Bootstrap,
+}
 
 impl WriterFileRecord {
     pub(crate) fn new(database: DatabaseId, peer: PeerId, epoch: Epoch) -> Self {
@@ -29,6 +41,11 @@ impl WriterFileRecord {
             sequence: CommitSequence::new(0),
         };
         Self {
+            origin: WriterFileOrigin::Created,
+            registration_attempt: None,
+            registration_failure: None,
+            renewal_operation: None,
+            renewal_failure: None,
             database,
             peer,
             epoch,

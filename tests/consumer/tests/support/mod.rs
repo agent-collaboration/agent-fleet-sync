@@ -1,5 +1,7 @@
 use fleet_sync_protocol::*;
 mod key_contract;
+#[allow(dead_code)]
+pub mod writer_process;
 use fleet_sync_session::*;
 use fleet_sync_test_consumer::{ControlAnswer, ControlRequest, SampleProtocol, TestResult};
 use fleet_sync_transport_websocket::{WebSocketConnection, WebSocketTransport};

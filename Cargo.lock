@@ -882,6 +882,7 @@ dependencies = [
  "fleet-sync-query-gen",
  "fleet-sync-receiver",
  "fleet-sync-session",
+ "fleet-sync-writer",
  "futures-util",
  "runtime-primitives",
  "serde",

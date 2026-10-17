@@ -31,6 +31,7 @@ pub struct ReplicatedDatabase<S: ReplicatedSchema> {
     pub(crate) control: Arc<Mutex<WriterControl>>,
     pub(crate) clock: Arc<dyn Clock>,
     pub(crate) authority_changes: tokio::sync::watch::Sender<()>,
+    pub(crate) engine_work: Arc<Mutex<()>>,
 }
 
 #[derive(Clone, Copy)]
@@ -251,6 +252,9 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                     };
                     let mut record = WriterFileRecord::new(database, holder.peer(), epoch);
                     record.retained_layout = adopted_layout;
+                    if adopting {
+                        record.origin = crate::writer_file_record::WriterFileOrigin::Adopted;
+                    }
                     write_file_record(&mut transaction, &record).await?;
                 }
             }
@@ -279,6 +283,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             })),
             clock,
             authority_changes,
+            engine_work: Arc::new(Mutex::new(())),
         };
         if let Err(error) = database.migrate().await {
             database.close().await;
@@ -295,6 +300,21 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
     }
     pub fn reader(&self) -> &ReadPool {
         &self.readers
+    }
+    pub fn engine_lock(&self) -> Arc<Mutex<()>> {
+        self.engine_work.clone()
+    }
+    pub fn subscribe_authority_changes(&self) -> tokio::sync::watch::Receiver<()> {
+        self.authority_changes.subscribe()
+    }
+    pub async fn registration_outcome(
+        &self,
+    ) -> Result<crate::WriterRegistrationOutcome, OpenError> {
+        let mut connection = self.maintenance.acquire().await?;
+        let record = read_file_record(&mut connection)
+            .await?
+            .ok_or_else(|| OpenError::corrupt("writer.record"))?;
+        Ok(crate::registration_bookkeeping::outcome(&record))
     }
     pub async fn begin_write(&self) -> Result<WriteTransaction, WriteRefusal> {
         if self.writer.is_closed() {
