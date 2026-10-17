@@ -54,6 +54,8 @@ mod writer_error;
 mod writer_file_record;
 mod writer_journal;
 mod writer_journal_storage;
+mod writer_move;
+mod writer_move_probe;
 mod writer_registration_state;
 mod writer_release;
 mod writer_release_record;
@@ -62,6 +64,11 @@ mod writer_scope;
 mod writer_seed_gate_tests;
 mod writer_snapshot;
 mod writer_withdrawal;
+pub use writer_move::MoveAsideError;
+#[cfg(feature = "test-support")]
+pub use writer_move_probe::MoveAsidePhase;
+#[cfg(test)]
+mod writer_move_tests;
 
 pub use capture_normalization::{CaptureChange, CaptureError, normalize_capture_change};
 pub use maintenance_transaction::MaintenanceTransaction;

@@ -31,7 +31,7 @@ static TABLES: LazyLock<Result<Vec<TableName>, fleet_sync_protocol::TextValueErr
             .map(TableName::new)
             .collect()
     });
-struct ReleaseSchema {
+pub(super) struct ReleaseSchema {
     tables: &'static [TableName],
 }
 impl ReplicatedSchema for ReleaseSchema {
@@ -42,7 +42,7 @@ impl ReplicatedSchema for ReleaseSchema {
         self.tables
     }
 }
-struct TestClock(AtomicI64);
+pub(super) struct TestClock(pub(super) AtomicI64);
 impl Clock for TestClock {
     fn now(&self) -> SyncTime {
         SyncTime::from_unix_millis(self.0.load(Ordering::SeqCst))
@@ -92,7 +92,7 @@ fn renewal(
         replayed: true,
     })
 }
-async fn create(
+pub(super) async fn create(
     path: &std::path::Path,
     clock: Arc<TestClock>,
 ) -> TestResult<Arc<ReplicatedDatabase<ReleaseSchema>>> {

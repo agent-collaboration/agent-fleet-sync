@@ -42,6 +42,9 @@ pub enum ControlRequest {
     SetHookFailure {
         enabled: bool,
     },
+    SetRegistrationFailure {
+        enabled: bool,
+    },
     LoseNextFollowUpAnswer,
     WaitEffects {
         count: usize,
@@ -180,6 +183,12 @@ impl ControlState {
                 },
                 ControlRequest::SetHookFailure { enabled } => {
                     self.consumer.hook_failure.store(enabled, Ordering::SeqCst);
+                    ControlAnswer::Ok
+                }
+                ControlRequest::SetRegistrationFailure { enabled } => {
+                    self.consumer
+                        .registration_failure
+                        .store(enabled, Ordering::SeqCst);
                     ControlAnswer::Ok
                 }
                 ControlRequest::LoseNextFollowUpAnswer => {

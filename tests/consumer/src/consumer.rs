@@ -18,6 +18,7 @@ use std::{
 pub struct Consumer {
     pub store: ConsumerStore,
     pub hook_failure: AtomicBool,
+    pub registration_failure: AtomicBool,
     pub lose_follow_up_answer: AtomicBool,
     hook_code: HookRefusalCode,
     pub handled_requests: AtomicU64,
@@ -27,6 +28,7 @@ impl Consumer {
         Ok(Self {
             store,
             hook_failure: AtomicBool::new(false),
+            registration_failure: AtomicBool::new(false),
             lose_follow_up_answer: AtomicBool::new(false),
             hook_code: HookRefusalCode::new("consumer_hook")?,
             handled_requests: AtomicU64::new(0),
@@ -142,7 +144,20 @@ impl LifecycleGate for Consumer {
         _: &PeerId,
         _: CallId,
     ) -> Result<GateAnswer, GateFailure> {
-        Ok(GateAnswer::Admitted)
+        if self.registration_failure.load(Ordering::SeqCst) {
+            Ok(GateAnswer::Refused {
+                reason: GateReason {
+                    code: GateReasonCode::new("registration_denied").map_err(|error| {
+                        GateFailure {
+                            detail: error.to_string(),
+                        }
+                    })?,
+                    detail: "consumer refused registration".into(),
+                },
+            })
+        } else {
+            Ok(GateAnswer::Admitted)
+        }
     }
     async fn admit_retirement(&self, _: &DatabaseId, _: CallId) -> Result<GateAnswer, GateFailure> {
         Ok(GateAnswer::Admitted)

@@ -33,6 +33,7 @@ pub struct ReplicatedDatabase<S: ReplicatedSchema> {
     pub(crate) authority_changes: tokio::sync::watch::Sender<()>,
     pub(crate) engine_work: Arc<Mutex<()>>,
     pub(crate) bootstrap_publish_probe: crate::bootstrap_publish_probe::BootstrapPublishProbe,
+    pub(crate) move_probe: crate::writer_move_probe::MoveAsideProbe,
     pub(crate) native_owner: Arc<crate::native_file_owner::NativeFileOwner>,
 }
 
@@ -342,6 +343,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             authority_changes,
             engine_work: Arc::new(Mutex::new(())),
             bootstrap_publish_probe,
+            move_probe: Default::default(),
             native_owner,
         };
         let opened = if pending_bootstrap {
