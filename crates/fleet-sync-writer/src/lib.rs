@@ -90,6 +90,8 @@ pub use writer_journal::{WriterJournalScope, WriterJournalStore};
 pub use writer_snapshot::WriterSnapshot;
 
 #[cfg(test)]
+mod capture_cursor_tests;
+#[cfg(test)]
 mod capture_stream_tests;
 #[cfg(test)]
 mod guarded_executor_tests;

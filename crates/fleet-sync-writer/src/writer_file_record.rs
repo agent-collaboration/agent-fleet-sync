@@ -112,6 +112,16 @@ pub(crate) async fn read_file_record(
     {
         return Err(OpenError::corrupt("writer.positions"));
     }
+    let expected_cursor = if record.retained_after.epoch == record.epoch {
+        record.retained_after.sequence.value()
+    } else {
+        0
+    };
+    if record.retained_change_id != expected_cursor
+        || i64::try_from(record.retained_change_id).is_err()
+    {
+        return Err(OpenError::corrupt("writer.capture_cursor"));
+    }
     Ok(Some(record))
 }
 
