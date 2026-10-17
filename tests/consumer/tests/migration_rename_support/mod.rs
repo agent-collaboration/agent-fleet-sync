@@ -26,8 +26,10 @@ use std::{
 use tokio::sync::Mutex;
 pub type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 const KEY: &str = "019eef00-0000-7000-8000-000000000001";
+mod column_journeys;
 mod local_history;
 mod scenarios;
+pub use column_journeys::{ColumnJourney, CopyAvailability, run_column_journey};
 pub use scenarios::{Case, dropped_local_case, rename_chain_case, rename_table_case};
 use scenarios::{RenameSchema, peer, policy, receiver, schema};
 struct Annotation;
