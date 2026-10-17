@@ -1,7 +1,8 @@
 use crate::{LocalStateCarryError, PublishError, native_carry_schema::FileScope};
 use durable_steps::{BoxFuture, StoreError, Uuid};
 use fleet_sync_protocol::{
-    CopyStatus, ReplicationPosition, SnapshotCursor, SnapshotManifest, SnapshotPage, SnapshotRead,
+    CopyStatus, ReplicationPosition, SnapshotCursor, SnapshotManifest, SnapshotManifestAnswer,
+    SnapshotPage, SnapshotRead,
 };
 use fleet_sync_receiver::{
     InstallPageReceipt, SnapshotInstall, SnapshotInstallError, SnapshotInstallRules,
@@ -32,6 +33,10 @@ pub enum StagingError {
     Carry(#[from] LocalStateCarryError),
     #[error("staging I/O failed: {message}")]
     Io { message: String },
+    #[error("snapshot source is not initialized")]
+    SourceNotInitialized,
+    #[error("snapshot source is retired")]
+    SourceRetired,
 }
 impl StagingError {
     pub(crate) fn io(error: impl std::fmt::Display) -> Self {
@@ -49,6 +54,11 @@ impl From<sqlx_core::Error> for StagingError {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StagedPage {
     Receipt(InstallPageReceipt),
+    Moved { position: ReplicationPosition },
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum StagedVerification {
+    Verified,
     Moved { position: ReplicationPosition },
 }
 
@@ -212,6 +222,60 @@ impl StagingStore {
             })
         })
         .await
+    }
+    pub async fn verify_from<F, Fetch>(
+        &self,
+        install: &SnapshotInstall,
+        fetch: F,
+    ) -> Result<StagedVerification, StagingError>
+    where
+        F: FnOnce() -> Fetch + Send,
+        Fetch: Future<Output = Result<SnapshotManifestAnswer, StagingError>> + Send,
+    {
+        let _owner = self.lock(install).await?;
+        let path = self.path(install);
+        let expected = install.clone();
+        let verified = transact_path(&path, move |scope| {
+            Box::pin(async move {
+                let marker = SnapshotInstallRules(scope)
+                    .state()
+                    .await?
+                    .ok_or(SnapshotInstallError::NotPrepared)?;
+                if marker.install != expected {
+                    return Err(SnapshotInstallError::IdentityConflict.into());
+                }
+                Ok(marker.verified)
+            })
+        })
+        .await?;
+        if verified {
+            return Ok(StagedVerification::Verified);
+        }
+        let manifest = match fetch().await? {
+            SnapshotManifestAnswer::Manifest(manifest) if manifest.position != install.position => {
+                return Ok(StagedVerification::Moved {
+                    position: manifest.position,
+                });
+            }
+            SnapshotManifestAnswer::Manifest(manifest) => manifest,
+            SnapshotManifestAnswer::Moved { position } => {
+                return Ok(StagedVerification::Moved { position });
+            }
+            SnapshotManifestAnswer::NotInitialized => {
+                return Err(StagingError::SourceNotInitialized);
+            }
+            SnapshotManifestAnswer::Retired => return Err(StagingError::SourceRetired),
+        };
+        let expected = install.clone();
+        transact_path(&path, move |scope| {
+            Box::pin(async move {
+                Ok(SnapshotInstallRules(scope)
+                    .verify(&expected, &manifest)
+                    .await?)
+            })
+        })
+        .await?;
+        Ok(StagedVerification::Verified)
     }
 }
 pub(crate) async fn open_stage(path: &Path, create: bool) -> Result<TursoConnection, StagingError> {

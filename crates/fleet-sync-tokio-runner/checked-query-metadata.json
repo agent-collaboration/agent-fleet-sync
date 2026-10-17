@@ -49,14 +49,20 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "9f5f5ce3d0fe38a14a65a0043a903e36a8185b538ecfa9c5ce868dae9bce2998",
+    "checked-queries.json": "2eec587f1e9f939c33c1e6e1ad41eac61743d733a405e5bf9e5a17a6099585ad",
+    "control-migrations/1000_installs.sql": "e557e6bc7d5388f83432905bd1058a779f4849ba5b238765795deb02994bf58e",
     "query-schema/0001_native_sequence.sql": "165243dad92f95583c3aa10704c78005845868934faf23561c85615a9d86b3e0",
     "sql/erase_local_sequence.sql": "b897975d138eb74c6914c7468af1b7cba37b954b3b098af8769def8242836c66",
+    "sql/read_current_install.sql": "4b107ae7d012535691bde97e49b4a1f07afdcec020028aecba8a8bdcb506eee7",
     "sql/read_file_columns.sql": "0460454fdb7d2b1b2707633c2da6a5200914e8b94a0b03e4c00a8f59613d330c",
     "sql/read_file_schema.sql": "323144fc00e8f8485ce8800adb62d54b843f7f8556b5cf99d8def7fb41f01cb3",
+    "sql/read_install.sql": "7fb351793831c71ba273c0ef893ebc87baf85b2a49ed91717c5332239ac9d15f",
     "sql/read_local_sequences.sql": "2c2fd7e0a76470076d22592f269bad5f8b2fc806a64278c9bb815cc656c630a0",
+    "sql/read_target_installs.sql": "d2a3f8f8d376c406ef5e4a4aeca30c6107925d5a8f72eeeaac94617c1eda2a93",
+    "sql/write_current_install.sql": "e3747ae757b06e6660a524bb03f9e6d2541de24eb2e8324594a00656abf2500f",
+    "sql/write_install.sql": "1023d8e9044c87cbdbda63a742b99e40721d503d2a6ed19e29fbbc885f3fd611",
     "sql/write_local_sequence.sql": "8629992a27a6eca59dc76fb2c7633a19e7da054004ec1b5447dc2a93f33a852d",
-    "src/checked_native_queries.rs": "d7896c35fcd1a5dd4faf425a18900ca890e64a5233d6b274cfa74f2fc0b8fada"
+    "src/checked_native_queries.rs": "76849cf531b5246477eb908d6b38373d817248f18c5ab438c1ab33f2d4999915"
   },
   "queries": [
     {
@@ -196,6 +202,76 @@
     },
     {
       "name": "write_local_sequence",
+      "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "read_install",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "record_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "read_current_install",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "record_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "read_target_installs",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "record_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "write_install",
+      "bind_slots": 3,
+      "columns": []
+    },
+    {
+      "name": "write_current_install",
       "bind_slots": 2,
       "columns": []
     }

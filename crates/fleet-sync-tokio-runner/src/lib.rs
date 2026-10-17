@@ -2,6 +2,24 @@
 
 mod call_host;
 mod checked_native_queries;
+mod install_calls;
+mod install_contract;
+mod install_coordinator;
+#[cfg(test)]
+mod install_coordinator_tests;
+#[cfg(test)]
+mod install_failure_tests;
+mod install_records;
+mod install_staging_calls;
+mod install_task;
+pub use install_calls::{
+    InstallFile, InstallFileRequest, InstallFileResult, InstallRefusal, InstallSource,
+};
+pub use install_contract::{
+    InstallFileAnswer, InstallProgress, InstallRecord, InstallRequest, InstallStatus,
+};
+pub use install_coordinator::{InstallCoordinator, InstallHandle};
+pub use install_task::InstallSnapshot;
 mod native_carry;
 mod native_carry_rows;
 mod native_carry_schema;
@@ -19,7 +37,7 @@ mod session_peer_call;
 mod session_socket;
 mod staging_publish;
 mod staging_store;
-pub use staging_store::{StagedPage, StagingError, StagingStore};
+pub use staging_store::{StagedPage, StagedVerification, StagingError, StagingStore};
 #[cfg(test)]
 mod staging_store_tests;
 

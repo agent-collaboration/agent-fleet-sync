@@ -163,3 +163,137 @@ where
         Ok(())
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct InstallRecordRow {
+    pub record: Option<String>,
+    pub record_class: Option<String>,
+}
+pub(crate) fn read_install<S>(
+    scope: &mut S,
+    install_id: String,
+) -> impl std::future::Future<Output = Result<Option<InstallRecordRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_install.sql"
+        )))
+        .bind(install_id);
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(InstallRecordRow {
+                    record: row.try_get("record")?,
+                    record_class: row.try_get("record_class")?,
+                })
+            })
+            .transpose()
+    }
+}
+pub(crate) fn read_current_install<S>(
+    scope: &mut S,
+    target_key: String,
+) -> impl std::future::Future<Output = Result<Option<InstallRecordRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_current_install.sql"
+        )))
+        .bind(target_key);
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(InstallRecordRow {
+                    record: row.try_get("record")?,
+                    record_class: row.try_get("record_class")?,
+                })
+            })
+            .transpose()
+    }
+}
+pub(crate) fn read_target_installs<S>(
+    scope: &mut S,
+    target_key: String,
+) -> impl std::future::Future<Output = Result<Vec<InstallRecordRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_target_installs.sql"
+        )))
+        .bind(target_key);
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(InstallRecordRow {
+                    record: row.try_get("record")?,
+                    record_class: row.try_get("record_class")?,
+                })
+            })
+            .collect()
+    }
+}
+pub(crate) fn write_install<S>(
+    scope: &mut S,
+    install_id: String,
+    target_key: String,
+    record: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_install.sql"
+        )))
+        .bind(install_id)
+        .bind(target_key)
+        .bind(record);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn write_current_install<S>(
+    scope: &mut S,
+    target_key: String,
+    install_id: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_current_install.sql"
+        )))
+        .bind(target_key)
+        .bind(install_id);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}

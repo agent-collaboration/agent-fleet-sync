@@ -18,7 +18,8 @@ impl CallRouter for NoCalls {
         })
     }
 }
-fn snapshot() -> TestResult<(SnapshotInstall, CopyStatus, SnapshotPage, SnapshotManifest)> {
+pub(super) fn snapshot() -> TestResult<(SnapshotInstall, CopyStatus, SnapshotPage, SnapshotManifest)>
+{
     let database = DatabaseId::new(durable_steps::Uuid::from_u128(1))?;
     let holder = PeerId::new(durable_steps::Uuid::from_u128(2))?;
     let epoch = Epoch::new(1)?;
@@ -74,6 +75,37 @@ fn snapshot() -> TestResult<(SnapshotInstall, CopyStatus, SnapshotPage, Snapshot
             }],
         },
     ))
+}
+
+#[tokio::test]
+async fn verified_receipt_replays_without_fetching_a_later_moved_manifest() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let (install, source, page, manifest) = snapshot()?;
+    let store = StagingStore::open(directory.path()).await?;
+    store.prepare(&install, &source).await?;
+    store.stage_page(&install, 0, None, &page).await?;
+    assert_eq!(
+        store
+            .verify_from(&install, move || async {
+                Ok(SnapshotManifestAnswer::Manifest(manifest))
+            })
+            .await?,
+        StagedVerification::Verified
+    );
+    drop(store);
+    let reopened = StagingStore::open(directory.path()).await?;
+    assert_eq!(
+        reopened
+            .verify_from(&install, || async {
+                Err(StoreError::backend(
+                    "verified receipt must answer without fetching source again",
+                )
+                .into())
+            })
+            .await?,
+        StagedVerification::Verified
+    );
+    Ok(())
 }
 
 #[tokio::test]

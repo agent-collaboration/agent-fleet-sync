@@ -14,7 +14,7 @@ impl StagingStore {
     /// Publication is receipted by the marker in the live file itself. After a
     /// crash, that marker distinguishes a completed rename from a staging file
     /// that still needs the target's latest journal, hook rows and fence.
-    pub async fn publish<H: Host>(
+    pub(crate) async fn publish<H: Host>(
         &self,
         install: &SnapshotInstall,
         target: &TokioObject<H>,

@@ -1,6 +1,7 @@
 {
   "migrations": [
-    "query-schema"
+    "query-schema",
+    "control-migrations"
   ],
   "output": "src/checked_native_queries.rs",
   "metadata": "checked-query-metadata.json",
@@ -57,6 +58,84 @@
         {
           "name": "sequence_value",
           "kind": "integer",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_install",
+      "sql": "sql/read_install.sql",
+      "row": "InstallRecordRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "install_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_current_install",
+      "sql": "sql/read_current_install.sql",
+      "row": "InstallRecordRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "target_key",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_target_installs",
+      "sql": "sql/read_target_installs.sql",
+      "row": "InstallRecordRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "target_key",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_install",
+      "sql": "sql/write_install.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "install_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "target_key",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_current_install",
+      "sql": "sql/write_current_install.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "target_key",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "install_id",
+          "kind": "text",
           "nullable": false
         }
       ]
