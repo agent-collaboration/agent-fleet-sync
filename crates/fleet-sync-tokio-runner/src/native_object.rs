@@ -145,6 +145,48 @@ impl<H: Host> TokioObject<H> {
         Ok(())
     }
 }
+impl<H: Host> TokioObject<H> {
+    /// A domain refusal rolls back through its own typed error. Effects returned
+    /// by a successful rule become visible to the caller only after commit.
+    pub async fn rule_transaction<T, E, F>(&self, run: F) -> Result<T, E>
+    where
+        T: Send + 'static,
+        E: From<StoreError> + Send + 'static,
+        F: for<'scope, 'transaction> FnOnce(
+                &'scope mut TursoScope<'transaction, H>,
+            ) -> BoxFuture<'scope, Result<T, E>>
+            + Send
+            + 'static,
+    {
+        let mut guard = self.connection.lock().await;
+        let ObjectConnection::Open(connection) = &mut *guard else {
+            return Err(StoreError::Aborted {
+                reason: "object is closed or publication needs replay".into(),
+            }
+            .into());
+        };
+        let mut transaction = connection
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(|error| E::from(StoreError::backend(error)))?;
+        match run(&mut TursoScope::new(&mut transaction, self.host.as_ref())).await {
+            Ok(value) => {
+                transaction
+                    .commit()
+                    .await
+                    .map_err(|error| E::from(StoreError::backend(error)))?;
+                Ok(value)
+            }
+            Err(error) => {
+                transaction
+                    .rollback()
+                    .await
+                    .map_err(|error| E::from(StoreError::backend(error)))?;
+                Err(error)
+            }
+        }
+    }
+}
 impl<H: Host> AtomicStore for TokioObject<H> {
     type Scope<'transaction> = TursoScope<'transaction, H>;
     async fn transaction<T, F>(&self, run: F) -> Result<T, StoreError>
@@ -157,26 +199,6 @@ impl<H: Host> AtomicStore for TokioObject<H> {
             + Send
             + 'static,
     {
-        let mut guard = self.connection.lock().await;
-        let ObjectConnection::Open(connection) = &mut *guard else {
-            return Err(StoreError::Aborted {
-                reason: "object is closed or publication needs replay".into(),
-            });
-        };
-        let mut transaction = connection
-            .begin_with("BEGIN IMMEDIATE")
-            .await
-            .map_err(StoreError::backend)?;
-        let result = run(&mut TursoScope::new(&mut transaction, self.host.as_ref())).await;
-        match result {
-            Ok(value) => {
-                transaction.commit().await.map_err(StoreError::backend)?;
-                Ok(value)
-            }
-            Err(error) => {
-                transaction.rollback().await.map_err(StoreError::backend)?;
-                Err(error)
-            }
-        }
+        self.rule_transaction(run).await
     }
 }

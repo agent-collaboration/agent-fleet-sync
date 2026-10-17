@@ -830,6 +830,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "fleet-sync-service"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "durable-steps",
+ "fleet-sync-lease",
+ "fleet-sync-protocol",
+ "fleet-sync-receiver",
+ "fleet-sync-session",
+ "fleet-sync-tokio-runner",
+ "fleet-sync-transport-websocket",
+ "runtime-primitives",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "sqlx-core",
+ "sqlx-turso",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "fleet-sync-session"
 version = "0.1.0"
 dependencies = [
