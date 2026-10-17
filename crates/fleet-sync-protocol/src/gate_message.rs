@@ -22,6 +22,7 @@ pub enum GateAnswer {
     deny_unknown_fields
 )]
 pub enum SettleOutcome {
+    Cancelled,
     Granted { epoch: Epoch },
     Refused { reason: HolderChangeRefusal },
 }

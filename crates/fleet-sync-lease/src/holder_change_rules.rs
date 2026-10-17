@@ -74,6 +74,11 @@ where
                 return Ok(answer);
             }
             let final_position = match released {
+                ReleaseAnswer::ReleaseRefused(ReleaseRefusal::Withdrawn) => {
+                    return Err(LeaseError::InvalidInput {
+                        field: "holder reports this transfer's release withdrawn".into(),
+                    });
+                }
                 ReleaseAnswer::Released { final_position } => final_position,
                 ReleaseAnswer::RequestConflict => {
                     return Err(LeaseError::InvalidInput {

@@ -57,3 +57,49 @@ fn holder_change_epoch_unprovable_round_trips_as_a_typed_refusal() {
     assert_eq!(serde_json::to_string(&refusal).unwrap(), refusal_wire);
     assert_eq!(serde_json::to_string(&answer).unwrap(), answer_wire);
 }
+
+#[test]
+fn cancellation_and_stale_holder_answers_preserve_their_wire_details() {
+    for wire in [
+        serde_json::json!({"kind":"cancelled","value":{"by":"admin-subject"}}),
+        serde_json::json!({"kind":"refused","value":{"kind":"holderStale","value":{"lastRenewedAt":1234}}}),
+    ] {
+        let answer: HolderChangeAnswer = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(answer).unwrap(), wire);
+    }
+    let settlement = serde_json::json!({"kind":"cancelled"});
+    let answer: SettleOutcome = serde_json::from_value(settlement.clone()).unwrap();
+    assert_eq!(serde_json::to_value(answer).unwrap(), settlement);
+    let refusal = serde_json::json!({"kind":"releaseRefused","value":{"kind":"withdrawn"}});
+    let answer: ReleaseAnswer = serde_json::from_value(refusal.clone()).unwrap();
+    assert_eq!(serde_json::to_value(answer).unwrap(), refusal);
+}
+
+#[test]
+fn withdrawal_server_call_and_answers_keep_call_and_transfer_identity() {
+    let request = serde_json::json!({"kind":"withdrawRelease","value":{
+        "call":{"operation":"019f0000-0000-7000-8000-000000000001","step":"withdraw"},
+        "request":{"database":"019f0000-0000-7000-8000-000000000002","epoch":3,
+            "transfer":"019f0000-0000-7000-8000-000000000003"}
+    }});
+    let call: ServerCall = serde_json::from_value(request.clone()).unwrap();
+    assert_eq!(serde_json::to_value(call).unwrap(), request);
+    for kind in ["withdrawn", "notHolder"] {
+        let wire = serde_json::json!({"kind":"withdrawRelease","value":{"kind":kind}});
+        let answer: ServerCallAnswer = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(answer).unwrap(), wire);
+    }
+}
+
+#[test]
+fn cancelled_actor_is_bounded_in_utf8_bytes_at_wire_decode() {
+    for actor in ["a".repeat(256), "é".repeat(128)] {
+        let wire = serde_json::json!({"kind":"cancelled","value":{"by":actor}});
+        let answer: HolderChangeAnswer = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(answer).unwrap(), wire);
+    }
+    for actor in [String::new(), "a".repeat(257), "é".repeat(129)] {
+        let wire = serde_json::json!({"kind":"cancelled","value":{"by":actor}});
+        assert!(serde_json::from_value::<HolderChangeAnswer>(wire).is_err());
+    }
+}

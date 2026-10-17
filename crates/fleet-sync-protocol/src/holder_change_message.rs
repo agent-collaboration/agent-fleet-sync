@@ -55,6 +55,21 @@ pub struct ReleaseRequest {
     pub transfer: TransferId,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WithdrawRelease {
+    pub database: DatabaseId,
+    pub epoch: Epoch,
+    pub transfer: TransferId,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum WithdrawAnswer {
+    Withdrawn,
+    NotHolder,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MigrationState {
@@ -71,6 +86,7 @@ pub enum MigrationState {
     deny_unknown_fields
 )]
 pub enum ReleaseRefusal {
+    Withdrawn,
     Superseded {
         current: Epoch,
     },

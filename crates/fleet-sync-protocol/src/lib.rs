@@ -3,6 +3,7 @@
 //! Each transport carries the same JSON bytes in one ordered binary message.
 //! Operation identities belong to their owners; frame IDs only correlate replies.
 
+mod actor_reference;
 mod crate_call_frame;
 mod gate_message;
 mod holder_change_message;
@@ -21,6 +22,7 @@ mod snapshot_manifest;
 mod snapshot_page;
 mod transaction_part;
 
+pub use actor_reference::*;
 pub use crate_call_frame::*;
 pub use gate_message::*;
 pub use holder_change_message::*;

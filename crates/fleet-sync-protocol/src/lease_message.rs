@@ -123,6 +123,9 @@ pub enum HolderChangeRequest {
     deny_unknown_fields
 )]
 pub enum HolderChangeRefusal {
+    HolderStale {
+        last_renewed_at: SyncTime,
+    },
     GateRefused {
         reason: crate::GateReason,
     },
@@ -157,6 +160,9 @@ pub enum HolderChangeRefusal {
     deny_unknown_fields
 )]
 pub enum HolderChangeAnswer {
+    Cancelled {
+        by: crate::ActorRef,
+    },
     Granted {
         epoch: Epoch,
         expires_at: SyncTime,

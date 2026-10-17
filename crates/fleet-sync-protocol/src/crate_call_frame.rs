@@ -58,6 +58,10 @@ pub struct StatusPublication;
     deny_unknown_fields
 )]
 pub enum ServerCall {
+    WithdrawRelease {
+        call: CallId,
+        request: WithdrawRelease,
+    },
     Release {
         call: CallId,
         request: ReleaseRequest,
@@ -77,6 +81,7 @@ pub enum ServerCall {
     deny_unknown_fields
 )]
 pub enum ServerCallAnswer {
+    WithdrawRelease(WithdrawAnswer),
     Release(ReleaseAnswer),
     PublishStatus,
 }
