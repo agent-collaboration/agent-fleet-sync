@@ -40,7 +40,7 @@ fn all_eight_delivery_request_bodies_cross_the_operation_envelope() {
 #[test]
 fn all_eight_delivery_answers_preserve_their_typed_bodies() {
     let answers = [
-        json!({"kind":"submit","value":{"kind":"accepted","value":{"seq":1,"version":1}}}),
+        json!({"kind":"submit","value":{"kind":"accepted","value":{"seq":1,"status":{"kind":"sent","value":{"seq":1}},"version":1,"cancel":null}}}),
         json!({"kind":"fetch","value":{"stream":"controls","entries":[{"kind":"retired","value":{"seq":2,"items":[ITEM]}}],"through":2}}),
         json!({"kind":"received","value":{"stream":"controls","releasedThrough":2}}),
         json!({"kind":"report","value":{"kind":"applied","value":{"item":ITEM,"acknowledged":2,"status":{"kind":"delivered","value":{"acceptance":null}},"version":4}}}),
@@ -138,4 +138,19 @@ fn delivery_header_preserves_identity_and_rejects_a_body() {
         >(with_body)
         .is_err()
     );
+}
+
+#[test]
+fn accepted_and_replayed_submit_receipts_carry_the_canonical_expired_snapshot() {
+    for kind in ["accepted", "replayed"] {
+        let mut snapshot = json!({"status":{"kind":"expired"},"version":1,"cancel":null});
+        if kind == "accepted" {
+            snapshot["seq"] = json!(1);
+        }
+        let wire = json!({"kind":"delivery","value":{"kind":"submit","value":{"kind":kind,"value":snapshot}}});
+        let decoded: OperationAnswer = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+    }
+    let old_sparse = json!({"kind":"delivery","value":{"kind":"submit","value":{"kind":"accepted","value":{"seq":1,"version":1}}}});
+    assert!(serde_json::from_value::<OperationAnswer>(old_sparse).is_err());
 }

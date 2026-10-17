@@ -17,6 +17,57 @@ use node::*;
 use support::*;
 
 #[tokio::test]
+async fn a_first_submit_that_is_already_expired_converges_to_the_canonical_receipt_over_websocket()
+-> TestResult {
+    let directory = tempfile::tempdir()?;
+    let mut relay = ServiceProcess::start(&directory.path().join("relay")).await?;
+    let mut sender = DeliveryNode::start(&directory.path().join("sender"), 2).await?;
+    let mut recipient = DeliveryNode::start(&directory.path().join("recipient"), 4).await?;
+    sender.connect(&relay).await?;
+    recipient.connect(&relay).await?;
+    let item = item_id(702)?;
+    sender
+        .command(NodeCommand::Enqueue {
+            item,
+            recipient: peer(4)?,
+            body: "expired before first admission".into(),
+            valid_until: Some(SyncTime::from_unix_millis(0)),
+        })
+        .await?;
+    let expired = sender.wait(item, CustodySide::Outbox, "expired").await?;
+    assert_eq!(expired["outbox"]["state"]["value"]["version"], 1);
+    recipient
+        .command(NodeCommand::Receive {
+            stream: DeliveryStream::Items,
+        })
+        .await?;
+    let untouched = recipient.command(NodeCommand::Inspect { item }).await?;
+    assert!(untouched["inbox"].is_null());
+    assert_eq!(effect_count(&untouched, item), 0);
+    let queried = sender
+        .command(NodeCommand::Query {
+            mailbox: peer(4)?,
+            items: vec![item],
+        })
+        .await?;
+    assert_eq!(
+        queried["value"]["statuses"][0]["state"]["value"]["status"]["kind"],
+        "expired"
+    );
+    assert_eq!(
+        queried["value"]["statuses"][0]["state"]["value"]["version"],
+        1
+    );
+    eprintln!(
+        "OBS decision73: already-expired first submit reaches sender Expired@1 across actual WS, relay Query agrees, no recipient effect"
+    );
+    recipient.stop().await?;
+    sender.stop().await?;
+    relay.kill().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn queued_relay_offline_then_recipient_offline_drains_real_custody_once() -> TestResult {
     let directory = tempfile::tempdir()?;
     let mut sender = DeliveryNode::start(&directory.path().join("sender"), 2).await?;
@@ -59,12 +110,26 @@ async fn queued_relay_offline_then_recipient_offline_drains_real_custody_once() 
     }
     sender.connect(&relay).await?;
     let catchup = sender.command(NodeCommand::StatusFetch).await?;
-    assert!(
-        catchup["events"]
-            .as_array()
-            .is_some_and(|events| events.len() == 6)
-    );
-    assert_eq!(catchup["through"], 6);
+    let events = catchup["events"]
+        .as_array()
+        .ok_or("missing status events")?;
+    // Owed publications can coalesce intermediate versions. The cursor orders
+    // retained events; catch-up must still contain both canonical terminal states.
+    assert!((2..=6).contains(&events.len()));
+    for (index, event) in events.iter().enumerate() {
+        assert_eq!(event["cursor"], index as u64 + 1);
+    }
+    assert_eq!(catchup["through"], events.len() as u64);
+    let revisions: std::collections::BTreeSet<_> = events
+        .iter()
+        .map(|event| {
+            (
+                event["item"].as_str().unwrap(),
+                event["version"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(revisions.len(), events.len());
     assert_eq!(
         catchup["events"]
             .as_array()

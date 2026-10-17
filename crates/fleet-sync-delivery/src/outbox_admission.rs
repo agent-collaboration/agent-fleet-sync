@@ -103,8 +103,6 @@ where
     {
         self.limits.validate::<D>()?;
         let envelope = DeliveryEnvelope::Cancel(cancel);
-        self.limits.validate::<D>()?;
-        crate::delivery_sizes::check_envelope(&envelope)?;
         crate::delivery_sizes::check_envelope(&envelope)?;
         if let Some(answer) = self.existing_admission(&envelope).await? {
             return Ok(answer);

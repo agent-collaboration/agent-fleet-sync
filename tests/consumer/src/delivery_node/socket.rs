@@ -78,7 +78,7 @@ fn hop(request: &DeliveryRequest<SampleDelivery>) -> &'static str {
         DeliveryRequest::Retire { .. } => "retire",
     }
 }
-async fn connect(port: u16, owner: PeerId) -> TestResult<WebSocketConnection> {
+async fn connect(port: u16, owner: PeerId) -> TestResult<(WebSocketConnection, SessionId)> {
     let credential = format!("Bearer peer-{}", owner.as_uuid().as_u128());
     let mut socket = WebSocketTransport::default()
         .connect(
@@ -96,11 +96,9 @@ async fn connect(port: u16, owner: PeerId) -> TestResult<WebSocketConnection> {
             .into(),
         )
         .await?;
-    let frame = socket.receive().await.ok_or("closed before Welcome")??;
-    match serde_json::from_slice::<ServerFrame<SampleProtocol>>(&frame)? {
-        ServerFrame::Welcome { session_id, .. } if session_id == session => Ok(socket),
-        _ => Err("node did not receive matching Welcome".into()),
-    }
+    // SessionClient uses the same model: Hello starts the transport and its
+    // receive pump handles both Welcome and any already-due server requests.
+    Ok((socket, session))
 }
 async fn close(
     socket: &mut Option<WebSocketConnection>,
@@ -120,6 +118,7 @@ impl LinkActor {
         mut stopped: watch::Receiver<bool>,
     ) -> TestResult {
         let mut socket: Option<WebSocketConnection> = None;
+        let mut expected_session = None;
         let mut pending: Vec<(FrameId, &'static str, Reply)> = Vec::new();
         loop {
             tokio::select! {
@@ -129,7 +128,7 @@ impl LinkActor {
                     Some(LinkCommand::Connect {port,owner,answer})=>{
                         close(&mut socket,&mut pending).await;
                         let result=connect(port,owner).await;
-                        let receipt=match result {Ok(connected)=>{socket=Some(connected);Ok(())},Err(error)=>Err(error)};
+                        let receipt=match result {Ok((connected,session))=>{socket=Some(connected);expected_session=Some(session);Ok(())},Err(error)=>Err(error)};
                         let _=answer.send(receipt);
                     }
                     Some(LinkCommand::Disconnect {answer})=>{
@@ -153,6 +152,7 @@ impl LinkActor {
                     let frame:ServerFrame<SampleProtocol>=serde_json::from_slice(&bytes)?;
                     let Some(state)=state.upgrade() else {break;};
                     match frame {
+                        ServerFrame::Welcome {session_id,..} if expected_session==Some(session_id)=>{},
                         ServerFrame::Answer {frame,body:OperationAnswer::Delivery(body)}=>{
                             if let Some(index)=pending.iter().position(|(expected,_,_)|*expected==frame) {
                                 let (_,kind,answer)=pending.remove(index);

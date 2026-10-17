@@ -103,9 +103,12 @@ pub enum DeliveryAnswer<D: DeliveryTypes = NoDelivery> {
     deny_unknown_fields
 )]
 pub enum SubmitResult<A> {
+    /// The relay's canonical snapshot at first admission, including an already expired item.
     Accepted {
         seq: DeliverySeq,
+        status: DeliveryStatus<A>,
         version: StatusVersion,
+        cancel: Option<CancelResult>,
     },
     Replayed {
         status: DeliveryStatus<A>,

@@ -9,7 +9,7 @@ async fn repeat_preserves_sequence_and_conflicting_content_changes_nothing() {
     let fixture = Fixture::new().await;
     fixture.store.transaction(|scope|Box::pin(async move {
         let mut mailbox=Mailbox::<_,TestTypes>::new(scope,peer(2),limits());
-        assert!(matches!(mailbox.submit(peer(1),item(1,"original"),SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,SubmitResult::Accepted{seq,version} if seq.value()==1&&version.value()==1));
+        assert!(matches!(mailbox.submit(peer(1),item(1,"original"),SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,SubmitResult::Accepted{seq,status:DeliveryStatus::Sent{seq:status_seq},version,cancel:None} if seq.value()==1&&status_seq==seq&&version.value()==1));
         assert!(matches!(mailbox.submit(peer(1),item(1,"original"),SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,SubmitResult::Replayed{status:DeliveryStatus::Sent{seq},version,..} if seq.value()==1&&version.value()==1));
         assert!(matches!(mailbox.submit(peer(1),item(1,"different"),SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,SubmitResult::Refused{reason:DeliveryRefusal::ItemConflict{..}}));
         assert!(matches!(mailbox.submit(peer(1),item(2,"next"),SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,SubmitResult::Accepted{seq,..} if seq.value()==2));
@@ -132,7 +132,7 @@ async fn a_full_mailbox_uses_the_originals_reserved_cancel_and_replays_a_second_
                     .submit(peer(1), cancel(2, 1), SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)?;
-                assert!(matches!(first,SubmitResult::Accepted{seq,..} if seq.value()==1));
+                assert!(matches!(first,SubmitResult::Accepted{seq,status:DeliveryStatus::Sent {seq:status_seq},cancel:Some(CancelResult::Pending),..} if seq.value()==1&&status_seq==seq));
                 let second = mailbox
                     .submit(peer(1), cancel(3, 1), SyncTime::from_unix_millis(0))
                     .await

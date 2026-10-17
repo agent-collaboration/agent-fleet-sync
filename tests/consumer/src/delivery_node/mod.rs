@@ -44,6 +44,7 @@ pub enum NodeCommand {
         item: ItemId,
         recipient: PeerId,
         body: String,
+        valid_until: Option<SyncTime>,
     },
     Cancel {
         item: ItemId,
@@ -238,6 +239,7 @@ impl NodeState {
                 item,
                 recipient,
                 body,
+                valid_until,
             } => {
                 let item = DeliveryItem::<SampleDelivery>::new(
                     item,
@@ -246,7 +248,7 @@ impl NodeState {
                         peer: recipient,
                         address: "effects".into(),
                     },
-                    None,
+                    valid_until,
                     body,
                 )?;
                 let admitted = self

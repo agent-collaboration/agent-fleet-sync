@@ -1,4 +1,6 @@
-use super::*;
+use crate::support::ServiceProcess;
+use fleet_sync_protocol::{ItemId, PeerId};
+use fleet_sync_test_consumer::TestResult;
 use fleet_sync_test_consumer::delivery_node::{CustodySide, NodeCommand};
 use serde_json::Value;
 use std::{path::Path, process::Stdio, time::Duration};
@@ -101,6 +103,7 @@ pub async fn enqueue(
             item,
             recipient,
             body: format!("delivery body {number}"),
+            valid_until: None,
         })
         .await?;
     Ok(item)

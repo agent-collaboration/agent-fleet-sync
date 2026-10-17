@@ -132,13 +132,13 @@ where
             return Ok(());
         }
         match answer {
-            SubmitResult::Accepted { seq, version } => {
-                if version > header.version {
-                    header.status = DeliveryStatus::Sent { seq };
-                    header.version = version;
-                }
+            SubmitResult::Accepted {
+                status,
+                version,
+                cancel,
+                ..
             }
-            SubmitResult::Replayed {
+            | SubmitResult::Replayed {
                 status,
                 version,
                 cancel,
@@ -247,10 +247,13 @@ where
         answer: SubmitResult<D::Acceptance>,
     ) -> Result<(), DeliveryError> {
         let (status, version, cancel) = match answer {
-            SubmitResult::Accepted { seq, version } => {
-                (DeliveryStatus::Sent { seq }, version, None)
+            SubmitResult::Accepted {
+                status,
+                version,
+                cancel,
+                ..
             }
-            SubmitResult::Replayed {
+            | SubmitResult::Replayed {
                 status,
                 version,
                 cancel,

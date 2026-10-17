@@ -199,7 +199,9 @@ where
         self.owe(&record).await?;
         Ok(SubmitResult::Accepted {
             seq,
+            status: copy_wire(&record.status)?,
             version: record.version,
+            cancel: record.cancel,
         })
     }
 

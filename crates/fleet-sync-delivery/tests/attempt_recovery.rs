@@ -228,6 +228,51 @@ async fn cancel_waiting_for_a_saved_delivered_answer_becomes_too_late() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn cancel_waiting_for_a_saved_held_answer_prevents_the_original_in_the_outcome_transaction() {
+    let network = NetworkFixture::new().await;
+    network.enqueue(1, "held before cancel").await;
+    drain(&network.engine(&network.sender)).await;
+    // Controls arrives at the recipient later, while the relay already owns the cancel.
+    network
+        .mailbox
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    .submit(peer(1), cancel(2, 1), SyncTime::from_unix_millis(0))
+                    .await
+                    .map_err(storage_error)?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+    network
+        .routes
+        .local_answers
+        .lock()
+        .unwrap()
+        .push_back(LocalOutcome::Held { until: None });
+    network.receive(DeliveryStream::Items).await;
+    let engine = interleaved_engine(&network, support::interleaving::AfterAnswer::Cancel);
+    assert_eq!(engine.drive_due().await.unwrap().completed.len(), 1);
+    assert!(engine.drive_due().await.unwrap().failed.is_empty());
+    network.recipient.store.transaction(|scope|Box::pin(async move {
+        let mut inbox=Inbox::<_,TestTypes>::new(scope,peer(2),limits());
+        assert!(matches!(inbox.local_outcome(item_id(1)).await.map_err(storage_error)?,Some(RecipientOutcome::Prevented {cancel}) if cancel==item_id(2)));
+        for item in [item_id(1),item_id(2)] {
+            let reference=inbox.pending_report(item).await.map_err(storage_error)?.unwrap();
+            assert!(matches!(inbox.resolve_report(reference).await.map_err(storage_error)?.outcome,RecipientOutcome::Prevented {cancel} if cancel==item_id(2)));
+        }
+        Ok(())
+    })).await.unwrap();
+    drain(&engine).await;
+    network.advance();
+    drain(&network.engine(&network.recipient)).await;
+    assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
+}
 #[tokio::test]
 async fn cancel_waiting_for_an_uncertain_attempt_becomes_too_late() {
     let network = NetworkFixture::new().await;
