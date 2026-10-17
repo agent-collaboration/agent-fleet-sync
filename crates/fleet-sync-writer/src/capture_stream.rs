@@ -224,6 +224,20 @@ pub(crate) async fn schema_step_exists(
         .contains_key(&version))
 }
 
+/// Schema-step layouts describe the latest committed membership, including names
+/// that a newer consumer bundle will rename. Adoption starts at retained_layout.
+pub(crate) async fn committed_layout(
+    connection: &mut TursoConnection,
+) -> Result<Vec<TableLayout>, OpenError> {
+    if let Some((_, step)) = stored_schema_steps(connection).await?.pop_last() {
+        return Ok(step.layout);
+    }
+    Ok(crate::writer_file_record::read_file_record(connection)
+        .await?
+        .ok_or_else(|| OpenError::corrupt("writer.record"))?
+        .retained_layout)
+}
+
 fn captured_schema_step(row: &CaptureRow) -> Result<(u64, SchemaStep), OpenError> {
     if row.kind != 1 || row.before.is_some() {
         return Err(OpenError::corrupt("schema_step.capture_kind"));

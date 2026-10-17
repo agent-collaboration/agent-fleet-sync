@@ -36,18 +36,21 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             .ok_or_else(|| OpenError::corrupt("writer.record"))?;
         let position = capture_head(&mut transaction, &record).await?;
         let bootstrapped = record.origin == crate::writer_file_record::WriterFileOrigin::Bootstrap;
+        let committed = crate::capture_stream::committed_layout(&mut transaction).await?;
+        let names = committed
+            .iter()
+            .map(|layout| {
+                TableName::new(layout.name())
+                    .map_err(|_| OpenError::corrupt("migration.membership"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let mut tables = if bootstrapped {
-            crate::migration_execution::inspect_present_tables(
-                &mut transaction,
-                self.schema.replicated_tables(),
-            )
-            .await?
+            crate::migration_execution::inspect_present_tables(&mut transaction, &names).await?
         } else {
             inspect_replicated_tables(&mut transaction, self.schema.replicated_tables()).await?
         };
         tables.sort_by(|left, right| left.name().cmp(right.name()));
-        let (schema, statements) =
-            snapshot_schema(&mut transaction, self.schema.replicated_tables(), &tables).await?;
+        let (schema, statements) = snapshot_schema(&mut transaction, &names, &tables).await?;
         if bootstrapped {
             let latest = crate::migration_execution::offered_migrations(&self.schema)?
                 .last()

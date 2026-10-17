@@ -1,6 +1,7 @@
 use crate::{
     OpenError, ReplicatedDatabase, ReplicatedSchema, SchemaForm, StatementGuard, checked_queries,
     foreign_key_integrity::reject_orphans,
+    migration_lineage::{migration_lineage, require_final_membership},
     migration_ownership::MigrationKind,
     schema_inspection::{inspect_replicated_tables, schema_entries},
     writer_scope::WriterScope,
@@ -65,6 +66,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                 .await?;
         }
         let offered = offered_migrations(&self.schema)?;
+        let lineage = migration_lineage(&offered, self.schema.replicated_tables())?;
         let previous = offered.last().map_or(0, |migration| migration.version);
         let mut maintenance = self.maintenance.acquire().await?;
         let applied =
@@ -109,6 +111,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                 message: error.to_string(),
             })?;
         check_transaction.commit().await?;
+        control.statements =
+            StatementGuard::new(crate::capture_stream::committed_layout(&mut maintenance).await?);
         drop(maintenance);
         for migration in &offered {
             if u64::try_from(migration.version).is_ok_and(|version| applied.contains(&version)) {
@@ -126,9 +130,11 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                 let mut connection = self.maintenance.acquire().await?;
                 schema_entries(&mut connection).await?
             };
-            let statements = control.statements.migration_statements(
+            let plan = control.statements.migration_plan(
                 migration.sql.as_str(),
-                self.schema.replicated_tables(),
+                lineage
+                    .get(&migration.version)
+                    .ok_or_else(|| OpenError::corrupt("migration.lineage"))?,
                 &catalog,
                 MigrationKind::Replicated,
             )?;
@@ -143,8 +149,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                 &mut connection,
                 migration,
                 prefix,
-                statements,
-                self.schema.replicated_tables(),
+                plan.statements,
+                &plan.tables,
                 self.clock.as_ref(),
                 &control,
             )
@@ -160,6 +166,10 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             control.statements = StatementGuard::new(layouts);
         }
         let mut connection = self.maintenance.acquire().await?;
+        require_final_membership(
+            control.statements.layouts(),
+            self.schema.replicated_tables(),
+        )?;
         let layouts =
             inspect_replicated_tables(&mut connection, self.schema.replicated_tables()).await?;
         reject_orphans(&mut connection, self.schema.replicated_tables()).await?;

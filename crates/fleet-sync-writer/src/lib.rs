@@ -14,6 +14,7 @@ mod guarded_query;
 mod maintenance_transaction;
 mod migration_execution;
 mod migration_inspection;
+mod migration_lineage;
 mod migration_ownership;
 pub mod native_file;
 mod native_file_owner;

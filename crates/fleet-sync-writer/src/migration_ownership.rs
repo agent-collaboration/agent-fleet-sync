@@ -10,7 +10,8 @@ pub(crate) enum MigrationKind {
 }
 
 struct TableOwnership {
-    declared: BTreeSet<String>,
+    eligible: BTreeSet<String>,
+    owned: BTreeMap<String, TableName>,
     objects: BTreeMap<String, (SchemaObjectKind, String)>,
     transient: BTreeSet<String>,
     views: BTreeMap<String, crate::migration_inspection::MigrationInspection>,
@@ -57,7 +58,7 @@ impl TableOwnership {
                         complete.insert(name);
                         continue;
                     }
-                    if self.declared.contains(&name)
+                    if self.owned.contains_key(&name)
                         || self.transient.contains(&name)
                         || complete.contains(&name)
                     {
@@ -82,7 +83,7 @@ impl TableOwnership {
                 }
             }
             MigrationKind::Local => {
-                if write && self.declared.contains(&name_key) {
+                if write && self.eligible.contains(&name_key) {
                     return Err(table_error(name, true));
                 }
             }
@@ -101,7 +102,24 @@ impl TableOwnership {
     fn create(&mut self, name: &QualifiedName) -> Result<(), OpenError> {
         let name_key = name.name.as_str().to_ascii_lowercase();
         if matches!(self.kind, MigrationKind::Replicated)
-            && !self.declared.contains(&name_key)
+            && self.objects.contains_key(&name_key)
+            && !self.owned.contains_key(&name_key)
+            && !self.transient.contains(&name_key)
+        {
+            return Err(table_error(name.name.as_str(), false));
+        }
+        if matches!(self.kind, MigrationKind::Replicated)
+            && self.eligible.contains(&name_key)
+            && !self.objects.contains_key(&name_key)
+        {
+            self.owned.insert(
+                name_key.clone(),
+                TableName::new(name.name.as_str())
+                    .map_err(|_| OpenError::corrupt("migration.table"))?,
+            );
+        }
+        if matches!(self.kind, MigrationKind::Replicated)
+            && !self.eligible.contains(&name_key)
             && !self.transient.contains(&name_key)
             && !self.objects.contains_key(&name_key)
             && name
@@ -123,6 +141,7 @@ impl TableOwnership {
         self.objects
             .retain(|key, (_, owner)| key != &name_key && owner != &name_key);
         self.transient.remove(&name_key);
+        self.owned.remove(&name_key);
         Ok(())
     }
 }
@@ -131,15 +150,21 @@ impl TableOwnership {
 /// local table. Only the former may temporarily sit outside the declared set.
 pub(crate) fn validate_ownership(
     statements: &[MigrationStatement],
-    declared: &[TableName],
+    current: &[TableName],
+    eligible: &[TableName],
     catalog: &[(SchemaEntry, String)],
     views: BTreeMap<String, crate::migration_inspection::MigrationInspection>,
     kind: MigrationKind,
-) -> Result<(), OpenError> {
+) -> Result<Vec<TableName>, OpenError> {
     let mut ownership = TableOwnership {
-        declared: declared
+        eligible: eligible
             .iter()
             .map(|table| table.as_str().to_ascii_lowercase())
+            .collect(),
+        owned: current
+            .iter()
+            .cloned()
+            .map(|name| (name.as_str().to_ascii_lowercase(), name))
             .collect(),
         objects: catalog
             .iter()
@@ -251,6 +276,16 @@ pub(crate) fn validate_ownership(
                 ownership.target(&alter.name)?;
                 if let AlterTableBody::RenameTo(next) = &alter.body {
                     let next_name = QualifiedName::single(next.clone());
+                    if matches!(kind, MigrationKind::Replicated)
+                        && ownership
+                            .objects
+                            .contains_key(&next.as_str().to_ascii_lowercase())
+                    {
+                        return Err(invalid(
+                            statement,
+                            "table rename destination already exists",
+                        ));
+                    }
                     ownership.create(&next_name)?;
                     let old_name = alter.name.name.as_str().to_ascii_lowercase();
                     let new_name = next.as_str().to_ascii_lowercase();
@@ -259,6 +294,7 @@ pub(crate) fn validate_ownership(
                     }
                     ownership.objects.remove(&old_name);
                     ownership.transient.remove(&old_name);
+                    ownership.owned.remove(&old_name);
                     for (_, owner) in ownership.objects.values_mut() {
                         if *owner == old_name {
                             *owner = new_name.clone();
@@ -401,185 +437,9 @@ pub(crate) fn validate_ownership(
     if let Some(name) = ownership.transient.iter().next() {
         return Err(table_error(name, false));
     }
-    Ok(())
+    Ok(ownership.owned.into_values().collect())
 }
 
 #[cfg(test)]
-mod tests {
-    #![allow(clippy::panic_in_result_fn)]
-    use super::*;
-    use crate::StatementGuard;
-
-    type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
-    fn catalog() -> Vec<(SchemaEntry, String)> {
-        ["records", "local_notes"]
-            .into_iter()
-            .map(|name| {
-                (
-                    SchemaEntry {
-                        kind: SchemaObjectKind::Table,
-                        name: name.into(),
-                        sql: format!("CREATE TABLE {name}(id TEXT NOT NULL PRIMARY KEY)"),
-                    },
-                    name.into(),
-                )
-            })
-            .collect()
-    }
-    fn check(sql: &str, kind: MigrationKind) -> TestResult<Result<Vec<String>, OpenError>> {
-        Ok(StatementGuard::new(Vec::new()).migration_statements(
-            sql,
-            &[TableName::new("records")?],
-            &catalog(),
-            kind,
-        ))
-    }
-
-    #[test]
-    fn rebuild_tables_must_be_created_here_and_leave_no_undeclared_survivor() -> TestResult {
-        for sql in [
-            "DROP TABLE records; CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY)",
-            "CREATE TABLE rebuilt(id TEXT NOT NULL PRIMARY KEY); INSERT INTO rebuilt SELECT id FROM records; DROP TABLE records; ALTER TABLE rebuilt RENAME TO records",
-            "CREATE TABLE discarded(id TEXT NOT NULL PRIMARY KEY); DROP TABLE discarded",
-            "ALTER TABLE records RENAME TO previous; CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY); INSERT INTO records SELECT id FROM previous; DROP TABLE previous",
-        ] {
-            check(sql, MigrationKind::Replicated)??;
-        }
-        for sql in [
-            "CREATE TABLE leftover(id TEXT NOT NULL PRIMARY KEY)",
-            "CREATE TABLE IF NOT EXISTS local_notes(id TEXT NOT NULL PRIMARY KEY); DROP TABLE local_notes",
-            "INSERT INTO records SELECT id FROM local_notes",
-            "ALTER TABLE local_notes RENAME TO records",
-            "CREATE INDEX local_index ON local_notes(id)",
-        ] {
-            assert!(
-                matches!(
-                    check(sql, MigrationKind::Replicated)?,
-                    Err(OpenError::SchemaUnsupported {
-                        form: SchemaForm::UndeclaredTable { .. }
-                    })
-                ),
-                "{sql}"
-            );
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn physical_references_are_found_inside_subqueries_and_cte_aliases_stay_in_scope() -> TestResult
-    {
-        for sql in [
-            "WITH local_notes AS(SELECT id FROM records) INSERT INTO records SELECT id FROM local_notes",
-            "INSERT INTO records SELECT (WITH local_notes AS(SELECT id FROM records) SELECT id FROM local_notes)",
-        ] {
-            check(sql, MigrationKind::Replicated)??;
-        }
-        for sql in [
-            "INSERT INTO records SELECT (WITH local_notes AS(SELECT id FROM records) SELECT id FROM local_notes) FROM local_notes",
-            "WITH local_notes AS(SELECT id FROM records) INSERT INTO records SELECT id FROM main.local_notes",
-            "UPDATE records SET payload=(SELECT id FROM local_notes)",
-            "DELETE FROM records WHERE id IN local_notes",
-            "CREATE TABLE rebuilt(id TEXT NOT NULL PRIMARY KEY, parent TEXT REFERENCES local_notes(id)); DROP TABLE rebuilt",
-            "WITH source AS(SELECT id FROM local_notes) INSERT INTO records SELECT id FROM source",
-        ] {
-            assert!(
-                matches!(
-                    check(sql, MigrationKind::Replicated)?,
-                    Err(OpenError::SchemaUnsupported {
-                        form: SchemaForm::UndeclaredTable { .. }
-                    })
-                ),
-                "{sql}"
-            );
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn views_resolve_transitive_dependencies_without_a_primary_key() -> TestResult {
-        check(
-            "CREATE VIEW first_view AS SELECT id FROM records; CREATE VIEW second_view AS SELECT id FROM first_view; INSERT INTO records SELECT id FROM second_view",
-            MigrationKind::Replicated,
-        )??;
-        check(
-            "CREATE TABLE rebuilt(id TEXT NOT NULL PRIMARY KEY); CREATE VIEW renamed_view AS SELECT id FROM rebuilt; DROP TABLE records; ALTER TABLE rebuilt RENAME TO records",
-            MigrationKind::Replicated,
-        )??;
-        let mut entries = catalog();
-        entries.push((
-            SchemaEntry {
-                kind: SchemaObjectKind::View,
-                name: "allowed_view".into(),
-                sql: "CREATE VIEW allowed_view AS SELECT id FROM records".into(),
-            },
-            "allowed_view".into(),
-        ));
-        entries.push((
-            SchemaEntry {
-                kind: SchemaObjectKind::View,
-                name: "local_view".into(),
-                sql: "CREATE VIEW local_view AS SELECT id FROM local_notes".into(),
-            },
-            "local_view".into(),
-        ));
-        let mut guard = StatementGuard::new(Vec::new());
-        let declared = [TableName::new("records")?];
-        guard.migration_statements(
-            "INSERT INTO records SELECT id FROM allowed_view",
-            &declared,
-            &entries,
-            MigrationKind::Replicated,
-        )?;
-        for sql in [
-            "CREATE VIEW bad_view AS SELECT id FROM local_notes",
-            "INSERT INTO records SELECT id FROM local_view",
-            "CREATE VIEW cycle AS SELECT id FROM cycle",
-        ] {
-            assert!(
-                matches!(
-                    guard.migration_statements(sql, &declared, &entries, MigrationKind::Replicated),
-                    Err(OpenError::SchemaUnsupported {
-                        form: SchemaForm::UndeclaredTable { .. }
-                    })
-                ),
-                "{sql}"
-            );
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn local_migrations_cannot_mutate_replicated_tables_or_take_over_connections() -> TestResult {
-        check(
-            "CREATE TABLE local_notes(id TEXT NOT NULL PRIMARY KEY); INSERT INTO local_notes SELECT id FROM records",
-            MigrationKind::Local,
-        )??;
-        for sql in [
-            "UPDATE records SET id='changed'",
-            "DROP TABLE records",
-            "CREATE INDEX replica_index ON records(id)",
-            "ALTER TABLE local_notes RENAME TO records",
-        ] {
-            assert!(
-                matches!(
-                    check(sql, MigrationKind::Local)?,
-                    Err(OpenError::SchemaUnsupported {
-                        form: SchemaForm::ReplicatedTableInLocalMigration { .. }
-                    })
-                ),
-                "{sql}"
-            );
-        }
-        for sql in [
-            "CREATE VIEW local_view AS SELECT id FROM records",
-            "DROP VIEW existing_view",
-            "PRAGMA foreign_keys=OFF",
-            "ATTACH ':memory:' AS other",
-            "BEGIN",
-            "UPDATE _fleet_sync_writer SET record='bad'",
-        ] {
-            assert!(check(sql, MigrationKind::Local)?.is_err(), "{sql}");
-        }
-        Ok(())
-    }
-}
+#[path = "migration_ownership_tests.rs"]
+mod tests;

@@ -111,17 +111,21 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
     ) -> Result<std::collections::BTreeSet<String>, OpenError> {
         let _control = self.control.lock().await;
         let mut connection = self.maintenance.acquire().await?;
-        let layouts =
-            inspect_present_tables(&mut connection, self.schema.replicated_tables()).await?;
-        Ok(crate::snapshot_schema::replicated_entries(
-            &mut connection,
-            self.schema.replicated_tables(),
-            &layouts,
+        let layouts = crate::capture_stream::committed_layout(&mut connection).await?;
+        let tables = layouts
+            .iter()
+            .map(|layout| {
+                fleet_sync_protocol::TableName::new(layout.name())
+                    .map_err(|_| OpenError::corrupt("migration.membership"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(
+            crate::snapshot_schema::replicated_entries(&mut connection, &tables, &layouts)
+                .await?
+                .into_iter()
+                .map(|entry| entry.name)
+                .collect(),
         )
-        .await?
-        .into_iter()
-        .map(|entry| entry.name)
-        .collect())
     }
 
     /// The staging owner holds its install lock and supplies the closed-file
@@ -143,7 +147,6 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         let prefix = validate_prefix(&self.schema, &install.schema).await?;
         let staged_path = staging.to_path_buf();
         let expected = install.clone();
-        let tables = self.schema.replicated_tables();
         let probe = self.bootstrap_publish_probe.clone();
         self.with_drained_snapshot(Some(install.clone()), move |live| {
             Box::pin(async move {
@@ -151,8 +154,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                     live,
                     &staged_path,
                     &expected,
-                    prefix,
-                    tables,
+                    prefix.migrations,
+                    prefix.tables,
                     carry,
                     probe,
                 )
@@ -163,9 +166,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         let mut control = self.control.lock().await;
         let mut connection = self.maintenance.acquire().await?;
         crate::writer_authority::restore_authority(&mut connection, &mut control.holder).await?;
-        control.statements = StatementGuard::new(
-            inspect_present_tables(&mut connection, self.schema.replicated_tables()).await?,
-        );
+        control.statements =
+            StatementGuard::new(crate::capture_stream::committed_layout(&mut connection).await?);
         Ok(())
     }
 
@@ -174,7 +176,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         staging: &Path,
         install: &SnapshotInstall,
         prefix: Vec<Migration>,
-        tables: &'static [fleet_sync_protocol::TableName],
+        tables: Vec<fleet_sync_protocol::TableName>,
         carry: F,
         probe: crate::bootstrap_publish_probe::BootstrapPublishProbe,
     ) -> Result<(), BootstrapError>
@@ -213,7 +215,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         }
         carry(live, staging).await?;
         let mut staged = open_closed(staging).await?;
-        let converted = Self::convert_staged_bootstrap(&mut staged, install, prefix, tables).await;
+        let converted = Self::convert_staged_bootstrap(&mut staged, install, prefix, &tables).await;
         let closed = staged.close().await;
         converted?;
         closed?;

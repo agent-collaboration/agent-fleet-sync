@@ -59,6 +59,11 @@ pub(crate) struct MigrationStatement {
     pub inspection: crate::migration_inspection::MigrationInspection,
 }
 
+pub(crate) struct MigrationPlan {
+    pub statements: Vec<String>,
+    pub tables: Vec<TableName>,
+}
+
 impl StatementGuard {
     pub fn new(tables: Vec<TableLayout>) -> Self {
         Self {
@@ -90,6 +95,25 @@ impl StatementGuard {
         catalog: &[(SchemaEntry, String)],
         kind: MigrationKind,
     ) -> Result<Vec<String>, OpenError> {
+        Ok(self
+            .migration_plan(sql, declared, catalog, kind)?
+            .statements)
+    }
+
+    pub(crate) fn migration_plan(
+        &mut self,
+        sql: &str,
+        declared: &[TableName],
+        catalog: &[(SchemaEntry, String)],
+        kind: MigrationKind,
+    ) -> Result<MigrationPlan, OpenError> {
+        let current = self
+            .tables
+            .iter()
+            .map(|table| {
+                TableName::new(table.name()).map_err(|_| OpenError::corrupt("migration.membership"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let mut views = BTreeMap::new();
         for (entry, _) in catalog
             .iter()
@@ -112,11 +136,14 @@ impl StatementGuard {
             .migration
             .as_ref()
             .map_err(Clone::clone)?;
-        validate_ownership(statements, declared, catalog, views, kind)?;
-        Ok(statements
-            .iter()
-            .map(|statement| statement.sql.clone())
-            .collect())
+        let tables = validate_ownership(statements, &current, declared, catalog, views, kind)?;
+        Ok(MigrationPlan {
+            statements: statements
+                .iter()
+                .map(|statement| statement.sql.clone())
+                .collect(),
+            tables,
+        })
     }
 
     fn checked_profiles(&mut self, sql: &str) -> &CheckedProfiles {
