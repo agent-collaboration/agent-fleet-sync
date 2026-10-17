@@ -29,17 +29,35 @@ pub struct WriterSnapshot {
 impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
     pub async fn snapshot(&self) -> Result<WriterSnapshot, OpenError> {
         let _control = self.control.lock().await;
-        let (pool, reader) = self.readers.pin()?;
+        let (pool, reader) = self.readers.pin().await?;
         let mut transaction = pool.begin().await?;
         let record = read_file_record(&mut transaction)
             .await?
             .ok_or_else(|| OpenError::corrupt("writer.record"))?;
         let position = capture_head(&mut transaction, &record).await?;
-        let mut tables =
-            inspect_replicated_tables(&mut transaction, self.schema.replicated_tables()).await?;
+        let bootstrapped = record.origin == crate::writer_file_record::WriterFileOrigin::Bootstrap;
+        let mut tables = if bootstrapped {
+            crate::migration_execution::inspect_present_tables(
+                &mut transaction,
+                self.schema.replicated_tables(),
+            )
+            .await?
+        } else {
+            inspect_replicated_tables(&mut transaction, self.schema.replicated_tables()).await?
+        };
         tables.sort_by(|left, right| left.name().cmp(right.name()));
         let (schema, statements) =
             snapshot_schema(&mut transaction, self.schema.replicated_tables(), &tables).await?;
+        if bootstrapped {
+            let latest = crate::migration_execution::offered_migrations(&self.schema)?
+                .last()
+                .map_or(0, |migration| migration.version);
+            if u64::try_from(latest).is_ok_and(|latest| schema.version >= latest) {
+                // Future declarations are due only after their migrations run.
+                inspect_replicated_tables(&mut transaction, self.schema.replicated_tables())
+                    .await?;
+            }
+        }
         Ok(WriterSnapshot {
             transaction,
             _reader: reader,

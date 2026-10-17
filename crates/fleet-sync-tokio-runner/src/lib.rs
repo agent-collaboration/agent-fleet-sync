@@ -36,6 +36,7 @@ mod native_carry_schema;
 pub use native_carry::{
     LocalStateCarried, LocalStateCarryError, LocalStateSelection, carry_local_state,
 };
+mod install_target;
 #[cfg(test)]
 mod native_carry_tests;
 mod native_object;
@@ -46,10 +47,15 @@ mod session_host;
 mod session_peer_call;
 mod session_socket;
 mod staging_publish;
+pub use install_target::{SnapshotTarget, WriterInstallTarget};
 mod staging_store;
 pub use staging_store::{StagedPage, StagedVerification, StagingError, StagingStore};
 #[cfg(test)]
 mod staging_store_tests;
+#[cfg(test)]
+mod writer_bootstrap_fixture;
+#[cfg(test)]
+mod writer_bootstrap_tests;
 
 pub use call_host::{CallEnvelope, CallRouter, TokioHost};
 pub use native_object::{ObjectOptions, ObjectStore, TokioObject};

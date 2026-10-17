@@ -215,6 +215,15 @@ async fn stored_schema_steps(
     Ok(steps)
 }
 
+pub(crate) async fn schema_step_exists(
+    connection: &mut TursoConnection,
+    version: u64,
+) -> Result<bool, OpenError> {
+    Ok(stored_schema_steps(connection)
+        .await?
+        .contains_key(&version))
+}
+
 fn captured_schema_step(row: &CaptureRow) -> Result<(u64, SchemaStep), OpenError> {
     if row.kind != 1 || row.before.is_some() {
         return Err(OpenError::corrupt("schema_step.capture_kind"));

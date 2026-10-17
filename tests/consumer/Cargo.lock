@@ -877,6 +877,7 @@ dependencies = [
  "fleet-sync-lease",
  "fleet-sync-protocol",
  "fleet-sync-query-gen",
+ "fleet-sync-receiver",
  "futures-core",
  "futures-util",
  "runtime-primitives",

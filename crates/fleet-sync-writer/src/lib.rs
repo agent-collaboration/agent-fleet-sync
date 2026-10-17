@@ -1,6 +1,9 @@
 //! Captured writes and transport-independent replication senders for Turso.
 
+mod bootstrap_publish_probe;
 mod bootstrap_schema;
+mod writer_bootstrap;
+pub use writer_bootstrap::{BootstrapError, BootstrapGrant};
 #[cfg(test)]
 mod bootstrap_schema_tests;
 mod capture_normalization;
@@ -13,6 +16,7 @@ mod migration_execution;
 mod migration_inspection;
 mod migration_ownership;
 pub mod native_file;
+mod native_file_owner;
 #[cfg(test)]
 mod native_file_tests;
 mod native_pool;

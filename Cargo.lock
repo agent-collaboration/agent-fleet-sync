@@ -878,6 +878,7 @@ name = "fleet-sync-tokio-runner"
 version = "0.1.0"
 dependencies = [
  "durable-steps",
+ "fleet-sync-lease",
  "fleet-sync-protocol",
  "fleet-sync-query-gen",
  "fleet-sync-receiver",

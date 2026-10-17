@@ -32,6 +32,8 @@ pub struct ReplicatedDatabase<S: ReplicatedSchema> {
     pub(crate) clock: Arc<dyn Clock>,
     pub(crate) authority_changes: tokio::sync::watch::Sender<()>,
     pub(crate) engine_work: Arc<Mutex<()>>,
+    pub(crate) bootstrap_publish_probe: crate::bootstrap_publish_probe::BootstrapPublishProbe,
+    pub(crate) native_owner: Arc<crate::native_file_owner::NativeFileOwner>,
 }
 
 #[derive(Clone, Copy)]
@@ -40,6 +42,11 @@ pub(crate) enum CaptureMode {
     Writer,
     Maintenance,
     Reader,
+}
+pub(crate) enum OpenMode {
+    Managed,
+    Adopt,
+    Bootstrap(crate::BootstrapGrant),
 }
 pub(crate) async fn open_pool(path: &Path, mode: CaptureMode) -> Result<Pool<Turso>, OpenError> {
     let limit = if matches!(mode, CaptureMode::Reader) {
@@ -90,7 +97,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             LeaseHolder::provisional(database, peer, policy),
             Arc::new(SystemClock),
             options,
-            true,
+            OpenMode::Adopt,
         )
         .await
     }
@@ -140,18 +147,32 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         clock: Arc<dyn Clock>,
         options: WriterOptions,
     ) -> Result<Self, OpenError> {
-        Self::open_internal(path, database, schema, holder, clock, options, false).await
+        Self::open_internal(
+            path,
+            database,
+            schema,
+            holder,
+            clock,
+            options,
+            OpenMode::Managed,
+        )
+        .await
     }
 
-    async fn open_internal(
+    pub(crate) async fn open_internal(
         path: &Path,
         database: DatabaseId,
         schema: S,
         holder: LeaseHolder,
         clock: Arc<dyn Clock>,
         options: WriterOptions,
-        adopting: bool,
+        mode: OpenMode,
     ) -> Result<Self, OpenError> {
+        let adopting = matches!(&mode, OpenMode::Adopt);
+        let bootstrap = match &mode {
+            OpenMode::Bootstrap(grant) => Some(grant),
+            _ => None,
+        };
         if holder.database() != database {
             return Err(OpenError::corrupt("writer.database"));
         }
@@ -214,11 +235,14 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                 .map_err(|error| OpenError::Storage {
                     message: error.to_string(),
                 })?;
-            match read_file_record(&mut transaction).await? {
+            let pending_bootstrap = match read_file_record(&mut transaction).await? {
                 Some(record) if record.database != database || record.peer != holder.peer() => {
                     return Err(OpenError::corrupt("writer.identity"));
                 }
                 Some(record) => {
+                    if bootstrap.is_some_and(|grant| grant.start != record.start) {
+                        return Err(OpenError::corrupt("bootstrap.grant_start"));
+                    }
                     let epoch = match holder.writer_state(clock.now()) {
                         Ok(
                             WriterState::Seeding { epoch }
@@ -232,6 +256,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                     if epoch.is_some_and(|epoch| epoch != record.epoch) {
                         return Err(OpenError::corrupt("writer.epoch"));
                     }
+                    record.origin == crate::writer_file_record::WriterFileOrigin::Bootstrap
+                        && !record.bootstrap.as_ref().is_some_and(|state| state.ready)
                 }
                 None => {
                     let epoch = match holder
@@ -255,26 +281,57 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                     if adopting {
                         record.origin = crate::writer_file_record::WriterFileOrigin::Adopted;
                     }
+                    if let Some(grant) = &bootstrap {
+                        record.origin = crate::writer_file_record::WriterFileOrigin::Bootstrap;
+                        record.start = grant.start;
+                        record.retained_after = grant.start;
+                        record.registration =
+                            crate::writer_registration_state::RegistrationState::Granted {
+                                grant: crate::writer_registration_state::RegistrationGrant {
+                                    lease: grant.lease.clone(),
+                                    request_started: grant.request_started,
+                                },
+                                seed: Some(
+                                    crate::writer_registration_state::RegistrationSeed::Seeding {
+                                        position: grant.start,
+                                    },
+                                ),
+                            };
+                    }
                     write_file_record(&mut transaction, &record).await?;
+                    bootstrap.is_some()
                 }
-            }
+            };
             transaction.commit().await?;
-            Ok::<(), OpenError>(())
+            Ok::<bool, OpenError>(pending_bootstrap)
         }
         .await;
-        if let Err(error) = setup {
-            maintenance.close().await;
-            return Err(error);
-        }
+        let pending_bootstrap = match setup {
+            Ok(pending) => pending,
+            Err(error) => {
+                maintenance.close().await;
+                return Err(error);
+            }
+        };
         let writer = open_pool(path, CaptureMode::Writer).await?;
-        let readers = ReadPool::new(open_pool(path, CaptureMode::Reader).await?);
+        let reader_pool = open_pool(path, CaptureMode::Reader).await?;
+        let bootstrap_publish_probe =
+            crate::bootstrap_publish_probe::BootstrapPublishProbe::default();
+        let native_owner = crate::native_file_owner::NativeFileOwner::new(
+            path,
+            writer,
+            maintenance,
+            reader_pool,
+            bootstrap_publish_probe.clone(),
+        );
+        let readers = ReadPool::from_native_pool(native_owner.readers());
         let (authority_changes, _) = tokio::sync::watch::channel(());
         let database = Self {
             path: path.into(),
             database,
             schema,
-            writer: crate::native_pool::NativePool::new(writer),
-            maintenance: crate::native_pool::NativePool::new(maintenance),
+            writer: native_owner.writer(),
+            maintenance: native_owner.maintenance(),
             readers,
             control: Arc::new(Mutex::new(WriterControl {
                 holder,
@@ -284,8 +341,26 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             clock,
             authority_changes,
             engine_work: Arc::new(Mutex::new(())),
+            bootstrap_publish_probe,
+            native_owner,
         };
-        if let Err(error) = database.migrate().await {
+        let opened = if pending_bootstrap {
+            let mut control = database.control.lock().await;
+            let mut connection = database.maintenance.acquire().await?;
+            crate::writer_authority::restore_authority(&mut connection, &mut control.holder)
+                .await?;
+            crate::migration_execution::inspect_present_tables(
+                &mut connection,
+                database.schema.replicated_tables(),
+            )
+            .await
+            .map(|layouts| {
+                control.statements = StatementGuard::new(layouts);
+            })
+        } else {
+            database.migrate().await
+        };
+        if let Err(error) = opened {
             database.close().await;
             return Err(error);
         }
@@ -317,6 +392,15 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         Ok(crate::registration_bookkeeping::outcome(&record))
     }
     pub async fn begin_write(&self) -> Result<WriteTransaction, WriteRefusal> {
+        self.native_owner
+            .recover()
+            .await
+            .map_err(|error| match error {
+                crate::native_file::PublishError::Closed => WriteRefusal::Closed,
+                error => WriteRefusal::Storage {
+                    message: error.to_string(),
+                },
+            })?;
         if self.writer.is_closed() {
             return Err(WriteRefusal::Closed);
         }
@@ -350,8 +434,6 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             .map_err(|error| OpenError::Holder { error })
     }
     pub async fn close(&self) {
-        self.writer.close().await;
-        self.readers.pool.close().await;
-        self.maintenance.close().await;
+        self.native_owner.close().await;
     }
 }

@@ -165,35 +165,7 @@ impl<H: Host> WriterJournalScope<'_, H> {
         receiver: ReceiverId,
         position: ReplicationPosition,
     ) -> Result<(), OpenError> {
-        let record = read_file_record(self.maintenance.connection)
-            .await?
-            .ok_or_else(|| OpenError::corrupt("writer.record"))?;
-        let copies = crate::sender_storage::copies(self.maintenance.connection, &record)
-            .await
-            .map_err(|error| OpenError::Storage {
-                message: error.to_string(),
-            })?;
-        if let Some(existing) = copies.iter().find(|copy| copy.copy == receiver) {
-            if existing.role != CopyRole::Authoritative || existing.start != position {
-                return Err(OpenError::corrupt("registration.copy_conflict"));
-            }
-        } else {
-            crate::sender_storage::save_copy(
-                self.maintenance.connection,
-                &crate::SenderCopyStatus {
-                    copy: receiver,
-                    role: CopyRole::Authoritative,
-                    start: position,
-                    acked: position,
-                    needs_snapshot: false,
-                },
-            )
-            .await
-            .map_err(|error| OpenError::Storage {
-                message: error.to_string(),
-            })?;
-        }
-        Ok(())
+        register_sender_copy(self.maintenance.connection, receiver, position).await
     }
     pub(crate) async fn holder_epoch(&mut self) -> Result<Epoch, OpenError> {
         Ok(read_file_record(self.maintenance.connection)
@@ -209,4 +181,40 @@ pub(crate) fn registration_key() -> Result<RequestKey, StartRefusal> {
 }
 pub(crate) fn renewal_key(id: Uuid) -> Result<RequestKey, durable_steps::StoreError> {
     RequestKey::new(format!("writer-renewal:{id}")).map_err(durable_steps::StoreError::backend)
+}
+
+pub(crate) async fn register_sender_copy(
+    connection: &mut sqlx_turso::TursoConnection,
+    receiver: ReceiverId,
+    position: ReplicationPosition,
+) -> Result<(), OpenError> {
+    let record = read_file_record(connection)
+        .await?
+        .ok_or_else(|| OpenError::corrupt("writer.record"))?;
+    let copies = crate::sender_storage::copies(connection, &record)
+        .await
+        .map_err(|error| OpenError::Storage {
+            message: error.to_string(),
+        })?;
+    if let Some(existing) = copies.iter().find(|copy| copy.copy == receiver) {
+        if existing.role != CopyRole::Authoritative || existing.start != position {
+            return Err(OpenError::corrupt("registration.copy_conflict"));
+        }
+    } else {
+        crate::sender_storage::save_copy(
+            connection,
+            &crate::SenderCopyStatus {
+                copy: receiver,
+                role: CopyRole::Authoritative,
+                start: position,
+                acked: position,
+                needs_snapshot: false,
+            },
+        )
+        .await
+        .map_err(|error| OpenError::Storage {
+            message: error.to_string(),
+        })?;
+    }
+    Ok(())
 }

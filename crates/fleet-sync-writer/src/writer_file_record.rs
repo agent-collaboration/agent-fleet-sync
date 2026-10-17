@@ -10,6 +10,7 @@ use sqlx_turso::TursoConnection;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct WriterFileRecord {
+    pub bootstrap: Option<fleet_sync_receiver::SnapshotInstallState>,
     pub origin: WriterFileOrigin,
     pub registration_attempt: Option<fleet_sync_protocol::RequestId>,
     pub registration_failure: Option<durable_steps::OperationFailure>,
@@ -41,6 +42,7 @@ impl WriterFileRecord {
             sequence: CommitSequence::new(0),
         };
         Self {
+            bootstrap: None,
             origin: WriterFileOrigin::Created,
             registration_attempt: None,
             registration_failure: None,
@@ -80,6 +82,24 @@ pub(crate) async fn read_file_record(
     let encoded = text(row.record, row.record_class, "writer.record")?;
     let record: WriterFileRecord =
         serde_json::from_str(&encoded).map_err(|_| OpenError::corrupt("writer.record"))?;
+    if let Some(marker) = &record.bootstrap
+        && (!marker.verified
+            || marker.install.database != record.database
+            || marker.install.position != record.start
+            || marker.install.position.epoch >= record.epoch
+            || marker.ready
+                != matches!(
+                    record.registration,
+                    crate::writer_registration_state::RegistrationState::Granted {
+                        seed: Some(
+                            crate::writer_registration_state::RegistrationSeed::Ready { .. }
+                        ),
+                        ..
+                    }
+                ))
+    {
+        return Err(OpenError::corrupt("writer.bootstrap"));
+    }
     if record.start.epoch > record.epoch
         || !record
             .registration

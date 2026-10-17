@@ -17,6 +17,7 @@ durable-steps = { path = "../durable-steps", features = ["turso"] }
 either.workspace = true
 fleet-sync-lease = { path = "../fleet-sync-lease" }
 fleet-sync-protocol = { path = "../fleet-sync-protocol" }
+fleet-sync-receiver = { path = "../fleet-sync-receiver" }
 futures-core.workspace = true
 futures-util.workspace = true
 runtime-primitives = { path = "../runtime-primitives", features = ["tokio"] }
@@ -31,7 +32,6 @@ turso.workspace = true
 turso_parser.workspace = true
 
 [dev-dependencies]
-fleet-sync-receiver = { path = "../fleet-sync-receiver" }
 tempfile = "3.27.0"
 
 [build-dependencies]

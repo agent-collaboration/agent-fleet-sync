@@ -260,6 +260,30 @@
           "nullable": false
         }
       ]
+    },
+    {
+      "name": "clear_bootstrap_marker",
+      "sql": "sql/clear_bootstrap_marker.sql",
+      "result": "execute",
+      "parameters": []
+    },
+    {
+      "name": "clear_bootstrap_pages",
+      "sql": "sql/clear_bootstrap_pages.sql",
+      "result": "execute",
+      "parameters": []
+    },
+    {
+      "name": "clear_bootstrap_receiver_history",
+      "sql": "sql/clear_bootstrap_receiver_history.sql",
+      "result": "execute",
+      "parameters": []
+    },
+    {
+      "name": "clear_bootstrap_membership",
+      "sql": "sql/clear_bootstrap_membership.sql",
+      "result": "execute",
+      "parameters": []
     }
   ]
 }

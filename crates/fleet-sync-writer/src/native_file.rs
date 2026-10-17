@@ -1,7 +1,4 @@
-use crate::{
-    ReplicatedDatabase, ReplicatedSchema,
-    replicated_database::{CaptureMode, open_pool},
-};
+use crate::{ReplicatedDatabase, ReplicatedSchema};
 use durable_steps::{BoxFuture, StoreError};
 use sqlx_core::{
     column::Column,
@@ -16,6 +13,10 @@ use std::path::Path;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PublishError {
+    #[error("writer file is closed")]
+    Closed,
+    #[error("live writer receipt differs from the old or expected publication")]
+    InvalidWriterReceipt,
     #[error("writer snapshot publication requires Seeding")]
     NotSeeding,
     #[error("writer snapshot publication is blocked by a guarded reader")]
@@ -125,22 +126,34 @@ fn invalid(detail: &str) -> PublishError {
 }
 
 impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
-    /// Run publication against a checkpointed, closed file while this writer
-    /// owns admission. The callback receives the path and no database handle.
+    /// Run a closed-path callback while this writer owns Seeding admission.
     pub async fn with_drained_file<T, F>(&self, publish: F) -> Result<T, PublishError>
+    where
+        T: Send + 'static,
+        F: for<'path> FnOnce(&'path Path) -> BoxFuture<'path, Result<T, PublishError>> + Send,
+    {
+        self.with_drained_snapshot(None, publish).await
+    }
+
+    pub(crate) async fn with_drained_snapshot<T, F>(
+        &self,
+        expected: Option<fleet_sync_receiver::SnapshotInstall>,
+        publish: F,
+    ) -> Result<T, PublishError>
     where
         T: Send + 'static,
         F: for<'path> FnOnce(&'path Path) -> BoxFuture<'path, Result<T, PublishError>> + Send,
     {
         let _engine = self.engine_work.lock().await;
         let mut control = self.control.lock().await;
+        self.native_owner.recover().await?;
         let _readers = self
             .readers
             .readers
             .clone()
             .try_write_owned()
             .map_err(|_| PublishError::ActiveReaders)?;
-        {
+        let record = {
             let mut connection = self
                 .maintenance
                 .acquire()
@@ -149,61 +162,22 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             crate::writer_authority::restore_authority(&mut connection, &mut control.holder)
                 .await
                 .map_err(StoreError::backend)?;
-        }
+            crate::writer_file_record::read_file_record(&mut connection)
+                .await
+                .map_err(StoreError::backend)?
+                .ok_or(PublishError::InvalidWriterReceipt)?
+        };
         if !matches!(
             control.holder.writer_state(self.clock.now()),
             Ok(fleet_sync_lease::WriterState::Seeding { .. })
         ) {
             return Err(PublishError::NotSeeding);
         }
-        self.writer.close().await;
-        self.readers.pool.close().await;
-        let result = async {
-            let mut connection = self
-                .maintenance
-                .acquire()
-                .await
-                .map_err(StoreError::backend)?;
-            checkpoint_for_publish(&mut connection).await?;
-            drop(connection);
-            self.maintenance.close().await;
-            ensure_empty_wal(self.path()).await?;
-            publish(self.path()).await
-        }
-        .await;
-        // Checkpoint or callback failure must not strand the owner's pools.
-        self.maintenance.close().await;
-        let maintenance = open_pool(self.path(), CaptureMode::Maintenance)
-            .await
-            .map_err(StoreError::backend)?;
-        let writer = match open_pool(self.path(), CaptureMode::Writer).await {
-            Ok(pool) => pool,
-            Err(error) => {
-                maintenance.close().await;
-                return Err(StoreError::backend(error).into());
-            }
-        };
-        let readers = match open_pool(self.path(), CaptureMode::Reader).await {
-            Ok(pool) => pool,
-            Err(error) => {
-                writer.close().await;
-                maintenance.close().await;
-                return Err(StoreError::backend(error).into());
-            }
-        };
-        self.maintenance
-            .reopen(maintenance)
-            .map_err(StoreError::backend)?;
-        self.writer.reopen(writer).map_err(StoreError::backend)?;
-        self.readers
-            .pool
-            .reopen(readers)
-            .map_err(StoreError::backend)?;
-        result
+        self.native_owner.publish(&record, expected, publish).await
     }
 }
 
-async fn ensure_empty_wal(path: &Path) -> Result<(), PublishError> {
+pub(crate) async fn ensure_empty_wal(path: &Path) -> Result<(), PublishError> {
     let mut wal = path.as_os_str().to_owned();
     wal.push("-wal");
     match tokio::fs::metadata(wal).await {

@@ -1,0 +1,1 @@
+DELETE FROM _fleet_sync_copy_migrations

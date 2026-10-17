@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "../../Cargo.lock": "cba0353d66110a29f7d1e016c89f5add68622b23b5b383aeb53318e6abd1d212",
+    "../../Cargo.lock": "56746297f816d6a2c6684104beaf565c0a521e4e5bd8c0d2e2d02402be326cb0",
     "../../rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "../fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "../fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",

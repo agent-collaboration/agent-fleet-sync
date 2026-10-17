@@ -12,23 +12,7 @@ pub(crate) async fn snapshot_schema(
     tables: &[TableName],
     layouts: &[TableLayout],
 ) -> Result<(SchemaIdentity, Vec<String>), OpenError> {
-    let catalog = schema_entries(connection).await?;
-    let mut guard = StatementGuard::new(layouts.to_vec());
-    let mut entries = Vec::<SchemaEntry>::new();
-    for (entry, owner) in &catalog {
-        let replicated = match entry.kind {
-            SchemaObjectKind::Table | SchemaObjectKind::Index => tables
-                .iter()
-                .any(|table| table.as_str().eq_ignore_ascii_case(owner)),
-            SchemaObjectKind::View => guard
-                .migration_statements(&entry.sql, tables, &catalog, MigrationKind::Replicated)
-                .is_ok(),
-            SchemaObjectKind::Trigger => false,
-        };
-        if replicated && !fleet_sync_protocol::reserved_namespace(&entry.name) {
-            entries.push(entry.clone());
-        }
-    }
+    let mut entries = replicated_entries(connection, tables, layouts).await?;
     let versions =
         crate::checked_queries::read_applied_migrations(&mut WriterScope(connection)).await?;
     let mut version = 0;
@@ -58,4 +42,28 @@ pub(crate) async fn snapshot_schema(
         identity,
         entries.into_iter().map(|entry| entry.sql).collect(),
     ))
+}
+pub(crate) async fn replicated_entries(
+    connection: &mut TursoConnection,
+    tables: &[TableName],
+    layouts: &[TableLayout],
+) -> Result<Vec<SchemaEntry>, OpenError> {
+    let catalog = schema_entries(connection).await?;
+    let mut guard = StatementGuard::new(layouts.to_vec());
+    let mut entries = Vec::<SchemaEntry>::new();
+    for (entry, owner) in &catalog {
+        let replicated = match entry.kind {
+            SchemaObjectKind::Table | SchemaObjectKind::Index => tables
+                .iter()
+                .any(|table| table.as_str().eq_ignore_ascii_case(owner)),
+            SchemaObjectKind::View => guard
+                .migration_statements(&entry.sql, tables, &catalog, MigrationKind::Replicated)
+                .is_ok(),
+            SchemaObjectKind::Trigger => false,
+        };
+        if replicated && !fleet_sync_protocol::reserved_namespace(&entry.name) {
+            entries.push(entry.clone());
+        }
+    }
+    Ok(entries)
 }

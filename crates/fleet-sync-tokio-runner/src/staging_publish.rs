@@ -11,6 +11,29 @@ use sqlx_core::connection::Connection;
 use std::path::Path;
 
 impl StagingStore {
+    pub async fn publish_writer<S: fleet_sync_writer::ReplicatedSchema>(
+        &self,
+        install: &SnapshotInstall,
+        target: &fleet_sync_writer::ReplicatedDatabase<S>,
+    ) -> Result<(), StagingError> {
+        let _owner = self.lock(install).await?;
+        let before = target
+            .replicated_objects()
+            .await
+            .map_err(fleet_sync_writer::BootstrapError::from)?;
+        target
+            .publish_bootstrap(&self.path(install), install, move |live, staged| {
+                Box::pin(async move {
+                    carry_writer_local(live, staged, before)
+                        .await
+                        .map_err(|error| {
+                            crate::PublishError::Storage(durable_steps::StoreError::backend(error))
+                        })
+                })
+            })
+            .await?;
+        Ok(())
+    }
     /// Publication is receipted by the marker in the live file itself. After a
     /// crash, that marker distinguishes a completed rename from a staging file
     /// that still needs the target's latest journal, hook rows and fence.
@@ -45,6 +68,56 @@ impl StagingStore {
             })
             .await
     }
+}
+
+async fn carry_writer_local(
+    live: &Path,
+    staged: &Path,
+    before: std::collections::BTreeSet<String>,
+) -> Result<(), StagingError> {
+    let mut source = open_stage(live, false).await?;
+    let mut destination = match open_stage(staged, false).await {
+        Ok(connection) => connection,
+        Err(error) => {
+            source.close().await?;
+            return Err(error);
+        }
+    };
+    let result = async {
+        let mut transaction = destination.begin_with("BEGIN IMMEDIATE").await?;
+        let after = SnapshotInstallRules(&mut FileScope(&mut transaction))
+            .replicated_objects()
+            .await?;
+        carry_local_state(
+            &mut source,
+            &mut transaction,
+            &LocalStateSelection {
+                replicated_before: before,
+                replicated_after: after,
+                // Keep the verified receipt while the writer's own tables replace
+                // receiver bookkeeping, including their different schema-step form.
+                replaced_tables: [
+                    "_fleet_sync_install",
+                    "_fleet_sync_install_pages",
+                    "_fleet_sync_copy_migrations",
+                    "_fleet_sync_copy_tables",
+                ]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            },
+        )
+        .await?;
+        transaction.commit().await?;
+        Ok::<_, StagingError>(())
+    }
+    .await;
+    let source_closed = source.close().await;
+    let destination_closed = destination.close().await;
+    result?;
+    source_closed?;
+    destination_closed?;
+    Ok(())
 }
 
 async fn publish_closed_files(

@@ -1,7 +1,7 @@
 use crate::{StatementGuard, WriteRefusal};
 use either::Either;
 use futures_core::{future::BoxFuture, stream::BoxStream};
-use futures_util::{FutureExt, StreamExt, stream};
+use futures_util::{FutureExt, StreamExt, TryStreamExt, stream};
 use sqlx_core::{
     describe::Describe,
     executor::{Execute, Executor},
@@ -25,19 +25,28 @@ pub struct ReadPool {
 }
 
 impl ReadPool {
+    #[cfg(test)]
     pub(crate) fn new(pool: Pool<Turso>) -> Self {
+        Self::from_native_pool(crate::native_pool::NativePool::new(pool))
+    }
+    pub(crate) fn from_native_pool(pool: crate::native_pool::NativePool) -> Self {
         Self {
-            pool: crate::native_pool::NativePool::new(pool),
+            pool,
             readers: Arc::new(RwLock::new(())),
             statements: Mutex::new(StatementGuard::new(Vec::new())),
         }
     }
-    pub(crate) fn pin(&self) -> Result<(Pool<Turso>, OwnedRwLockReadGuard<()>), sqlx_core::Error> {
-        let guard = self
-            .readers
+    fn read_guard(&self) -> Result<OwnedRwLockReadGuard<()>, sqlx_core::Error> {
+        self.readers
             .clone()
             .try_read_owned()
-            .map_err(|_| sqlx_core::Error::PoolClosed)?;
+            .map_err(|_| sqlx_core::Error::PoolClosed)
+    }
+    pub(crate) async fn pin(
+        &self,
+    ) -> Result<(Pool<Turso>, OwnedRwLockReadGuard<()>), sqlx_core::Error> {
+        let guard = self.read_guard()?;
+        self.pool.recover().await?;
         Ok((self.pool.current()?, guard))
     }
     fn check(&self, sql: &str) -> Result<(), sqlx_core::Error> {
@@ -65,14 +74,20 @@ impl<'pool> Executor<'pool> for &'pool ReadPool {
             Ok(query) => query,
             Err(error) => return stream::once(async move { Err(error) }).boxed(),
         };
-        let (pool, guard) = match self.pin() {
-            Ok(pin) => pin,
+        let guard = match self.read_guard() {
+            Ok(guard) => guard,
             Err(error) => return stream::once(async move { Err(error) }).boxed(),
         };
-        Box::pin(GuardedReadStream {
-            stream: (&pool).fetch_many(query),
-            _guard: guard,
+        stream::once(async move {
+            self.pool.recover().await?;
+            let pool = self.pool.current()?;
+            Ok::<_, sqlx_core::Error>(GuardedReadStream {
+                stream: (&pool).fetch_many(query),
+                _guard: guard,
+            })
         })
+        .try_flatten()
+        .boxed()
     }
 
     fn fetch_optional<'executor, 'query: 'executor, E>(
@@ -85,7 +100,7 @@ impl<'pool> Executor<'pool> for &'pool ReadPool {
     {
         async move {
             let query = crate::guarded_query::GuardedQuery::capture(query, |sql| self.check(sql))?;
-            let (pool, _guard) = self.pin()?;
+            let (pool, _guard) = self.pin().await?;
             (&pool).fetch_optional(query).await
         }
         .boxed()
@@ -101,7 +116,7 @@ impl<'pool> Executor<'pool> for &'pool ReadPool {
     {
         async move {
             self.check(sql.as_str())?;
-            let (pool, _guard) = self.pin()?;
+            let (pool, _guard) = self.pin().await?;
             (&pool).prepare_with(sql, parameters).await
         }
         .boxed()
@@ -116,7 +131,7 @@ impl<'pool> Executor<'pool> for &'pool ReadPool {
     {
         async move {
             self.check(sql.as_str())?;
-            let (pool, _guard) = self.pin()?;
+            let (pool, _guard) = self.pin().await?;
             (&pool).describe(sql).await
         }
         .boxed()

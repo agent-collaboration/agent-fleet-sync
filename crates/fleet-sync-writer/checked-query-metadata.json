@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "../../Cargo.lock": "cba0353d66110a29f7d1e016c89f5add68622b23b5b383aeb53318e6abd1d212",
+    "../../Cargo.lock": "56746297f816d6a2c6684104beaf565c0a521e4e5bd8c0d2e2d02402be326cb0",
     "../../rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "../fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "../fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
@@ -49,9 +49,14 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "42e1b613d2c88c6689127a6eb2f10f1b2a3465c3210097315a06e835d1876d03",
+    "checked-queries.json": "c440e4987791df9b9afb084e554874eb8467587c74532ac79b7f1a5459c11b86",
     "migrations/0001_writer_bookkeeping.sql": "b21f22f18dbb1544d0964ac419ba309db198b365f72d1acd74f3e665ae133bda",
     "query-schema/99990001_capture_query_schema.sql": "1e1ee98953e04f6edcd18b85abc33326819a0e0210f3fc42717e4cd30e4b1c98",
+    "query-schema/99990002_bootstrap_receipts_query_schema.sql": "9f09325a6ae42fa29838e137ac93dcbf00ef59456da699d7c75a24a090ede4b3",
+    "sql/clear_bootstrap_marker.sql": "67ab649a322fbb5787a26d9cde08efdd78b80fb8b119c3bd65531791b8f2cb3e",
+    "sql/clear_bootstrap_membership.sql": "bf03e6a59e72a07c875127dab289b704cad60dd69a570b7ae3ebd87fd4a73557",
+    "sql/clear_bootstrap_pages.sql": "0faaf30d6e2e77fa85be4f95ba307950ab02f57f5207137c6d6de0ca59cdb7ba",
+    "sql/clear_bootstrap_receiver_history.sql": "f3c3147fab0653060fd8c015ad130b51ce508167740396e6fd01a8c208f22de3",
     "sql/delete_rejected_tail.sql": "0de2677b858fc5052ee8bcf70581bfd4b80659215aa10eda7861fc7304266c37",
     "sql/prune_capture.sql": "dae53de9d01be7b35bfe30848e8277de952923ec5166a0c2dff0b612131e68b3",
     "sql/read_adoption_history.sql": "d9cc2923628f9925e18fecf595132b5e9048f705f1730a2e4c359f7b5ad00020",
@@ -73,7 +78,7 @@
     "sql/write_release.sql": "3d870ecf5b0fb14556afbf069454a0fa7e0f94e53afc68bc1bcf44bc6d6bcd67",
     "sql/write_schema_step.sql": "25bf187503cdca23522d2da0d086a329b812bf5c06e904308956aa8a2f8687cc",
     "sql/write_writer.sql": "2897299ed63abcbcf3162c1bd725e8ff664020aa9a384d7820028341460282bf",
-    "src/checked_queries.rs": "4e7c8889b247c59056131bf40fc3f81306df965f9386a686e927981cb53d6417"
+    "src/checked_queries.rs": "370aac093a8dd6017b6bd5aa1440b14db3e890490dc60193bb69112c21c43798"
   },
   "queries": [
     {
@@ -752,6 +757,26 @@
     {
       "name": "write_release",
       "bind_slots": 3,
+      "columns": []
+    },
+    {
+      "name": "clear_bootstrap_marker",
+      "bind_slots": 0,
+      "columns": []
+    },
+    {
+      "name": "clear_bootstrap_pages",
+      "bind_slots": 0,
+      "columns": []
+    },
+    {
+      "name": "clear_bootstrap_receiver_history",
+      "bind_slots": 0,
+      "columns": []
+    },
+    {
+      "name": "clear_bootstrap_membership",
+      "bind_slots": 0,
       "columns": []
     }
   ]

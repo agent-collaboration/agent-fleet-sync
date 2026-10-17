@@ -696,3 +696,67 @@ where
         Ok(())
     }
 }
+pub(crate) fn clear_bootstrap_marker<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/clear_bootstrap_marker.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn clear_bootstrap_pages<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/clear_bootstrap_pages.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn clear_bootstrap_receiver_history<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/clear_bootstrap_receiver_history.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn clear_bootstrap_membership<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/clear_bootstrap_membership.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}

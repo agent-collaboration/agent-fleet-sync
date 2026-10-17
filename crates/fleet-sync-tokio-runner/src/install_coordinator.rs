@@ -1,7 +1,7 @@
 use crate::{
     InstallFileAnswer, InstallProgress, InstallRecord, InstallRequest, InstallStatus, ObjectKey,
-    StagingError, StagingStore, TokioObject, install_contract::corrupt,
-    install_records::InstallRecords, native_carry_schema::FileScope,
+    SnapshotTarget, StagingError, StagingStore, TokioObject, WriterInstallTarget,
+    install_contract::corrupt, install_records::InstallRecords, native_carry_schema::FileScope,
     native_object::ObjectConnection,
 };
 use durable_steps::{
@@ -92,10 +92,10 @@ impl<H: Host> InstallCoordinator<H> {
             .await?;
         Ok(Self { control, staging })
     }
-    pub async fn start(
+    pub async fn start<T: SnapshotTarget + ?Sized>(
         self: &Arc<Self>,
         request: InstallRequest,
-        target: &TokioObject<H>,
+        target: &T,
     ) -> Result<InstallHandle<H>, StartRefusal> {
         if request.target != *target.key() || target.path() == self.control.path() {
             return Err(corrupt("install target differs or replaces its control journal").into());
@@ -115,16 +115,7 @@ impl<H: Host> InstallCoordinator<H> {
             if matches!(record.status, InstallStatus::Running { .. })
                 && record.status.snapshot().is_some()
             {
-                let marker = target
-                    .rule_transaction(|scope| {
-                        Box::pin(async move {
-                            SnapshotInstallRules(scope)
-                                .state()
-                                .await
-                                .map_err(StoreError::backend)
-                        })
-                    })
-                    .await?;
+                let marker = target.installed_snapshot().await?;
                 if let Some(marker) = marker
                     && record.status.snapshot() == Some(&marker.install)
                     && marker.verified
@@ -204,10 +195,10 @@ impl<H: Host> InstallCoordinator<H> {
             })
             .await
     }
-    pub async fn publish(
+    pub async fn publish<T: SnapshotTarget + ?Sized>(
         &self,
         id: Uuid,
-        target: &TokioObject<H>,
+        target: &T,
     ) -> Result<InstallFileAnswer, StagingError> {
         let mut owner = self.control.connection.lock().await;
         let ObjectConnection::Open(connection) = &mut *owner else {
@@ -234,7 +225,7 @@ impl<H: Host> InstallCoordinator<H> {
             .cloned()
             .ok_or_else(|| corrupt("install has not pinned a snapshot"))?;
         transaction.commit().await?;
-        self.staging.publish(&snapshot, target).await?;
+        target.publish_snapshot(&self.staging, &snapshot).await?;
         let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
         record.status = InstallStatus::Running {
             progress: InstallProgress::Published {
@@ -260,6 +251,54 @@ impl<H: Host> InstallCoordinator<H> {
             ) -> BoxFuture<'s, Result<(), StagingError>>
             + Send
             + 'static,
+    {
+        self.finish_ready(id, target, move |expected| async move {
+            target
+                .rule_transaction(move |scope| {
+                    Box::pin(async move {
+                        ready(scope, expected.clone()).await?;
+                        let marker = SnapshotInstallRules(scope)
+                            .state()
+                            .await?
+                            .ok_or_else(|| corrupt("ready marker is missing"))?;
+                        if marker.install != expected || !marker.ready {
+                            return Err(
+                                corrupt("ready callback did not make this install ready").into()
+                            );
+                        }
+                        Ok::<_, StagingError>(())
+                    })
+                })
+                .await
+        })
+        .await
+    }
+    pub async fn mark_writer_ready<S: fleet_sync_writer::ReplicatedSchema>(
+        &self,
+        id: Uuid,
+        target: &WriterInstallTarget<S>,
+    ) -> Result<InstallFileAnswer, StagingError> {
+        let source = self.record(id).await?.request.source;
+        self.finish_ready(id, target, move |expected| async move {
+            target
+                .database()
+                .mark_bootstrap_ready(&expected, source)
+                .await
+                .map_err(fleet_sync_writer::BootstrapError::from)
+                .map_err(Into::into)
+        })
+        .await
+    }
+    async fn finish_ready<T, F, Fut>(
+        &self,
+        id: Uuid,
+        target: &T,
+        ready: F,
+    ) -> Result<InstallFileAnswer, StagingError>
+    where
+        T: SnapshotTarget + ?Sized,
+        F: FnOnce(SnapshotInstall) -> Fut + Send,
+        Fut: std::future::Future<Output = Result<(), StagingError>> + Send,
     {
         let mut owner = self.control.connection.lock().await;
         let ObjectConnection::Open(connection) = &mut *owner else {
@@ -287,24 +326,14 @@ impl<H: Host> InstallCoordinator<H> {
             .cloned()
             .ok_or_else(|| corrupt("install has not published"))?;
         transaction.commit().await?;
-        let expected = snapshot.clone();
-        target
-            .rule_transaction(move |scope| {
-                Box::pin(async move {
-                    ready(scope, expected.clone()).await?;
-                    let marker = SnapshotInstallRules(scope)
-                        .state()
-                        .await?
-                        .ok_or_else(|| corrupt("ready marker is missing"))?;
-                    if marker.install != expected || !marker.ready {
-                        return Err(
-                            corrupt("ready callback did not make this install ready").into()
-                        );
-                    }
-                    Ok::<_, StagingError>(())
-                })
-            })
-            .await?;
+        ready(snapshot.clone()).await?;
+        let marker = target
+            .installed_snapshot()
+            .await?
+            .ok_or_else(|| corrupt("ready marker is missing"))?;
+        if marker.install != snapshot || !marker.ready {
+            return Err(corrupt("ready owner did not make this install ready").into());
+        }
         let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
         record.status = InstallStatus::Ready {
             snapshot: snapshot.clone(),
@@ -317,9 +346,9 @@ impl<H: Host> InstallCoordinator<H> {
         Ok(InstallFileAnswer::Ready { snapshot })
     }
 }
-fn check_target<H: Host>(
+fn check_target<T: SnapshotTarget + ?Sized>(
     record: &InstallRecord,
-    target: &TokioObject<H>,
+    target: &T,
 ) -> Result<(), StoreError> {
     if record.request.target != *target.key() {
         return Err(corrupt("install belongs to another target"));
