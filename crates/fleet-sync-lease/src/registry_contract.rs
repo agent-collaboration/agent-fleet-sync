@@ -75,6 +75,8 @@ pub trait HolderChangeGate: Send + Sync + 'static {
         change: &HolderChangeRequest,
         call: CallId,
     ) -> impl Future<Output = Result<GateAnswer, GateFailure>> + Send;
+    /// Close the attempt even before reserve arrives; any later reserve is refused.
+    /// Repeats retain the first outcome, and a different outcome is a conflict.
     fn settle(
         &self,
         change: &HolderChangeRequest,

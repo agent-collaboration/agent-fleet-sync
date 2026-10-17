@@ -37,9 +37,20 @@ where
     for<'row> &'row str: ColumnIndex<D::Row>,
 {
     let request = request.clone();
+    let now = ctx.now();
     Ok(ctx
         .local(step("repair")?, move |scope| {
             Box::pin(async move {
+                if let Some(answer) = crate::transfer_cancellation::process_cancel::<C::Store, D>(
+                    scope,
+                    change_checks::attempt(&request),
+                    now,
+                )
+                .await
+                .map_err(step_error)?
+                {
+                    return Ok(RepairedFence::Answer(answer));
+                }
                 let mut storage = RegistryStorage(scope);
                 let id = change_checks::attempt(&request);
                 let mut record =
@@ -77,6 +88,9 @@ where
                 else {
                     let answer = HolderChangeAnswer::Refused(HolderChangeRefusal::EpochUnprovable);
                     record.outcome = Some(answer.clone());
+                    record
+                        .enter(crate::HolderChangePhase::Ended, now)
+                        .map_err(step_error)?;
                     storage.save_transfer(&record).await.map_err(step_error)?;
                     return Ok(RepairedFence::Answer(answer));
                 };

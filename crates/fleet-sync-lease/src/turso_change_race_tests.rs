@@ -4,14 +4,14 @@ use crate::{
     turso_change_tests::register_first, turso_registry_copy::FenceGate, turso_registry_fixture::*,
     *,
 };
-use durable_steps::{AtomicStore, JournalScope, OperationState, RequestKey, Uuid};
+use durable_steps::{AtomicStore, OperationState, RequestKey, Uuid};
 use fleet_sync_protocol::*;
 use sqlx_turso::Turso;
 use std::sync::atomic::Ordering;
 use std::{sync::Arc, time::Duration};
 
 async fn saved_answer(
-    engine: &durable_steps::Engine<TestStore, TestHost>,
+    engine: &TestEngine,
     id: durable_steps::OperationId,
 ) -> TestResult<HolderChangeAnswer> {
     let OperationState::Completed { result } = engine.status(&id).await?.state else {
@@ -49,14 +49,17 @@ async fn superseded_move_finishes_after_reopen_without_resending_its_unanswered_
             from_epoch: Epoch::new(1)?,
             to: peer(2)?,
         };
-        let key = holder_change_request_key(move_id)?;
         let admitted = store
             .transaction(move |scope| {
                 Box::pin(async move {
-                    scope
-                        .admit::<HolderChangeTask<TestStore, Turso>>(&key, &request)
-                        .await
-                        .map_err(storage)
+                    admit_holder_change::<TestStore, Turso>(
+                        scope,
+                        &request,
+                        &ActorRef::new("race-admin").map_err(storage)?,
+                        SyncTime::from_unix_millis(1000),
+                    )
+                    .await
+                    .map_err(storage)
                 })
             })
             .await?;

@@ -8,6 +8,7 @@ publish.workspace = true
 description = "Shared lease values, writer state and runtime-independent registry rules"
 
 [dependencies]
+runtime-primitives.workspace = true
 durable-steps = { path = "../durable-steps" }
 fleet-sync-protocol = { path = "../fleet-sync-protocol" }
 serde.workspace = true
@@ -24,7 +25,6 @@ durable-steps = { path = "../durable-steps", features = ["turso"] }
 fleet-sync-receiver = { path = "../fleet-sync-receiver" }
 sqlx-turso.workspace = true
 tokio.workspace = true
-runtime-primitives.workspace = true
 tempfile = "3.27.0"
 
 [lints]

@@ -16,6 +16,7 @@ pub(crate) async fn outcome<C, D>(
     ctx: &mut C,
     request: &HolderChangeRequest,
     name: &str,
+    phase: Option<crate::HolderChangePhase>,
 ) -> Result<Option<HolderChangeAnswer>, LeaseError>
 where
     C: OperationContext,
@@ -28,9 +29,17 @@ where
 {
     let id = attempt(request);
     let database = database(request);
+    let now = ctx.now();
     Ok(ctx
         .local(step(name)?, move |scope| {
             Box::pin(async move {
+                if let Some(answer) =
+                    crate::transfer_cancellation::process_cancel::<C::Store, D>(scope, id, now)
+                        .await
+                        .map_err(step_error)?
+                {
+                    return Ok(Some(answer));
+                }
                 let mut storage = RegistryStorage(scope);
                 let mut record =
                     storage
@@ -53,9 +62,18 @@ where
                     let answer = HolderChangeAnswer::Refused(HolderChangeRefusal::Retired);
                     if record.outcome.is_none() {
                         record.outcome = Some(answer.clone());
+                        record
+                            .enter(crate::HolderChangePhase::Ended, now)
+                            .map_err(step_error)?;
                         storage.save_transfer(&record).await.map_err(step_error)?;
                     }
                     return Ok(Some(answer));
+                }
+                if record.outcome.is_none()
+                    && let Some(phase) = phase
+                {
+                    record.enter(phase, now).map_err(step_error)?;
+                    storage.save_transfer(&record).await.map_err(step_error)?;
                 }
                 Ok(record.outcome)
             })
@@ -79,9 +97,17 @@ where
     for<'row> &'row str: ColumnIndex<D::Row>,
 {
     let id = attempt(request);
+    let now = ctx.now();
     Ok(ctx
         .local(step(name)?, move |scope| {
             Box::pin(async move {
+                if let Some(answer) =
+                    crate::transfer_cancellation::process_cancel::<C::Store, D>(scope, id, now)
+                        .await
+                        .map_err(step_error)?
+                {
+                    return Ok(answer);
+                }
                 let mut storage = RegistryStorage(scope);
                 let mut record =
                     storage
@@ -108,6 +134,9 @@ where
                     HolderChangeAnswer::Refused(reason)
                 };
                 record.outcome = Some(answer.clone());
+                record
+                    .enter(crate::HolderChangePhase::Ended, now)
+                    .map_err(step_error)?;
                 storage.save_transfer(&record).await.map_err(step_error)?;
                 Ok(answer)
             })
@@ -138,6 +167,16 @@ where
     Ok(ctx
         .local(step("grant")?, move |scope| {
             Box::pin(async move {
+                if let Some(answer) = crate::transfer_cancellation::process_cancel::<C::Store, D>(
+                    scope,
+                    attempt(&request),
+                    now,
+                )
+                .await
+                .map_err(step_error)?
+                {
+                    return Ok(answer);
+                }
                 let mut storage = RegistryStorage(scope);
                 let database = database(&request);
                 let mut transfer = storage
@@ -270,6 +309,9 @@ where
                     }
                 };
                 transfer.outcome = Some(answer.clone());
+                transfer
+                    .enter(crate::HolderChangePhase::Ended, now)
+                    .map_err(step_error)?;
                 storage.save_transfer(&transfer).await.map_err(step_error)?;
                 Ok(answer)
             })
@@ -309,5 +351,7 @@ where
             field: "holder-change identity has different contents".into(),
         });
     }
-    Ok(record.outcome)
+    Ok(record.outcome.or(Some(HolderChangeAnswer::Pending {
+        transfer: attempt(request),
+    })))
 }

@@ -225,6 +225,16 @@
           "name": "outcome",
           "kind": "text",
           "nullable": true
+        },
+        {
+          "name": "phase",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "phase_history",
+          "kind": "text",
+          "nullable": false
         }
       ]
     },
@@ -272,7 +282,7 @@
     {
       "name": "active_transfer",
       "sql": "sql/active_transfer.sql",
-      "row": "StoredTransferRow",
+      "row": "StoredActiveTransferRow",
       "result": "optional",
       "parameters": [
         {
@@ -344,6 +354,88 @@
         },
         {
           "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_transfer_admission",
+      "sql": "sql/read_transfer_admission.sql",
+      "row": "StoredTransferAdmissionRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_transfer_admission",
+      "sql": "sql/write_transfer_admission.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "operation",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "request",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "requested_by",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "admitted_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "follow_up",
+          "kind": "text",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "name": "read_transfer_cancel",
+      "sql": "sql/read_transfer_cancel.sql",
+      "row": "StoredTransferCancelRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_transfer_cancel",
+      "sql": "sql/write_transfer_cancel.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
           "kind": "text",
           "nullable": false
         }

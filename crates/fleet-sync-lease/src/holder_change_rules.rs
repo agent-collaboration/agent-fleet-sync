@@ -27,7 +27,7 @@ where
     for<'value> Option<String>: Type<D> + Encode<'value, D> + Decode<'value, D>,
     for<'row> &'row str: ColumnIndex<D::Row>,
 {
-    let (intent, holder) = match change_checks::check::<C, D>(ctx, request).await? {
+    let (intent, holder) = match change_checks::check::<C, D>(ctx, request, config).await? {
         CheckedChange::Answer(answer) => return Ok(answer),
         CheckedChange::Continue { intent, holder } => (intent, holder),
     };
@@ -68,8 +68,20 @@ where
                     .await;
                 }
             };
-            if let Some(answer) =
-                change_completion::outcome::<C, D>(ctx, request, "after_release").await?
+            if let Some(answer) = change_completion::outcome::<C, D>(
+                ctx,
+                request,
+                "after_release",
+                match &released {
+                    ReleaseAnswer::Released { final_position } => {
+                        Some(HolderChangePhase::Released {
+                            final_position: *final_position,
+                        })
+                    }
+                    _ => None,
+                },
+            )
+            .await?
             {
                 return Ok(answer);
             }
@@ -197,8 +209,13 @@ where
                     });
                 }
             }
-            if let Some(answer) =
-                change_completion::outcome::<C, D>(ctx, request, "after_reserve").await?
+            if let Some(answer) = change_completion::outcome::<C, D>(
+                ctx,
+                request,
+                "after_reserve",
+                Some(HolderChangePhase::Reserved),
+            )
+            .await?
             {
                 return settle_claim::<C, D>(ctx, request, answer).await;
             }
@@ -246,7 +263,14 @@ where
             }
         }
     };
-    if let Some(answer) = change_completion::outcome::<C, D>(ctx, request, "before_fence").await? {
+    if let Some(answer) = change_completion::outcome::<C, D>(
+        ctx,
+        request,
+        "before_fence",
+        Some(HolderChangePhase::Fencing),
+    )
+    .await?
+    {
         return settle_claim::<C, D>(ctx, request, answer).await;
     }
     let mut fenced = ctx
@@ -340,7 +364,12 @@ where
     for<'value> Option<String>: Type<D> + Encode<'value, D> + Decode<'value, D>,
     for<'row> &'row str: ColumnIndex<D::Row>,
 {
-    if !matches!(request, HolderChangeRequest::Claim { .. }) {
+    if !matches!(request, HolderChangeRequest::Claim { .. })
+        || matches!(
+            answer,
+            HolderChangeAnswer::Pending { .. } | HolderChangeAnswer::Cancelled { .. }
+        )
+    {
         return Ok(answer);
     }
     let outcome = match &answer {

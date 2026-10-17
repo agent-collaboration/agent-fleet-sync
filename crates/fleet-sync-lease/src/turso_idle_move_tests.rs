@@ -6,7 +6,7 @@ use crate::{
     turso_registry_fixture::*,
     *,
 };
-use durable_steps::{AtomicStore, Engine, OperationState, RequestKey, Uuid};
+use durable_steps::{AtomicStore, OperationState, RequestKey, Uuid};
 use fleet_sync_protocol::*;
 use runtime_primitives::Clock;
 use sqlx_core::row::Row;
@@ -25,7 +25,7 @@ fn movement(id: u128, from: u64, to: u128) -> TestResult<HolderChangeRequest> {
     })
 }
 async fn grant_and_replay(
-    engine: &Engine<TestStore, TestHost>,
+    engine: &TestEngine,
     store: &TestStore,
     host: &TestHost,
     request: HolderChangeRequest,

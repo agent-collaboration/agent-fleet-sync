@@ -2,7 +2,7 @@
 
 Source inventory: `crates/collaboration-central-core` at M3 commit `9cc19dd2`. All **163 test declarations** are accounted for: **70 adapted** to generic contracts and **93 excluded** with the outside-D1 reason below. A property declaration counts once; generated cases do not inflate the inventory. Adapted means the named generic obligation is exercised, with changed or excluded M3 assertions stated explicitly; it does not mean a byte-for-byte test move.
 
-The D1 test links resolve against this branch. The final-base workspace all-features suite passes 314 tests with zero failures and two inherited opt-in tests ignored; this includes all 61 receiver and 44 lease tests, with zero scoped ignores. Format, workspace clippy with warnings denied, query metadata freshness and wasm checks pass. This ledger does not claim hosted CI, process-kill, WebSocket, or D2 writer verification.
+The D1 test links resolve against this branch. The final-base workspace all-features suite passes 330 tests with zero failures and two inherited opt-in tests ignored; this includes all 61 receiver and 57 lease tests, with zero scoped ignores. Format, workspace clippy with warnings denied, query metadata freshness and wasm checks pass. This ledger does not claim hosted CI, process-kill, WebSocket, or D2 writer verification.
 
 Copy rules run against actual Turso transactions. Durable-operation tests use the actual engine and file-backed Turso journal, copy rules and call-keyed consumer gate receipts. Reopen cases close and reopen files in one process. Holder release/drain is a receipted stand-in for D2's writer; it cannot establish the real writer interaction. The controlled capacity case injects SQLITE_FULL after a real write, not physical disk exhaustion. Pure SQL planning and fragment assembly tests remain pure.
 
@@ -183,10 +183,10 @@ Approved adaptations: copy-first initialization replaces pending-lease publicati
 | T1 | [`typed_casts_preserve_placeholders_and_do_not_touch_question_marks_in_literals`](../../crates/fleet-sync-receiver/src/bound_sql.rs#L104) |
 | T2 | [`typed_read_plan_decodes_classes_and_rejects_bad_or_duplicate_aliases`](../../crates/fleet-sync-receiver/src/bound_sql.rs#L128) |
 | T3 | [`claim_replays_reservation_and_fence_without_a_second_epoch_or_settlement`](../../crates/fleet-sync-lease/src/turso_claim_replay_tests.rs#L10) |
-| T4 | [`version_failure_before_grant_records_failed_and_settles_reserved_claim_refused`](../../crates/fleet-sync-lease/src/turso_claim_recovery_tests.rs#L40) |
-| T5 | [`version_failure_after_committed_grant_preserves_granted_and_settles_it_once`](../../crates/fleet-sync-lease/src/turso_claim_recovery_tests.rs#L105) |
+| T4 | [`version_failure_before_grant_records_failed_and_settles_reserved_claim_refused`](../../crates/fleet-sync-lease/src/turso_claim_recovery_tests.rs#L37) |
+| T5 | [`version_failure_after_committed_grant_preserves_granted_and_settles_it_once`](../../crates/fleet-sync-lease/src/turso_claim_recovery_tests.rs#L102) |
 | T6 | [`an_unseeded_copy_refuses_claim_and_settles_its_reserved_attempt`](../../crates/fleet-sync-lease/src/turso_claim_replay_tests.rs#L120) |
-| T7 | [`schema_refusal_after_reservation_is_settled_and_a_gate_refusal_has_no_settlement`](../../crates/fleet-sync-lease/src/turso_claim_recovery_tests.rs#L183) |
+| T7 | [`schema_refusal_after_reservation_is_settled_and_a_gate_refusal_has_no_settlement`](../../crates/fleet-sync-lease/src/turso_claim_recovery_tests.rs#L202) |
 | T8 | [`reopened_copy_keeps_old_fence_receipts_and_cutoffs_after_later_fences`](../../crates/fleet-sync-receiver/src/turso_fence_integrity_tests.rs#L67) |
 | T9 | [`absent_copy_and_future_epoch_are_distinct_refusals_with_no_mutation`](../../crates/fleet-sync-receiver/src/turso_integrity_tests.rs#L291) |
 | T10 | [`fencing_preserves_old_holder_cutoff_and_retirement_dominates_replays`](../../crates/fleet-sync-receiver/src/turso_rule_tests.rs#L324) |
@@ -210,15 +210,15 @@ Approved adaptations: copy-first initialization replaces pending-lease publicati
 | T28 | [`digest_refusal_rolls_back_created_schema_and_preserves_staging_for_correct_resend`](../../crates/fleet-sync-receiver/src/turso_seed_tests.rs#L325) |
 | T29 | [`import_repeats_and_conflicts_then_retirement_precedes_cached_engine_answers`](../../crates/fleet-sync-lease/src/turso_lifecycle_tests.rs#L188) |
 | T30 | [`seed_hook_and_follow_up_run_once_while_retained_piece_work_keeps_its_own_identity`](../../crates/fleet-sync-receiver/src/turso_seed_hook_tests.rs#L161) |
-| T31 | [`claim_grants_the_next_epoch_and_settles_once_after_seed_publication`](../../crates/fleet-sync-lease/src/turso_change_tests.rs#L29) |
+| T31 | [`claim_grants_the_next_epoch_and_settles_once_after_seed_publication`](../../crates/fleet-sync-lease/src/turso_change_tests.rs#L27) |
 | T32 | [`stored_database_identity_mismatch_is_not_treated_as_an_import_replay`](../../crates/fleet-sync-lease/src/turso_registry_integrity_tests.rs#L82) |
 | T33 | [`import_replays_the_copy_before_publishing_registry_state_after_lost_answer`](../../crates/fleet-sync-lease/src/turso_registry_integrity_tests.rs#L11) |
 | T34 | [`claim_repairs_above_a_restored_imported_copys_fence_before_granting`](../../crates/fleet-sync-lease/src/turso_claim_replay_tests.rs#L185) |
 | T35 | [`integer_real_text_blob_and_null_keep_exact_values_and_storage_classes`](../../crates/fleet-sync-receiver/src/turso_transport_tests.rs#L41) |
 | T36 | [`positive_and_negative_infinity_remain_real_through_row_apply_and_exact_readback`](../../crates/fleet-sync-receiver/src/turso_transport_tests.rs#L96) |
-| T37 | [`renewal_replay_never_extends_expiry_and_an_expired_current_holder_can_renew_the_same_epoch`](../../crates/fleet-sync-lease/src/turso_renew_tests.rs#L88) |
-| T38 | [`replay_preserves_recorded_answer_but_returns_current_lease_after_later_renewal_and_takeover`](../../crates/fleet-sync-lease/src/turso_renew_tests.rs#L135) |
-| T39 | [`changed_renewal_identity_is_an_error_and_cannot_extend_the_lease`](../../crates/fleet-sync-lease/src/turso_renew_tests.rs#L273) |
+| T37 | [`renewal_replay_never_extends_expiry_and_an_expired_current_holder_can_renew_the_same_epoch`](../../crates/fleet-sync-lease/src/turso_renew_tests.rs#L92) |
+| T38 | [`replay_preserves_recorded_answer_but_returns_current_lease_after_later_renewal_and_takeover`](../../crates/fleet-sync-lease/src/turso_renew_tests.rs#L139) |
+| T39 | [`changed_renewal_identity_is_an_error_and_cannot_extend_the_lease`](../../crates/fleet-sync-lease/src/turso_renew_tests.rs#L287) |
 | T40 | [`refused_registration_changes_no_copy_or_authority_and_a_new_attempt_can_succeed`](../../crates/fleet-sync-lease/src/turso_lifecycle_tests.rs#L142) |
 | T41 | [`register_creates_copy_before_grant_and_replay_never_issues_another_epoch`](../../crates/fleet-sync-lease/src/turso_lifecycle_tests.rs#L35) |
 | T42 | [`restored_registry_reserves_above_the_fresh_previews_copy_fence`](../../crates/fleet-sync-lease/src/turso_floor_repair_tests.rs#L39) |
@@ -226,11 +226,11 @@ Approved adaptations: copy-first initialization replaces pending-lease publicati
 | T44 | [`missing_or_exhausted_floor_refuses_without_changing_authority_or_calling_peers`](../../crates/fleet-sync-lease/src/turso_epoch_proof_tests.rs#L44) |
 | T45 | [`failed_registration_leaves_no_grant_and_original_creation_prevents_a_different_writer`](../../crates/fleet-sync-lease/src/turso_lifecycle_tests.rs#L71) |
 | T46 | [`unavailable_preview_saves_no_confirmation_or_epoch_until_the_copy_answers`](../../crates/fleet-sync-lease/src/turso_epoch_proof_tests.rs#L141) |
-| T47 | [`lost_release_answer_replays_one_call_even_past_the_unsent_bound_and_keeps_rows`](../../crates/fleet-sync-lease/src/turso_change_tests.rs#L101) |
-| T48 | [`never_sent_move_ends_unreachable_without_fencing_or_changing_holder`](../../crates/fleet-sync-lease/src/turso_change_tests.rs#L162) |
+| T47 | [`lost_release_answer_replays_one_call_even_past_the_unsent_bound_and_keeps_rows`](../../crates/fleet-sync-lease/src/turso_change_tests.rs#L99) |
+| T48 | [`never_sent_move_ends_unreachable_without_fencing_or_changing_holder`](../../crates/fleet-sync-lease/src/turso_change_tests.rs#L160) |
 | T49 | [`typed_release_refusals_replay_without_fencing_or_changing_the_lease`](../../crates/fleet-sync-lease/src/turso_move_refusal_tests.rs#L13) |
 | T50 | [`retired_marker_answers_without_any_other_replication_bookkeeping`](../../crates/fleet-sync-receiver/src/turso_seed_tests.rs#L446) |
-| T51 | [`takeover_refuses_a_moved_preview_then_new_preview_uses_a_later_reserved_epoch`](../../crates/fleet-sync-lease/src/turso_change_tests.rs#L233) |
+| T51 | [`takeover_refuses_a_moved_preview_then_new_preview_uses_a_later_reserved_epoch`](../../crates/fleet-sync-lease/src/turso_change_tests.rs#L231) |
 | T52 | [`a_pending_move_blocks_another_move_and_renewal_returns_fresh_authority_after_grant`](../../crates/fleet-sync-lease/src/turso_registry_integrity_tests.rs#L147) |
 | T53 | [`released_final_position_waits_for_the_real_copy_then_grants_once`](../../crates/fleet-sync-lease/src/turso_move_refusal_tests.rs#L110) |
 | T54 | [`absent_copy_and_floor_cannot_create_a_preview_or_manufacture_epoch_evidence`](../../crates/fleet-sync-lease/src/turso_epoch_proof_tests.rs#L205) |
@@ -249,3 +249,5 @@ Decision 43 adds three real-Turso authority cases: writer-created copies accept 
 Additional real-store regressions cover successive idle Moves and Move immediately after Claim or Takeover, preserving predecessor positions/rows and exact request replay, with future releases still rejected. Five valid-shaped fence-receipt corruption cases exercise both replay and historical stale-piece consumption with unchanged persisted readbacks. These are new generic-contract regressions; the original 163 declaration dispositions remain unchanged.
 
 T57 retains the M3 copy-side metadata identity obligation at the receiver boundary. Three real-Turso regressions corrupt only the pending seed's database, then reject begin replay/new generation, page replay/new staging and completion with a typed corruption error. Committed error transactions preserve copy, seed, pages, attempts, creation, schema, hook rows and journal identities; no snapshot callback, new follow-up admission or transition to following occurs. T32 remains separate registry identity coverage and does not substitute for the receiver check. The inventory stays 70 adapted / 93 excluded; this corrects the adaptation target for the existing M3 declaration.
+
+The workflow extension adds admission identity, phase/history and admin inspection, cancellation before fencing, move withdrawal and claim settlement debt. It retains the existing holder-change, renewal, floor and supersession assertions against the same real stores and engine. Original M3 declarations remain 163; additional workflow regressions do not change that inventory.

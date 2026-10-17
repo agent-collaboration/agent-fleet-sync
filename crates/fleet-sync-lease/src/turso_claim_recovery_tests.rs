@@ -1,7 +1,7 @@
 //! Failure recording and settlement debt over the actual journal and consumer-gate files.
 #![allow(clippy::panic_in_result_fn)]
 use crate::{turso_copy_fixture::*, turso_registry_fixture::*, *};
-use durable_steps::{AtomicStore, Engine, OperationState, Uuid};
+use durable_steps::{AtomicStore, OperationState, Uuid};
 use fleet_sync_protocol::*;
 use sqlx_turso::Turso;
 use std::sync::{Arc, atomic::Ordering};
@@ -25,13 +25,10 @@ async fn prepare(store: &Arc<TestStore>, host: &Arc<TestHost>) -> TestResult {
     seed_import(host).await?;
     Ok(())
 }
-async fn changed_version(
-    store: Arc<TestStore>,
-    host: Arc<TestHost>,
-) -> TestResult<Engine<TestStore, TestHost>> {
-    let mut engine = Engine::new(store, host);
+async fn changed_version(store: Arc<TestStore>, host: Arc<TestHost>) -> TestResult<TestEngine> {
+    let mut engine = TestEngine::new(store, Arc::clone(&host));
     engine.register(VersionedTask::<_, 2>(
-        HolderChangeTask::<TestStore, Turso>::new(config()?),
+        HolderChangeTask::<TestStore, Turso>::new(config()?, host),
     ))?;
     engine.register(SettleReservationTask::<TestStore>::new())?;
     Ok(engine)
@@ -142,14 +139,36 @@ async fn version_failure_after_committed_grant_preserves_granted_and_settles_it_
         assert!(
             matches!(answer,Some(HolderChangeAnswer::Granted{epoch,..}) if epoch==Epoch::new(2)?)
         );
+        let view = crate::turso_workflow_tests::view(&store, transfer()?).await?;
+        assert_eq!(view.phase, HolderChangePhase::Ended);
+        assert!(view.settlement_owed);
+
         drop(running);
         drop(store);
         host.advance();
-        host.settlement_unreachable.store(false, Ordering::SeqCst);
+        host.settlement_unreachable.store(true, Ordering::SeqCst);
         let store = open_store(&path, Arc::clone(&host), false).await?;
         let changed = changed_version(Arc::clone(&store), Arc::clone(&host)).await?;
         assert_eq!(changed.drive_due().await?.failed.len(), 1);
+        changed.drive_due().await?;
+        let pending = crate::turso_workflow_tests::view(&store, transfer()?).await?;
+        assert_eq!(pending.phase, HolderChangePhase::Ended);
+        assert!(
+            matches!(pending.outcome,Some(HolderChangeAnswer::Granted{epoch,..}) if epoch==Epoch::new(2)?)
+        );
+        assert!(pending.settlement_owed);
+        assert_eq!(
+            pending.waiting.ok_or("follow-up settlement missing")?.on,
+            WaitingOn::Gate
+        );
+        host.settlement_unreachable.store(false, Ordering::SeqCst);
+        host.advance();
         assert_eq!(changed.drive_due().await?.completed.len(), 1);
+        assert!(
+            !crate::turso_workflow_tests::view(&store, transfer()?)
+                .await?
+                .settlement_owed
+        );
         let answer = store
             .transaction(move |scope| {
                 Box::pin(
@@ -195,10 +214,13 @@ async fn schema_refusal_after_reservation_is_settled_and_a_gate_refusal_has_no_s
         host.gate
             .reject_claim
             .store(reject_at_gate, Ordering::SeqCst);
-        let mut engine = Engine::new(Arc::clone(&store), Arc::clone(&host));
+        let mut engine = TestEngine::new(Arc::clone(&store), Arc::clone(&host));
         let mut policy = config()?;
         policy.target_schema_max = 0;
-        engine.register(HolderChangeTask::<TestStore, Turso>::new(policy))?;
+        engine.register(HolderChangeTask::<TestStore, Turso>::new(
+            policy,
+            host.clone(),
+        ))?;
         let request = HolderChangeRequest::Claim {
             attempt: transfer()?,
             database: database()?,

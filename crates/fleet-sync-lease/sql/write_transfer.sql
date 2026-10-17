@@ -1,1 +1,1 @@
-INSERT INTO _fleet_sync_transfers(attempt,database,intent,outcome) VALUES(?1,?2,?3,?4) ON CONFLICT(attempt) DO UPDATE SET outcome=excluded.outcome
+INSERT INTO _fleet_sync_transfers(attempt,database,intent,outcome,phase,phase_history) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(attempt) DO UPDATE SET outcome=excluded.outcome,phase=excluded.phase,phase_history=excluded.phase_history

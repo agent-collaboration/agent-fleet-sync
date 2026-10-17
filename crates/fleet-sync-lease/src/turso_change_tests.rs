@@ -10,9 +10,7 @@ use std::sync::{Arc, atomic::Ordering};
 fn transfer(value: u128) -> TestResult<TransferId> {
     Ok(TransferId::new(Uuid::from_u128(value))?)
 }
-pub(super) async fn register_first(
-    engine: &durable_steps::Engine<TestStore, TestHost>,
-) -> TestResult {
+pub(super) async fn register_first(engine: &TestEngine) -> TestResult {
     let request = registration(201, 1)?;
     let answer = task_answer::<RegistrationTask<TestStore, Turso>>(
         engine,

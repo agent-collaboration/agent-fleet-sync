@@ -1,28 +1,31 @@
 use crate::{
-    RegistryConfig, SettleReservationTask,
+    RegistryConfig,
     holder_change_rules::holder_change,
     operation_support::{failure_code, storage_error},
     registry_storage::RegistryStorage,
 };
 use durable_steps::{
-    AtomicStore, BoxFuture, JournalScope, OperationContext, OperationFailure, RequestKey, Resume,
-    StoreError, Task, storage::TransactionScope,
+    AtomicStore, BoxFuture, OperationContext, OperationFailure, RequestKey, Resume, StoreError,
+    Task, storage::TransactionScope,
 };
 use fleet_sync_protocol::*;
+use runtime_primitives::Clock;
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
 };
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 pub struct HolderChangeTask<S, D> {
     config: RegistryConfig,
+    clock: Arc<dyn Clock>,
     store: PhantomData<fn() -> (S, D)>,
 }
 impl<S, D> HolderChangeTask<S, D> {
-    pub const fn new(config: RegistryConfig) -> Self {
+    pub const fn new(config: RegistryConfig, clock: Arc<dyn Clock>) -> Self {
         Self {
             config,
+            clock,
             store: PhantomData,
         }
     }
@@ -57,12 +60,20 @@ where
         key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<Self::Output>, StoreError>> {
         Box::pin(async move {
+            let now = self.clock.now();
             let Some(id) = uuid::Uuid::parse_str(key.as_str())
                 .ok()
                 .and_then(|id| TransferId::new(id).ok())
             else {
                 return Ok(Resume::Continue);
             };
+            if let Some(answer) =
+                crate::transfer_cancellation::process_cancel::<S, D>(scope, id, now)
+                    .await
+                    .map_err(storage_error)?
+            {
+                return Ok(Resume::Finish(answer));
+            }
             let Some(record) = RegistryStorage(scope)
                 .transfer(id)
                 .await
@@ -89,19 +100,39 @@ where
         failure: &'s OperationFailure,
     ) -> BoxFuture<'s, Result<(), StoreError>> {
         Box::pin(async move {
+            let now = self.clock.now();
             let Some(id) = uuid::Uuid::parse_str(key.as_str())
                 .ok()
                 .and_then(|id| TransferId::new(id).ok())
             else {
                 return Ok(());
             };
-            let Some(mut record) = RegistryStorage(scope)
-                .transfer(id)
+            let Some(admission) = RegistryStorage(scope)
+                .admission(id)
                 .await
                 .map_err(storage_error)?
             else {
                 return Ok(());
             };
+            crate::transfer_cancellation::process_cancel::<S, D>(scope, id, now)
+                .await
+                .map_err(storage_error)?;
+            let mut record = RegistryStorage(scope)
+                .transfer(id)
+                .await
+                .map_err(storage_error)?
+                .unwrap_or_else(|| {
+                    crate::registry_records::TransferRecord::requested(
+                        crate::registry_records::TransferIntent {
+                            request: admission.request,
+                            new_epoch: None,
+                        },
+                        admission.admitted_at,
+                    )
+                });
+            if record.phase == crate::HolderChangePhase::Cancelling {
+                return Ok(());
+            }
             let settlement = match &record.outcome {
                 Some(HolderChangeAnswer::Granted { epoch, .. }) => {
                     SettleOutcome::Granted { epoch: *epoch }
@@ -109,6 +140,7 @@ where
                 Some(HolderChangeAnswer::Refused(reason)) => SettleOutcome::Refused {
                     reason: reason.clone(),
                 },
+                Some(HolderChangeAnswer::Cancelled { .. }) => SettleOutcome::Cancelled,
                 _ => SettleOutcome::Refused {
                     reason: HolderChangeRefusal::Unavailable,
                 },
@@ -117,24 +149,18 @@ where
                 record.outcome = Some(HolderChangeAnswer::Failed {
                     reason: failure_code(failure)?,
                 });
+                record
+                    .enter(crate::HolderChangePhase::Ended, now)
+                    .map_err(storage_error)?;
                 RegistryStorage(scope)
                     .save_transfer(&record)
                     .await
                     .map_err(storage_error)?;
             }
             if matches!(record.intent.request, HolderChangeRequest::Claim { .. }) {
-                let key = RequestKey::new(format!("claim-settle:{}", id.as_uuid()))
-                    .map_err(StoreError::backend)?;
-                scope
-                    .admit::<SettleReservationTask<S>>(
-                        &key,
-                        &ClaimSettlement {
-                            change: record.intent.request,
-                            outcome: settlement,
-                        },
-                    )
+                crate::transfer_cancellation::admit_settlement::<S, D>(scope, id, settlement)
                     .await
-                    .map_err(StoreError::backend)?;
+                    .map_err(storage_error)?;
             }
             Ok(())
         })

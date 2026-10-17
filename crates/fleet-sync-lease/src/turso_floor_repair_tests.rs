@@ -13,7 +13,7 @@ use std::{sync::Arc, time::Duration};
 fn transfer(value: u128) -> TestResult<TransferId> {
     Ok(TransferId::new(Uuid::from_u128(value))?)
 }
-async fn advance_copy(host: &TestHost, from: u64, to: u64) -> TestResult {
+pub(super) async fn advance_copy(host: &TestHost, from: u64, to: u64) -> TestResult {
     let mut copies = host.copies.lock().await;
     let copy = copies.get_mut(&database()?).ok_or("copy missing")?;
     let mut transaction = copy.begin_with("BEGIN IMMEDIATE").await?;

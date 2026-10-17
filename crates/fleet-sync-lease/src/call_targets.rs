@@ -14,6 +14,17 @@ impl CallTarget for HolderRelease {
     type Request = ReleaseRequest;
     type Answer = ReleaseAnswer;
 }
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HolderWithdrawal {
+    pub holder: PeerId,
+}
+impl CallTarget for HolderWithdrawal {
+    const KIND: &'static str = "fleet-sync.holder-withdrawal";
+    type Request = WithdrawRelease;
+    type Answer = WithdrawAnswer;
+}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CopyFence {

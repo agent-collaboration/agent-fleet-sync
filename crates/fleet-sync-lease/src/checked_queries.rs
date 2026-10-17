@@ -315,6 +315,8 @@ where
 pub(crate) struct StoredTransferRow {
     pub intent: Option<String>,
     pub outcome: Option<String>,
+    pub phase: Option<String>,
+    pub phase_history: Option<String>,
 }
 pub(crate) fn read_transfer<S>(
     scope: &mut S,
@@ -339,6 +341,8 @@ where
                 Ok(StoredTransferRow {
                     intent: row.try_get("intent")?,
                     outcome: row.try_get("outcome")?,
+                    phase: row.try_get("phase")?,
+                    phase_history: row.try_get("phase_history")?,
                 })
             })
             .transpose()
@@ -350,6 +354,8 @@ pub(crate) fn write_transfer<S>(
     database: String,
     intent: String,
     outcome: Option<String>,
+    phase: String,
+    phase_history: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -365,7 +371,9 @@ where
         .bind(attempt)
         .bind(database)
         .bind(intent)
-        .bind(outcome);
+        .bind(outcome)
+        .bind(phase)
+        .bind(phase_history);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -430,10 +438,19 @@ where
         Ok(())
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct StoredActiveTransferRow {
+    pub attempt: Option<String>,
+    pub intent: Option<String>,
+    pub outcome: Option<String>,
+    pub phase: Option<String>,
+    pub phase_history: Option<String>,
+}
 pub(crate) fn active_transfer<S>(
     scope: &mut S,
     database: String,
-) -> impl std::future::Future<Output = Result<Option<StoredTransferRow>, sqlx_core::Error>> + Send
+) -> impl std::future::Future<Output = Result<Option<StoredActiveTransferRow>, sqlx_core::Error>> + Send
 where
     S: TransactionScope,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
@@ -450,9 +467,12 @@ where
         let row = statement.fetch_optional(scope.executor()).await?;
         row.as_ref()
             .map(|row| {
-                Ok(StoredTransferRow {
+                Ok(StoredActiveTransferRow {
+                    attempt: row.try_get("attempt")?,
                     intent: row.try_get("intent")?,
                     outcome: row.try_get("outcome")?,
+                    phase: row.try_get("phase")?,
+                    phase_history: row.try_get("phase_history")?,
                 })
             })
             .transpose()
@@ -558,6 +578,129 @@ where
         )))
         .bind(intent)
         .bind(attempt);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredTransferAdmissionRow {
+    pub operation: Option<String>,
+    pub request: Option<String>,
+    pub requested_by: Option<String>,
+    pub admitted_at: Option<String>,
+    pub follow_up: Option<String>,
+}
+pub(crate) fn read_transfer_admission<S>(
+    scope: &mut S,
+    attempt: String,
+) -> impl std::future::Future<Output = Result<Option<StoredTransferAdmissionRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_transfer_admission.sql"
+        )))
+        .bind(attempt);
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(StoredTransferAdmissionRow {
+                    operation: row.try_get("operation")?,
+                    request: row.try_get("request")?,
+                    requested_by: row.try_get("requested_by")?,
+                    admitted_at: row.try_get("admitted_at")?,
+                    follow_up: row.try_get("follow_up")?,
+                })
+            })
+            .transpose()
+    }
+}
+pub(crate) fn write_transfer_admission<S>(
+    scope: &mut S,
+    attempt: String,
+    operation: String,
+    request: String,
+    requested_by: String,
+    admitted_at: String,
+    follow_up: Option<String>,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> Option<String>: Type<S::Database> + Encode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_transfer_admission.sql"
+        )))
+        .bind(attempt)
+        .bind(operation)
+        .bind(request)
+        .bind(requested_by)
+        .bind(admitted_at)
+        .bind(follow_up);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredTransferCancelRow {
+    pub record: Option<String>,
+}
+pub(crate) fn read_transfer_cancel<S>(
+    scope: &mut S,
+    attempt: String,
+) -> impl std::future::Future<Output = Result<Option<StoredTransferCancelRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_transfer_cancel.sql"
+        )))
+        .bind(attempt);
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(StoredTransferCancelRow {
+                    record: row.try_get("record")?,
+                })
+            })
+            .transpose()
+    }
+}
+pub(crate) fn write_transfer_cancel<S>(
+    scope: &mut S,
+    attempt: String,
+    record: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_transfer_cancel.sql"
+        )))
+        .bind(attempt)
+        .bind(record);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

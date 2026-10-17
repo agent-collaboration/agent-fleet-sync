@@ -4,16 +4,13 @@ use crate::{
     turso_change_tests::register_first, turso_copy_fixture::seed_import, turso_registry_fixture::*,
     *,
 };
-use durable_steps::{AtomicStore, Engine, OperationState};
+use durable_steps::{AtomicStore, OperationState};
 use fleet_sync_protocol::*;
 use sqlx_core::row::Row;
 use sqlx_turso::Turso;
 use std::sync::{Arc, atomic::Ordering};
 
-async fn imported(
-    engine: &Engine<TestStore, TestHost>,
-    host: &Arc<TestHost>,
-) -> TestResult<Retirement> {
+async fn imported(engine: &TestEngine, host: &Arc<TestHost>) -> TestResult<Retirement> {
     let import = import_request(201, "a")?;
     assert_eq!(
         task_answer::<ImportTask<TestStore, Turso>>(
@@ -81,7 +78,7 @@ async fn failed_retirement_keeps_its_seal_and_a_new_attempt_finishes_the_real_co
     drop(store);
     host.advance();
     let store = open_store(&path, Arc::clone(&host), false).await?;
-    let mut changed = Engine::new(Arc::clone(&store), Arc::clone(&host));
+    let mut changed = TestEngine::new(Arc::clone(&store), Arc::clone(&host));
     changed.register(VersionedTask::<_, 2>(
         RetirementTask::<TestStore, Turso>::new(config()?),
     ))?;

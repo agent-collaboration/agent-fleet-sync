@@ -1,14 +1,14 @@
 //! Public registry tasks over the actual engine, journal, copy rules and consumer gates.
 #![allow(clippy::panic_in_result_fn)]
 use crate::{turso_registry_fixture::*, *};
-use durable_steps::{AtomicStore, Engine, OperationState, Uuid};
+use durable_steps::{AtomicStore, OperationState, Uuid};
 use fleet_sync_protocol::*;
 use sqlx_turso::Turso;
 use std::sync::{Arc, atomic::Ordering};
 
 async fn import_entry(
     store: &TestStore,
-    engine: &Engine<TestStore, TestHost>,
+    engine: &TestEngine,
     request: Import,
 ) -> TestResult<ImportAnswer> {
     let database = request.database;
@@ -100,7 +100,7 @@ async fn failed_registration_leaves_no_grant_and_original_creation_prevents_a_di
     drop(store);
     host.advance();
     let store = open_store(&path, Arc::clone(&host), false).await?;
-    let mut mismatch = Engine::new(Arc::clone(&store), Arc::clone(&host));
+    let mut mismatch = TestEngine::new(Arc::clone(&store), Arc::clone(&host));
     mismatch.register(VersionedTask::<_, 2>(
         RegistrationTask::<TestStore, Turso>::new(config()?),
     ))?;

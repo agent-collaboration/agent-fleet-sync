@@ -1,5 +1,5 @@
 use crate::{
-    LeaseError,
+    LeaseError, RegistryConfig,
     operation_support::{step, step_error},
     registry_records::*,
     registry_storage::RegistryStorage,
@@ -53,6 +53,7 @@ pub(crate) enum CheckedChange {
 pub(crate) async fn check<C, D>(
     ctx: &mut C,
     request: &HolderChangeRequest,
+    config: &RegistryConfig,
 ) -> Result<CheckedChange, LeaseError>
 where
     C: OperationContext,
@@ -65,6 +66,8 @@ where
 {
     let operation = *ctx.id();
     let offered = request.clone();
+    let now = ctx.now();
+    let renewal_bound = config.move_needs_renewal_within;
     let checked = ctx
         .local(step("check")?, move |scope| {
             Box::pin(async move {
@@ -79,6 +82,28 @@ where
                         message: "holder-change request key must be its attempt ID".into(),
                     }));
                 }
+                let id = attempt(&offered);
+                let admission = RegistryStorage(scope)
+                    .admission(id)
+                    .await
+                    .map_err(step_error)?
+                    .ok_or_else(|| {
+                        step_error(LeaseError::Corrupt {
+                            field: "holder change must use registry admission".into(),
+                        })
+                    })?;
+                if admission.operation != operation || admission.request != offered {
+                    return Err(step_error(LeaseError::Corrupt {
+                        field: "holder-change admission identity".into(),
+                    }));
+                }
+                if let Some(answer) =
+                    crate::transfer_cancellation::process_cancel::<C::Store, D>(scope, id, now)
+                        .await
+                        .map_err(step_error)?
+                {
+                    return Ok(CheckedChange::Answer(answer));
+                }
                 let mut storage = RegistryStorage(scope);
                 let database = database(&offered);
                 let id = attempt(&offered);
@@ -86,6 +111,10 @@ where
                 if record.as_ref().is_some_and(|record| {
                     matches!(record.lifecycle, DatabaseLifecycle::Retired { .. })
                 }) {
+                    if storage.transfer(id).await.map_err(step_error)?.is_none() {
+                        return refuse(&mut storage, offered, HolderChangeRefusal::Retired, now)
+                            .await;
+                    }
                     return Ok(CheckedChange::Answer(HolderChangeAnswer::Refused(
                         HolderChangeRefusal::Retired,
                     )));
@@ -110,7 +139,7 @@ where
                     });
                 }
                 let Some(record) = record else {
-                    return refuse(&mut storage, offered, HolderChangeRefusal::NotFound).await;
+                    return refuse(&mut storage, offered, HolderChangeRefusal::NotFound, now).await;
                 };
                 if let DatabaseLifecycle::Retiring { attempt } = record.lifecycle {
                     let transfer = TransferId::new(attempt.as_uuid()).map_err(|error| {
@@ -122,6 +151,7 @@ where
                         &mut storage,
                         offered,
                         HolderChangeRefusal::TransferInProgress { transfer },
+                        now,
                     )
                     .await;
                 }
@@ -140,6 +170,7 @@ where
                         &mut storage,
                         offered,
                         HolderChangeRefusal::TransferInProgress { transfer },
+                        now,
                     )
                     .await;
                 }
@@ -147,30 +178,63 @@ where
                 match &offered {
                     HolderChangeRequest::Move { from_epoch, to, .. } => {
                         let Some(current) = lease.as_ref() else {
-                            return refuse(&mut storage, offered, HolderChangeRefusal::NotFound)
-                                .await;
+                            return refuse(
+                                &mut storage,
+                                offered,
+                                HolderChangeRefusal::NotFound,
+                                now,
+                            )
+                            .await;
                         };
                         if *to == current.holder {
-                            return refuse(&mut storage, offered, HolderChangeRefusal::AlreadyHeld)
-                                .await;
+                            return refuse(
+                                &mut storage,
+                                offered,
+                                HolderChangeRefusal::AlreadyHeld,
+                                now,
+                            )
+                            .await;
                         }
                         if *from_epoch != current.epoch {
                             return refuse(
                                 &mut storage,
                                 offered,
                                 HolderChangeRefusal::PreviewStale,
+                                now,
+                            )
+                            .await;
+                        }
+                        if renewal_bound
+                            .is_some_and(|bound| now > current.last_renewed_at.after(bound))
+                        {
+                            let last_renewed_at = current.last_renewed_at;
+                            return refuse(
+                                &mut storage,
+                                offered,
+                                HolderChangeRefusal::HolderStale { last_renewed_at },
+                                now,
                             )
                             .await;
                         }
                     }
                     HolderChangeRequest::Takeover { preview, to, .. } => {
                         let Some(current) = lease.as_ref() else {
-                            return refuse(&mut storage, offered, HolderChangeRefusal::NotFound)
-                                .await;
+                            return refuse(
+                                &mut storage,
+                                offered,
+                                HolderChangeRefusal::NotFound,
+                                now,
+                            )
+                            .await;
                         };
                         if *to == current.holder {
-                            return refuse(&mut storage, offered, HolderChangeRefusal::AlreadyHeld)
-                                .await;
+                            return refuse(
+                                &mut storage,
+                                offered,
+                                HolderChangeRefusal::AlreadyHeld,
+                                now,
+                            )
+                            .await;
                         }
                         let saved = storage.preview(&preview.token).await.map_err(step_error)?;
                         if current.holder != preview.holder
@@ -182,6 +246,7 @@ where
                                 &mut storage,
                                 offered,
                                 HolderChangeRefusal::PreviewStale,
+                                now,
                             )
                             .await;
                         }
@@ -190,30 +255,50 @@ where
                         if lease.is_some()
                             || !matches!(record.lifecycle, DatabaseLifecycle::Unheld { .. })
                         {
-                            return refuse(&mut storage, offered, HolderChangeRefusal::AlreadyHeld)
-                                .await;
+                            return refuse(
+                                &mut storage,
+                                offered,
+                                HolderChangeRefusal::AlreadyHeld,
+                                now,
+                            )
+                            .await;
                         }
                     }
                 }
                 let Some(floor) = storage.floor(database).await.map_err(step_error)? else {
-                    return refuse(&mut storage, offered, HolderChangeRefusal::EpochUnprovable)
-                        .await;
+                    return refuse(
+                        &mut storage,
+                        offered,
+                        HolderChangeRefusal::EpochUnprovable,
+                        now,
+                    )
+                    .await;
                 };
                 let floor = match &offered {
                     HolderChangeRequest::Takeover { preview, .. } => floor.max(preview.fence),
                     _ => floor,
                 };
                 if lease.as_ref().is_some_and(|lease| lease.epoch > floor) {
-                    return refuse(&mut storage, offered, HolderChangeRefusal::EpochUnprovable)
-                        .await;
+                    return refuse(
+                        &mut storage,
+                        offered,
+                        HolderChangeRefusal::EpochUnprovable,
+                        now,
+                    )
+                    .await;
                 }
                 let Some(next) = floor
                     .value()
                     .checked_add(1)
                     .and_then(|value| Epoch::new(value).ok())
                 else {
-                    return refuse(&mut storage, offered, HolderChangeRefusal::EpochUnprovable)
-                        .await;
+                    return refuse(
+                        &mut storage,
+                        offered,
+                        HolderChangeRefusal::EpochUnprovable,
+                        now,
+                    )
+                    .await;
                 };
                 if let Some(mut active) = storage
                     .active_transfer(database)
@@ -226,6 +311,9 @@ where
                         active.outcome = Some(HolderChangeAnswer::Refused(
                             HolderChangeRefusal::Superseded { by: id },
                         ));
+                        active
+                            .enter(crate::HolderChangePhase::Ended, now)
+                            .map_err(step_error)?;
                         storage.save_transfer(&active).await.map_err(step_error)?;
                     } else {
                         return refuse(
@@ -234,6 +322,7 @@ where
                             HolderChangeRefusal::TransferInProgress {
                                 transfer: active.intent.attempt(),
                             },
+                            now,
                         )
                         .await;
                     }
@@ -246,13 +335,13 @@ where
                     request: offered,
                     new_epoch: Some(next),
                 };
-                storage
-                    .save_transfer(&TransferRecord {
-                        intent: intent.clone(),
-                        outcome: None,
-                    })
-                    .await
-                    .map_err(step_error)?;
+                let mut transfer = TransferRecord::requested(intent.clone(), admission.admitted_at);
+                if matches!(intent.request, HolderChangeRequest::Move { .. }) {
+                    transfer
+                        .enter(crate::HolderChangePhase::Releasing, now)
+                        .map_err(step_error)?;
+                }
+                storage.save_transfer(&transfer).await.map_err(step_error)?;
                 Ok(CheckedChange::Continue {
                     intent,
                     holder: lease.map(|lease| lease.holder),
@@ -267,6 +356,7 @@ async fn refuse<S>(
     storage: &mut RegistryStorage<'_, S>,
     request: HolderChangeRequest,
     reason: HolderChangeRefusal,
+    now: SyncTime,
 ) -> Result<CheckedChange, StepError>
 where
     S: TransactionScope,
@@ -278,15 +368,26 @@ where
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
     let answer = HolderChangeAnswer::Refused(reason);
-    storage
-        .save_transfer(&TransferRecord {
-            intent: TransferIntent {
-                request,
-                new_epoch: None,
-            },
-            outcome: Some(answer.clone()),
-        })
+    let admission = storage
+        .admission(attempt(&request))
         .await
+        .map_err(step_error)?
+        .ok_or_else(|| {
+            step_error(LeaseError::Corrupt {
+                field: "refusal admission missing".into(),
+            })
+        })?;
+    let mut record = TransferRecord::requested(
+        TransferIntent {
+            request,
+            new_epoch: None,
+        },
+        admission.admitted_at,
+    );
+    record.outcome = Some(answer.clone());
+    record
+        .enter(crate::HolderChangePhase::Ended, now)
         .map_err(step_error)?;
+    storage.save_transfer(&record).await.map_err(step_error)?;
     Ok(CheckedChange::Answer(answer))
 }

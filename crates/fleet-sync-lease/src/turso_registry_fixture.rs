@@ -49,6 +49,7 @@ pub(super) struct TestHost {
     pub lose_release: AtomicBool,
     pub release_answer: Mutex<Option<ReleaseAnswer>>,
     pub settlement_unreachable: AtomicBool,
+    pub withdrawal_unreachable: AtomicBool,
     pub release_observed: Notify,
     pub acked_observed: Notify,
     pub hold_release: AtomicBool,
@@ -91,7 +92,7 @@ impl TestHost {
             .create_if_missing(true)
             .connect()
             .await?;
-        sqlx_core::raw_sql::raw_sql("CREATE TABLE IF NOT EXISTS calls(call TEXT PRIMARY KEY,request TEXT NOT NULL,answer TEXT NOT NULL); CREATE TABLE IF NOT EXISTS reservations(attempt TEXT PRIMARY KEY,change TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settlements(attempt TEXT PRIMARY KEY,outcome TEXT NOT NULL); CREATE TABLE IF NOT EXISTS releases(call TEXT PRIMARY KEY,request TEXT NOT NULL,answer TEXT NOT NULL);").execute(&mut gate).await?;
+        sqlx_core::raw_sql::raw_sql("CREATE TABLE IF NOT EXISTS calls(call TEXT PRIMARY KEY,request TEXT NOT NULL,answer TEXT NOT NULL); CREATE TABLE IF NOT EXISTS reservations(attempt TEXT PRIMARY KEY,change TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settlements(attempt TEXT PRIMARY KEY,outcome TEXT NOT NULL); CREATE TABLE IF NOT EXISTS releases(call TEXT PRIMARY KEY,request TEXT NOT NULL,answer TEXT NOT NULL); CREATE TABLE IF NOT EXISTS withdrawals(call TEXT PRIMARY KEY,request TEXT NOT NULL,answer TEXT NOT NULL);").execute(&mut gate).await?;
         Ok(Arc::new(Self {
             now: AtomicI64::new(1000),
             copies: Mutex::new(BTreeMap::new()),
@@ -109,6 +110,7 @@ impl TestHost {
             lose_release: AtomicBool::new(false),
             release_answer: Mutex::new(None),
             settlement_unreachable: AtomicBool::new(false),
+            withdrawal_unreachable: AtomicBool::new(false),
             release_observed: Notify::new(),
             acked_observed: Notify::new(),
             hold_release: AtomicBool::new(false),
@@ -159,6 +161,37 @@ impl Host for TestHost {
         let target = serde_json::to_value(target).map_err(lost)?;
         let request = serde_json::to_value(request).map_err(lost)?;
         let answer = match C::KIND {
+            "fleet-sync.holder-withdrawal" => {
+                if self.withdrawal_unreachable.load(Ordering::SeqCst) {
+                    return Err(CallFailure::AnswerLost);
+                }
+                let request: WithdrawRelease = decode(request)?;
+                let mut connection = self.gate.connection.lock().await;
+                let call = serde_json::to_string(&call).map_err(lost)?;
+                let request = serde_json::to_string(&request).map_err(lost)?;
+                let prior = sqlx_core::query::query::<Turso>(
+                    "SELECT request FROM withdrawals WHERE call=?",
+                )
+                .bind(call.clone())
+                .fetch_optional(&mut *connection)
+                .await
+                .map_err(lost)?;
+                if let Some(prior) = prior {
+                    if prior.try_get::<String, _>("request").map_err(lost)? != request {
+                        return Err(CallFailure::AnswerLost);
+                    }
+                } else {
+                    sqlx_core::query::query::<Turso>(
+                        "INSERT INTO withdrawals(call,request,answer) VALUES(?,?,'withdrawn')",
+                    )
+                    .bind(call)
+                    .bind(request)
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(lost)?;
+                }
+                encode(WithdrawAnswer::Withdrawn)?
+            }
             "fleet-sync.registration-admission" => {
                 let request: fleet_sync_protocol::RegistrationAdmission = decode(request)?;
                 encode(
@@ -237,6 +270,7 @@ pub(super) fn config() -> TestResult<RegistryConfig> {
         authoritative_receiver: ReceiverId::new(Uuid::from_u128(101))?,
         target_schema_max: 10,
         release_unsent_for: Duration::from_millis(100),
+        move_needs_renewal_within: None,
     })
 }
 pub(super) fn registration(attempt: u128, writer: u128) -> TestResult<Registration> {
@@ -264,8 +298,10 @@ pub(super) async fn open_store(
         store
             .transaction(|scope| {
                 Box::pin(async move {
-                    sqlx_core::raw_sql::raw_sql(include_str!(
-                        "../migrations/0001_registry_rules.sql"
+                    sqlx_core::raw_sql::raw_sql(concat!(
+                        include_str!("../migrations/0001_registry_rules.sql"),
+                        "\n",
+                        include_str!("../migrations/0002_holder_workflow.sql")
                     ))
                     .execute(scope.executor())
                     .await?;
@@ -276,21 +312,25 @@ pub(super) async fn open_store(
     }
     Ok(store)
 }
-pub(super) fn engine(
-    store: Arc<TestStore>,
-    host: Arc<TestHost>,
-) -> TestResult<Engine<TestStore, TestHost>> {
-    let mut engine = Engine::new(store, host);
+pub(super) fn engine(store: Arc<TestStore>, host: Arc<TestHost>) -> TestResult<TestEngine> {
+    let mut engine = TestEngine::new(store, Arc::clone(&host));
     engine.register(RegistrationTask::<TestStore, Turso>::new(config()?))?;
     engine.register(ImportTask::<TestStore, Turso>::new(config()?))?;
     engine.register(RetirementTask::<TestStore, Turso>::new(config()?))?;
     engine.register(PreviewTakeoverTask::<TestStore, Turso>::new(config()?))?;
-    engine.register(HolderChangeTask::<TestStore, Turso>::new(config()?))?;
+    engine.register(HolderChangeTask::<TestStore, Turso>::new(
+        config()?,
+        host.clone(),
+    ))?;
+    engine.register(HolderChangeCancelTask::<TestStore, Turso>::new(
+        config()?,
+        host,
+    ))?;
     engine.register(SettleReservationTask::<TestStore>::new())?;
     Ok(engine)
 }
 pub(super) async fn task_answer<T>(
-    engine: &Engine<TestStore, TestHost>,
+    engine: &TestEngine,
     key: &RequestKey,
     input: T::Input,
 ) -> TestResult<T::Output>
@@ -349,5 +389,63 @@ impl<T: Task, const VERSION: u32> Task for VersionedTask<T, VERSION> {
         Result<durable_steps::Resume<Self::Output>, durable_steps::StoreError>,
     > {
         self.0.before_resume(scope, key)
+    }
+}
+
+/// The test consumer uses the public registry admission boundary for holder changes.
+pub(super) struct TestEngine {
+    inner: Engine<TestStore, TestHost>,
+    store: Arc<TestStore>,
+}
+impl TestEngine {
+    pub fn new(store: Arc<TestStore>, host: Arc<TestHost>) -> Self {
+        Self {
+            inner: Engine::new(Arc::clone(&store), host),
+            store,
+        }
+    }
+    pub async fn start<T: Task<Store = TestStore>>(
+        &self,
+        key: &RequestKey,
+        input: T::Input,
+    ) -> TestResult<durable_steps::OperationId> {
+        if T::KIND == "fleet-sync.holder-change" {
+            let request: HolderChangeRequest =
+                serde_json::from_value(serde_json::to_value(input)?)?;
+            assert_eq!(
+                *key,
+                holder_change_request_key(crate::change_checks::attempt(&request))?
+            );
+            let admitted = self
+                .store
+                .transaction(move |scope| {
+                    Box::pin(async move {
+                        admit_holder_change::<TestStore, Turso>(
+                            scope,
+                            &request,
+                            &ActorRef::new("test-admin").map_err(storage)?,
+                            SyncTime::from_unix_millis(1000),
+                        )
+                        .await
+                        .map_err(storage)
+                    })
+                })
+                .await?;
+            self.inner.drive_due().await?;
+            Ok(admitted.id())
+        } else {
+            Ok(self.inner.start::<T>(key, input).await?)
+        }
+    }
+}
+impl std::ops::Deref for TestEngine {
+    type Target = Engine<TestStore, TestHost>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+impl std::ops::DerefMut for TestEngine {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }

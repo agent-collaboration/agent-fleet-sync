@@ -21,7 +21,7 @@ async fn execute_fixture_sql(store: &TestStore, sql: &'static str) -> TestResult
 }
 
 async fn move_holder(
-    engine: &durable_steps::Engine<TestStore, TestHost>,
+    engine: &TestEngine,
     attempt: u128,
     from: u64,
     to: u128,

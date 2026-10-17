@@ -22,6 +22,16 @@ cargo check --target wasm32-unknown-unknown -p sqlx-durable-object -p sqlx-durab
 
 The checked-query fixtures and offline metadata are imported with the Turso driver. `SQLX_OFFLINE=true` is configured in `.cargo/config.toml`. Tests cover checked-query diagnostics, migrations, constraints, engine pinning, contention and pool return.
 
+## Holder-change workflows
+
+The registry's authenticated host starts moves, takeovers and claims with `admit_holder_change::<Store, Database>(scope, request, requested_by, now)` inside its transaction, then drives the engine after commit. Admission binds the attempt to the engine's operation ID and keeps the first requester on repeats. Register `HolderChangeTask`, `HolderChangeCancelTask` and `SettleReservationTask`; the first two take the registry configuration and the same shared `Clock` as the engine host. Apply every registry migration before admitting work.
+
+`holder_change_view` reads the current phase, retained phase history, pending dependency and scheduled retry time through the public journal interface. A claim's outcome is final when decided; `settlement_owed` separately shows unfinished settlement. Read repeated answers through `holder_change_answer`: a cancelled move's compact engine result can remain Pending while its withdrawal task later records Cancelled.
+
+The admin surface can call `cancel_holder_change` before Fencing commits. A move stays Cancelling until its release is withdrawn, or a takeover supersedes it. A claim records Cancelled and owes its gate a settlement; the gate must refuse a late reservation after settlement. Once Fencing commits, cancellation is TooLate, including during floor repair. Retry times are schedules, and an already-dispatched call can remain unanswered. `move_needs_renewal_within` independently bounds the holder's renewal age when a move starts; consumers choose the bound.
+
+These registry tests use actual Turso journals and receipted holder-call fixtures. The real holder's withdrawal, writer resumption and session integration belong to the writer/runner/service layer. Historical development transfer rows without admission identity or phase history fail closed; this foundation has no compatibility path that invents an authenticated requester.
+
 ## Local workerd integration
 
 Install the wasm target, wasm-bindgen CLI **0.2.129**, Node.js, and the pinned package dependencies, then run:

@@ -46,9 +46,13 @@ fn policy() -> LeasePolicy {
 async fn setup() -> TestResult<TursoConnection> {
     let mut connection = TursoConnectOptions::new().connect().await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
-    sqlx_core::raw_sql::raw_sql(include_str!("../migrations/0001_registry_rules.sql"))
-        .execute(&mut *transaction)
-        .await?;
+    sqlx_core::raw_sql::raw_sql(concat!(
+        include_str!("../migrations/0001_registry_rules.sql"),
+        "\n",
+        include_str!("../migrations/0002_holder_workflow.sql")
+    ))
+    .execute(&mut *transaction)
+    .await?;
     let mut scope = TursoScope(&mut transaction);
     let database = database()?;
     RegistryStorage(&mut scope)
@@ -224,19 +228,29 @@ async fn open_transfer_does_not_stop_renewal_and_retired_marker_precedes_saved_a
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     let mut scope = TursoScope(&mut transaction);
     let transfer = TransferId::new(uuid::Uuid::from_u128(20))?;
+    let offered = HolderChangeRequest::Move {
+        attempt: transfer,
+        database: database()?,
+        from_epoch: Epoch::new(1)?,
+        to: holder(2)?,
+    };
     RegistryStorage(&mut scope)
-        .save_transfer(&TransferRecord {
-            intent: TransferIntent {
-                request: HolderChangeRequest::Move {
-                    attempt: transfer,
-                    database: database()?,
-                    from_epoch: Epoch::new(1)?,
-                    to: holder(2)?,
-                },
+        .save_admission(&crate::registry_records::TransferAdmission {
+            operation: durable_steps::OperationId(uuid::Uuid::from_u128(21)),
+            request: offered.clone(),
+            requested_by: ActorRef::new("renewal-fixture")?,
+            admitted_at: now(200),
+            follow_up: None,
+        })
+        .await?;
+    RegistryStorage(&mut scope)
+        .save_transfer(&TransferRecord::requested(
+            TransferIntent {
+                request: offered,
                 new_epoch: Some(Epoch::new(2)?),
             },
-            outcome: None,
-        })
+            now(200),
+        ))
         .await?;
     assert!(
         matches!(renew(&mut scope,&request(10,1)?,&holder(1)?,now(210),&policy()).await?,RenewAnswer::Renewed{transfer_in_progress:Some(current),current:LeaseStatus{state:LeaseState::Held,..},..} if current==transfer)

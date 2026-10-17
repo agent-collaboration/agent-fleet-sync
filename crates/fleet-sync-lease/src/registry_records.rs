@@ -55,6 +55,103 @@ pub(crate) struct TransferIntent {
 pub(crate) struct TransferRecord {
     pub intent: TransferIntent,
     pub outcome: Option<HolderChangeAnswer>,
+    pub phase: crate::HolderChangePhase,
+    pub phase_history: Vec<crate::PhaseEntry>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct TransferAdmission {
+    pub operation: durable_steps::OperationId,
+    pub request: HolderChangeRequest,
+    pub requested_by: ActorRef,
+    pub admitted_at: SyncTime,
+    pub follow_up: Option<durable_steps::OperationId>,
+}
+
+impl TransferRecord {
+    pub(crate) fn requested(intent: TransferIntent, at: SyncTime) -> Self {
+        Self {
+            intent,
+            outcome: None,
+            phase: crate::HolderChangePhase::Requested,
+            phase_history: vec![crate::PhaseEntry {
+                phase: crate::HolderChangePhase::Requested,
+                entered_at: at,
+            }],
+        }
+    }
+    pub(crate) fn enter(
+        &mut self,
+        phase: crate::HolderChangePhase,
+        at: SyncTime,
+    ) -> Result<(), crate::LeaseError> {
+        if self.phase == phase {
+            return Ok(());
+        }
+        if !self.allows(&self.phase, &phase) {
+            return Err(crate::LeaseError::Corrupt {
+                field: "holder-change phase transition".into(),
+            });
+        }
+        let at = self
+            .phase_history
+            .last()
+            .map_or(at, |entry| at.max(entry.entered_at));
+        self.phase_history.push(crate::PhaseEntry {
+            phase: phase.clone(),
+            entered_at: at,
+        });
+        self.phase = phase;
+        self.validate()
+    }
+    fn allows(&self, before: &crate::HolderChangePhase, after: &crate::HolderChangePhase) -> bool {
+        use crate::HolderChangePhase as P;
+        match (before, after) {
+            (P::Ended, _) => false,
+            (_, P::Ended) => true,
+            (P::Requested, P::Releasing) | (P::Releasing, P::Released { .. }) => {
+                matches!(self.intent.request, HolderChangeRequest::Move { .. })
+            }
+            (P::Requested, P::Reserved) => {
+                matches!(self.intent.request, HolderChangeRequest::Claim { .. })
+            }
+            (P::Requested, P::Fencing) => {
+                matches!(self.intent.request, HolderChangeRequest::Takeover { .. })
+            }
+            (P::Released { .. } | P::Reserved, P::Fencing) => true,
+            (phase, P::Cancelling) => {
+                phase.cancellable()
+                    && matches!(self.intent.request, HolderChangeRequest::Move { .. })
+            }
+            _ => false,
+        }
+    }
+    pub(crate) fn validate(&self) -> Result<(), crate::LeaseError> {
+        use crate::HolderChangePhase as P;
+        let history = &self.phase_history;
+        let valid = !history.is_empty()
+            && history.len() <= 8
+            && history
+                .first()
+                .is_some_and(|entry| entry.phase == P::Requested)
+            && history
+                .last()
+                .is_some_and(|entry| entry.phase == self.phase)
+            && history.windows(2).all(|pair| matches!(pair,[before,after] if before.entered_at<=after.entered_at && self.allows(&before.phase,&after.phase)))
+            && (self.phase != P::Ended
+                || self
+                    .outcome
+                    .as_ref()
+                    .is_some_and(|answer| !matches!(answer, HolderChangeAnswer::Pending { .. })))
+            && (self.outcome.is_none() || self.phase == P::Ended)
+            && (!matches!(self.phase, P::Cancelling) || self.outcome.is_none());
+        if !valid {
+            return Err(crate::LeaseError::Corrupt {
+                field: "holder-change phase history".into(),
+            });
+        }
+        Ok(())
+    }
 }
 impl TransferIntent {
     pub(crate) fn database(&self) -> DatabaseId {

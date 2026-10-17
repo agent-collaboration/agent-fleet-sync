@@ -4,6 +4,9 @@
 
 mod checked_queries;
 mod lease_values;
+mod workflow_values;
+pub use fleet_sync_protocol::ActorRef;
+pub use workflow_values::*;
 mod registry_contract;
 mod registry_reads;
 mod registry_records;
@@ -107,3 +110,24 @@ mod turso_registry_integrity_tests;
 mod turso_registry_read_tests;
 #[cfg(test)]
 mod turso_retirement_recovery_tests;
+#[cfg(test)]
+mod turso_stale_holder_tests;
+#[cfg(test)]
+mod turso_workflow_tests;
+
+mod transfer_admission;
+pub use transfer_admission::{admit_holder_change, cancel_holder_change};
+mod holder_change_view;
+pub use holder_change_view::holder_change_view;
+
+mod transfer_storage;
+
+mod holder_change_cancel_task;
+mod transfer_cancellation;
+pub use holder_change_cancel_task::HolderChangeCancelTask;
+
+#[cfg(test)]
+mod turso_workflow_race_tests;
+
+#[cfg(test)]
+mod turso_workflow_storage_tests;

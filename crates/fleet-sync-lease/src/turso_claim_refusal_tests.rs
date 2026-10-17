@@ -6,7 +6,7 @@ use crate::{
     turso_registry_fixture::*,
     *,
 };
-use durable_steps::{Engine, Uuid};
+use durable_steps::Uuid;
 use fleet_sync_protocol::*;
 use sqlx_core::connection::Connection;
 use sqlx_turso::Turso;
@@ -22,7 +22,7 @@ fn request() -> TestResult<HolderChangeRequest> {
         claimant: peer(2)?,
     })
 }
-async fn prepare(engine: &Engine<TestStore, TestHost>, host: &Arc<TestHost>) -> TestResult {
+async fn prepare(engine: &TestEngine, host: &Arc<TestHost>) -> TestResult {
     let import = import_request(201, "a")?;
     assert_eq!(
         task_answer::<ImportTask<TestStore, Turso>>(

@@ -49,10 +49,11 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "39caf306ebb478da6fc1536ba86dbfbdc5fe20ee258205cd2bbfe5ca4ddbdaaa",
+    "checked-queries.json": "7ec6afcd0b4ebdca1be05a6b2f54ef96d4961ea8f805c550ff0c5070ea64fe3c",
     "migrations/0001_registry_rules.sql": "36df9f576906fe7af85d23ef33173c287873a52f83b52f6a2ac58415d19362ca",
+    "migrations/0002_holder_workflow.sql": "31e51009f5d402b4611b0cbde18c4f827dca99974ba06f77a2b8d5465948acb3",
     "sql/active_lifecycle.sql": "64bc3b0185802ec8bbea6de02e9c919033177065c9bf7858eaac9e53db149ced",
-    "sql/active_transfer.sql": "b470ec59359105858f4982d733bd12543bcf5212c2fc1f30058dd2531773309c",
+    "sql/active_transfer.sql": "46c8d8de723a9208495bb387ad029ab42d224e5532c1b629e6744234cab0acd9",
     "sql/read_database.sql": "a4bbb901cb140530037a78b7523f4809e40cb4b1c191f12044bbd449dfb94573",
     "sql/read_databases.sql": "03df15dee14d8a8d04e27aaac5a692d219df917f94144d6319795e172749205b",
     "sql/read_floor.sql": "ae9cfc61011a959ed812863fef30b179195e1515349fc13c6ffc3a03449adf9c",
@@ -61,7 +62,9 @@
     "sql/read_lifecycle.sql": "e2b8fd8ab65e8b824f84d0af28659249c4d53d52f07b50635245bdaec32d690d",
     "sql/read_preview.sql": "03783b07995797fdc8c3cce98c5aba00bd174e16f572b43f9bbd6c7641b162ab",
     "sql/read_renewal.sql": "b642f0498c8a5da61fa27928c70c88bc43aa716ceb4562a24b7270cd79571dcc",
-    "sql/read_transfer.sql": "9a77765bc6cd9252524105c6e9bfb781be9f2907cd2aa856d8b61f78eb42407d",
+    "sql/read_transfer.sql": "ddea07d173830073b18faf7058d1f816100d6a8d125214397414b2cfa1da8e58",
+    "sql/read_transfer_admission.sql": "3bb12fde9cbf3689f326e4a9f3b89b6df1fc2c48ad97207a84d0803cc647fd5d",
+    "sql/read_transfer_cancel.sql": "556023f2ca49edd322eeb595d45ccdef3a8f5ed8d28df5e9afd340960a050f6a",
     "sql/repair_transfer_epoch.sql": "ed1c291c5575c97d9aa5494a98d8476a7d5df0e2f4de0e06917ee881b0f40257",
     "sql/write_database.sql": "f8755bcccae7ac8d48e3a6cc358c9d770d5dde979968deaab3027b48c1b4b644",
     "sql/write_floor.sql": "95b08bb73896095a54e86b1b9aa0022b13c7069e2971ae3cd184b472a2f3ce03",
@@ -70,8 +73,10 @@
     "sql/write_lifecycle.sql": "605edb5321dc5f6aea118bb1ffb025419258e83aac3cafcafeecbdb0f1751121",
     "sql/write_preview.sql": "3394d8da7cef6adb1f85433dfd713e70a7e41a2132b8eeeb98815744b251f28a",
     "sql/write_renewal.sql": "c24b06a98fc0e0d1542af9d711fad9a1e9be335d85a0853114383947b4d69e4e",
-    "sql/write_transfer.sql": "36cb611ddb484c599bf36a9b45249757dbe873a483ac7d55c7863cf8233054be",
-    "src/checked_queries.rs": "ec9718f320388beac730f4bea9b29dfa6a1ea9de0209a1899580ee16848450e0"
+    "sql/write_transfer.sql": "4ed30617f4e77451d8eac4eea3880bd8b253be03bb1c10fa6a8048e85a9305c1",
+    "sql/write_transfer_admission.sql": "701ad11ddc02c312ddfaa291080caf10f0e4e68f32a2c9f7e3c3aae44ed5a110",
+    "sql/write_transfer_cancel.sql": "e87289aae5156cf989da4748122eebec5e417d67c9d641e1e994ca75f6860975",
+    "src/checked_queries.rs": "f470a4f3822d4cc05094dc0b32fad0ad377f340661513fc4045db4f8f5e2d090"
   },
   "queries": [
     {
@@ -201,12 +206,26 @@
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "driver"
+        },
+        {
+          "name": "phase",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "phase_history",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
         }
       ]
     },
     {
       "name": "write_transfer",
-      "bind_slots": 4,
+      "bind_slots": 6,
       "columns": []
     },
     {
@@ -239,6 +258,13 @@
       "bind_slots": 1,
       "columns": [
         {
+          "name": "attempt",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
           "name": "intent",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
@@ -247,6 +273,20 @@
         },
         {
           "name": "outcome",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "phase",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "phase_history",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -294,6 +334,70 @@
     },
     {
       "name": "repair_transfer_epoch",
+      "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "read_transfer_admission",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "operation",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "request",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "requested_by",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "admitted_at",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "follow_up",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_transfer_admission",
+      "bind_slots": 6,
+      "columns": []
+    },
+    {
+      "name": "read_transfer_cancel",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_transfer_cancel",
       "bind_slots": 2,
       "columns": []
     }
