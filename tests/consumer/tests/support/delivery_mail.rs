@@ -1,4 +1,7 @@
-#![allow(dead_code, reason = "shared custody helpers are used by separate native test binaries")]
+#![allow(
+    dead_code,
+    reason = "shared custody helpers are used by separate native test binaries"
+)]
 use super::control_request;
 use fleet_sync_protocol::*;
 use fleet_sync_test_consumer::{ControlAnswer, ControlRequest, TestResult};
