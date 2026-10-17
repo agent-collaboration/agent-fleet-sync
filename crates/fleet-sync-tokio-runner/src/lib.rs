@@ -1,6 +1,15 @@
 //! Tokio owns files, locks, calls and timers; rules own domain decisions.
 
 mod call_host;
+mod checked_native_queries;
+mod native_carry;
+mod native_carry_rows;
+mod native_carry_schema;
+pub use native_carry::{
+    LocalStateCarried, LocalStateCarryError, LocalStateSelection, carry_local_state,
+};
+#[cfg(test)]
+mod native_carry_tests;
 mod native_object;
 mod native_publish;
 mod object_key;

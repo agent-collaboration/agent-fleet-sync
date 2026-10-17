@@ -1,0 +1,65 @@
+{
+  "migrations": [
+    "query-schema"
+  ],
+  "output": "src/checked_native_queries.rs",
+  "metadata": "checked-query-metadata.json",
+  "queries": [
+    {
+      "name": "read_file_schema",
+      "sql": "sql/read_file_schema.sql",
+      "row": "NativeSchemaRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "read_file_columns",
+      "sql": "sql/read_file_columns.sql",
+      "row": "NativeColumnRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "table_name",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_local_sequences",
+      "sql": "sql/read_local_sequences.sql",
+      "row": "LocalSequenceRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "erase_local_sequence",
+      "sql": "sql/erase_local_sequence.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "table_name",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_local_sequence",
+      "sql": "sql/write_local_sequence.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "table_name",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "sequence_value",
+          "kind": "integer",
+          "nullable": false
+        }
+      ]
+    }
+  ]
+}

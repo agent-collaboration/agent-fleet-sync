@@ -838,7 +838,9 @@ version = "0.1.0"
 dependencies = [
  "durable-steps",
  "fleet-sync-protocol",
+ "fleet-sync-query-gen",
  "fleet-sync-session",
+ "futures-util",
  "runtime-primitives",
  "serde",
  "serde_json",
@@ -847,6 +849,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "turso",
 ]
 
 [[package]]
