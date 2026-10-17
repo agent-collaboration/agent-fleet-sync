@@ -1,5 +1,6 @@
 mod checked_queries;
 mod consumer;
+mod consumer_claim_gate;
 mod consumer_store;
 mod control;
 mod protocol;
@@ -14,10 +15,11 @@ pub use consumer::{Consumer, FixtureAuthenticator};
 pub use consumer_store::ConsumerStore;
 pub use control::{ControlAnswer, ControlRequest};
 pub use protocol::{
-    EffectReceipt, HookEffect, SampleAnswer, SampleProtocol, SampleRequest, SampleSchema,
-    SavedEffect,
+    ClaimGateReceipt, ClaimSettlementReceipt, EffectReceipt, HookEffect, SampleAnswer,
+    SampleProtocol, SampleRequest, SampleSchema, SavedEffect,
 };
 pub use server::run_server;
+pub use server::run_server_with_policy;
 pub use server::run_server_with_receiver;
 pub use writer_actor::run_writer;
 pub use writer_control::{WriterCommand, WriterReply};

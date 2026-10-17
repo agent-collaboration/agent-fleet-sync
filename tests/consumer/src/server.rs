@@ -60,6 +60,22 @@ pub async fn run_server(directory: &Path, port: u16) -> TestResult {
     run_server_with_receiver(directory, port, 3).await
 }
 pub async fn run_server_with_receiver(directory: &Path, port: u16, receiver: u128) -> TestResult {
+    run_server_with_policy(
+        directory,
+        port,
+        receiver,
+        Duration::from_secs(600),
+        Duration::from_secs(60),
+    )
+    .await
+}
+pub async fn run_server_with_policy(
+    directory: &Path,
+    port: u16,
+    receiver: u128,
+    lease_duration: Duration,
+    move_renewal_within: Duration,
+) -> TestResult {
     tokio::fs::create_dir_all(directory).await?;
     let store = ConsumerStore::open(&directory.join("consumer.db")).await?;
     let consumer = Arc::new(Consumer::new(store.clone())?);
@@ -69,13 +85,13 @@ pub async fn run_server_with_receiver(directory: &Path, port: u16, receiver: u12
         receiver,
         registry: RegistryConfig {
             lease: LeasePolicy {
-                lease_duration: Duration::from_secs(600),
-                renew_interval: Duration::from_secs(30),
+                lease_duration,
+                renew_interval: Duration::from_secs(30).min(lease_duration / 3),
             },
             authoritative_receiver: receiver,
             target_schema_max: 100,
             release_unsent_for: Duration::from_secs(5),
-            move_needs_renewal_within: Some(Duration::from_secs(60)),
+            move_needs_renewal_within: Some(move_renewal_within),
         },
         call_timeout: Duration::from_secs(10),
         socket_timeout: Duration::from_secs(5),

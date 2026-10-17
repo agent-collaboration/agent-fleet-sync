@@ -23,10 +23,23 @@ impl ServiceProcess {
         Self::start_as(path, 3).await
     }
     pub async fn start_as(path: &Path, receiver: u128) -> TestResult<Self> {
+        Self::start_with_lease(path, receiver, 600_000).await
+    }
+    pub async fn start_with_lease(path: &Path, receiver: u128, lease_ms: u64) -> TestResult<Self> {
+        Self::start_with_policy(path, receiver, lease_ms, 60_000).await
+    }
+    pub async fn start_with_policy(
+        path: &Path,
+        receiver: u128,
+        lease_ms: u64,
+        move_renewal_ms: u64,
+    ) -> TestResult<Self> {
         let mut child = Command::new(env!("CARGO_BIN_EXE_fleet-sync-test-consumer"))
             .arg(path)
             .arg("0")
             .arg(receiver.to_string())
+            .arg(lease_ms.to_string())
+            .arg(move_renewal_ms.to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -63,6 +76,15 @@ impl ServiceProcess {
             .await?)
     }
     pub async fn peer(&self, peer: u128, session: SessionId) -> TestResult<WebSocketConnection> {
+        self.peer_with_statuses(peer, session)
+            .await
+            .map(|(socket, _)| socket)
+    }
+    pub async fn peer_with_statuses(
+        &self,
+        peer: u128,
+        session: SessionId,
+    ) -> TestResult<(WebSocketConnection, Vec<DatabaseStatus>)> {
         let mut socket = self
             .connect("session", &format!("Bearer peer-{peer}"))
             .await?;
@@ -72,7 +94,10 @@ impl ServiceProcess {
         };
         socket.send(serde_json::to_vec(&hello)?.into()).await?;
         match server_frame(&mut socket).await? {
-            ServerFrame::Welcome { session_id, .. } if session_id == session => Ok(socket),
+            ServerFrame::Welcome {
+                session_id,
+                databases,
+            } if session_id == session => Ok((socket, databases)),
             _ => Err("no matching Welcome".into()),
         }
     }
@@ -131,6 +156,7 @@ pub async fn control_request(
         ControlRequest::WaitInstall { .. }
             | ControlRequest::WaitSourceUnattached { .. }
             | ControlRequest::WaitHolderChange(_)
+            | ControlRequest::WaitClaimSettlement { .. }
     ) {
         Duration::from_secs(65)
     } else if matches!(request, ControlRequest::WaitAttempts { .. }) {

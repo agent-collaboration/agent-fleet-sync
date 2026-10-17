@@ -50,6 +50,14 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         self.bootstrap_publish_probe.arm();
     }
     #[cfg(feature = "test-support")]
+    pub fn hold_bootstrap_after_rename(&self) {
+        self.bootstrap_publish_probe.arm_published();
+    }
+    #[cfg(feature = "test-support")]
+    pub async fn wait_bootstrap_published(&self) -> Result<SnapshotInstall, OpenError> {
+        self.bootstrap_publish_probe.wait().await
+    }
+    #[cfg(feature = "test-support")]
     pub async fn wait_bootstrap_converted(&self) -> Result<SnapshotInstall, OpenError> {
         self.bootstrap_publish_probe.wait().await
     }
@@ -222,6 +230,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             .sync_all()
             .await
             .map_err(PublishError::io)?;
+        probe.published(install).await;
         Ok(())
     }
 

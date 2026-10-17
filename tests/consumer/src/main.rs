@@ -61,10 +61,22 @@ async fn main() -> fleet_sync_test_consumer::TestResult {
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(3);
-    fleet_sync_test_consumer::run_server_with_receiver(
+    let lease_ms = std::env::args()
+        .nth(4)
+        .map(|value| value.parse::<u64>())
+        .transpose()?
+        .unwrap_or(600_000);
+    let move_renewal_ms = std::env::args()
+        .nth(5)
+        .map(|value| value.parse::<u64>())
+        .transpose()?
+        .unwrap_or(60_000);
+    fleet_sync_test_consumer::run_server_with_policy(
         std::path::Path::new(&directory),
         port,
         receiver,
+        std::time::Duration::from_millis(lease_ms),
+        std::time::Duration::from_millis(move_renewal_ms),
     )
     .await
 }

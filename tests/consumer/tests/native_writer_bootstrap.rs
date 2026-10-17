@@ -14,6 +14,13 @@ use support::{writer_process::WriterProcess, *};
 #[tokio::test]
 async fn new_writer_resumes_converted_snapshot_after_process_kill_then_migrates_and_follows()
 -> TestResult {
+    bootstrap_kill(false).await
+}
+#[tokio::test]
+async fn new_writer_resumes_published_snapshot_after_process_kill_before_reopen() -> TestResult {
+    bootstrap_kill(true).await
+}
+async fn bootstrap_kill(after_rename: bool) -> TestResult {
     let root = tempfile::tempdir()?;
     let service = ServiceProcess::start(&root.path().join("service")).await?;
     let endpoint = format!("ws://127.0.0.1:{}/session", service.port);
@@ -52,17 +59,28 @@ async fn new_writer_resumes_converted_snapshot_after_process_kill_then_migrates_
         WriterReply::WriteRefused { seeding: true, .. }
     ));
     writer
-        .command(WriterCommand::HoldBootstrapBeforeRename)
+        .command(if after_rename {
+            WriterCommand::HoldBootstrapAfterRename
+        } else {
+            WriterCommand::HoldBootstrapBeforeRename
+        })
         .await?;
     let attempt = durable_steps::Uuid::now_v7();
     writer
         .command(WriterCommand::InstallSnapshot { attempt })
         .await?;
-    let converted = match writer
-        .command(WriterCommand::WaitBootstrapConverted)
-        .await?
-    {
-        WriterReply::Converted(snapshot) => snapshot,
+    let converted = match (
+        after_rename,
+        writer
+            .command(if after_rename {
+                WriterCommand::WaitBootstrapPublished
+            } else {
+                WriterCommand::WaitBootstrapConverted
+            })
+            .await?,
+    ) {
+        (false, WriterReply::Converted(snapshot))
+        | (true, WriterReply::PublishedSnapshot(snapshot)) => snapshot,
         _ => return Err("converted snapshot missing".into()),
     };
     assert_eq!(converted.position, through);

@@ -6,6 +6,92 @@ use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, query::query, row::Row, types::Type,
 };
+
+#[derive(Debug)]
+pub(crate) struct ClaimGateRow {
+    pub attempt: Option<String>,
+    pub attempt_class: Option<String>,
+    pub record: Option<String>,
+    pub record_class: Option<String>,
+}
+pub(crate) fn read_claim_gate<S>(
+    scope: &mut S,
+    attempt: String,
+) -> impl std::future::Future<Output = Result<Option<ClaimGateRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_claim_gate.sql"
+        )))
+        .bind(attempt);
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(ClaimGateRow {
+                    attempt: row.try_get("attempt")?,
+                    attempt_class: row.try_get("attempt_class")?,
+                    record: row.try_get("record")?,
+                    record_class: row.try_get("record_class")?,
+                })
+            })
+            .transpose()
+    }
+}
+pub(crate) fn read_claim_gates<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<ClaimGateRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_claim_gates.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(ClaimGateRow {
+                    attempt: row.try_get("attempt")?,
+                    attempt_class: row.try_get("attempt_class")?,
+                    record: row.try_get("record")?,
+                    record_class: row.try_get("record_class")?,
+                })
+            })
+            .collect()
+    }
+}
+pub(crate) fn write_claim_gate<S>(
+    scope: &mut S,
+    attempt: String,
+    record: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_claim_gate.sql"
+        )))
+        .bind(attempt)
+        .bind(record);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
 pub(crate) fn insert_effect<S>(
     scope: &mut S,
     call_id: String,

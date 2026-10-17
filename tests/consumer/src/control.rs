@@ -47,6 +47,22 @@ pub enum ControlRequest {
         enabled: bool,
     },
     LoseNextFollowUpAnswer,
+    HoldNextFollowUpBeforeEffect,
+    WaitFollowUpBeforeEffect,
+    LoseNextClaimSettlementAnswer,
+    WaitClaimSettlement {
+        attempt: TransferId,
+        count: u64,
+    },
+    WaitHolderChangeSettled {
+        attempt: TransferId,
+    },
+    ClaimReceipts,
+    Retire(Retirement),
+    Renew {
+        request: RenewRequest,
+        holder: PeerId,
+    },
     WaitEffects {
         count: usize,
     },
@@ -97,6 +113,11 @@ pub enum ControlAnswer {
     Ok,
     Effects(Vec<EffectReceipt>),
     Effect(EffectReceipt),
+    FollowUpCall(durable_steps::CallId),
+    ClaimReceipt(crate::ClaimGateReceipt),
+    ClaimReceipts(Vec<crate::ClaimGateReceipt>),
+    Retirement(RetirementAnswer),
+    Renewal(RenewAnswer),
     Import(ImportAnswer),
     Replication(Box<ReplicationAnswer>),
     CopyStatus(CopyStatusAnswer),
@@ -142,9 +163,7 @@ impl ControlState {
                             receiver,
                             client,
                             fleet_sync_session::Endpoint::new(&endpoint)?,
-                            fleet_sync_session::PeerCredential::new(&format!(
-                                "Bearer peer-{peer}"
-                            ))?,
+                            fleet_sync_session::PeerCredential::new(format!("Bearer peer-{peer}"))?,
                         )
                         .await?;
                     self.source_events.send(attached).await?;
@@ -224,6 +243,51 @@ impl ControlState {
                         .lose_follow_up_answer
                         .store(true, Ordering::SeqCst);
                     ControlAnswer::Ok
+                }
+                ControlRequest::HoldNextFollowUpBeforeEffect => {
+                    self.consumer.follow_up_before_effect.send_replace(None);
+                    self.consumer
+                        .hold_follow_up_before_effect
+                        .store(true, Ordering::SeqCst);
+                    ControlAnswer::Ok
+                }
+                ControlRequest::WaitFollowUpBeforeEffect => {
+                    let mut observed = self.consumer.follow_up_before_effect.subscribe();
+                    let call = loop {
+                        if let Some(call) = observed.borrow().clone() {
+                            break call;
+                        }
+                        observed.changed().await?;
+                    };
+                    ControlAnswer::FollowUpCall(call)
+                }
+                ControlRequest::LoseNextClaimSettlementAnswer => {
+                    self.consumer
+                        .lose_claim_settlement_answer
+                        .store(true, Ordering::SeqCst);
+                    ControlAnswer::Ok
+                }
+                ControlRequest::WaitClaimSettlement { attempt, count } => {
+                    ControlAnswer::ClaimReceipt(
+                        self.consumer
+                            .store
+                            .wait_claim_settlement(attempt, count)
+                            .await?,
+                    )
+                }
+                ControlRequest::WaitHolderChangeSettled { attempt } => {
+                    ControlAnswer::HolderChangeView(Some(
+                        self.service.wait_holder_change_settled(attempt).await?,
+                    ))
+                }
+                ControlRequest::ClaimReceipts => {
+                    ControlAnswer::ClaimReceipts(self.consumer.store.claim_receipts().await?)
+                }
+                ControlRequest::Retire(request) => {
+                    ControlAnswer::Retirement(self.service.retire(request).await?)
+                }
+                ControlRequest::Renew { request, holder } => {
+                    ControlAnswer::Renewal(self.service.renew(request, holder).await?)
                 }
                 ControlRequest::Effects => {
                     ControlAnswer::Effects(self.consumer.store.effects().await?)

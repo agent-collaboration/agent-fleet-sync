@@ -41,6 +41,20 @@ pub struct EffectReceipt {
     pub attempts: u64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ClaimSettlementReceipt {
+    pub call: CallId,
+    pub outcome: SettleOutcome,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ClaimGateReceipt {
+    pub request: HolderChangeRequest,
+    pub reserved_by: Option<CallId>,
+    pub settlement: Option<ClaimSettlementReceipt>,
+    pub reserve_attempts: u64,
+    pub settle_attempts: u64,
+}
+
 static MIGRATIONS: sqlx_core::migrate::Migrator = sqlx::migrate!("./replicated-migrations");
 static LATER_MIGRATIONS: sqlx_core::migrate::Migrator = sqlx::migrate!("./later-migrations");
 static EXTENDED_MIGRATIONS: LazyLock<Vec<Migration>> = LazyLock::new(|| {

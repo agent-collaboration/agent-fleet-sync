@@ -200,6 +200,22 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             changed.changed().await.map_err(ServiceError::rule)?;
         }
     }
+    #[cfg(feature = "test-support")]
+    pub async fn wait_holder_change_settled(
+        &self,
+        attempt: TransferId,
+    ) -> Result<fleet_sync_lease::HolderChangeView, ServiceError> {
+        let mut changed = self.state.registry.subscribe_commits();
+        loop {
+            if let Some(view) = self.holder_change_view(attempt).await?
+                && view.outcome.is_some()
+                && !view.settlement_owed
+            {
+                return Ok(view);
+            }
+            changed.changed().await.map_err(ServiceError::rule)?;
+        }
+    }
     /// Observe an admitted change through its domain record and committed wakes.
     #[cfg(feature = "test-support")]
     pub async fn wait_holder_change(

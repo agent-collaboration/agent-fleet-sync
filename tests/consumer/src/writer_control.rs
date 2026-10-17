@@ -38,6 +38,8 @@ pub enum WriterCommand {
     },
     HoldBootstrapBeforeRename,
     WaitBootstrapConverted,
+    HoldBootstrapAfterRename,
+    WaitBootstrapPublished,
     Migrate,
     HoldReleaseAnswer,
     HoldWithdrawalAnswer,
@@ -63,6 +65,7 @@ pub enum WriterReply {
     JournalSteps(Vec<durable_steps::storage::StepRecord>),
     Install(fleet_sync_tokio_runner::InstallRecord),
     Converted(fleet_sync_receiver::SnapshotInstall),
+    PublishedSnapshot(fleet_sync_receiver::SnapshotInstall),
     TransportCall(fleet_sync_tokio_runner::WriterTransportObservation),
     CaptureRows(u64),
     Error { message: String },
@@ -92,6 +95,11 @@ impl WriterControl {
                     self.database.hold_bootstrap_before_rename();
                     WriterReply::Ok
                 }
+                WriterCommand::HoldBootstrapAfterRename => {
+                    self.database.hold_bootstrap_after_rename();
+                    WriterReply::Ok
+                }
+                WriterCommand::WaitBootstrapPublished => WriterReply::PublishedSnapshot(self.database.wait_bootstrap_published().await?),
                 WriterCommand::WaitBootstrapConverted => {
                     WriterReply::Converted(self.database.wait_bootstrap_converted().await?)
                 }

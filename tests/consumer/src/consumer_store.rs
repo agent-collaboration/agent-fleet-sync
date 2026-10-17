@@ -22,8 +22,8 @@ impl TransactionScope for ConsumerScope<'_> {
 }
 #[derive(Clone)]
 pub struct ConsumerStore {
-    pool: Pool<Turso>,
-    changes: Arc<watch::Sender<()>>,
+    pub(crate) pool: Pool<Turso>,
+    pub(crate) changes: Arc<watch::Sender<()>>,
 }
 impl ConsumerStore {
     pub async fn open(path: &Path) -> TestResult<Self> {

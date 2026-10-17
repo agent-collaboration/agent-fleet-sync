@@ -8,6 +8,29 @@
   "metadata": "checked-query-metadata.json",
   "queries": [
     {
+      "name": "read_claim_gate",
+      "sql": "sql/read_claim_gate.sql",
+      "row": "ClaimGateRow",
+      "result": "optional",
+      "parameters": [{ "name": "attempt", "kind": "text", "nullable": false }]
+    },
+    {
+      "name": "read_claim_gates",
+      "sql": "sql/read_claim_gates.sql",
+      "row": "ClaimGateRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "write_claim_gate",
+      "sql": "sql/write_claim_gate.sql",
+      "result": "execute",
+      "parameters": [
+        { "name": "attempt", "kind": "text", "nullable": false },
+        { "name": "record", "kind": "text", "nullable": false }
+      ]
+    },
+    {
       "name": "insert_effect",
       "sql": "sql/insert_effect.sql",
       "result": "execute",

@@ -318,3 +318,135 @@ async fn split_capture_survives_receiver_kill_and_lost_final_answer_then_updates
     service.stop(&mut control).await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn receiver_kill_after_copy_commit_before_delivery_retries_the_admitted_follow_up_once()
+-> TestResult {
+    let root = tempfile::tempdir()?;
+    let service_path = root.path().join("service");
+    let mut service = ServiceProcess::start(&service_path).await?;
+    let session = SessionId::new(durable_steps::Uuid::now_v7())?;
+    let mut socket = service.peer(2, session).await?;
+    let writer = Arc::new(
+        ReplicatedDatabase::create(
+            &root.path().join("writer.db"),
+            SampleSchema::new()?,
+            peer()?,
+            policy(),
+            WriterOptions::default(),
+        )
+        .await?,
+    );
+    let database = writer.database();
+    let started = SystemClock.now();
+    let lease = match request(
+        &mut socket,
+        OperationRequest::Lease(LeaseRequest::Register(Registration {
+            attempt: RequestId::new(durable_steps::Uuid::now_v7())?,
+            database,
+            writer: peer()?,
+            origin: Origin::Empty,
+        })),
+    )
+    .await?
+    {
+        OperationAnswer::Lease(LeaseAnswer::Register(RegistrationAnswer::Registered {
+            lease,
+            ..
+        })) => lease,
+        _ => return Err("registration failed".into()),
+    };
+    writer.observe_registration(lease.clone(), started).await?;
+    let transport = Arc::new(SocketTransport::new(socket, 0));
+    let sending = sender(writer.clone(), transport.clone());
+    sending
+        .add_copy(
+            receiver()?,
+            CopyRole::Authoritative,
+            ReplicationPosition::new(lease.epoch, CommitSequence::new(0)),
+        )
+        .await?;
+    sending.replicate_once(receiver()?).await?;
+    let mut control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    effects(&mut control, 1).await?;
+    control_request(&mut control, ControlRequest::HoldNextFollowUpBeforeEffect).await?;
+    let mut write = writer.begin_write().await?;
+    insert_sample(
+        &mut write,
+        "019eef00-0000-7000-8000-000000000001".into(),
+        "committed before delivery".into(),
+        9_007_199_254_740_993,
+        vec![0, 255, 128],
+    )
+    .await?;
+    write.commit().await?;
+    sending.replicate_once(receiver()?).await?;
+    let call = match control_request(&mut control, ControlRequest::WaitFollowUpBeforeEffect).await?
+    {
+        ControlAnswer::FollowUpCall(call) => call,
+        _ => return Err("before-delivery call missing".into()),
+    };
+    assert!(
+        matches!(control_request(&mut control, ControlRequest::Effects).await?, ControlAnswer::Effects(receipts) if receipts.len()==1)
+    );
+    let mut reader = service
+        .peer(5, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
+    assert_eq!(
+        copy_rows(&mut reader, database)
+            .await?
+            .get("samples")
+            .map(Vec::len),
+        Some(1)
+    );
+    let last = transport
+        .last
+        .lock()
+        .await
+        .clone()
+        .ok_or("committed piece missing")?;
+    service.kill().await?;
+    writer.close().await;
+    drop(control);
+    service = ServiceProcess::start(&service_path).await?;
+    control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let mut resumed = service.peer(2, session).await?;
+    assert!(matches!(
+        request(
+            &mut resumed,
+            OperationRequest::Replication(ReplicationRequest::Piece(last))
+        )
+        .await?,
+        OperationAnswer::Replication(ReplicationAnswer::AlreadyApplied { .. })
+    ));
+    let receipt = match control_request(
+        &mut control,
+        ControlRequest::WaitAttempts {
+            call: call.clone(),
+            count: 1,
+        },
+    )
+    .await?
+    {
+        ControlAnswer::Effect(receipt) => receipt,
+        _ => return Err("admitted follow-up did not resume".into()),
+    };
+    assert_eq!(receipt.saved.call, call);
+    assert_eq!(receipt.saved.effect.database, database);
+    assert_eq!(receipt.saved.effect.event_count, 2);
+    assert_eq!(receipt.attempts, 1);
+    assert_eq!(effects(&mut control, 2).await?.len(), 2);
+    assert_eq!(
+        copy_rows(&mut resumed, database)
+            .await?
+            .get("samples")
+            .map(Vec::len),
+        Some(1)
+    );
+    service.stop(&mut control).await?;
+    Ok(())
+}

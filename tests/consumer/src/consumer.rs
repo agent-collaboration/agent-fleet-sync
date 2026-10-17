@@ -19,7 +19,10 @@ pub struct Consumer {
     pub store: ConsumerStore,
     pub hook_failure: AtomicBool,
     pub registration_failure: AtomicBool,
+    pub lose_claim_settlement_answer: AtomicBool,
     pub lose_follow_up_answer: AtomicBool,
+    pub hold_follow_up_before_effect: AtomicBool,
+    pub follow_up_before_effect: tokio::sync::watch::Sender<Option<CallId>>,
     hook_code: HookRefusalCode,
     pub handled_requests: AtomicU64,
 }
@@ -29,7 +32,10 @@ impl Consumer {
             store,
             hook_failure: AtomicBool::new(false),
             registration_failure: AtomicBool::new(false),
+            lose_claim_settlement_answer: AtomicBool::new(false),
             lose_follow_up_answer: AtomicBool::new(false),
+            hold_follow_up_before_effect: AtomicBool::new(false),
+            follow_up_before_effect: tokio::sync::watch::channel(None).0,
             hook_code: HookRefusalCode::new("consumer_hook")?,
             handled_requests: AtomicU64::new(0),
         })
@@ -125,6 +131,14 @@ impl ReceiverHook<ServiceScope<'_>> for Consumer {
         item: &HookEffect,
         call: CallId,
     ) -> Result<FollowUpDone, FollowUpFailure> {
+        if self
+            .hold_follow_up_before_effect
+            .swap(false, Ordering::SeqCst)
+        {
+            self.follow_up_before_effect
+                .send_replace(Some(call.clone()));
+            std::future::pending::<()>().await;
+        }
         self.store
             .save_effect(call, item.clone())
             .await
@@ -164,15 +178,36 @@ impl LifecycleGate for Consumer {
     }
 }
 impl HolderChangeGate for Consumer {
-    async fn reserve(&self, _: &HolderChangeRequest, _: CallId) -> Result<GateAnswer, GateFailure> {
-        Ok(GateAnswer::Reserved)
+    async fn reserve(
+        &self,
+        request: &HolderChangeRequest,
+        call: CallId,
+    ) -> Result<GateAnswer, GateFailure> {
+        self.store
+            .reserve_claim(request, call)
+            .await
+            .map_err(|error| GateFailure {
+                detail: error.to_string(),
+            })
     }
     async fn settle(
         &self,
-        _: &HolderChangeRequest,
-        _: SettleOutcome,
-        _: CallId,
+        request: &HolderChangeRequest,
+        outcome: SettleOutcome,
+        call: CallId,
     ) -> Result<(), GateFailure> {
+        self.store
+            .settle_claim(request, outcome, call)
+            .await
+            .map_err(|error| GateFailure {
+                detail: error.to_string(),
+            })?;
+        if self
+            .lose_claim_settlement_answer
+            .swap(false, Ordering::SeqCst)
+        {
+            std::future::pending::<()>().await;
+        }
         Ok(())
     }
 }

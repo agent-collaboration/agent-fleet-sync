@@ -6,8 +6,8 @@ pub(crate) struct BootstrapPublishProbe {
 #[cfg(feature = "test-support")]
 struct State {
     reopen_blocked: std::sync::atomic::AtomicBool,
-    armed: std::sync::atomic::AtomicBool,
-    converted: tokio::sync::watch::Sender<Option<fleet_sync_receiver::SnapshotInstall>>,
+    armed: std::sync::atomic::AtomicU8,
+    observed: tokio::sync::watch::Sender<Option<fleet_sync_receiver::SnapshotInstall>>,
     release: tokio::sync::Notify,
 }
 #[cfg(feature = "test-support")]
@@ -16,7 +16,7 @@ impl Default for State {
         Self {
             reopen_blocked: Default::default(),
             armed: Default::default(),
-            converted: tokio::sync::watch::channel(None).0,
+            observed: tokio::sync::watch::channel(None).0,
             release: Default::default(),
         }
     }
@@ -46,22 +46,52 @@ impl BootstrapPublishProbe {
         if self
             .state
             .armed
-            .swap(false, std::sync::atomic::Ordering::SeqCst)
+            .compare_exchange(
+                1,
+                0,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_ok()
         {
-            self.state.converted.send_replace(Some(_install.clone()));
+            self.state.observed.send_replace(Some(_install.clone()));
+            self.state.release.notified().await;
+        }
+    }
+    pub async fn published(&self, _install: &fleet_sync_receiver::SnapshotInstall) {
+        #[cfg(feature = "test-support")]
+        if self
+            .state
+            .armed
+            .compare_exchange(
+                2,
+                0,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_ok()
+        {
+            self.state.observed.send_replace(Some(_install.clone()));
             self.state.release.notified().await;
         }
     }
     #[cfg(feature = "test-support")]
     pub fn arm(&self) {
-        self.state.converted.send_replace(None);
+        self.state.observed.send_replace(None);
         self.state
             .armed
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+            .store(1, std::sync::atomic::Ordering::SeqCst);
+    }
+    #[cfg(feature = "test-support")]
+    pub fn arm_published(&self) {
+        self.state.observed.send_replace(None);
+        self.state
+            .armed
+            .store(2, std::sync::atomic::Ordering::SeqCst);
     }
     #[cfg(feature = "test-support")]
     pub async fn wait(&self) -> Result<fleet_sync_receiver::SnapshotInstall, crate::OpenError> {
-        let mut changed = self.state.converted.subscribe();
+        let mut changed = self.state.observed.subscribe();
         loop {
             if let Some(install) = changed.borrow().clone() {
                 return Ok(install);
