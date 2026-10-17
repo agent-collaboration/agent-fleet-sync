@@ -82,7 +82,7 @@ where
             }
         }
         let mut effects = InboxEffects::default();
-        let nonempty = !batch.entries.is_empty();
+        let advanced = batch.through > input.after;
         for entry in batch.entries {
             match entry {
                 FetchEntry::Item { item, .. } => {
@@ -132,7 +132,7 @@ where
                                     .and_then(|bytes| bytes.checked_add(u64::from(settlement)))
                                     .is_none_or(|bytes| bytes > self.limits.inbox_bytes)
                                 {
-                                    return Err(DeliveryError::InvalidBatch);
+                                    return Err(DeliveryError::InboxFull);
                                 }
                                 effects.attempts.push(DeliveryAttempt {
                                     item: id,
@@ -201,7 +201,7 @@ where
             }
         }
         progress.received = progress.received.max(batch.through);
-        progress.rerun_requested |= nonempty;
+        progress.rerun_requested |= advanced;
         self.save_state(&state).await?;
         // Cancellation may have ended an item in this same receive commit.
         let mut admitted = Vec::new();

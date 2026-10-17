@@ -23,6 +23,7 @@ pub use service_contract::{ConsumerHandler, ServiceConsumer, ServiceError, Servi
 pub use service_handle::ImportSeedRequest;
 pub use service_runtime::{FleetService, ServiceHandle};
 
+mod delivery_deadlines;
 mod delivery_owner;
 mod delivery_publication;
 mod delivery_requests;

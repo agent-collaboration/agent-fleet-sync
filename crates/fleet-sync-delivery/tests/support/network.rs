@@ -11,14 +11,20 @@ pub type ReceiveTask = ReceiveItems<TestStore, sqlx_turso::Turso, TestTypes, Tes
 pub type DeliverTask = DeliverLocally<TestStore, sqlx_turso::Turso, TestTypes, TestConsumer>;
 pub type ReportTask = ReportOutcome<TestStore, sqlx_turso::Turso, TestTypes>;
 pub type PublishTask = PublishStatus<TestStore, sqlx_turso::Turso, TestTypes>;
+pub struct FetchBarrier {
+    pub reached: Arc<tokio::sync::Notify>,
+    pub release: Arc<tokio::sync::Notify>,
+}
 pub struct TestNetwork {
     pub sender: Weak<TestStore>,
     pub mailbox: Weak<TestStore>,
-    pub recipient: Weak<TestStore>,
+    pub recipient: Mutex<Weak<TestStore>>,
     pub status: Weak<TestStore>,
     pub relay_up: AtomicBool,
     pub lose_submit: AtomicBool,
     pub lose_fetch: AtomicBool,
+    pub fetch_barrier: Mutex<Option<FetchBarrier>>,
+    pub invalid_fetch: AtomicBool,
     pub lose_receipt: AtomicBool,
     pub lose_delivery: AtomicBool,
     pub lose_report: AtomicBool,
@@ -130,7 +136,7 @@ impl TestNetwork {
             }
             FetchCall::<TestTypes>::KIND => {
                 let request: FetchInput = serde_json::from_value(request).unwrap();
-                let answer = self
+                let mut answer = self
                     .mailbox
                     .upgrade()
                     .unwrap()
@@ -155,6 +161,14 @@ impl TestNetwork {
                     })
                     .await
                     .unwrap();
+                let barrier = self.fetch_barrier.lock().unwrap().take();
+                if let Some(barrier) = barrier {
+                    barrier.reached.notify_one();
+                    barrier.release.notified().await;
+                }
+                if self.invalid_fetch.swap(false, Ordering::SeqCst) {
+                    answer.stream = DeliveryStream::Controls;
+                }
                 if self.lose_fetch.swap(false, Ordering::SeqCst) {
                     return Err(CallFailure::AnswerLost);
                 }
@@ -187,10 +201,8 @@ impl TestNetwork {
             }
             DeliverCall::<TestTypes>::KIND => {
                 let reference: DeliveryItemRef = serde_json::from_value(request).unwrap();
-                let resolved = self
-                    .recipient
-                    .upgrade()
-                    .unwrap()
+                let recipient = self.recipient.lock().unwrap().upgrade().unwrap();
+                let resolved = recipient
                     .transaction(move |scope| {
                         Box::pin(async move {
                             Ok(Inbox::<_, TestTypes>::new(scope, peer(2), limits())
@@ -310,11 +322,13 @@ impl NetworkFixture {
         let routes = Arc::new(TestNetwork {
             sender: Arc::downgrade(&sender.store),
             mailbox: Arc::downgrade(&mailbox.store),
-            recipient: Arc::downgrade(&recipient.store),
+            recipient: Mutex::new(Arc::downgrade(&recipient.store)),
             status: Arc::downgrade(&status.store),
             relay_up: AtomicBool::new(true),
             lose_submit: AtomicBool::new(false),
             lose_fetch: AtomicBool::new(false),
+            fetch_barrier: Mutex::new(None),
+            invalid_fetch: AtomicBool::new(false),
             lose_receipt: AtomicBool::new(false),
             lose_delivery: AtomicBool::new(false),
             lose_report: AtomicBool::new(false),
@@ -338,9 +352,15 @@ impl NetworkFixture {
         }
     }
     pub fn engine(&self, fixture: &Fixture) -> Engine<TestStore, TestHost> {
+        self.engine_with_config(fixture, config())
+    }
+    pub fn engine_with_config(
+        &self,
+        fixture: &Fixture,
+        config: DeliveryTaskConfig,
+    ) -> Engine<TestStore, TestHost> {
         let mut engine = Engine::new(fixture.store.clone(), fixture.host.clone());
         let consumer = Arc::new(TestConsumer);
-        let config = config();
         engine
             .register(SubmitTask::new(limits(), consumer.clone()))
             .unwrap();

@@ -109,6 +109,21 @@ where
         self.save_state(&state).await
     }
 
+    pub async fn fail_receive(
+        &mut self,
+        stream: DeliveryStream,
+        cycle: ReceiveCycle,
+    ) -> Result<(), DeliveryError> {
+        let mut state = self.state().await?;
+        let progress = state.stream(stream);
+        if progress.active.is_some_and(|run| run.cycle == cycle) {
+            progress.active = None;
+            progress.rerun_requested = false;
+            self.save_state(&state).await?;
+        }
+        Ok(())
+    }
+
     pub async fn receive_budget(
         &mut self,
         input: ReceiveInput,

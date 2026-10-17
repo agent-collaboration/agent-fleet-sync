@@ -42,12 +42,15 @@ where
         .map_err(sql_error)?;
         let mut candidates = Vec::new();
         for row in rows {
-            let MailRecord::Live(record) = self.storage.decode_mail::<D>(row, None)? else {
-                return Err(DeliveryError::Corrupt {
-                    field: "compacted fetch payload",
-                });
-            };
-            candidates.push((record.seq, Some(record), None));
+            let seq = DeliverySeq::new(integer(
+                row.seq.clone(),
+                row.seq_class.clone(),
+                "fetch sequence",
+            )?);
+            match self.storage.decode_mail::<D>(row, None)? {
+                MailRecord::Live(record) => candidates.push((seq, Some(record), None)),
+                MailRecord::Compacted(_) => candidates.push((seq, None, None)),
+            }
         }
         if stream == DeliveryStream::Controls {
             for row in queries::read_controls(
@@ -77,6 +80,11 @@ where
                 break;
             }
             if let Some(mut mail) = mail {
+                // Validate above before deciding that a released row has no work.
+                if mail.payload.is_none() {
+                    through = seq;
+                    continue;
+                }
                 if mail
                     .payload
                     .as_ref()
@@ -167,10 +175,11 @@ where
         let mut releases = Vec::new();
         for row in rows {
             let MailRecord::Live(record) = self.storage.decode_mail::<D>(row, None)? else {
-                return Err(DeliveryError::Corrupt {
-                    field: "compacted receipt payload",
-                });
+                continue;
             };
+            if record.payload.is_none() {
+                continue;
+            }
             if !record.fetched {
                 return Err(DeliveryError::InvalidBatch);
             }

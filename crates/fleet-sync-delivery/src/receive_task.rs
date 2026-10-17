@@ -1,7 +1,8 @@
 use crate::task_support::*;
 use crate::*;
 use durable_steps::{
-    AtomicStore, JournalScope, OperationContext, OperationFailure, Task, storage::TransactionScope,
+    AtomicStore, BoxFuture, JournalScope, OperationContext, OperationFailure, RequestKey,
+    StepError, StoreError, Task, storage::TransactionScope,
 };
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
@@ -81,7 +82,12 @@ where
                     let effects = Inbox::<_, D>::new(scope, config.owner, config.limits)
                         .store_batch(input, batch, consumer.as_ref(), now)
                         .await
-                        .map_err(step_error)?;
+                        .map_err(|error| match error {
+                            DeliveryError::InboxFull => StepError::Retry {
+                                after: std::time::Duration::from_secs(1),
+                            },
+                            error => step_error(error),
+                        })?;
                     admit_effects::<_, DeliverLocally<S, Db, D, C>, ReportOutcome<S, Db, D>>(
                         scope, effects,
                     )
@@ -125,5 +131,21 @@ where
         })
         .await?;
         Ok(())
+    }
+
+    fn on_failed<'s, 't>(
+        &'s self,
+        scope: &'s mut S::Scope<'t>,
+        key: &'s RequestKey,
+        _failure: &'s OperationFailure,
+    ) -> BoxFuture<'s, Result<(), StoreError>> {
+        Box::pin(async move {
+            let (stream, cycle): (DeliveryStream, ReceiveCycle) =
+                serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
+            Inbox::<_, D>::new(scope, self.config.owner, self.config.limits)
+                .fail_receive(stream, cycle)
+                .await
+                .map_err(store_error)
+        })
     }
 }

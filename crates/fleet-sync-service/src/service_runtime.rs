@@ -326,6 +326,16 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             if !started.insert(key) {
                 continue;
             }
+            if let crate::delivery_owner::DeliveryObject::Mailbox(mailbox) = key {
+                let shutdown = shutdown.clone();
+                let Some(limits) = self.state.options.delivery else {
+                    continue;
+                };
+                tasks.spawn(crate::delivery_deadlines::run_mailbox::<P::Delivery>(
+                    owner, mailbox, limits, shutdown,
+                ));
+                continue;
+            }
             let runner = TokioRunner::new(
                 owner.engine.clone(),
                 owner.object.host(),

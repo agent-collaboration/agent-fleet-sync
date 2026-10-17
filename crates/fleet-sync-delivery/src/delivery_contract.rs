@@ -65,6 +65,8 @@ pub enum DeliveryError {
     CallConflict,
     #[error("delivery batch does not continue the requested stream")]
     InvalidBatch,
+    #[error("inbox has no room for the fetched batch yet")]
+    InboxFull,
     #[error("custody row or payload is missing")]
     CustodyMissing,
     #[error("custody digest differs from its call reference")]

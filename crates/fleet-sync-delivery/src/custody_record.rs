@@ -141,6 +141,9 @@ impl<D: DeliveryTypes> MailRecord<D> {
                     || row.seq.value() > i64::MAX as u64
                     || row.status.rank() == 0
                     || row.released_at.is_some() && row.payload.is_some()
+                    || row.released_at.is_none()
+                        && row.payload.is_none()
+                        && !row.status.is_terminal()
                     || (row.stream == DeliveryStream::Controls) != (row.cancel_target.is_some())
                     || (row.cancel_target.is_some()) != (row.cancel.is_some())
                 {

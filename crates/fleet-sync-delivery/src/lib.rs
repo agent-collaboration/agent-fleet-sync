@@ -16,6 +16,7 @@ mod inbox_record;
 mod inbox_storage;
 mod mail_storage;
 mod mailbox_custody;
+mod mailbox_deadlines;
 mod mailbox_rules;
 mod outbox_record;
 mod outbox_rules;
