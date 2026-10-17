@@ -7,6 +7,7 @@ mod sample_writes;
 pub use sample_writes::{insert_reading, insert_sample, insert_source};
 mod server;
 mod writer_actor;
+mod writer_bootstrap;
 mod writer_control;
 pub use consumer::{Consumer, FixtureAuthenticator};
 pub use consumer_store::ConsumerStore;

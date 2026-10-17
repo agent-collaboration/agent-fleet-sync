@@ -79,7 +79,43 @@ pub async fn run_writer(
 ) -> TestResult {
     tokio::fs::create_dir_all(directory).await?;
     let path = directory.join("writer.db");
-    let peer = PeerId::new(durable_steps::Uuid::from_u128(2))?;
+    let bootstrap = mode == "bootstrap" || mode == "resume-bootstrap";
+    let peer = PeerId::new(durable_steps::Uuid::from_u128(if bootstrap {
+        4
+    } else {
+        2
+    }))?;
+    let store = ConsumerStore::open(&directory.join("client.db")).await?;
+    let client = SessionClient::<_, _, SampleProtocol>::load(
+        WebSocketTransport::default(),
+        store.clone(),
+        &UuidV7Ids,
+        SchemaSupport { max_version: 100 },
+        Backoff {
+            initial: Duration::from_millis(10),
+            max: Duration::from_secs(1),
+            factor: 2,
+        },
+    )
+    .await?;
+    let session = client.state().session_id;
+    let (requests, mut incoming, pump) = SessionPump::new(
+        client,
+        Endpoint::new(endpoint)?,
+        PeerCredential::new(if bootstrap {
+            "Bearer peer-4"
+        } else {
+            "Bearer peer-2"
+        })?,
+        Duration::from_secs(10),
+    );
+    let (stop, stopped) = watch::channel(false);
+    let mut tasks = JoinSet::<TestResult>::new();
+    let pumping = stopped.clone();
+    tasks.spawn(async move {
+        pump.run(pumping).await?;
+        Ok(())
+    });
     let options = WriterOptions {
         allow_provisional_writes: true,
     };
@@ -103,9 +139,18 @@ pub async fn run_writer(
             )
             .await?
         }
-        _ => return Err("writer mode must be create, adopt or resume".into()),
+        "bootstrap" | "resume-bootstrap" => {
+            crate::writer_bootstrap::open(
+                &path,
+                database_id.ok_or("bootstrap needs database identity")?,
+                &requests,
+                policy(),
+            )
+            .await?
+        }
+        _ => return Err("unknown writer mode".into()),
     });
-    if mode != "resume" {
+    if matches!(mode, "create" | "adopt") {
         let mut write = database.begin_write().await?;
         crate::insert_sample(
             &mut write,
@@ -117,29 +162,15 @@ pub async fn run_writer(
         .await?;
         write.commit().await?;
     }
-    let store = ConsumerStore::open(&directory.join("client.db")).await?;
-    let client = SessionClient::<_, _, SampleProtocol>::load(
-        WebSocketTransport::default(),
-        store.clone(),
-        &UuidV7Ids,
-        SchemaSupport { max_version: 100 },
-        Backoff {
-            initial: Duration::from_millis(10),
-            max: Duration::from_secs(1),
-            factor: 2,
-        },
-    )
-    .await?;
-    let session = client.state().session_id;
-    let (requests, mut incoming, pump) = SessionPump::new(
-        client,
-        Endpoint::new(endpoint)?,
-        PeerCredential::new("Bearer peer-2")?,
-        Duration::from_secs(10),
-    );
     let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
-    let runtime =
-        Arc::new(NativeWriterRuntime::new(database.clone(), receiver, requests.clone()).await?);
+    let mut runtime =
+        NativeWriterRuntime::new(database.clone(), receiver, requests.clone()).await?;
+    if bootstrap {
+        runtime
+            .enable_snapshot_installs(&directory.join("installs"))
+            .await?;
+    }
+    let runtime = Arc::new(runtime);
     let sender = Arc::new(ReplicationSender::new(
         database.clone(),
         Arc::new(Annotation),
@@ -147,7 +178,6 @@ pub async fn run_writer(
         runtime.transport(),
         SenderOptions::default(),
     ));
-    let (stop, stopped) = watch::channel(false);
     let (events, mut event_stream) = mpsc::channel(128);
     let (acked, acked_state) = watch::channel(None);
     let control = Arc::new(WriterControl {
@@ -156,12 +186,6 @@ pub async fn run_writer(
         acked: acked_state,
         sender: sender.clone(),
         receiver,
-    });
-    let mut tasks = JoinSet::<TestResult>::new();
-    let pumping = stopped.clone();
-    tasks.spawn(async move {
-        pump.run(pumping).await?;
-        Ok(())
     });
     let running = stopped.clone();
     let work = runtime.clone();
@@ -205,6 +229,14 @@ pub async fn run_writer(
                     if matches!(body,Notice::LeaseChanged {database:changed} if changed==database.database()){runtime.prompt_renewal().await?;}
                     requests.acknowledge_notice(position).await?;
                 }
+                Some(ClientEvent::Request {frame,body:ServerRequest::Crate(ServerCall::Release {call,request})})=>{
+                    let work=runtime.clone();
+                    tasks.spawn(async move {work.answer_release(frame,call,&request).await?;Ok(())});
+                }
+                Some(ClientEvent::Request {frame,body:ServerRequest::Crate(ServerCall::WithdrawRelease {call,request})})=>{
+                    let work=runtime.clone();
+                    tasks.spawn(async move {work.answer_withdrawal(frame,call,&request).await?;Ok(())});
+                }
                 Some(ClientEvent::Request {..})=>return Err("writer fixture received an unconfigured server request".into()),
                 Some(_)=>{},None=>break,
             },
@@ -213,6 +245,7 @@ pub async fn run_writer(
     }Ok(())}.await;
     stop.send_replace(true);
     runtime.transport().release_seed_page_answer();
+    database.release_bootstrap_rename();
     while let Some(task) = tasks.join_next().await {
         task??;
     }

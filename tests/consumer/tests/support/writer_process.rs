@@ -59,7 +59,10 @@ impl WriterProcess {
         })
     }
     pub async fn command(&mut self, command: WriterCommand) -> TestResult<WriterReply> {
-        let wait = if matches!(command, WriterCommand::WaitReady) {
+        let wait = if matches!(
+            command,
+            WriterCommand::WaitReady | WriterCommand::WaitInstall { .. }
+        ) {
             Duration::from_secs(70)
         } else if matches!(command, WriterCommand::WaitSeedPage) {
             // The engine retains a killed drive's ownership for 30 seconds.

@@ -42,6 +42,14 @@ pub struct EffectReceipt {
 }
 
 static MIGRATIONS: sqlx_core::migrate::Migrator = sqlx::migrate!("./replicated-migrations");
+static LATER_MIGRATIONS: sqlx_core::migrate::Migrator = sqlx::migrate!("./later-migrations");
+static EXTENDED_MIGRATIONS: LazyLock<Vec<Migration>> = LazyLock::new(|| {
+    MIGRATIONS
+        .iter()
+        .chain(LATER_MIGRATIONS.iter())
+        .cloned()
+        .collect()
+});
 static TABLES: LazyLock<Result<Vec<TableName>, TextValueError>> = LazyLock::new(|| {
     ["samples", "readings", "samples_by_source"]
         .into_iter()
@@ -50,17 +58,29 @@ static TABLES: LazyLock<Result<Vec<TableName>, TextValueError>> = LazyLock::new(
 });
 pub struct SampleSchema {
     tables: &'static [TableName],
+    extended: bool,
 }
 impl SampleSchema {
     pub fn new() -> Result<Self, TextValueError> {
         Ok(Self {
             tables: TABLES.as_ref().map(Vec::as_slice).map_err(Clone::clone)?,
+            extended: false,
+        })
+    }
+    pub fn extended() -> Result<Self, TextValueError> {
+        Ok(Self {
+            extended: true,
+            ..Self::new()?
         })
     }
 }
 impl ReplicatedSchema for SampleSchema {
     fn migrations(&self) -> &'static [Migration] {
-        MIGRATIONS.iter().as_slice()
+        if self.extended {
+            &EXTENDED_MIGRATIONS
+        } else {
+            MIGRATIONS.iter().as_slice()
+        }
     }
     fn replicated_tables(&self) -> &'static [TableName] {
         self.tables

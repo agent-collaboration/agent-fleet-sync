@@ -25,7 +25,10 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         let mut connection = self.maintenance.acquire().await?;
         let records = read_releases(&mut connection, self.database).await?;
         let existing = records.iter().find(|record| record.call == call);
-        if existing.is_some_and(|record| record.request != *request) {
+        if existing.is_some_and(|record| {
+            record.request != *request
+                || matches!(record.state, ReleaseState::WithdrawalAnswered { .. })
+        }) {
             return Ok(ReleaseAnswer::RequestConflict);
         }
         crate::writer_authority::restore_authority(&mut connection, &mut control.holder).await?;
@@ -40,6 +43,23 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             return Ok(ReleaseAnswer::ReleaseRefused(ReleaseRefusal::Superseded {
                 current,
             }));
+        }
+        if records.iter().any(|record| record.withdraws(request)) {
+            let answer = ReleaseAnswer::ReleaseRefused(ReleaseRefusal::Withdrawn);
+            let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+            save_release(
+                &mut transaction,
+                &WriterReleaseRecord {
+                    request: request.clone(),
+                    call,
+                    state: ReleaseState::Answered {
+                        answer: answer.clone(),
+                    },
+                },
+            )
+            .await?;
+            transaction.commit().await?;
+            return Ok(answer);
         }
         if let Some(WriterReleaseRecord {
             state: ReleaseState::Answered { answer },

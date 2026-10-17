@@ -29,6 +29,15 @@ pub enum WriterCommand {
     JournalSteps {
         operation: durable_steps::OperationId,
     },
+    InstallSnapshot {
+        attempt: durable_steps::Uuid,
+    },
+    WaitInstall {
+        attempt: durable_steps::Uuid,
+    },
+    HoldBootstrapBeforeRename,
+    WaitBootstrapConverted,
+    Migrate,
     Shutdown,
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,6 +51,8 @@ pub enum WriterReply {
     WriteRefused { seeding: bool, message: String },
     LateRejectionRefused { already_granted: bool },
     JournalSteps(Vec<durable_steps::storage::StepRecord>),
+    Install(fleet_sync_tokio_runner::InstallRecord),
+    Converted(fleet_sync_receiver::SnapshotInstall),
     Error { message: String },
 }
 pub(crate) struct WriterControl {
@@ -57,6 +68,24 @@ impl WriterControl {
             Ok(match command {
                 WriterCommand::Register => {
                     WriterReply::Operation(self.runtime.start_registration().await?)
+                }
+                WriterCommand::InstallSnapshot { attempt } => {
+                    self.runtime.install_snapshot(attempt).await?;
+                    WriterReply::Ok
+                }
+                WriterCommand::WaitInstall { attempt } => {
+                    WriterReply::Install(self.runtime.wait_install(attempt).await?)
+                }
+                WriterCommand::HoldBootstrapBeforeRename => {
+                    self.database.hold_bootstrap_before_rename();
+                    WriterReply::Ok
+                }
+                WriterCommand::WaitBootstrapConverted => {
+                    WriterReply::Converted(self.database.wait_bootstrap_converted().await?)
+                }
+                WriterCommand::Migrate => {
+                    self.database.migrate().await?;
+                    WriterReply::Position(self.database.snapshot().await?.position())
                 }
                 WriterCommand::JournalSteps { operation } => {
                     WriterReply::JournalSteps(self.runtime.journal_steps(operation).await?)

@@ -1,7 +1,7 @@
 use crate::{LeasePolicy, WriterState};
 use fleet_sync_protocol::{
     DatabaseId, Epoch, GateReason, LeaseRefusal, LeaseState, LeaseStatus, PeerId, RenewAnswer,
-    ReplicationPosition, SyncTime, TransferId,
+    ReplicationPosition, SyncTime, TransferId, WithdrawAnswer,
 };
 use std::time::Duration;
 
@@ -30,7 +30,13 @@ struct CachedLease {
 enum WriteActivity {
     Seeding,
     Writing,
-    Draining { transfer: TransferId },
+    Draining {
+        transfer: TransferId,
+    },
+    Released {
+        transfer: TransferId,
+        final_position: ReplicationPosition,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +58,7 @@ enum HolderAuthority {
     },
     Released {
         epoch: Epoch,
+        transfer: TransferId,
         final_position: ReplicationPosition,
     },
     Superseded {
@@ -141,6 +148,10 @@ impl LeaseHolder {
                     epoch: cached.epoch,
                     transfer: *transfer,
                 },
+                WriteActivity::Released { final_position, .. } => WriterState::Released {
+                    epoch: cached.epoch,
+                    final_position: *final_position,
+                },
                 WriteActivity::Writing if now < cached.deadline => WriterState::Writing {
                     epoch: cached.epoch,
                 },
@@ -152,6 +163,7 @@ impl LeaseHolder {
             HolderAuthority::Released {
                 epoch,
                 final_position,
+                ..
             } => WriterState::Released {
                 epoch: *epoch,
                 final_position: *final_position,
@@ -199,8 +211,7 @@ impl LeaseHolder {
     ) -> Result<(), HolderError> {
         if matches!(
             self.authority,
-            HolderAuthority::Released { .. }
-                | HolderAuthority::Superseded { .. }
+            HolderAuthority::Superseded { .. }
                 | HolderAuthority::Rejected { .. }
                 | HolderAuthority::Refused(LeaseRefusal::Retired)
         ) {
@@ -268,6 +279,14 @@ impl LeaseHolder {
         let activity = match &self.authority {
             HolderAuthority::Draining { transfer, .. } => WriteActivity::Draining {
                 transfer: *transfer,
+            },
+            HolderAuthority::Released {
+                transfer,
+                final_position,
+                ..
+            } => WriteActivity::Released {
+                transfer: *transfer,
+                final_position: *final_position,
             },
             HolderAuthority::Seeding { .. } | HolderAuthority::RegistrationSeeding { .. } => {
                 WriteActivity::Seeding
@@ -341,14 +360,29 @@ impl LeaseHolder {
         if self.known_epoch().is_some_and(|known| known > epoch)
             || matches!(
                 self.authority,
-                HolderAuthority::Rejected { .. } | HolderAuthority::Refused(LeaseRefusal::Retired)
+                HolderAuthority::Superseded { .. }
+                    | HolderAuthority::Rejected { .. }
+                    | HolderAuthority::Refused(_)
             )
         {
+            return Ok(());
+        }
+        if let HolderAuthority::Lease { cached, activity } = &mut self.authority
+            && cached.epoch == epoch
+        {
+            *activity = match final_position {
+                Some(final_position) => WriteActivity::Released {
+                    transfer,
+                    final_position,
+                },
+                None => WriteActivity::Draining { transfer },
+            };
             return Ok(());
         }
         self.authority = match final_position {
             Some(final_position) => HolderAuthority::Released {
                 epoch,
+                transfer,
                 final_position,
             },
             None => HolderAuthority::Draining { epoch, transfer },
@@ -403,22 +437,48 @@ impl LeaseHolder {
         transfer: TransferId,
         final_position: ReplicationPosition,
     ) -> Result<(), HolderError> {
-        match &self.authority {
-            HolderAuthority::Lease {
-                cached,
-                activity: WriteActivity::Draining { transfer: existing },
-            } if *existing == transfer && cached.epoch == final_position.epoch => {
-                self.authority = HolderAuthority::Released {
-                    epoch: cached.epoch,
+        match &mut self.authority {
+            HolderAuthority::Lease { cached, activity }
+                if cached.epoch == final_position.epoch
+                    && matches!(&*activity, WriteActivity::Draining { transfer: existing } if *existing == transfer) =>
+            {
+                *activity = WriteActivity::Released {
+                    transfer,
                     final_position,
                 };
                 Ok(())
             }
+            HolderAuthority::Lease {
+                activity:
+                    WriteActivity::Released {
+                        transfer: existing_transfer,
+                        final_position: existing,
+                    },
+                ..
+            } if *existing_transfer == transfer && *existing == final_position => Ok(()),
             HolderAuthority::Released {
                 final_position: existing,
                 ..
             } if *existing == final_position => Ok(()),
             _ => Err(HolderError::InvalidTransition),
         }
+    }
+
+    /// Withdraw only this transfer's release. The cached deadline and all other
+    /// authority stay intact, including a different transfer's active drain.
+    pub fn withdraw_release(&mut self, epoch: Epoch, transfer: TransferId) -> WithdrawAnswer {
+        let HolderAuthority::Lease { cached, activity } = &mut self.authority else {
+            return WithdrawAnswer::NotHolder;
+        };
+        if cached.epoch != epoch {
+            return WithdrawAnswer::NotHolder;
+        }
+        if matches!(activity,
+            WriteActivity::Draining { transfer: existing } | WriteActivity::Released { transfer: existing, .. }
+            if *existing == transfer)
+        {
+            *activity = WriteActivity::Writing;
+        }
+        WithdrawAnswer::Withdrawn
     }
 }

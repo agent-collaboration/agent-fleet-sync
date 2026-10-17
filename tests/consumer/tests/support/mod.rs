@@ -125,7 +125,9 @@ pub async fn control_request(
 ) -> TestResult<ControlAnswer> {
     let answer_timeout = if matches!(
         request,
-        ControlRequest::WaitInstall { .. } | ControlRequest::WaitSourceUnattached { .. }
+        ControlRequest::WaitInstall { .. }
+            | ControlRequest::WaitSourceUnattached { .. }
+            | ControlRequest::WaitHolderChange(_)
     ) {
         Duration::from_secs(65)
     } else if matches!(request, ControlRequest::WaitAttempts { .. }) {

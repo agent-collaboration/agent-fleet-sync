@@ -61,6 +61,7 @@ pub enum ControlRequest {
         peer: PeerId,
     },
     HolderChange(HolderChangeRequest),
+    WaitHolderChange(HolderChangeRequest),
     Revoke {
         peer: PeerId,
     },
@@ -225,6 +226,9 @@ impl ControlState {
                 }
                 ControlRequest::HolderChange(request) => {
                     ControlAnswer::HolderChange(self.service.holder_change(request).await?)
+                }
+                ControlRequest::WaitHolderChange(request) => {
+                    ControlAnswer::HolderChange(self.service.wait_holder_change(request).await?)
                 }
                 ControlRequest::Revoke { peer } => {
                     self.service.revoke(peer).await?;

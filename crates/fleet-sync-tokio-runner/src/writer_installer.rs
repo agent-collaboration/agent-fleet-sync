@@ -13,11 +13,13 @@ use fleet_sync_writer::{BootstrapError, OpenError, ReplicatedDatabase, Replicate
 use runtime_primitives::SystemClock;
 use std::{path::Path, sync::Arc};
 
+type WriterInstallEngine<S, P> = Engine<TokioObject<WriterHost<S, P>>, WriterHost<S, P>>;
+
 pub(crate) struct WriterInstaller<S: ReplicatedSchema, P: ConsumerProtocol> {
     pub objects: ObjectStore<WriterHost<S, P>>,
     pub control: Arc<TokioObject<WriterHost<S, P>>>,
     pub host: Arc<WriterHost<S, P>>,
-    pub engine: Arc<Engine<TokioObject<WriterHost<S, P>>, WriterHost<S, P>>>,
+    pub engine: Arc<WriterInstallEngine<S, P>>,
     coordinator: Arc<InstallCoordinator<WriterHost<S, P>>>,
     target: WriterInstallTarget<S>,
     receiver: ReceiverId,

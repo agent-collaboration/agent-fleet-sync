@@ -145,6 +145,34 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             Err(error) => Err(error),
         }
     }
+    /// Observe an admitted change through its domain record and committed wakes.
+    #[cfg(feature = "test-support")]
+    pub async fn wait_holder_change(
+        &self,
+        request: HolderChangeRequest,
+    ) -> Result<HolderChangeAnswer, ServiceError> {
+        let mut changed = self.state.registry.subscribe_commits();
+        loop {
+            let reading = request.clone();
+            let answer = self
+                .state
+                .registry
+                .rule_transaction(move |scope| {
+                    Box::pin(async move {
+                        fleet_sync_lease::holder_change_answer(scope, &reading)
+                            .await
+                            .map_err(durable_steps::StoreError::backend)
+                    })
+                })
+                .await?;
+            if let Some(answer) = answer
+                && !matches!(answer, HolderChangeAnswer::Pending { .. })
+            {
+                return Ok(answer);
+            }
+            changed.changed().await.map_err(ServiceError::rule)?;
+        }
+    }
     /// Call after the authenticator's owner has committed the credential change.
     pub async fn revoke(&self, peer: PeerId) -> Result<(), ServiceError> {
         self.sessions.revoke(peer).await.map_err(ServiceError::rule)

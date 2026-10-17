@@ -271,3 +271,283 @@ async fn renewal_restore_keeps_original_deadline_and_does_not_erase_supersession
     reopened.close().await;
     Ok(())
 }
+
+fn withdrawal(request: &ReleaseRequest) -> fleet_sync_protocol::WithdrawRelease {
+    fleet_sync_protocol::WithdrawRelease {
+        database: request.database,
+        epoch: request.epoch,
+        transfer: request.transfer,
+    }
+}
+fn named_call(name: &str) -> TestResult<CallId> {
+    Ok(CallId {
+        step: StepName::new(name)?,
+        ..call()?
+    })
+}
+
+#[tokio::test]
+async fn withdrawal_survives_reopen_refuses_late_release_and_keeps_original_deadline() -> TestResult
+{
+    use fleet_sync_protocol::{ReleaseRefusal, WithdrawAnswer};
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("writer.db");
+    let clock = Arc::new(TestClock(AtomicI64::new(100)));
+    let database = create(&path, clock.clone()).await?;
+    database
+        .observe_renewal(renewal(database.database(), 1, 1000)?, clock.now())
+        .await?;
+    let request = request(database.database())?;
+    let release = database.request_release(&request, call()?).await?;
+    let ReleaseAnswer::Released { final_position } = release else {
+        return Err("release refused".into());
+    };
+    // A real renewal while released stays authoritative, without reopening admission.
+    database
+        .observe_renewal(
+            renewal(database.database(), 1, 500)?,
+            SyncTime::from_unix_millis(200),
+        )
+        .await?;
+    assert!(matches!(
+        database.begin_write().await,
+        Err(WriteRefusal::Released)
+    ));
+    let withdraw_call = named_call("withdraw")?;
+    assert_eq!(
+        database
+            .withdraw_release(&withdrawal(&request), withdraw_call.clone())
+            .await?,
+        WithdrawAnswer::Withdrawn
+    );
+    assert_eq!(database.snapshot().await?.position(), final_position);
+    assert_eq!(
+        database.request_release(&request, call()?).await?,
+        ReleaseAnswer::ReleaseRefused(ReleaseRefusal::Withdrawn)
+    );
+    database.close().await;
+    clock.0.store(699, Ordering::SeqCst);
+    let database = create(&path, clock.clone()).await?;
+    assert_eq!(
+        database
+            .withdraw_release(&withdrawal(&request), withdraw_call)
+            .await?,
+        WithdrawAnswer::Withdrawn
+    );
+    assert_eq!(
+        database
+            .request_release(&request, named_call("late_release")?)
+            .await?,
+        ReleaseAnswer::ReleaseRefused(ReleaseRefusal::Withdrawn)
+    );
+    let mut write = database.begin_write().await?;
+    (&mut write).execute("INSERT INTO text_records VALUES('019eef00-0000-7000-8000-00000000000a',42,'after withdrawal')").await?;
+    write.commit().await?;
+    assert!(database.snapshot().await?.position() > final_position);
+    clock.0.store(700, Ordering::SeqCst);
+    assert!(
+        matches!(database.begin_write().await, Err(WriteRefusal::LeaseExpired { expired_at, .. }) if expired_at == SyncTime::from_unix_millis(700))
+    );
+    database.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn withdrawal_before_release_is_a_tombstone_and_does_not_erase_another_transfer() -> TestResult
+{
+    use fleet_sync_protocol::{ReleaseRefusal, WithdrawAnswer};
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("writer.db");
+    let clock = Arc::new(TestClock(AtomicI64::new(100)));
+    let database = create(&path, clock.clone()).await?;
+    database
+        .observe_renewal(renewal(database.database(), 1, 1000)?, clock.now())
+        .await?;
+    let first = request(database.database())?;
+    assert_eq!(
+        database
+            .withdraw_release(&withdrawal(&first), named_call("withdraw_first")?)
+            .await?,
+        WithdrawAnswer::Withdrawn
+    );
+    let mut second = first.clone();
+    second.transfer = TransferId::new(Uuid::from_u128(5))?;
+    assert!(
+        database
+            .withdraw_release(&withdrawal(&second), named_call("withdraw_first")?)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        database
+            .request_release(&first, named_call("withdraw_first")?)
+            .await?,
+        ReleaseAnswer::RequestConflict
+    );
+    database
+        .request_release(&second, named_call("release_second")?)
+        .await?;
+    database
+        .withdraw_release(&withdrawal(&first), named_call("withdraw_first_again")?)
+        .await?;
+    assert!(matches!(
+        database.begin_write().await,
+        Err(WriteRefusal::Released)
+    ));
+    database.close().await;
+    let database = create(&path, clock).await?;
+    assert_eq!(
+        database.request_release(&first, call()?).await?,
+        ReleaseAnswer::ReleaseRefused(ReleaseRefusal::Withdrawn)
+    );
+    assert!(matches!(
+        database.begin_write().await,
+        Err(WriteRefusal::Released)
+    ));
+    assert_eq!(
+        database
+            .withdraw_release(&withdrawal(&second), named_call("withdraw_second")?)
+            .await?,
+        WithdrawAnswer::Withdrawn
+    );
+    assert!(matches!(
+        database.writer_state().await?,
+        WriterState::Writing { .. }
+    ));
+    database.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn committed_withdrawal_tombstone_reopens_the_gate_before_the_cache_has_changed() -> TestResult
+{
+    use fleet_sync_protocol::WithdrawAnswer;
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("writer.db");
+    let clock = Arc::new(TestClock(AtomicI64::new(100)));
+    let database = create(&path, clock.clone()).await?;
+    database
+        .observe_renewal(renewal(database.database(), 1, 1000)?, clock.now())
+        .await?;
+    let request = request(database.database())?;
+    database.request_release(&request, call()?).await?;
+    // A committed tombstone is sufficient even if the cache update was cancelled.
+    {
+        let mut connection = database.maintenance.acquire().await?;
+        save_release(
+            &mut connection,
+            &WriterReleaseRecord {
+                request,
+                call: named_call("withdraw")?,
+                state: ReleaseState::WithdrawalAnswered {
+                    answer: WithdrawAnswer::Withdrawn,
+                },
+            },
+        )
+        .await?;
+    }
+    assert!(matches!(
+        database.writer_state().await?,
+        WriterState::Writing { .. }
+    ));
+    database.close().await;
+    let database = create(&path, clock).await?;
+    assert!(matches!(
+        database.writer_state().await?,
+        WriterState::Writing { .. }
+    ));
+    database.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn withdrawal_after_committed_drain_never_resurrects_superseded_or_retired_authority()
+-> TestResult {
+    use fleet_sync_protocol::WithdrawAnswer;
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("writer.db");
+    let clock = Arc::new(TestClock(AtomicI64::new(100)));
+    let database = create(&path, clock.clone()).await?;
+    database
+        .observe_renewal(renewal(database.database(), 1, 1000)?, clock.now())
+        .await?;
+    let request = request(database.database())?;
+    // Commit only Draining, as a crash could leave it before the cache changes.
+    {
+        let mut connection = database.maintenance.acquire().await?;
+        save_release(
+            &mut connection,
+            &WriterReleaseRecord {
+                request: request.clone(),
+                call: call()?,
+                state: ReleaseState::Draining,
+            },
+        )
+        .await?;
+    }
+    assert_eq!(
+        database
+            .withdraw_release(&withdrawal(&request), named_call("withdraw")?)
+            .await?,
+        WithdrawAnswer::Withdrawn
+    );
+    let ended_at = database.snapshot().await?.position();
+    database
+        .observe_renewal(
+            RenewAnswer::Refused(LeaseRefusal::StaleEpoch {
+                current_epoch: Epoch::new(2)?,
+                epoch_ended_at: ended_at,
+            }),
+            clock.now(),
+        )
+        .await?;
+    assert_eq!(
+        database
+            .withdraw_release(&withdrawal(&request), named_call("after_supersession")?)
+            .await?,
+        WithdrawAnswer::NotHolder
+    );
+    // Repeating the original answer must leave the newer authority intact.
+    assert_eq!(
+        database
+            .withdraw_release(&withdrawal(&request), named_call("withdraw")?)
+            .await?,
+        WithdrawAnswer::Withdrawn
+    );
+    assert!(matches!(
+        database.begin_write().await,
+        Err(WriteRefusal::Superseded { .. })
+    ));
+    database.close().await;
+    let database = create(&path, clock.clone()).await?;
+    assert!(matches!(
+        database.begin_write().await,
+        Err(WriteRefusal::Superseded { .. })
+    ));
+    database.close().await;
+    let retired_path = directory.path().join("retired.db");
+    let database = create(&retired_path, clock.clone()).await?;
+    database
+        .observe_renewal(renewal(database.database(), 1, 1000)?, clock.now())
+        .await?;
+    database.request_release(&request, call()?).await?;
+    database
+        .observe_renewal(RenewAnswer::Refused(LeaseRefusal::Retired), clock.now())
+        .await?;
+    assert_eq!(
+        database
+            .withdraw_release(&withdrawal(&request), named_call("retired")?)
+            .await?,
+        WithdrawAnswer::NotHolder
+    );
+    database.close().await;
+    let database = create(&retired_path, clock).await?;
+    assert!(matches!(
+        database.writer_state().await,
+        Err(OpenError::Holder {
+            error: fleet_sync_lease::HolderError::Refused(LeaseRefusal::Retired)
+        })
+    ));
+    database.close().await;
+    Ok(())
+}

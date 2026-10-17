@@ -130,6 +130,22 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> NativeWriterRuntime<S, P> {
     pub fn transport(&self) -> Arc<WriterSessionCalls<S, P>> {
         self.calls.clone()
     }
+    pub async fn answer_withdrawal(
+        &self,
+        frame: fleet_sync_protocol::FrameId,
+        call: durable_steps::CallId,
+        request: &fleet_sync_protocol::WithdrawRelease,
+    ) -> Result<(), StoreError> {
+        let answer = self
+            .database
+            .withdraw_release(request, call)
+            .await
+            .map_err(StoreError::backend)?;
+        self.calls
+            .answer_withdrawal(frame, answer)
+            .await
+            .map_err(StoreError::backend)
+    }
     pub fn store(&self) -> Arc<NativeWriterStore<S, P>> {
         self.store.clone()
     }

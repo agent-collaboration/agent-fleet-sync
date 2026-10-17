@@ -34,11 +34,22 @@ async fn idle_writer_answers_release_and_clean_move_keeps_every_accepted_row() -
         to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
     };
     println!("OBS requesting clean move");
-    let moved =
+    let mut moved =
         match control_request(&mut control, ControlRequest::HolderChange(request.clone())).await? {
             ControlAnswer::HolderChange(answer) => answer,
             _ => return Err("move answer missing".into()),
         };
+    if matches!(moved, HolderChangeAnswer::Pending { .. }) {
+        moved = match control_request(
+            &mut control,
+            ControlRequest::WaitHolderChange(request.clone()),
+        )
+        .await?
+        {
+            ControlAnswer::HolderChange(answer) => answer,
+            _ => return Err("move completion missing".into()),
+        };
+    }
     println!("OBS idle writer clean move: {moved:?}");
     assert!(
         matches!(moved,HolderChangeAnswer::Granted {epoch,start,..} if epoch==Epoch::new(2)? && start==through)

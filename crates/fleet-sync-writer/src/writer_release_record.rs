@@ -1,7 +1,7 @@
 use crate::{OpenError, schema_inspection::text, writer_scope::WriterScope};
 use durable_steps::CallId;
 use fleet_sync_lease::LeaseHolder;
-use fleet_sync_protocol::{DatabaseId, ReleaseAnswer, ReleaseRequest};
+use fleet_sync_protocol::{DatabaseId, ReleaseAnswer, ReleaseRequest, WithdrawAnswer};
 use serde::{Deserialize, Serialize};
 use sqlx_turso::TursoConnection;
 
@@ -23,6 +23,7 @@ pub(crate) struct WriterReleaseRecord {
 pub(crate) enum ReleaseState {
     Draining,
     Answered { answer: ReleaseAnswer },
+    WithdrawalAnswered { answer: WithdrawAnswer },
 }
 
 impl WriterReleaseRecord {
@@ -32,11 +33,22 @@ impl WriterReleaseRecord {
             ReleaseState::Answered {
                 answer: ReleaseAnswer::Released { final_position },
             } => Some(final_position),
-            ReleaseState::Answered { .. } => return Ok(()),
+            ReleaseState::Answered { .. } | ReleaseState::WithdrawalAnswered { .. } => {
+                return Ok(());
+            }
         };
         holder
             .restore_release(self.request.epoch, self.request.transfer, final_position)
             .map_err(|_| OpenError::corrupt("release.authority"))
+    }
+    pub(crate) fn withdraws(&self, request: &ReleaseRequest) -> bool {
+        self.request == *request
+            && matches!(
+                self.state,
+                ReleaseState::WithdrawalAnswered {
+                    answer: WithdrawAnswer::Withdrawn
+                }
+            )
     }
     fn order(&self) -> (fleet_sync_protocol::Epoch, bool) {
         (
@@ -81,8 +93,21 @@ pub(crate) async fn restore_releases(
     connection: &mut TursoConnection,
     holder: &mut LeaseHolder,
 ) -> Result<(), OpenError> {
-    for record in read_releases(connection, holder.database()).await? {
-        record.restore(holder)?;
+    let records = read_releases(connection, holder.database()).await?;
+    for record in &records {
+        if !records
+            .iter()
+            .any(|withdrawal| withdrawal.withdraws(&record.request))
+        {
+            record.restore(holder)?;
+        }
+    }
+    // Tombstones outlive the release calls they dominate. Apply them after
+    // other transfers so an old withdrawal cannot reopen a newer drain.
+    for record in &records {
+        if record.withdraws(&record.request) {
+            holder.withdraw_release(record.request.epoch, record.request.transfer);
+        }
     }
     Ok(())
 }

@@ -196,7 +196,9 @@ impl<H: Host> WriterJournalScope<'_, H> {
         let epoch = match state {
             fleet_sync_lease::WriterState::Writing { epoch }
             | fleet_sync_lease::WriterState::Paused { epoch, .. }
-            | fleet_sync_lease::WriterState::Seeding { epoch } => epoch,
+            | fleet_sync_lease::WriterState::Seeding { epoch }
+            | fleet_sync_lease::WriterState::Draining { epoch, .. }
+            | fleet_sync_lease::WriterState::Released { epoch, .. } => epoch,
             _ => return Ok(RenewalPlan::Stop),
         };
         let Some(due) = self.holder.renewal_at() else {

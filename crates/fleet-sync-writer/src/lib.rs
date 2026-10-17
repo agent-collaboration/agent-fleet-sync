@@ -61,6 +61,7 @@ mod writer_scope;
 #[cfg(test)]
 mod writer_seed_gate_tests;
 mod writer_snapshot;
+mod writer_withdrawal;
 
 pub use capture_normalization::{CaptureChange, CaptureError, normalize_capture_change};
 pub use maintenance_transaction::MaintenanceTransaction;

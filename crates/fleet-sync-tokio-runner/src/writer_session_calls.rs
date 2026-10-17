@@ -71,6 +71,18 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterSessionCalls<S, P> {
             )
             .await
     }
+    pub(crate) async fn answer_withdrawal(
+        &self,
+        frame: FrameId,
+        answer: WithdrawAnswer,
+    ) -> Result<(), fleet_sync_session::ClientError> {
+        self.requests
+            .answer(
+                frame,
+                ClientAnswer::Crate(ServerCallAnswer::WithdrawRelease(answer)),
+            )
+            .await
+    }
     pub async fn close_seed(&self) {
         self.seed.lock().await.take();
     }

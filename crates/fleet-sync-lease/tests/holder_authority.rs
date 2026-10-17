@@ -109,7 +109,7 @@ fn replay_after_takeover_supersedes_and_late_old_answers_cannot_restore_writes()
 }
 
 #[test]
-fn seeding_and_draining_survive_same_epoch_renewals_and_release_is_final() -> TestResult {
+fn seeding_draining_and_released_keep_the_gate_closed_across_same_epoch_renewals() -> TestResult {
     let (database, peer) = identities()?;
     let epoch = Epoch::new(2)?;
     let mut holder = LeaseHolder::seeding(database, peer, epoch, policy());
