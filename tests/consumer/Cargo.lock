@@ -848,6 +848,7 @@ dependencies = [
  "sqlx-turso",
  "tempfile",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

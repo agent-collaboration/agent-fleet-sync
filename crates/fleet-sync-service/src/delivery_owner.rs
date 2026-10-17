@@ -3,13 +3,14 @@ use crate::{
 };
 use durable_steps::{AtomicStore, Engine, StoreError, storage::TransactionScope};
 use fleet_sync_delivery::{DeliveryLimits, PublishStatus};
-use fleet_sync_protocol::{ConsumerProtocol, PeerId};
+use fleet_sync_protocol::{ConsumerProtocol, DeliveryFailureKind, PeerId};
 use fleet_sync_session::PeerAuthenticator;
 use fleet_sync_tokio_runner::{ObjectKey, ObjectOptions};
 use runtime_primitives::SystemClock;
 use sqlx_core::migrate::Migrator;
 use sqlx_turso::Turso;
 use std::sync::Arc;
+use tokio::sync::{OnceCell, watch};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum DeliveryObject {
@@ -46,6 +47,43 @@ impl DeliveryObject {
 pub(crate) struct DeliveryOwner {
     pub object: Arc<ServiceObject>,
     pub engine: Arc<Engine<ServiceObject, ServiceHost>>,
+    pub health: watch::Sender<Option<DeliveryFailureKind>>,
+    schema: OnceCell<()>,
+}
+impl DeliveryOwner {
+    pub fn mark_corrupt(&self, mailbox: PeerId, field: &'static str) {
+        let changed = self.health.send_if_modified(|failure| {
+            if failure.is_some() {
+                return false;
+            }
+            *failure = Some(DeliveryFailureKind::CustodyCorrupt);
+            true
+        });
+        if changed {
+            tracing::warn!(?mailbox, field, "delivery mailbox unavailable");
+        }
+    }
+    pub async fn ensure_schema(&self) -> Result<(), StoreError> {
+        self.schema
+            .get_or_try_init(|| async {
+                self.object
+                    .transaction(|scope| {
+                        Box::pin(async move {
+                            let mut migrations = Migrator::with_migrations(
+                                MIGRATIONS.iter().cloned().collect::<Vec<_>>(),
+                            );
+                            migrations.dangerous_set_table_name("_fleet_sync_delivery_migrations");
+                            migrations
+                                .run_direct(None, scope.executor(), false)
+                                .await
+                                .map_err(StoreError::backend)
+                        })
+                    })
+                    .await
+            })
+            .await
+            .map(|_| ())
+    }
 }
 static MIGRATIONS: Migrator = sqlx::migrate!("../fleet-sync-delivery/migrations");
 impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
@@ -76,26 +114,18 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                         host,
                     )
                     .await?;
-                object
-                    .transaction(|scope| {
-                        Box::pin(async move {
-                            let mut migrations = Migrator::with_migrations(
-                                MIGRATIONS.iter().cloned().collect::<Vec<_>>(),
-                            );
-                            migrations.dangerous_set_table_name("_fleet_sync_delivery_migrations");
-                            migrations
-                                .run_direct(None, scope.executor(), false)
-                                .await
-                                .map_err(StoreError::backend)
-                        })
-                    })
-                    .await?;
                 let mut engine = Engine::new(object.clone(), object.host());
                 engine.register(PublishStatus::<ServiceObject, Turso, P::Delivery>::new())?;
-                Ok::<_, ServiceError>(Arc::new(DeliveryOwner {
+                let owner = Arc::new(DeliveryOwner {
                     object,
                     engine: Arc::new(engine),
-                }))
+                    health: watch::channel(None).0,
+                    schema: OnceCell::new(),
+                });
+                if matches!(key, DeliveryObject::Status(_)) {
+                    owner.ensure_schema().await?;
+                }
+                Ok::<_, ServiceError>(owner)
             })
             .await?
             .clone();

@@ -5,6 +5,22 @@ use serde_json::{Value, json};
 const ITEM: &str = "01900000-0000-7000-8000-000000000001";
 const PEER: &str = "00000000-0000-0000-0000-000000000002";
 
+#[test]
+fn an_unavailable_mailbox_is_distinct_from_an_item_refusal() {
+    let wire = json!({"kind":"delivery","value":{"kind":"mailboxUnavailable","value":{
+        "reason":{"kind":"processingFailed","value":{"kind":"custodyCorrupt"}}
+    }}});
+    let decoded = serde_json::from_value::<OperationAnswer>(wire.clone());
+    assert!(
+        decoded.is_ok(),
+        "decision83 unavailability must decode as a request answer"
+    );
+    assert_eq!(serde_json::to_value(decoded.unwrap()).unwrap(), wire);
+    let mut obsolete = wire;
+    obsolete["value"]["kind"] = json!("refused");
+    assert!(serde_json::from_value::<OperationAnswer>(obsolete).is_err());
+}
+
 fn call() -> Value {
     json!({"operation":"00000000-0000-0000-0000-000000000003","step":"delivery"})
 }

@@ -76,6 +76,8 @@ pub async fn run_server_with_policy(
     lease_duration: Duration,
     move_renewal_within: Duration,
 ) -> TestResult {
+    #[cfg(feature = "test-support")]
+    let events = crate::service_events::ServiceEvents::install()?;
     tokio::fs::create_dir_all(directory).await?;
     let store = ConsumerStore::open(&directory.join("consumer.db")).await?;
     let consumer = Arc::new(Consumer::new(store.clone())?);
@@ -108,6 +110,12 @@ pub async fn run_server_with_policy(
     let (source_events, mut source_incoming) =
         mpsc::channel::<fleet_sync_service::AttachedSource<SampleProtocol>>(8);
     let control = Arc::new(ControlState {
+        #[cfg(feature = "test-support")]
+        delivery_directory: directory.join("service"),
+        #[cfg(feature = "test-support")]
+        delivery_locks: Default::default(),
+        #[cfg(feature = "test-support")]
+        events,
         consumer,
         authenticator,
         service: service.handle(),

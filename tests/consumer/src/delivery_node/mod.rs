@@ -1,6 +1,7 @@
 //! A second delivery consumer with real durable custody and an external append-only effect sink.
 //! Standard input is test control; all delivery hops use the relay's localhost WebSocket service.
 mod consumer;
+mod journal_observation;
 mod observer;
 mod router;
 mod socket;
@@ -71,6 +72,16 @@ pub enum NodeCommand {
         side: CustodySide,
         kind: String,
     },
+    WaitMailboxUnavailable {
+        hop: String,
+    },
+    WaitPendingCall {
+        hop: String,
+        attempts: u32,
+    },
+    SetStatusPaused {
+        enabled: bool,
+    },
     SetHeld {
         enabled: bool,
     },
@@ -83,6 +94,14 @@ pub enum NodeCommand {
     Arm {
         hop: String,
         mode: FaultMode,
+    },
+    ArmItem {
+        hop: String,
+        item: ItemId,
+        mode: FaultMode,
+    },
+    WaitReportRetired {
+        item: ItemId,
     },
     WaitBarrier,
     Resume,
@@ -100,10 +119,15 @@ pub enum FaultMode {
 }
 
 pub(crate) struct FaultGate {
-    armed: Mutex<Option<(String, FaultMode)>>,
+    armed: Mutex<Option<ArmedFault>>,
     reached: Mutex<Option<String>>,
     changed: Notify,
     resumed: Notify,
+}
+struct ArmedFault {
+    hop: String,
+    item: Option<ItemId>,
+    mode: FaultMode,
 }
 impl FaultGate {
     fn new() -> Self {
@@ -115,16 +139,24 @@ impl FaultGate {
         }
     }
     async fn arm(&self, hop: String, mode: FaultMode) {
+        self.arm_item(hop, None, mode).await;
+    }
+    async fn arm_item(&self, hop: String, item: Option<ItemId>, mode: FaultMode) {
         *self.reached.lock().await = None;
-        *self.armed.lock().await = Some((hop, mode));
+        *self.armed.lock().await = Some(ArmedFault { hop, item, mode });
     }
     pub async fn after(&self, hop: &str) -> bool {
+        self.after_item(hop, None).await
+    }
+    pub async fn after_item(&self, hop: &str, item: Option<ItemId>) -> bool {
         let mode = {
             let mut armed = self.armed.lock().await;
-            if armed.as_ref().is_none_or(|(expected, _)| expected != hop) {
+            if armed.as_ref().is_none_or(|expected| {
+                expected.hop != hop || expected.item.is_some() && expected.item != item
+            }) {
                 return false;
             }
-            armed.take().map(|(_, mode)| mode)
+            armed.take().map(|fault| fault.mode)
         };
         *self.reached.lock().await = Some(hop.into());
         self.changed.notify_waiters();
@@ -160,6 +192,8 @@ pub(crate) struct NodeState {
     oversized: AtomicBool,
     effect_file: PathBuf,
     effect_lock: Mutex<()>,
+    status_paused: AtomicBool,
+    unavailable: Mutex<Vec<(String, CallId)>>,
 }
 impl NodeState {
     fn config(&self) -> Result<DeliveryTaskConfig, DeliveryError> {
@@ -325,6 +359,15 @@ impl NodeState {
             NodeCommand::WaitStatus { item, side, kind } => {
                 return self.wait_status(item, side, &kind).await;
             }
+            NodeCommand::WaitMailboxUnavailable { hop } => {
+                return self.wait_mailbox_unavailable(hop).await;
+            }
+            NodeCommand::WaitPendingCall { hop, attempts } => {
+                return self.wait_pending_call(hop, attempts).await;
+            }
+            NodeCommand::SetStatusPaused { enabled } => self
+                .status_paused
+                .store(enabled, std::sync::atomic::Ordering::SeqCst),
             NodeCommand::SetHeld { enabled } => self
                 .held
                 .store(enabled, std::sync::atomic::Ordering::SeqCst),
@@ -332,6 +375,10 @@ impl NodeState {
                 .oversized
                 .store(enabled, std::sync::atomic::Ordering::SeqCst),
             NodeCommand::Arm { hop, mode } => self.gate.arm(hop, mode).await,
+            NodeCommand::ArmItem { hop, item, mode } => {
+                self.gate.arm_item(hop, Some(item), mode).await
+            }
+            NodeCommand::WaitReportRetired { item } => return self.wait_report_retired(item).await,
             NodeCommand::WaitBarrier => return Ok(json!({"hop":self.gate.wait().await})),
             NodeCommand::Resume => self.gate.resumed.notify_one(),
             NodeCommand::StatusFetch => {
@@ -446,6 +493,8 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
         oversized: AtomicBool::new(false),
         effect_file: directory.join("effects.jsonl"),
         effect_lock: Mutex::new(()),
+        status_paused: AtomicBool::new(false),
+        unavailable: Mutex::new(Vec::new()),
     });
     router
         .0

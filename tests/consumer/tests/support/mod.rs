@@ -1,4 +1,6 @@
 use fleet_sync_protocol::*;
+#[cfg(feature = "test-support")]
+pub mod delivery_mail;
 mod key_contract;
 #[allow(dead_code)]
 pub mod writer_process;

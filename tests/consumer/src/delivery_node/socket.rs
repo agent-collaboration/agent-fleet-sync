@@ -5,6 +5,13 @@ use fleet_sync_transport_websocket::{WebSocketConnection, WebSocketTransport};
 use tokio::sync::{mpsc, oneshot};
 
 type Reply = oneshot::Sender<Result<DeliveryAnswer<SampleDelivery>, CallFailure>>;
+struct PendingRequest {
+    frame: FrameId,
+    hop: &'static str,
+    call: CallId,
+    item: Option<ItemId>,
+    answer: Reply,
+}
 enum LinkCommand {
     Connect {
         port: u16,
@@ -100,15 +107,12 @@ async fn connect(port: u16, owner: PeerId) -> TestResult<(WebSocketConnection, S
     // receive pump handles both Welcome and any already-due server requests.
     Ok((socket, session))
 }
-async fn close(
-    socket: &mut Option<WebSocketConnection>,
-    pending: &mut Vec<(FrameId, &'static str, Reply)>,
-) {
+async fn close(socket: &mut Option<WebSocketConnection>, pending: &mut Vec<PendingRequest>) {
     if let Some(socket) = socket.take() {
         socket.close(CloseReason::ClientClosed).await;
     }
-    for (_, _, answer) in pending.drain(..) {
-        let _ = answer.send(Err(CallFailure::AnswerLost));
+    for pending in pending.drain(..) {
+        let _ = pending.answer.send(Err(CallFailure::AnswerLost));
     }
 }
 impl LinkActor {
@@ -119,7 +123,7 @@ impl LinkActor {
     ) -> TestResult {
         let mut socket: Option<WebSocketConnection> = None;
         let mut expected_session = None;
-        let mut pending: Vec<(FrameId, &'static str, Reply)> = Vec::new();
+        let mut pending: Vec<PendingRequest> = Vec::new();
         loop {
             tokio::select! {
                 changed=stopped.changed()=>{if changed.is_err() || *stopped.borrow() {break;}},
@@ -139,9 +143,16 @@ impl LinkActor {
                         if let Some(active)=socket.as_mut() {
                             let frame=FrameId::new(durable_steps::Uuid::now_v7())?;
                             let kind=hop(&request);
+                            let call=match &request {
+                                DeliveryRequest::Submit {call,..}|DeliveryRequest::Fetch {call,..}|
+                                DeliveryRequest::Received {call,..}|DeliveryRequest::Report {call,..}|
+                                DeliveryRequest::Settle {call,..}|DeliveryRequest::StatusFetch {call,..}|
+                                DeliveryRequest::Query {call,..}|DeliveryRequest::Retire {call,..}=>call.clone(),
+                            };
+                            let item=match &request {DeliveryRequest::Submit {item,..}=>Some(item.id()),DeliveryRequest::Report {report,..}=>Some(report.item),_=>None};
                             let bytes=serde_json::to_vec(&ClientFrame::<SampleProtocol>::Request {frame,body:OperationRequest::Delivery(request)})?;
                             match active.send(bytes.into()).await {
-                                Ok(())=>pending.push((frame,kind,answer)),
+                                Ok(())=>pending.push(PendingRequest {frame,hop:kind,call,item,answer}),
                                 Err(_)=>{let _=answer.send(Err(CallFailure::AnswerLost));close(&mut socket,&mut pending).await;}
                             }
                         }else{let _=answer.send(Err(unreachable()));}
@@ -154,15 +165,20 @@ impl LinkActor {
                     match frame {
                         ServerFrame::Welcome {session_id,..} if expected_session==Some(session_id)=>{},
                         ServerFrame::Answer {frame,body:OperationAnswer::Delivery(body)}=>{
-                            if let Some(index)=pending.iter().position(|(expected,_,_)|*expected==frame) {
-                                let (_,kind,answer)=pending.remove(index);
-                                if state.gate.after(kind).await {
+                            if let Some(index)=pending.iter().position(|pending|pending.frame==frame) {
+                                let PendingRequest {hop:kind,call,item,answer,..}=pending.remove(index);
+                                if matches!(&body, DeliveryAnswer::MailboxUnavailable {..}) {
+                                    state.unavailable.lock().await.push((kind.into(),call));
+                                    state.changed.notify_waiters();
+                                }
+                                if state.gate.after_item(kind,item).await {
                                     let _=answer.send(Err(CallFailure::AnswerLost));
                                     close(&mut socket,&mut pending).await;
                                 }else{let _=answer.send(Ok(body));}
                             }
                         }
                         ServerFrame::Request {frame,body:ServerRequest::Crate(ServerCall::PublishStatus {publication,..})}=>{
+                            if state.status_paused.load(std::sync::atomic::Ordering::SeqCst) {continue;}
                             let limits=delivery_limits()?;
                             let result=state.object.rule_transaction::<_,DeliveryError,_>(move|scope|Box::pin(async move {
                                 Outbox::<_,SampleDelivery>::new(scope,limits).publish_status(publication).await

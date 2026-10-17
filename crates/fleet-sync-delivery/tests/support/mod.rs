@@ -130,12 +130,17 @@ impl Fixture {
             .transaction(|scope| {
                 Box::pin(async move {
                     use durable_steps::storage::TransactionScope;
-                    sqlx_core::raw_sql::raw_sql(include_str!(
-                        "../../migrations/0001_delivery_custody.sql"
-                    ))
-                    .execute(scope.executor())
-                    .await
-                    .map_err(durable_steps::StoreError::backend)?;
+                    let mut migrations = sqlx_core::migrate::Migrator::with_migrations(
+                        sqlx::migrate!("./migrations")
+                            .iter()
+                            .cloned()
+                            .collect::<Vec<_>>(),
+                    );
+                    migrations.dangerous_set_table_name("_fleet_sync_delivery_migrations");
+                    migrations
+                        .run_direct(None, scope.executor(), false)
+                        .await
+                        .map_err(durable_steps::StoreError::backend)?;
                     Ok(())
                 })
             })

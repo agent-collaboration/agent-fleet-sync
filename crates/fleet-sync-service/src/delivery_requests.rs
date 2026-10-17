@@ -47,6 +47,15 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
         let now = owner.object.host().now();
         let submit = matches!(&request, DeliveryRequest::Submit { .. });
         let report = matches!(&request, DeliveryRequest::Report { .. });
+        if let Some(kind) = *owner.health.borrow() {
+            return Ok(DeliveryAnswer::MailboxUnavailable {
+                reason: DeliveryRefusal::ProcessingFailed { kind },
+            });
+        }
+        owner.ensure_schema().await.map_err(|error| {
+            tracing::warn!(?mailbox, phase="migration", %error, "delivery mailbox operation retry");
+            ServiceError::from(error)
+        })?;
         let result = owner
             .object
             .rule_transaction(move |scope| {
@@ -99,21 +108,32 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             })
             .await;
         if result.is_ok() {
-            owner
-                .object
-                .host()
-                .wake_at(owner.object.host().now())
-                .await
-                .map_err(ServiceError::rule)?;
+            owner.object.host().wake_at(owner.object.host().now()).await.map_err(|error| {
+                tracing::warn!(?mailbox, phase="requestWake", %error, "delivery mailbox operation retry");
+                ServiceError::rule(error)
+            })?;
         }
         match result {
+            Ok(answer) => Ok(answer),
             Err(DeliveryError::Refused { reason }) if submit => {
                 Ok(DeliveryAnswer::Submit(SubmitResult::Refused { reason }))
             }
             Err(DeliveryError::Refused { reason }) if report => {
                 Ok(DeliveryAnswer::Report(ReportResult::Refused { reason }))
             }
-            result => result.map_err(ServiceError::rule),
+            Err(DeliveryError::Corrupt { field }) => {
+                owner.mark_corrupt(mailbox, field);
+                Ok(DeliveryAnswer::MailboxUnavailable {
+                    reason: DeliveryRefusal::ProcessingFailed {
+                        kind: DeliveryFailureKind::CustodyCorrupt,
+                    },
+                })
+            }
+            Err(error @ DeliveryError::Storage(_)) => {
+                tracing::warn!(?mailbox, phase="request", %error, "delivery mailbox operation retry");
+                Err(ServiceError::rule(error))
+            }
+            Err(error) => Err(ServiceError::rule(error)),
         }
     }
 }

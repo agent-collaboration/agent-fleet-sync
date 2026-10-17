@@ -8,6 +8,10 @@ mod protocol;
 mod sample_writes;
 pub use sample_writes::{insert_reading, insert_sample, insert_source};
 mod server;
+#[cfg(feature = "test-support")]
+mod service_events;
+#[cfg(feature = "test-support")]
+pub use service_events::ServiceEvent;
 mod writer_actor;
 mod writer_bootstrap;
 mod writer_control;

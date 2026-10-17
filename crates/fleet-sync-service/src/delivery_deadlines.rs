@@ -1,57 +1,123 @@
-use crate::{ServiceError, ServiceObject, delivery_owner::DeliveryOwner};
-use fleet_sync_delivery::{DeliveryLimits, Mailbox, PublishStatus, admit_publications};
+use crate::{ServiceObject, delivery_owner::DeliveryOwner};
+use fleet_sync_delivery::{
+    DeliveryError, DeliveryLimits, Mailbox, PublishStatus, admit_publications,
+};
 use fleet_sync_protocol::{DeliveryTypes, PeerId};
-use runtime_primitives::{Clock, WakeScheduler};
+use runtime_primitives::{Backoff, Clock, WakeScheduler};
 use sqlx_turso::Turso;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::watch;
+
+const RETRY: Backoff = Backoff {
+    initial: Duration::from_millis(100),
+    max: Duration::from_secs(30),
+    factor: 2,
+};
+
+enum PassFailure {
+    Corrupt { field: &'static str },
+    Operational { phase: &'static str, cause: String },
+}
+impl PassFailure {
+    fn operational(phase: &'static str, cause: impl std::fmt::Display) -> Self {
+        Self::Operational {
+            phase,
+            cause: cause.to_string(),
+        }
+    }
+}
+
+async fn mailbox_pass<D: DeliveryTypes>(
+    owner: &DeliveryOwner,
+    mailbox: PeerId,
+    limits: DeliveryLimits,
+) -> Result<(), PassFailure> {
+    let host = owner.object.host();
+    let engine_lock = owner.object.engine_lock();
+    let _work = engine_lock.lock().await;
+    owner
+        .ensure_schema()
+        .await
+        .map_err(|error| PassFailure::operational("migration", error))?;
+    let now = host.now();
+    let next = owner
+        .object
+        .rule_transaction(move |scope| {
+            Box::pin(async move {
+                let next = Mailbox::<_, D>::new(scope, mailbox, limits)
+                    .expire_due(now)
+                    .await?;
+                admit_publications::<_, D, PublishStatus<ServiceObject, Turso, D>>(scope).await?;
+                Ok::<_, DeliveryError>(next)
+            })
+        })
+        .await
+        .map_err(|error| match error {
+            DeliveryError::Corrupt { field } => PassFailure::Corrupt { field },
+            error => PassFailure::operational("scan", error),
+        })?;
+    let report = owner
+        .engine
+        .drive_due()
+        .await
+        .map_err(|error| PassFailure::operational("engine", error))?;
+    for (operation, failure) in report.failed {
+        tracing::warn!(operation=%operation.0,?failure,"durable delivery operation failed");
+    }
+    if let Some(error) = report.wake_failure {
+        return Err(PassFailure::operational("engineWake", error));
+    }
+    if let Some(next) = next {
+        // Keep the earlier of the custody deadline and the engine's retry.
+        host.wake_at(next)
+            .await
+            .map_err(|error| PassFailure::operational("deadlineWake", error))?;
+    }
+    Ok(())
+}
 
 pub(crate) async fn run_mailbox<D: DeliveryTypes>(
     owner: Arc<DeliveryOwner>,
     mailbox: PeerId,
     limits: DeliveryLimits,
     mut shutdown: watch::Receiver<bool>,
-) -> Result<(), ServiceError> {
+) {
     let host = owner.object.host();
-    let engine_lock = owner.object.engine_lock();
+    let mut health = owner.health.subscribe();
+    let mut attempt = 0_u32;
     loop {
-        if *shutdown.borrow() {
-            return Ok(());
+        if *shutdown.borrow() || health.borrow().is_some() {
+            return;
         }
-        {
-            let _work = engine_lock.lock().await;
-            let now = host.now();
-            let next = owner
-                .object
-                .rule_transaction(move |scope| {
-                    Box::pin(async move {
-                        let next = Mailbox::<_, D>::new(scope, mailbox, limits)
-                            .expire_due(now)
-                            .await?;
-                        admit_publications::<_, D, PublishStatus<ServiceObject, Turso, D>>(scope)
-                            .await?;
-                        Ok::<_, fleet_sync_delivery::DeliveryError>(next)
-                    })
-                })
-                .await
-                .map_err(ServiceError::rule)?;
-            let report = owner.engine.drive_due().await?;
-            for (operation, failure) in report.failed {
-                tracing::warn!(operation=%operation.0,?failure,"durable delivery operation failed");
+        let retry = match mailbox_pass::<D>(&owner, mailbox, limits).await {
+            Ok(()) => {
+                attempt = 0;
+                None
             }
-            if let Some(error) = report.wake_failure {
-                return Err(ServiceError::rule(error));
+            Err(PassFailure::Corrupt { field }) => {
+                owner.mark_corrupt(mailbox, field);
+                return;
             }
-            if let Some(next) = next {
-                // The timer keeps the earlier of this durable custody deadline
-                // and the engine's own next retry. Startup runs this same scan.
-                host.wake_at(next).await.map_err(ServiceError::rule)?;
+            Err(PassFailure::Operational { phase, cause }) => {
+                let delay = RETRY.delay(attempt);
+                attempt = attempt.saturating_add(1);
+                tracing::warn!(?mailbox, phase, %cause, ?delay, "delivery mailbox operation retry");
+                Some(delay)
             }
-        }
+        };
         tokio::select! {
-            _ = host.wait() => {},
+            // An operational retry owns its backoff; external kicks cannot spin it.
+            _ = async {
+                match retry {
+                    Some(delay) => tokio::time::sleep(delay).await,
+                    None => { host.wait().await; },
+                }
+            } => {},
+            changed = health.changed() => {
+                if changed.is_err() || health.borrow().is_some() { return; }
+            },
             changed = shutdown.changed() => {
-                if changed.is_err() || *shutdown.borrow() { return Ok(()); }
+                if changed.is_err() || *shutdown.borrow() { return; }
             }
         }
     }

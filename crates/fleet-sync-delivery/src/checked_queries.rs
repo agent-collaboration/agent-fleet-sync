@@ -62,6 +62,42 @@ where
             .transpose()
     }
 }
+pub(crate) fn read_mail_deadlines<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<StoredMailRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_mail_deadlines.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredMailRow {
+                    slot_class: row.try_get("slot_class")?,
+                    capacity_slot: row.try_get("capacity_slot")?,
+                    item_id: row.try_get("item_id")?,
+                    record: row.try_get("record")?,
+                    stream: row.try_get("stream")?,
+                    seq_class: row.try_get("seq_class")?,
+                    seq: row.try_get("seq")?,
+                    live_class: row.try_get("live_class")?,
+                    live: row.try_get("live")?,
+                    payload_class: row.try_get("payload_class")?,
+                    payload_bytes: row.try_get("payload_bytes")?,
+                    settlement_class: row.try_get("settlement_class")?,
+                    settlement_bytes: row.try_get("settlement_bytes")?,
+                })
+            })
+            .collect()
+    }
+}
 pub(crate) fn list_mail_items<S>(
     scope: &mut S,
 ) -> impl std::future::Future<Output = Result<Vec<StoredMailRow>, sqlx_core::Error>> + Send
@@ -520,6 +556,7 @@ where
 pub(crate) fn read_mail_receipt_batch<S>(
     scope: &mut S,
     stream: String,
+    previous: String,
     through: String,
 ) -> impl std::future::Future<Output = Result<Vec<StoredMailRow>, sqlx_core::Error>> + Send
 where
@@ -535,6 +572,7 @@ where
             "/sql/read_mail_receipt_batch.sql"
         )))
         .bind(stream)
+        .bind(previous)
         .bind(through);
         let rows = statement.fetch_all(scope.executor()).await?;
         rows.iter()

@@ -19,7 +19,7 @@ where
     /// return the next deadline the host must schedule from this durable state.
     pub async fn expire_due(&mut self, now: SyncTime) -> Result<Option<SyncTime>, DeliveryError> {
         let mut next = None;
-        for row in queries::list_mail_items(self.storage.scope)
+        for row in queries::read_mail_deadlines(self.storage.scope)
             .await
             .map_err(sql_error)?
         {

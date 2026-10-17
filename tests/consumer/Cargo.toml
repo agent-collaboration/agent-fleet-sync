@@ -7,7 +7,7 @@ publish = false
 [workspace]
 
 [features]
-test-support = ["fleet-sync-delivery/test-support"]
+test-support = ["fleet-sync-delivery/test-support", "dep:tracing"]
 
 [[bin]]
 name = "delivery_node"
@@ -16,7 +16,6 @@ required-features = ["test-support"]
 
 [dependencies]
 fleet-sync-delivery = { path = "../../crates/fleet-sync-delivery" }
-fleet-sync-tokio-runner = { path = "../../crates/fleet-sync-tokio-runner" }
 axum = { version = "0.8.9", features = ["ws"] }
 durable-steps = { path = "../../crates/durable-steps", features = ["turso"] }
 fleet-sync-lease = { path = "../../crates/fleet-sync-lease" }
@@ -34,6 +33,7 @@ sqlx = { version = "=0.9.0", default-features = false, features = ["migrate", "m
 sqlx-core = { version = "=0.9.0", default-features = false, features = ["migrate"] }
 sqlx-turso = { path = "../../crates/sqlx-turso" }
 tokio = { version = "1.48.0", features = ["rt-multi-thread","macros","net","time","sync","signal","process","io-util","io-std","fs"] }
+tracing = { version = "0.1.44", optional = true }
 
 [dev-dependencies]
 tempfile = "3.27.0"

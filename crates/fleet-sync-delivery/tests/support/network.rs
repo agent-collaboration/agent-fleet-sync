@@ -25,6 +25,8 @@ pub struct TestNetwork {
     pub lose_fetch: AtomicBool,
     pub fetch_barrier: Mutex<Option<FetchBarrier>>,
     pub invalid_fetch: AtomicBool,
+    pub unavailable_fetch: AtomicBool,
+    pub unavailable_receipt: AtomicBool,
     pub lose_receipt: AtomicBool,
     pub lose_delivery: AtomicBool,
     pub lose_report: AtomicBool,
@@ -135,6 +137,9 @@ impl TestNetwork {
                 Ok(value(answer))
             }
             FetchCall::<TestTypes>::KIND => {
+                if self.unavailable_fetch.load(Ordering::SeqCst) {
+                    return Err(CallFailure::AnswerLost);
+                }
                 let request: FetchInput = serde_json::from_value(request).unwrap();
                 let mut answer = self
                     .mailbox
@@ -175,6 +180,9 @@ impl TestNetwork {
                 Ok(value(answer))
             }
             ReceivedCall::KIND => {
+                if self.unavailable_receipt.load(Ordering::SeqCst) {
+                    return Err(CallFailure::AnswerLost);
+                }
                 let request: ReceiptInput = serde_json::from_value(request).unwrap();
                 let answer = self
                     .mailbox
@@ -329,6 +337,8 @@ impl NetworkFixture {
             lose_fetch: AtomicBool::new(false),
             fetch_barrier: Mutex::new(None),
             invalid_fetch: AtomicBool::new(false),
+            unavailable_fetch: AtomicBool::new(false),
+            unavailable_receipt: AtomicBool::new(false),
             lose_receipt: AtomicBool::new(false),
             lose_delivery: AtomicBool::new(false),
             lose_report: AtomicBool::new(false),

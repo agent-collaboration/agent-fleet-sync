@@ -84,6 +84,11 @@ impl<D: DeliveryTypes> DeliveryRequest<D> {
     bound = ""
 )]
 pub enum DeliveryAnswer<D: DeliveryTypes = NoDelivery> {
+    /// The owner is unavailable without deciding any item's outcome.
+    /// Durable dispatchers retry the same call rather than saving an item refusal.
+    MailboxUnavailable {
+        reason: DeliveryRefusal,
+    },
     Submit(SubmitResult<D::Acceptance>),
     Fetch(FetchResult<D>),
     Received(ReceivedResult),

@@ -168,6 +168,7 @@ where
         let rows = queries::read_mail_receipt_batch(
             self.storage.scope,
             stream_key(stream),
+            previous.value().to_string(),
             through.value().to_string(),
         )
         .await

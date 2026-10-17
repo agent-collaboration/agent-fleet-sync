@@ -40,6 +40,26 @@ pub enum ControlRequest {
         mailbox: PeerId,
         origin: PeerId,
     },
+    #[cfg(feature = "test-support")]
+    CorruptDeliveryCustody {
+        mailbox: PeerId,
+        item: ItemId,
+    },
+    #[cfg(feature = "test-support")]
+    HoldDeliveryWrite {
+        mailbox: PeerId,
+    },
+    #[cfg(feature = "test-support")]
+    ReleaseDeliveryWrite {
+        mailbox: PeerId,
+    },
+    #[cfg(feature = "test-support")]
+    WaitMailboxEvent {
+        mailbox: PeerId,
+        after: usize,
+    },
+    #[cfg(feature = "test-support")]
+    ServiceEvents,
     RequestCount,
     WaitAttempts {
         call: durable_steps::CallId,
@@ -132,6 +152,15 @@ pub enum ControlAnswer {
     Staged(fleet_sync_receiver::InstallPageReceipt),
     #[cfg(feature = "test-support")]
     DeliverySnapshot(fleet_sync_service::DeliveryServiceSnapshot),
+    #[cfg(feature = "test-support")]
+    CorruptedDelivery {
+        record: String,
+        payload_bytes: i64,
+    },
+    #[cfg(feature = "test-support")]
+    ServiceEvent(crate::ServiceEvent),
+    #[cfg(feature = "test-support")]
+    ServiceEvents(Vec<crate::ServiceEvent>),
     RequestCount(u64),
     PrivateHistoryChecks(u64),
     Opening {
@@ -160,6 +189,13 @@ pub enum ControlAnswer {
     },
 }
 pub(crate) struct ControlState {
+    #[cfg(feature = "test-support")]
+    pub delivery_directory: std::path::PathBuf,
+    #[cfg(feature = "test-support")]
+    pub delivery_locks:
+        tokio::sync::Mutex<std::collections::BTreeMap<PeerId, sqlx_turso::TursoConnection>>,
+    #[cfg(feature = "test-support")]
+    pub events: Arc<crate::service_events::ServiceEvents>,
     pub consumer: Arc<Consumer>,
     pub authenticator: Arc<FixtureAuthenticator>,
     pub service: ConsumerHandle,
@@ -250,6 +286,45 @@ impl ControlState {
                         self.service.delivery_snapshot(mailbox, origin).await?,
                     )
                 }
+                #[cfg(feature = "test-support")]
+                ControlRequest::CorruptDeliveryCustody { mailbox, item } => {
+                    use sqlx_turso::sqlx::{ConnectOptions, Connection, Row};
+                    let mut db = sqlx_turso::TursoConnectOptions::new()
+                        .filename(self.delivery_directory.join(format!("delivery-mailbox-{}.db", mailbox.as_uuid())))
+                        .create_if_missing(false).connect().await?;
+                    let row = sqlx_core::query::query::<sqlx_turso::Turso>("SELECT record,payload_bytes FROM _fleet_sync_mail_items WHERE item_id=?1")
+                        .bind(item.as_uuid().to_string()).fetch_one(&mut db).await?;
+                    let record: String = row.try_get("record")?;
+                    let payload_bytes: i64 = row.try_get("payload_bytes")?;
+                    sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_mail_items SET record=json_set(record,'$.value.payload',NULL),payload_bytes=0 WHERE item_id=?1")
+                        .bind(item.as_uuid().to_string()).execute(&mut db).await?;
+                    db.close().await?;
+                    ControlAnswer::CorruptedDelivery { record, payload_bytes }
+                }
+                #[cfg(feature = "test-support")]
+                ControlRequest::HoldDeliveryWrite { mailbox } => {
+                    use sqlx_turso::sqlx::ConnectOptions;
+                    let mut db = sqlx_turso::TursoConnectOptions::new()
+                        .filename(self.delivery_directory.join(format!("delivery-mailbox-{}.db", mailbox.as_uuid())))
+                        .create_if_missing(false).connect().await?;
+                    sqlx_core::query::query::<sqlx_turso::Turso>("BEGIN IMMEDIATE").execute(&mut db).await?;
+                    if self.delivery_locks.lock().await.insert(mailbox, db).is_some() {
+                        return Err("delivery write barrier already held".into());
+                    }
+                    ControlAnswer::Ok
+                }
+                #[cfg(feature = "test-support")]
+                ControlRequest::ReleaseDeliveryWrite { mailbox } => {
+                    use sqlx_turso::sqlx::Connection;
+                    let mut db = self.delivery_locks.lock().await.remove(&mailbox).ok_or("no held delivery write")?;
+                    sqlx_core::query::query::<sqlx_turso::Turso>("ROLLBACK").execute(&mut db).await?;
+                    db.close().await?;
+                    ControlAnswer::Ok
+                }
+                #[cfg(feature = "test-support")]
+                ControlRequest::WaitMailboxEvent { mailbox, after } => ControlAnswer::ServiceEvent(self.events.wait_mailbox(mailbox, after).await?),
+                #[cfg(feature = "test-support")]
+                ControlRequest::ServiceEvents => ControlAnswer::ServiceEvents(self.events.snapshot()?),
                 ControlRequest::RequestCount => ControlAnswer::RequestCount(
                     self.consumer.handled_requests.load(Ordering::SeqCst),
                 ),

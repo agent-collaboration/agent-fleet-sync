@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "../../Cargo.lock": "0d0cef65b671b354a2022eeecee86eca724d122e8d615c8d7e4cd527b6b78522",
+    "../../Cargo.lock": "2bca890edd7be5006c968e25c9cdd77a84051c8aedfe9ce7d1420c427c1545c9",
     "../../rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "../fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "../fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
@@ -49,8 +49,9 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "1a9448b6ccbf74b02f3951bb9fe83d34bb75e2fcf36fdab28afbfcb52434519d",
+    "checked-queries.json": "d997dadd30de2c01efc946a38fe615818e56c819b50eb6398331d4d650e804d7",
     "migrations/0001_delivery_custody.sql": "bcd8befd58901384e2d2e9b8d70f17063e33118442fad1eb77e78dbbe441dfe7",
+    "migrations/0002_mailbox_deadlines.sql": "7e60b848a3c73c0b05b139d1822225a631b1b79a0ea4d497646fdeb4f708d031",
     "sql/drop_controls.sql": "37e074f9a266324cd8eef8b207bc8e8bb6ac7b0faa6d5fcf79c5d186b9aae07b",
     "sql/drop_inbox_cancel_link.sql": "4377a26c27c954d92d5e38c1e63c55b57956745206ca0bd0509b83fcb83e794b",
     "sql/drop_inbox_item.sql": "058ff3f7aa917adc1b5a4f49df608b4eff4ea4ee0c0d6ac24cba3fe0c6bcc8f1",
@@ -64,8 +65,9 @@
     "sql/read_mail_accounting.sql": "76741666a281f45c83f43b853dcf1c73b07dd0b1e52f7d37a2d34e7f09a5c301",
     "sql/read_mail_batch.sql": "4c402ea7e166c4011c6cb7cece80f4982065bb6b52b0db5a921af063cfe679e0",
     "sql/read_mail_cancel_link.sql": "6074427b965305b9c91ea710b9f7529d66816644ee9a3fc01c271c099242fc8a",
+    "sql/read_mail_deadlines.sql": "1267974e016357fb98607d0d8e4fb24004c0317ca6f230d4db129dc348696eee",
     "sql/read_mail_item.sql": "65bf495a9eeb5803f2990c873689faf9e80981b8574a4ef637b4923c85720683",
-    "sql/read_mail_receipt_batch.sql": "9945a37faf6a9972849c9e7f753beaf6ad820f49443c54c91b11187b2478fab1",
+    "sql/read_mail_receipt_batch.sql": "1cacd3e76510cdb0812ab0bdd5c52012b58253a030a2d5b68a7bbc3c129479f6",
     "sql/read_mail_state.sql": "d00c9fb79c78224e094a5defde7fec93694fcc9bf0442070188fa532797d219d",
     "sql/read_outbox_accounting.sql": "ef25049cebebcbd715fda01e2965f2124681ae22c2bfc1504dcb32c05fb8e800",
     "sql/read_outbox_cancel_link.sql": "8e2fe6e7af6c484923c6b325fce8ecbdabfe0dc7054c2a606db8200a0d71773d",
@@ -94,12 +96,109 @@
     "sql/write_report.sql": "21eaec3d63aa3c09645a2fe3503797a84f969f152809a0e80b9998e9ecfcde62",
     "sql/write_status_event.sql": "37e7153541748530abb38d98a4563e1a9c0fc9987976ae39160b7b858d76777a",
     "sql/write_status_state.sql": "006017160514f16c0d1474ea57fa358214d56479e1294cb08d98d7af4d3267e9",
-    "src/checked_queries.rs": "5d147fd618478ae61aff4a53d5c592c5d21fa926d8290db8f9c7e48c9fec2989"
+    "src/checked_queries.rs": "d7a7571284081c568545a8a93cf4e658f20aab897b6b9c6d73f052eba2861fa0"
   },
   "queries": [
     {
       "name": "read_mail_item",
       "bind_slots": 1,
+      "columns": [
+        {
+          "name": "slot_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "capacity_slot",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "item_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "stream",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "seq_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "seq",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "live_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "live",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "payload_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "payload_bytes",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "settlement_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "settlement_bytes",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        }
+      ]
+    },
+    {
+      "name": "read_mail_deadlines",
+      "bind_slots": 0,
       "columns": [
         {
           "name": "slot_class",
@@ -636,7 +735,7 @@
     },
     {
       "name": "read_mail_receipt_batch",
-      "bind_slots": 2,
+      "bind_slots": 3,
       "columns": [
         {
           "name": "slot_class",

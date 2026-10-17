@@ -19,6 +19,13 @@
       "row": "StoredMailRow"
     },
     {
+      "name": "read_mail_deadlines",
+      "sql": "sql/read_mail_deadlines.sql",
+      "result": "many",
+      "parameters": [],
+      "row": "StoredMailRow"
+    },
+    {
       "name": "list_mail_items",
       "sql": "sql/list_mail_items.sql",
       "result": "many",
@@ -283,6 +290,11 @@
       "parameters": [
         {
           "name": "stream",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "previous",
           "kind": "text",
           "nullable": false
         },

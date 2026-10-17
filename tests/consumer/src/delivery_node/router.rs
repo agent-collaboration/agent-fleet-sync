@@ -128,6 +128,7 @@ impl CallRouter for NodeRouter {
                     .await?;
                 match answer {
                     DeliveryAnswer::Fetch(answer) => encoded(answer),
+                    DeliveryAnswer::MailboxUnavailable { .. } => Err(CallFailure::AnswerLost),
                     _ => Err(CallFailure::AnswerLost),
                 }
             }
@@ -147,6 +148,7 @@ impl CallRouter for NodeRouter {
                     .await?;
                 match answer {
                     DeliveryAnswer::Received(answer) => encoded(answer),
+                    DeliveryAnswer::MailboxUnavailable { .. } => Err(CallFailure::AnswerLost),
                     _ => Err(CallFailure::AnswerLost),
                 }
             }

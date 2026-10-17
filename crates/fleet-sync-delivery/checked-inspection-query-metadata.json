@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "../../Cargo.lock": "0d0cef65b671b354a2022eeecee86eca724d122e8d615c8d7e4cd527b6b78522",
+    "../../Cargo.lock": "2bca890edd7be5006c968e25c9cdd77a84051c8aedfe9ce7d1420c427c1545c9",
     "../../rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "../fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "../fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
@@ -51,6 +51,7 @@
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
     "checked-inspection-queries.json": "e027f8d1880560212cfd11dcd3cc341593717809c3e319aa1c831803376a72d9",
     "migrations/0001_delivery_custody.sql": "bcd8befd58901384e2d2e9b8d70f17063e33118442fad1eb77e78dbbe441dfe7",
+    "migrations/0002_mailbox_deadlines.sql": "7e60b848a3c73c0b05b139d1822225a631b1b79a0ea4d497646fdeb4f708d031",
     "sql/read_delivery_snapshot.sql": "b748d67f29b876c66212da91a0b139344c5b7da03ec544ca74e9ecf869a84de1",
     "src/checked_inspection_queries.rs": "234763ffc60fb2cf96f98724a04240ca677129331bb6bc4fceb06b50a2af478f"
   },
