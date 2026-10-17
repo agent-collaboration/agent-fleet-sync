@@ -2,7 +2,7 @@
 
 Source inventory: `crates/collaboration-central-core` at M3 commit `9cc19dd2`. All **163 test declarations** are accounted for: **70 adapted** to generic contracts and **93 excluded** with the consumer-owned reason below. A property declaration counts once; generated cases do not inflate the inventory. Adapted means the named generic obligation is exercised, with changed or excluded M3 assertions stated explicitly; it does not mean a byte-for-byte test move.
 
-The D1 test links resolve against this branch. The final-base workspace all-features suite passes 299 tests with zero failures and two inherited opt-in tests ignored; this includes all 50 receiver and 40 lease tests, with zero scoped ignores. Format, workspace clippy with warnings denied, query metadata freshness and wasm checks pass. This ledger does not claim hosted CI, process-kill, WebSocket, or D2 writer verification.
+The D1 test links resolve against this branch. The final-base workspace all-features suite passes 302 tests with zero failures and two inherited opt-in tests ignored; this includes all 53 receiver and 40 lease tests, with zero scoped ignores. Format, workspace clippy with warnings denied, query metadata freshness and wasm checks pass. This ledger does not claim hosted CI, process-kill, WebSocket, or D2 writer verification.
 
 Copy rules run against actual Turso transactions. Durable-operation tests use the actual engine and file-backed Turso journal, copy rules and call-keyed consumer gate receipts. Reopen cases close and reopen files in one process. Holder release/drain is a receipted stand-in for D2's writer; it cannot establish the real writer interaction. The controlled capacity case injects SQLITE_FULL after a real write, not physical disk exhaustion. Pure SQL planning and fragment assembly tests remain pure.
 
@@ -206,10 +206,10 @@ Approved adaptations: copy-first initialization replaces pending-lease publicati
 | T24 | [`copy_full_after_a_real_row_write_returns_the_typed_refusal_and_rolls_back_everything`](../../crates/fleet-sync-receiver/src/turso_capacity_tests.rs#L178) |
 | T25 | [`corrupt_copy_records_fail_closed_for_reads_and_apply`](../../crates/fleet-sync-receiver/src/turso_integrity_tests.rs#L219) |
 | T26 | [`a_second_floor_refusal_keeps_its_reservation_without_granting_or_changing_the_lease`](../../crates/fleet-sync-lease/src/turso_floor_repair_tests.rs#L157) |
-| T27 | [`missing_pages_changed_page_and_expected_position_are_refused_without_publishing`](../../crates/fleet-sync-receiver/src/turso_seed_tests.rs#L337) |
-| T28 | [`digest_refusal_rolls_back_created_schema_and_preserves_staging_for_correct_resend`](../../crates/fleet-sync-receiver/src/turso_seed_tests.rs#L278) |
+| T27 | [`missing_pages_changed_page_and_expected_position_are_refused_without_publishing`](../../crates/fleet-sync-receiver/src/turso_seed_tests.rs#L395) |
+| T28 | [`digest_refusal_rolls_back_created_schema_and_preserves_staging_for_correct_resend`](../../crates/fleet-sync-receiver/src/turso_seed_tests.rs#L325) |
 | T29 | [`import_repeats_and_conflicts_then_retirement_precedes_cached_engine_answers`](../../crates/fleet-sync-lease/src/turso_lifecycle_tests.rs#L188) |
-| T30 | [`seed_hook_and_follow_up_run_once_while_retained_piece_work_keeps_its_own_identity`](../../crates/fleet-sync-receiver/src/turso_seed_hook_tests.rs#L152) |
+| T30 | [`seed_hook_and_follow_up_run_once_while_retained_piece_work_keeps_its_own_identity`](../../crates/fleet-sync-receiver/src/turso_seed_hook_tests.rs#L161) |
 | T31 | [`claim_grants_the_next_epoch_and_settles_once_after_seed_publication`](../../crates/fleet-sync-lease/src/turso_change_tests.rs#L29) |
 | T32 | [`stored_database_identity_mismatch_is_not_treated_as_an_import_replay`](../../crates/fleet-sync-lease/src/turso_registry_integrity_tests.rs#L82) |
 | T33 | [`import_replays_the_copy_before_publishing_registry_state_after_lost_answer`](../../crates/fleet-sync-lease/src/turso_registry_integrity_tests.rs#L11) |
@@ -229,7 +229,7 @@ Approved adaptations: copy-first initialization replaces pending-lease publicati
 | T47 | [`lost_release_answer_replays_one_call_even_past_the_unsent_bound_and_keeps_rows`](../../crates/fleet-sync-lease/src/turso_change_tests.rs#L101) |
 | T48 | [`never_sent_move_ends_unreachable_without_fencing_or_changing_holder`](../../crates/fleet-sync-lease/src/turso_change_tests.rs#L162) |
 | T49 | [`typed_release_refusals_replay_without_fencing_or_changing_the_lease`](../../crates/fleet-sync-lease/src/turso_move_refusal_tests.rs#L13) |
-| T50 | [`retired_marker_answers_without_any_other_replication_bookkeeping`](../../crates/fleet-sync-receiver/src/turso_seed_tests.rs#L377) |
+| T50 | [`retired_marker_answers_without_any_other_replication_bookkeeping`](../../crates/fleet-sync-receiver/src/turso_seed_tests.rs#L446) |
 | T51 | [`takeover_refuses_a_moved_preview_then_new_preview_uses_a_later_reserved_epoch`](../../crates/fleet-sync-lease/src/turso_change_tests.rs#L233) |
 | T52 | [`a_pending_move_blocks_another_move_and_renewal_returns_fresh_authority_after_grant`](../../crates/fleet-sync-lease/src/turso_registry_integrity_tests.rs#L147) |
 | T53 | [`released_final_position_waits_for_the_real_copy_then_grants_once`](../../crates/fleet-sync-lease/src/turso_move_refusal_tests.rs#L110) |
@@ -242,3 +242,5 @@ Approved adaptations: copy-first initialization replaces pending-lease publicati
 Decision 42 adds real-journal proof of a permanent follow-up failure ending with its code, Retry then Done under one CallId, and a saved Failed answer consumed after file reopen without another hook call. The interruption fixture stops after answer commit, before final operation completion; it is not a process-kill test. The registry inventory read is checked, read-only and validates row identity; it excludes Retired and unknown IDs, retaining Registered, Unheld and Retiring records.
 
 The paired observation also identified gaps in reserved-Claim refusal coverage and explicit successful Takeover replay. `turso_claim_refusal_tests` now exercises Retired at status, NotInitialized/Retired at fence, repaired PreviewStale, and a second FenceNotAdvanced becoming EpochUnprovable. Every case reads the actual gate settlement and proves no registry grant; existing tests cover NotInitialized status, SchemaTooNew, and engine failures before/after grant. Gate refusal precedes reservation and owes no settlement. The successful Takeover case in `turso_floor_repair_tests` now resubmits the same request key after advancing the clock and verifies the identical answer with unchanged epoch, history and call count. No product regression was observed for these added coverage cases.
+
+Decision 43 adds three real-Turso authority cases: writer-created copies accept only their original Writer, imported copies accept only Admin, and fencing to another current holder never rewrites creation authority. Unauthorized begin/new-generation/replay, existing/new page and completion calls commit their error transactions and leave the complete seed/copy/creation/schema readback unchanged, before and after publication. Retirement still precedes erased creation bookkeeping. These cases failed against the compilable authority-argument scaffold, then passed after authorization was wired.

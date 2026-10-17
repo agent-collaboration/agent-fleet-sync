@@ -27,9 +27,16 @@ An apply error requires rollback. `RefusedDiscardingParts` additionally requires
 refusal. Only a successful complete piece records receipts and advances `acked`.
 
 Seeding requires an existing copy created with `CopyOrigin::AwaitingSeed`.
+Every seed call takes a `SeedAuthority` supplied by the authenticated host, never
+from a frame. `Writer(peer)` must match the immutable `CreateCopy` holder; `Admin`
+is accepted only for an imported copy created without a holder and awaiting a seed.
+Authorization precedes generation, page and publication replay. Dispatch maps
+`ReceiverError::NotWriter { current }` to the existing
+`ReplicationAnswer::Refused(PieceRefusal::NotWriter { current })` for seeds as well
+as other replication requests.
 `seed_begin` issues a monotonically increasing generation; repeat attempts return
 their original generation. Pages are staged without exposing rows. A successful
-`seed_complete(scope, done, hook)` publishes schema, rows and position in one
+`seed_complete(scope, done, hook, authority)` publishes schema, rows and position in one
 transaction, then calls `ReceiverHook::on_snapshot_installed` while those rows are
 visible. For `SeedDecision::Published`, admit the returned items with
 `admit_snapshot_follow_ups` in that same transaction before committing. A replay

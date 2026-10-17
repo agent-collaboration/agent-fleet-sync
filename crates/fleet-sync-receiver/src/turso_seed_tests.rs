@@ -18,7 +18,7 @@ fn ready_status(answer: CopyStatusAnswer) -> TestResult<CopyStatus> {
         answer => Err(format!("copy is not following: {answer:?}").into()),
     }
 }
-struct TursoScope<'a>(&'a mut TursoConnection);
+pub(super) struct TursoScope<'a>(pub(super) &'a mut TursoConnection);
 impl TransactionScope for TursoScope<'_> {
     type Database = Turso;
     type Executor<'q>
@@ -29,18 +29,26 @@ impl TransactionScope for TursoScope<'_> {
         self.0
     }
 }
-fn database() -> TestResult<DatabaseId> {
+pub(super) fn database() -> TestResult<DatabaseId> {
     Ok(DatabaseId::new(
         "019f0000-0000-7000-8000-000000000021".parse()?,
     )?)
 }
-fn position() -> TestResult<ReplicationPosition> {
+pub(super) fn position() -> TestResult<ReplicationPosition> {
     Ok(ReplicationPosition::new(
         Epoch::new(1)?,
         CommitSequence::new(7),
     ))
 }
-async fn setup(expected_position: Option<ReplicationPosition>) -> TestResult<TursoConnection> {
+pub(super) async fn setup(
+    expected_position: Option<ReplicationPosition>,
+) -> TestResult<TursoConnection> {
+    setup_with_holder(expected_position, None).await
+}
+pub(super) async fn setup_with_holder(
+    expected_position: Option<ReplicationPosition>,
+    holder: Option<PeerId>,
+) -> TestResult<TursoConnection> {
     let mut connection = TursoConnectOptions::new().connect().await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     sqlx_core::raw_sql::raw_sql(concat!(
@@ -55,7 +63,7 @@ async fn setup(expected_position: Option<ReplicationPosition>) -> TestResult<Tur
         &CreateCopy {
             database: database()?,
             epoch: Epoch::new(1)?,
-            holder: None,
+            holder,
             origin: CopyOrigin::AwaitingSeed { expected_position },
         },
     )
@@ -63,7 +71,7 @@ async fn setup(expected_position: Option<ReplicationPosition>) -> TestResult<Tur
     transaction.commit().await?;
     Ok(connection)
 }
-fn snapshot(seed: SeedId) -> TestResult<(SeedPage, SeedComplete)> {
+pub(super) fn snapshot(seed: SeedId) -> TestResult<(SeedPage, SeedComplete)> {
     let sql = "CREATE TABLE records(id INTEGER PRIMARY KEY, body TEXT)";
     let schema = SchemaIdentity::new(
         3,
@@ -115,11 +123,17 @@ async fn retirement_erases_unpublished_seed_rows_and_keeps_the_permanent_marker(
         &mut TursoScope(&mut transaction),
         database()?,
         Uuid::from_u128(401),
+        &crate::SeedAuthority::Admin,
     )
     .await?;
     let (page, _) = snapshot(seed)?;
     assert_eq!(
-        seed_page(&mut TursoScope(&mut transaction), &page).await?,
+        seed_page(
+            &mut TursoScope(&mut transaction),
+            &page,
+            &crate::SeedAuthority::Admin
+        )
+        .await?,
         SeedPageAnswer::Staged
     );
     transaction.commit().await?;
@@ -156,7 +170,12 @@ async fn retirement_erases_unpublished_seed_rows_and_keeps_the_permanent_marker(
         CopyStatusAnswer::Retired
     );
     assert_eq!(
-        seed_page(&mut TursoScope(&mut transaction), &page).await?,
+        seed_page(
+            &mut TursoScope(&mut transaction),
+            &page,
+            &crate::SeedAuthority::Admin
+        )
+        .await?,
         SeedPageAnswer::Retired
     );
     assert_eq!(
@@ -188,41 +207,64 @@ async fn copy_issues_rising_generations_and_repeat_attempt_does_not_replace_newe
         &mut TursoScope(&mut transaction),
         database()?,
         older_attempt,
+        &crate::SeedAuthority::Admin,
     )
     .await?;
     assert_eq!(first, SeedId { generation: 1 });
     let (first_page, _) = snapshot(first)?;
     assert_eq!(
-        seed_page(&mut TursoScope(&mut transaction), &first_page).await?,
+        seed_page(
+            &mut TursoScope(&mut transaction),
+            &first_page,
+            &crate::SeedAuthority::Admin
+        )
+        .await?,
         SeedPageAnswer::Staged
     );
     let second = seed_begin(
         &mut TursoScope(&mut transaction),
         database()?,
         newer_attempt,
+        &crate::SeedAuthority::Admin,
     )
     .await?;
     assert_eq!(second, SeedId { generation: 2 });
     let (second_page, done) = snapshot(second)?;
     assert_eq!(
-        seed_page(&mut TursoScope(&mut transaction), &second_page).await?,
+        seed_page(
+            &mut TursoScope(&mut transaction),
+            &second_page,
+            &crate::SeedAuthority::Admin
+        )
+        .await?,
         SeedPageAnswer::Staged
     );
     assert_eq!(
         seed_begin(
             &mut TursoScope(&mut transaction),
             database()?,
-            older_attempt
+            older_attempt,
+            &crate::SeedAuthority::Admin
         )
         .await?,
         first
     );
     assert_eq!(
-        seed_page(&mut TursoScope(&mut transaction), &first_page).await?,
+        seed_page(
+            &mut TursoScope(&mut transaction),
+            &first_page,
+            &crate::SeedAuthority::Admin
+        )
+        .await?,
         SeedPageAnswer::StaleSeed
     );
     assert_eq!(
-        seed_page(&mut TursoScope(&mut transaction), &second_page).await?,
+        seed_page(
+            &mut TursoScope(&mut transaction),
+            &second_page,
+            &crate::SeedAuthority::Admin
+        )
+        .await?,
         SeedPageAnswer::AlreadyStaged
     );
     assert_eq!(
@@ -242,7 +284,12 @@ async fn copy_issues_rising_generations_and_repeat_attempt_does_not_replace_newe
         }
     );
     assert_eq!(
-        seed_page(&mut TursoScope(&mut transaction), &second_page).await?,
+        seed_page(
+            &mut TursoScope(&mut transaction),
+            &second_page,
+            &crate::SeedAuthority::Admin
+        )
+        .await?,
         SeedPageAnswer::NotSeedable
     );
     let copy = ready_status(copy_status(&mut TursoScope(&mut transaction)).await?)?;
@@ -283,11 +330,17 @@ async fn digest_refusal_rolls_back_created_schema_and_preserves_staging_for_corr
         &mut TursoScope(&mut transaction),
         database()?,
         "019f0000-0000-7000-8000-000000000022".parse()?,
+        &crate::SeedAuthority::Admin,
     )
     .await?;
     let (page, done) = snapshot(seed)?;
     assert_eq!(
-        seed_page(&mut TursoScope(&mut transaction), &page).await?,
+        seed_page(
+            &mut TursoScope(&mut transaction),
+            &page,
+            &crate::SeedAuthority::Admin
+        )
+        .await?,
         SeedPageAnswer::Staged
     );
     transaction.commit().await?;
@@ -320,7 +373,12 @@ async fn digest_refusal_rolls_back_created_schema_and_preserves_staging_for_corr
         CopyStatusAnswer::NotInitialized
     );
     assert_eq!(
-        seed_page(&mut TursoScope(&mut transaction), &page).await?,
+        seed_page(
+            &mut TursoScope(&mut transaction),
+            &page,
+            &crate::SeedAuthority::Admin
+        )
+        .await?,
         SeedPageAnswer::AlreadyStaged
     );
     assert_eq!(
@@ -343,6 +401,7 @@ async fn missing_pages_changed_page_and_expected_position_are_refused_without_pu
         &mut TursoScope(&mut transaction),
         database()?,
         "019f0000-0000-7000-8000-000000000023".parse()?,
+        &crate::SeedAuthority::Admin,
     )
     .await?;
     let (page, mut done) = snapshot(seed)?;
@@ -359,14 +418,24 @@ async fn missing_pages_changed_page_and_expected_position_are_refused_without_pu
         SeedAnswer::Incomplete { missing: vec![0] }
     );
     assert_eq!(
-        seed_page(&mut TursoScope(&mut transaction), &page).await?,
+        seed_page(
+            &mut TursoScope(&mut transaction),
+            &page,
+            &crate::SeedAuthority::Admin
+        )
+        .await?,
         SeedPageAnswer::Staged
     );
     let mut conflict = page.clone();
     conflict.contents.rows.clear();
     conflict.digest = PageDigest::of(&conflict.contents)?;
     assert_eq!(
-        seed_page(&mut TursoScope(&mut transaction), &conflict).await?,
+        seed_page(
+            &mut TursoScope(&mut transaction),
+            &conflict,
+            &crate::SeedAuthority::Admin
+        )
+        .await?,
         SeedPageAnswer::SeedConflict
     );
     transaction.commit().await?;
@@ -410,12 +479,20 @@ async fn retired_marker_answers_without_any_other_replication_bookkeeping() -> T
         CreateCopyAnswer::Retired
     );
     let (page, done) = snapshot(SeedId { generation: 1 })?;
-    assert_eq!(seed_page(&mut scope, &page).await?, SeedPageAnswer::Retired);
+    assert_eq!(
+        seed_page(&mut scope, &page, &crate::SeedAuthority::Admin).await?,
+        SeedPageAnswer::Retired
+    );
     assert_eq!(complete_seed(&mut scope, &done).await?, SeedAnswer::Retired);
     assert_eq!(
-        seed_begin(&mut scope, database()?, Uuid::from_u128(2201))
-            .await
-            .err(),
+        seed_begin(
+            &mut scope,
+            database()?,
+            Uuid::from_u128(2201),
+            &crate::SeedAuthority::Admin
+        )
+        .await
+        .err(),
         Some(ReceiverError::Retired)
     );
     assert_eq!(
@@ -434,7 +511,7 @@ async fn retired_marker_answers_without_any_other_replication_bookkeeping() -> T
     Ok(())
 }
 
-struct NoHook;
+pub(super) struct NoHook;
 impl ReceiverHook<TursoScope<'_>> for NoHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
@@ -458,7 +535,7 @@ async fn complete_seed(
     scope: &mut TursoScope<'_>,
     done: &SeedComplete,
 ) -> Result<SeedAnswer, ReceiverError> {
-    match seed_complete(scope, done, &NoHook).await? {
+    match seed_complete(scope, done, &NoHook, &crate::SeedAuthority::Admin).await? {
         SeedDecision::Published {
             position,
             follow_ups,

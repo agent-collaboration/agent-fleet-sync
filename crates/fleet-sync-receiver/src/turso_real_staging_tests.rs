@@ -189,6 +189,7 @@ async fn split_piece_and_seed_json_keep_sensitive_finite_bits_and_infinities_aft
         &mut TursoScope(&mut transaction),
         database()?,
         uuid::Uuid::from_u128(1500),
+        &crate::SeedAuthority::Admin,
     )
     .await?;
     for (index, contents) in pages.iter().enumerate() {
@@ -199,7 +200,12 @@ async fn split_piece_and_seed_json_keep_sensitive_finite_bits_and_infinities_aft
             digest: PageDigest::of(contents)?,
         };
         assert_eq!(
-            seed_page(&mut TursoScope(&mut transaction), &page).await?,
+            seed_page(
+                &mut TursoScope(&mut transaction),
+                &page,
+                &crate::SeedAuthority::Admin
+            )
+            .await?,
             SeedPageAnswer::Staged
         );
     }
@@ -223,7 +229,7 @@ async fn split_piece_and_seed_json_keep_sensitive_finite_bits_and_infinities_aft
     };
     let mut transaction = target.begin_with("BEGIN IMMEDIATE").await?;
     assert!(
-        matches!(seed_complete(&mut TursoScope(&mut transaction), &complete, &Hook { refuse: false }).await?, SeedDecision::Published { position: actual, follow_ups } if actual == position(2)? && follow_ups.is_empty())
+        matches!(seed_complete(&mut TursoScope(&mut transaction), &complete, &Hook { refuse: false }, &crate::SeedAuthority::Admin).await?, SeedDecision::Published { position: actual, follow_ups } if actual == position(2)? && follow_ups.is_empty())
     );
     transaction.commit().await?;
     assert_values(&mut target).await?;

@@ -40,9 +40,14 @@ async fn staged_seed(store: &TursoStore<TestHost>, hook: Arc<Hook>) -> TestResul
                 )
                 .await
                 .map_err(storage)?;
-                let seed = seed_begin(scope, database, durable_steps::Uuid::from_u128(2001))
-                    .await
-                    .map_err(storage)?;
+                let seed = seed_begin(
+                    scope,
+                    database,
+                    durable_steps::Uuid::from_u128(2001),
+                    &crate::SeedAuthority::Admin,
+                )
+                .await
+                .map_err(storage)?;
                 let sql = "CREATE TABLE records(id INTEGER PRIMARY KEY,body TEXT)";
                 let schema = SchemaIdentity::new(
                     3,
@@ -77,7 +82,11 @@ async fn staged_seed(store: &TursoStore<TestHost>, hook: Arc<Hook>) -> TestResul
                     digest: PageDigest::of(&contents).map_err(storage)?,
                     contents,
                 };
-                if seed_page(scope, &page).await.map_err(storage)? != SeedPageAnswer::Staged {
+                if seed_page(scope, &page, &crate::SeedAuthority::Admin)
+                    .await
+                    .map_err(storage)?
+                    != SeedPageAnswer::Staged
+                {
                     return Err(storage("seed page not staged"));
                 }
                 // A pending piece follow-up retained at this position must not collide with the snapshot's item0.
@@ -113,7 +122,7 @@ async fn publish(
     store
         .transaction(move |scope| {
             Box::pin(async move {
-                match seed_complete(scope, &done, &*hook).await {
+                match seed_complete(scope, &done, &*hook, &crate::SeedAuthority::Admin).await {
                     Ok(SeedDecision::Published {
                         position,
                         follow_ups,

@@ -22,6 +22,7 @@ pub fn seed_begin<'scope, S>(
     scope: &'scope mut S,
     database: DatabaseId,
     attempt: Uuid,
+    authority: &'scope crate::SeedAuthority,
 ) -> impl std::future::Future<Output = Result<SeedId, ReceiverError>> + Send + 'scope
 where
     S: TransactionScope + 'scope,
@@ -33,11 +34,6 @@ where
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
     async move {
-        if attempt.is_nil() {
-            return Err(ReceiverError::InvalidInput {
-                field: "seed attempt must be non-nil".into(),
-            });
-        }
         let copy = CopyStorage(scope)
             .load()
             .await?
@@ -47,6 +43,12 @@ where
         }
         if copy.database() != database {
             return Err(ReceiverError::NotInitialized);
+        }
+        authorize_seed(scope, &copy, authority).await?;
+        if attempt.is_nil() {
+            return Err(ReceiverError::InvalidInput {
+                field: "seed attempt must be non-nil".into(),
+            });
         }
         if let Some(seed) = SeedStorage(scope).attempt(attempt).await? {
             return Ok(seed);
@@ -84,6 +86,7 @@ where
 pub fn seed_page<'scope, S>(
     scope: &'scope mut S,
     page: &'scope SeedPage,
+    authority: &'scope crate::SeedAuthority,
 ) -> impl std::future::Future<Output = Result<SeedPageAnswer, ReceiverError>> + Send + 'scope
 where
     S: TransactionScope + 'scope,
@@ -95,10 +98,14 @@ where
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
     async move {
-        let copy = match CopyStorage(scope).load().await? {
+        let record = match CopyStorage(scope).load().await? {
             Some(CopyRecord::Retired { .. }) => return Ok(SeedPageAnswer::Retired),
-            Some(CopyRecord::Seeding { status, .. }) => status,
-            _ => return Ok(SeedPageAnswer::NotSeedable),
+            Some(record) => record,
+            None => return Ok(SeedPageAnswer::NotSeedable),
+        };
+        authorize_seed(scope, &record, authority).await?;
+        let CopyRecord::Seeding { status: copy, .. } = record else {
+            return Ok(SeedPageAnswer::NotSeedable);
         };
         let Some(record) = SeedStorage(scope).load().await? else {
             return Ok(SeedPageAnswer::NotSeedable);
@@ -131,6 +138,7 @@ pub fn seed_complete<'scope, S, H>(
     scope: &'scope mut S,
     done: &'scope SeedComplete,
     hook: &'scope H,
+    authority: &'scope crate::SeedAuthority,
 ) -> impl std::future::Future<Output = Result<crate::SeedDecision<H::FollowUp>, ReceiverError>>
 + Send
 + 'scope
@@ -158,6 +166,7 @@ where
         if copy.database() != done.database {
             return Err(ReceiverError::NotInitialized);
         }
+        authorize_seed(scope, &copy, authority).await?;
         let Some(mut seed) = SeedStorage(scope).load().await? else {
             return Ok(crate::SeedDecision::Answer(SeedAnswer::StaleSeed));
         };
@@ -240,4 +249,52 @@ where
             follow_ups,
         })
     }
+}
+
+async fn authorize_seed<S>(
+    scope: &mut S,
+    copy: &CopyRecord,
+    authority: &crate::SeedAuthority,
+) -> Result<(), ReceiverError>
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String:
+        Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
+    for<'value> Option<String>:
+        Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+{
+    let status = match copy {
+        CopyRecord::Seeding { status, .. } | CopyRecord::Following(status) => status,
+        CopyRecord::Retired { .. } => return Err(ReceiverError::Retired),
+    };
+    let original = CopyStorage(scope)
+        .creation()
+        .await?
+        .ok_or_else(|| StoreError::Corrupt {
+            field: "seed authority requires original copy creation".into(),
+        })?;
+    if original.database != status.database {
+        return Err(StoreError::Corrupt {
+            field: "original copy creation database".into(),
+        }
+        .into());
+    }
+    let allowed = match authority {
+        crate::SeedAuthority::Writer(sender) => original.holder.as_ref() == Some(sender),
+        crate::SeedAuthority::Admin => {
+            original.holder.is_none()
+                && matches!(
+                    original.origin,
+                    fleet_sync_protocol::CopyOrigin::AwaitingSeed { .. }
+                )
+        }
+    };
+    if !allowed {
+        return Err(ReceiverError::NotWriter {
+            current: Some(status.fence),
+        });
+    }
+    Ok(())
 }

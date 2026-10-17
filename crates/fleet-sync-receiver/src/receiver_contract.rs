@@ -1,7 +1,7 @@
 use crate::StoreError;
 use durable_steps::{CallId, storage::TransactionScope};
 use fleet_sync_protocol::{
-    ConsumerProtocol, DatabaseId, Epoch, FailureCode, HookRefusal, PieceRefusal,
+    ConsumerProtocol, DatabaseId, Epoch, FailureCode, HookRefusal, PeerId, PieceRefusal,
     ReplicatedTransaction, ReplicationPosition, TransactionKey,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -20,6 +20,13 @@ pub struct InstalledSnapshot {
     pub database: DatabaseId,
     pub position: ReplicationPosition,
     pub schema: fleet_sync_protocol::SchemaIdentity,
+}
+
+/// Supplied by the authenticated host, never decoded from a replication frame.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SeedAuthority {
+    Writer(PeerId),
+    Admin,
 }
 
 #[derive(Debug)]
@@ -129,6 +136,9 @@ impl From<ReceiverError> for ApplyFailure {
             ReceiverError::Storage(error) => Self::from_storage(error),
             ReceiverError::NotInitialized => Self::Refused(PieceRefusal::NotInitialized),
             ReceiverError::Retired => Self::Refused(PieceRefusal::Retired),
+            ReceiverError::NotWriter { current } => {
+                Self::Refused(PieceRefusal::NotWriter { current })
+            }
             ReceiverError::InvalidInput { field } => {
                 Self::Storage(StoreError::Constraint { message: field })
             }
@@ -152,6 +162,10 @@ pub enum ReceiverError {
     NotInitialized,
     #[error("copy is retired")]
     Retired,
+    /// Host dispatch answers any unauthorized replication request, including a
+    /// seed request, with ReplicationAnswer::Refused(PieceRefusal::NotWriter).
+    #[error("seed authority is not this database's writer; current epoch: {current:?}")]
+    NotWriter { current: Option<Epoch> },
     #[error("fence identity has different content")]
     FenceConflict,
     #[error("seed publication refused: {answer:?}; host must roll back")]

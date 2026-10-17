@@ -32,7 +32,7 @@ pub use fleet_sync_protocol::{CopyRole, CopyStatus};
 pub use hook_migrations::initialize_hook;
 pub use receiver_contract::{
     AppliedPiece, ApplyDecision, ApplyFailure, FollowUpAnswer, FollowUpDone, FollowUpFailure,
-    InstalledSnapshot, ReceiverError, ReceiverHook, SeedDecision,
+    InstalledSnapshot, ReceiverError, ReceiverHook, SeedAuthority, SeedDecision,
 };
 pub use seed_rules::{seed_begin, seed_complete, seed_page};
 pub use snapshot_follow_up::{admit_snapshot_follow_ups, snapshot_follow_up_key};
@@ -48,6 +48,8 @@ mod turso_transport_tests;
 #[cfg(test)]
 mod turso_rule_tests;
 
+#[cfg(test)]
+mod turso_seed_authority_tests;
 #[cfg(test)]
 mod turso_seed_tests;
 

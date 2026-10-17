@@ -87,6 +87,7 @@ pub(super) async fn seed_import(host: &Arc<TestHost>) -> TestResult<ReplicationP
         &mut scope,
         database()?,
         durable_steps::Uuid::from_u128(900),
+        &fleet_sync_receiver::SeedAuthority::Admin,
     )
     .await?;
     let position = ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(7));
@@ -115,7 +116,14 @@ pub(super) async fn seed_import(host: &Arc<TestHost>) -> TestResult<ReplicationP
         digest: PageDigest::of(&contents)?,
         contents,
     };
-    if fleet_sync_receiver::seed_page(&mut scope, &page).await? != SeedPageAnswer::Staged {
+    if fleet_sync_receiver::seed_page(
+        &mut scope,
+        &page,
+        &fleet_sync_receiver::SeedAuthority::Admin,
+    )
+    .await?
+        != SeedPageAnswer::Staged
+    {
         return Err("seed page not staged".into());
     }
     let mut digest = TableDigestBuilder::new();
@@ -128,7 +136,7 @@ pub(super) async fn seed_import(host: &Arc<TestHost>) -> TestResult<ReplicationP
         schema,
         table_digests: vec![(TableName::new("records")?, digest.finish())],
     };
-    if !matches!(fleet_sync_receiver::seed_complete(&mut scope, &done, &EmptyHook).await?, fleet_sync_receiver::SeedDecision::Published { position: actual, follow_ups } if actual == position && follow_ups.is_empty())
+    if !matches!(fleet_sync_receiver::seed_complete(&mut scope, &done, &EmptyHook, &fleet_sync_receiver::SeedAuthority::Admin).await?, fleet_sync_receiver::SeedDecision::Published { position: actual, follow_ups } if actual == position && follow_ups.is_empty())
     {
         return Err("seed not published".into());
     }
