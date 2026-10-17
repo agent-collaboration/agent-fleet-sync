@@ -171,10 +171,17 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                 .iter()
                 .any(|(entry, _)| entry.name == "_fleet_sync_writer");
             if managed || !adopting {
-                crate::schema_inspection::reject_autoincrement(
+                crate::schema_inspection::reject_invalid_key_schemas(
                     &entries,
                     schema.replicated_tables(),
                 )?;
+            }
+            if managed {
+                crate::migration_execution::inspect_present_tables(
+                    &mut transaction,
+                    schema.replicated_tables(),
+                )
+                .await?;
             }
             if !managed
                 && !adopting

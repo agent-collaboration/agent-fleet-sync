@@ -342,6 +342,10 @@ pub(crate) struct StoredTableColumnRow {
     pub column_class: Option<String>,
     pub key_order: Option<String>,
     pub key_class: Option<String>,
+    pub declared_type: Option<String>,
+    pub type_class: Option<String>,
+    pub not_null: Option<String>,
+    pub not_null_class: Option<String>,
 }
 pub(crate) fn read_table_columns<S>(
     scope: &mut S,
@@ -368,6 +372,10 @@ where
                     column_class: row.try_get("column_class")?,
                     key_order: row.try_get("key_order")?,
                     key_class: row.try_get("key_class")?,
+                    declared_type: row.try_get("declared_type")?,
+                    type_class: row.try_get("type_class")?,
+                    not_null: row.try_get("not_null")?,
+                    not_null_class: row.try_get("not_null_class")?,
                 })
             })
             .collect()

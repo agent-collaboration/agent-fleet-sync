@@ -48,7 +48,9 @@ async fn split_piece_and_seed_json_keep_sensitive_finite_bits_and_infinities_aft
         transactions: vec![ReplicatedTransaction::SchemaStep {
             commit_id: position(1)?.sequence,
             migration_version: 2,
-            statements: vec!["CREATE TABLE real_rows(id INTEGER PRIMARY KEY,value REAL)".into()],
+            statements: vec![
+                "CREATE TABLE real_rows(id TEXT NOT NULL PRIMARY KEY,value REAL)".into(),
+            ],
         }],
         part: None,
         annotation: None,
@@ -70,8 +72,11 @@ async fn split_piece_and_seed_json_keep_sensitive_finite_bits_and_infinities_aft
             let id = i64::try_from(index).map_err(|error| error.to_string())?;
             RowChange::upsert(
                 "real_rows",
-                vec![SqlValue::Integer(id)],
-                vec![SqlValue::Integer(id), SqlValue::Real(f64::from_bits(*bits))],
+                vec![crate::turso_rule_fixture::uuid_key(id)],
+                vec![
+                    crate::turso_rule_fixture::uuid_key(id),
+                    SqlValue::Real(f64::from_bits(*bits)),
+                ],
             )
             .map_err(|error| error.to_string())
         })

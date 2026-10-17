@@ -86,13 +86,24 @@ where
                     .ok_or_else(|| StoreError::Corrupt {
                         field: "primary key order".into(),
                     })?;
+                if key_order > 0
+                    && (!required_text(row.declared_type, row.type_class, "replicated key type")?
+                        .eq_ignore_ascii_case("TEXT")
+                        || row.not_null_class.as_deref() != Some("integer")
+                        || row.not_null.as_deref() != Some("1"))
+                {
+                    return Err(StoreError::Corrupt {
+                        field: "replicated UUIDv7 key schema".into(),
+                    });
+                }
                 Ok(TableColumn { name, key_order })
             })
             .collect::<Result<Vec<_>, StoreError>>()?;
         if columns.is_empty() || !columns.iter().any(|column| column.key_order > 0) {
-            return Err(ReceiverError::InvalidInput {
-                field: "replicated table must have a declared primary key".into(),
-            });
+            return Err(StoreError::Corrupt {
+                field: "replicated UUIDv7 key schema".into(),
+            }
+            .into());
         }
         Ok(columns)
     }

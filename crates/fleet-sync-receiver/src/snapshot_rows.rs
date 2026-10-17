@@ -67,12 +67,10 @@ where
                     .iter()
                     .position(|column| column.name == key.name)
                     .and_then(|index| row.get(index))
-                    .is_none_or(|value| matches!(value, SqlValue::Null))
+                    .is_none_or(|value| !matches!(value, SqlValue::Text(key) if fleet_sync_protocol::canonical_uuid_v7(key)))
             })
         {
-            return Err(ReceiverError::InvalidInput {
-                field: "seed row shape".into(),
-            });
+            return Err(crate::StoreError::Corrupt {field:"snapshot UUIDv7 row key or row shape".into()}.into());
         }
         BoundStatement::new(
             format!(

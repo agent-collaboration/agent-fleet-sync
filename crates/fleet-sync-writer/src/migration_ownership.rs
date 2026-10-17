@@ -15,6 +15,7 @@ struct TableOwnership {
     transient: BTreeSet<String>,
     views: BTreeMap<String, crate::migration_inspection::MigrationInspection>,
     kind: MigrationKind,
+    key_columns: BTreeMap<String, Vec<String>>,
 }
 
 fn table_error(name: &str, local: bool) -> OpenError {
@@ -152,16 +153,32 @@ pub(crate) fn validate_ownership(
         transient: BTreeSet::new(),
         views,
         kind,
+        key_columns: catalog
+            .iter()
+            .filter_map(|(entry, _)| {
+                let command = turso_parser::parser::Parser::new(entry.sql.as_bytes())
+                    .next_cmd()
+                    .ok()
+                    .flatten()?;
+                let (_, keys) = fleet_sync_protocol::replicated_key_columns(&command).ok()??;
+                Some((
+                    entry.name.to_ascii_lowercase(),
+                    keys.into_iter()
+                        .map(|key| key.as_str().to_owned())
+                        .collect(),
+                ))
+            })
+            .collect(),
     };
     for statement in statements {
         if matches!(kind, MigrationKind::Replicated)
-            && let Some(target) =
-                fleet_sync_protocol::schema_autoincrement_table(&statement.command)
+            && let Err(error) = fleet_sync_protocol::replicated_key_columns(&statement.command)
         {
             return Err(OpenError::SchemaUnsupported {
-                form: SchemaForm::Autoincrement {
-                    table: TableName::new(target.name.as_str())
+                form: SchemaForm::KeyNotUuidV7 {
+                    table: TableName::new(error.table)
                         .map_err(|_| OpenError::corrupt("migration.table"))?,
+                    column: error.column,
                 },
             });
         }
@@ -178,6 +195,38 @@ pub(crate) fn validate_ownership(
         let Cmd::Stmt(command) = &statement.command else {
             return Err(invalid(statement, "expected a schema or data statement"));
         };
+        if matches!(kind, MigrationKind::Replicated) {
+            let target = match command {
+                Stmt::Insert { tbl_name, .. } => Some(tbl_name),
+                Stmt::Update(update) => Some(&update.tbl_name),
+                _ => None,
+            };
+            if let Some(target) = target
+                && ownership
+                    .key_columns
+                    .get(&target.name.as_str().to_ascii_lowercase())
+                    .is_some_and(|keys| {
+                        keys.iter().any(|key| {
+                            fleet_sync_protocol::assigns_replicated_key(&statement.command, key)
+                        })
+                    })
+            {
+                return Err(OpenError::WriteRefused {
+                    refusal: crate::WriteRefusal::KeyChange {
+                        table: target.name.as_str().into(),
+                    },
+                });
+            }
+            if let Some((table, keys)) =
+                fleet_sync_protocol::replicated_key_columns(&statement.command)
+                    .map_err(|_| OpenError::corrupt("migration.key_schema"))?
+            {
+                ownership.key_columns.insert(
+                    table.name.as_str().to_ascii_lowercase(),
+                    keys.iter().map(|key| key.as_str().into()).collect(),
+                );
+            }
+        }
         match command {
             Stmt::CreateTable {
                 tbl_name,
@@ -192,7 +241,12 @@ pub(crate) fn validate_ownership(
                 }
                 ownership.create(tbl_name)?;
             }
-            Stmt::DropTable { tbl_name, .. } => ownership.remove(tbl_name)?,
+            Stmt::DropTable { tbl_name, .. } => {
+                ownership.remove(tbl_name)?;
+                ownership
+                    .key_columns
+                    .remove(&tbl_name.name.as_str().to_ascii_lowercase());
+            }
             Stmt::AlterTable(alter) => {
                 ownership.target(&alter.name)?;
                 if let AlterTableBody::RenameTo(next) = &alter.body {
@@ -200,6 +254,9 @@ pub(crate) fn validate_ownership(
                     ownership.create(&next_name)?;
                     let old_name = alter.name.name.as_str().to_ascii_lowercase();
                     let new_name = next.as_str().to_ascii_lowercase();
+                    if let Some(keys) = ownership.key_columns.remove(&old_name) {
+                        ownership.key_columns.insert(new_name.clone(), keys);
+                    }
                     ownership.objects.remove(&old_name);
                     ownership.transient.remove(&old_name);
                     for (_, owner) in ownership.objects.values_mut() {
@@ -212,6 +269,28 @@ pub(crate) fn validate_ownership(
                             if source.eq_ignore_ascii_case(&old_name) {
                                 *source = new_name.clone();
                             }
+                        }
+                    }
+                }
+                if let AlterTableBody::RenameColumn { old, new } = &alter.body
+                    && let Some(keys) = ownership
+                        .key_columns
+                        .get_mut(&alter.name.name.as_str().to_ascii_lowercase())
+                {
+                    for key in keys {
+                        if key.eq_ignore_ascii_case(old.as_str()) {
+                            *key = new.as_str().into();
+                        }
+                    }
+                }
+                if let AlterTableBody::AlterColumn { old, new } = &alter.body
+                    && let Some(keys) = ownership
+                        .key_columns
+                        .get_mut(&alter.name.name.as_str().to_ascii_lowercase())
+                {
+                    for key in keys {
+                        if key.eq_ignore_ascii_case(old.as_str()) {
+                            *key = new.col_name.as_str().into();
                         }
                     }
                 }
@@ -340,7 +419,7 @@ mod tests {
                     SchemaEntry {
                         kind: SchemaObjectKind::Table,
                         name: name.into(),
-                        sql: format!("CREATE TABLE {name}(id TEXT PRIMARY KEY)"),
+                        sql: format!("CREATE TABLE {name}(id TEXT NOT NULL PRIMARY KEY)"),
                     },
                     name.into(),
                 )
@@ -359,16 +438,16 @@ mod tests {
     #[test]
     fn rebuild_tables_must_be_created_here_and_leave_no_undeclared_survivor() -> TestResult {
         for sql in [
-            "DROP TABLE records; CREATE TABLE records(id TEXT PRIMARY KEY)",
-            "CREATE TABLE rebuilt(id TEXT PRIMARY KEY); INSERT INTO rebuilt SELECT id FROM records; DROP TABLE records; ALTER TABLE rebuilt RENAME TO records",
-            "CREATE TABLE discarded(id TEXT PRIMARY KEY); DROP TABLE discarded",
-            "ALTER TABLE records RENAME TO previous; CREATE TABLE records(id TEXT PRIMARY KEY); INSERT INTO records SELECT id FROM previous; DROP TABLE previous",
+            "DROP TABLE records; CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY)",
+            "CREATE TABLE rebuilt(id TEXT NOT NULL PRIMARY KEY); INSERT INTO rebuilt SELECT id FROM records; DROP TABLE records; ALTER TABLE rebuilt RENAME TO records",
+            "CREATE TABLE discarded(id TEXT NOT NULL PRIMARY KEY); DROP TABLE discarded",
+            "ALTER TABLE records RENAME TO previous; CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY); INSERT INTO records SELECT id FROM previous; DROP TABLE previous",
         ] {
             check(sql, MigrationKind::Replicated)??;
         }
         for sql in [
-            "CREATE TABLE leftover(id TEXT PRIMARY KEY)",
-            "CREATE TABLE IF NOT EXISTS local_notes(id TEXT PRIMARY KEY); DROP TABLE local_notes",
+            "CREATE TABLE leftover(id TEXT NOT NULL PRIMARY KEY)",
+            "CREATE TABLE IF NOT EXISTS local_notes(id TEXT NOT NULL PRIMARY KEY); DROP TABLE local_notes",
             "INSERT INTO records SELECT id FROM local_notes",
             "ALTER TABLE local_notes RENAME TO records",
             "CREATE INDEX local_index ON local_notes(id)",
@@ -398,9 +477,9 @@ mod tests {
         for sql in [
             "INSERT INTO records SELECT (WITH local_notes AS(SELECT id FROM records) SELECT id FROM local_notes) FROM local_notes",
             "WITH local_notes AS(SELECT id FROM records) INSERT INTO records SELECT id FROM main.local_notes",
-            "UPDATE records SET id=(SELECT id FROM local_notes)",
+            "UPDATE records SET payload=(SELECT id FROM local_notes)",
             "DELETE FROM records WHERE id IN local_notes",
-            "CREATE TABLE rebuilt(id TEXT PRIMARY KEY, parent TEXT REFERENCES local_notes(id)); DROP TABLE rebuilt",
+            "CREATE TABLE rebuilt(id TEXT NOT NULL PRIMARY KEY, parent TEXT REFERENCES local_notes(id)); DROP TABLE rebuilt",
             "WITH source AS(SELECT id FROM local_notes) INSERT INTO records SELECT id FROM source",
         ] {
             assert!(
@@ -423,7 +502,7 @@ mod tests {
             MigrationKind::Replicated,
         )??;
         check(
-            "CREATE TABLE rebuilt(id TEXT PRIMARY KEY); CREATE VIEW renamed_view AS SELECT id FROM rebuilt; DROP TABLE records; ALTER TABLE rebuilt RENAME TO records",
+            "CREATE TABLE rebuilt(id TEXT NOT NULL PRIMARY KEY); CREATE VIEW renamed_view AS SELECT id FROM rebuilt; DROP TABLE records; ALTER TABLE rebuilt RENAME TO records",
             MigrationKind::Replicated,
         )??;
         let mut entries = catalog();
@@ -472,7 +551,7 @@ mod tests {
     #[test]
     fn local_migrations_cannot_mutate_replicated_tables_or_take_over_connections() -> TestResult {
         check(
-            "CREATE TABLE local_notes(id TEXT PRIMARY KEY); INSERT INTO local_notes SELECT id FROM records",
+            "CREATE TABLE local_notes(id TEXT NOT NULL PRIMARY KEY); INSERT INTO local_notes SELECT id FROM records",
             MigrationKind::Local,
         )??;
         for sql in [

@@ -50,7 +50,7 @@ async fn staged_seed(store: &TursoStore<TestHost>, hook: Arc<Hook>) -> TestResul
                 )
                 .await
                 .map_err(storage)?;
-                let sql = "CREATE TABLE records(id INTEGER PRIMARY KEY,body TEXT)";
+                let sql = "CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY,body TEXT)";
                 let schema = SchemaIdentity::new(
                     3,
                     schema_fingerprint(&[SchemaEntry {
@@ -62,7 +62,7 @@ async fn staged_seed(store: &TursoStore<TestHost>, hook: Arc<Hook>) -> TestResul
                 )
                 .map_err(storage)?;
                 let rows = vec![vec![
-                    SqlValue::Integer(1),
+                    crate::turso_rule_fixture::uuid_key(1),
                     SqlValue::Text("installed record".into()),
                 ]];
                 let mut digest = TableDigestBuilder::new();

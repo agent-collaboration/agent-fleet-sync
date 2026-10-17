@@ -15,15 +15,16 @@ use uuid::Uuid;
 async fn page_chain_has_no_gaps_and_snapshot_replaces_migration_created_rows() -> TestResult {
     let mut connection = staging().await?;
     let (install, status, mut first, manifest) = source()?;
-    first
-        .schema_steps
-        .push("INSERT INTO records VALUES(1,'migration-only')".into());
+    first.schema_steps.push(
+        "INSERT INTO records VALUES('019eef00-0000-7000-8000-000000000001','migration-only')"
+            .into(),
+    );
     let mut second = first.clone();
     first.rows = first.rows.get(..1).ok_or("no first row")?.to_vec();
     first.next = Some(SnapshotCursor {
         position: install.position,
         table: first.table.clone(),
-        after_key: vec![SqlValue::Integer(2)],
+        after_key: vec![crate::turso_rule_fixture::uuid_key(2)],
     });
     second.rows = second.rows.get(1..).ok_or("no second row")?.to_vec();
     second.next = None;
@@ -68,7 +69,7 @@ async fn page_chain_has_no_gaps_and_snapshot_replaces_migration_created_rows() -
         installed
             .rows
             .iter()
-            .all(|row| row.first() != Some(&SqlValue::Integer(1)))
+            .all(|row| row.first() != Some(&crate::turso_rule_fixture::uuid_key(1)))
     );
     Ok(())
 }

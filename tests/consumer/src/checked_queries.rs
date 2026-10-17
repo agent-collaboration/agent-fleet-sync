@@ -219,14 +219,14 @@ where
 }
 pub(crate) fn insert_reading<S>(
     scope: &mut S,
-    id: i64,
+    id: String,
     measured: f64,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
     for<'value> f64: Type<S::Database> + Encode<'value, S::Database>,
-    for<'value> i64: Type<S::Database> + Encode<'value, S::Database>,
 {
     async move {
         let statement = query::<S::Database>(include_str!(concat!(
@@ -241,23 +241,22 @@ where
 }
 pub(crate) fn insert_source<S>(
     scope: &mut S,
-    source: String,
-    sequence: i64,
+    source_id: String,
+    event_id: String,
     sample_id: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
-    for<'value> i64: Type<S::Database> + Encode<'value, S::Database>,
 {
     async move {
         let statement = query::<S::Database>(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/sql/insert_source.sql"
         )))
-        .bind(source)
-        .bind(sequence)
+        .bind(source_id)
+        .bind(event_id)
         .bind(sample_id);
         statement.execute(scope.executor()).await?;
         Ok(())

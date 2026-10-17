@@ -49,6 +49,7 @@ pub struct WriteTransaction {
     transaction: Transaction<'static, Turso>,
     control: OwnedMutexGuard<WriterControl>,
     clock: Arc<dyn Clock>,
+    capture_start: u64,
 }
 
 impl fmt::Debug for WriteTransaction {
@@ -66,14 +67,20 @@ impl WriteTransaction {
         clock: Arc<dyn Clock>,
     ) -> Result<Self, WriteRefusal> {
         control.admit(clock.now())?;
-        let transaction = pool
+        let mut transaction = pool
             .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(WriteRefusal::from_sqlx)?;
+        let capture_start = crate::capture_stream::key_validation_start(&mut transaction)
+            .await
+            .map_err(|error| WriteRefusal::Storage {
+                message: error.to_string(),
+            })?;
         Ok(Self {
             transaction,
             control,
             clock,
+            capture_start,
         })
     }
 
@@ -84,7 +91,39 @@ impl WriteTransaction {
         self.control.statements.check(sql).map_err(Into::into)
     }
 
-    pub async fn commit(self) -> Result<(), WriteRefusal> {
+    pub async fn commit(mut self) -> Result<(), WriteRefusal> {
+        if let Err(refusal) = self.control.admit(self.clock.now()) {
+            self.transaction
+                .rollback()
+                .await
+                .map_err(WriteRefusal::from_sqlx)?;
+            return Err(refusal);
+        }
+        if let Err(error) = crate::capture_stream::validate_pending_keys(
+            &mut self.transaction,
+            self.control.statements.layouts(),
+            self.capture_start,
+        )
+        .await
+        {
+            self.transaction
+                .rollback()
+                .await
+                .map_err(WriteRefusal::from_sqlx)?;
+            return Err(match error {
+                crate::OpenError::Capture {
+                    error: crate::CaptureError::InvalidKey { table },
+                } => WriteRefusal::InvalidKey { table },
+                crate::OpenError::Capture {
+                    error: crate::CaptureError::KeyChange { table },
+                } => WriteRefusal::KeyChange { table },
+                error => WriteRefusal::Storage {
+                    message: error.to_string(),
+                },
+            });
+        }
+        // Key validation can scan a large captured transaction. Its lease must
+        // still admit the write immediately before the actual commit.
         if let Err(refusal) = self.control.admit(self.clock.now()) {
             self.transaction
                 .rollback()

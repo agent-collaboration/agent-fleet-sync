@@ -26,7 +26,7 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 static MIGRATIONS: Migrator = sqlx::migrate!("./tests/fixtures/regular");
 static TABLES: LazyLock<Result<Vec<TableName>, fleet_sync_protocol::TextValueError>> =
     LazyLock::new(|| {
-        ["text_records", "composite_records", "integer_records"]
+        ["text_records", "composite_records", "real_records"]
             .into_iter()
             .map(TableName::new)
             .collect()
@@ -127,7 +127,7 @@ async fn release_drains_accepted_transaction_and_replays_after_reopen_without_re
         .await?;
     let mut write = database.begin_write().await?;
     (&mut write)
-        .execute("INSERT INTO text_records VALUES('accepted',42,'before release')")
+        .execute("INSERT INTO text_records VALUES('019eef00-0000-7000-8000-00000000000a',42,'before release')")
         .await?;
     let release_request = request(database.database())?;
     let release_call = call()?;
@@ -144,10 +144,12 @@ async fn release_drains_accepted_transaction_and_replays_after_reopen_without_re
     };
     assert_eq!(database.snapshot().await?.position(), final_position);
     assert_eq!(
-        query::<Turso>("SELECT amount FROM text_records WHERE id='accepted'")
-            .fetch_one(database.reader())
-            .await?
-            .try_get::<i64, _>("amount")?,
+        query::<Turso>(
+            "SELECT amount FROM text_records WHERE id='019eef00-0000-7000-8000-00000000000a'"
+        )
+        .fetch_one(database.reader())
+        .await?
+        .try_get::<i64, _>("amount")?,
         42
     );
     assert!(matches!(

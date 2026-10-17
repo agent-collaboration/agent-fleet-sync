@@ -17,7 +17,7 @@ static LOCAL: Migrator = sqlx::migrate!("./tests/fixtures/local");
 static RANDOM: Migrator = sqlx::migrate!("./tests/fixtures/nondeterministic");
 static TABLES: LazyLock<Result<Vec<TableName>, fleet_sync_protocol::TextValueError>> =
     LazyLock::new(|| {
-        ["text_records", "composite_records", "integer_records"]
+        ["text_records", "composite_records", "real_records"]
             .into_iter()
             .map(TableName::new)
             .collect()
@@ -70,9 +70,11 @@ async fn create_captures_each_migration_atomically_and_keeps_local_tables_out() 
         },
     )
     .await?;
-    let row = query::<Turso>("SELECT amount,label FROM text_records WHERE id='initial'")
-        .fetch_one(database.reader())
-        .await?;
+    let row = query::<Turso>(
+        "SELECT amount,label FROM text_records WHERE id='019eef00-0000-7000-8000-000000000001'",
+    )
+    .fetch_one(database.reader())
+    .await?;
     assert_eq!(row.try_get::<i64, _>("amount")?, 9_007_199_254_740_993);
     assert_eq!(row.try_get::<String, _>("label")?, "backfilled");
     let rows = query::<Turso>("SELECT change_txn_id,table_name FROM turso_cdc ORDER BY change_id")
@@ -105,7 +107,7 @@ async fn create_captures_each_migration_atomically_and_keeps_local_tables_out() 
             || table == "_fleet_sync_writer")
     );
     let mut write = database.begin_write().await?;
-    (&mut write).execute("INSERT INTO local_notes VALUES('local','never copied'); UPDATE text_records SET id='renamed' WHERE id='initial'").await?;
+    (&mut write).execute("INSERT INTO local_notes VALUES('local','never copied'); UPDATE text_records SET label='renamed' WHERE id='019eef00-0000-7000-8000-000000000001'").await?;
     write.commit().await?;
     let id = database.database();
     database.close().await;
@@ -121,10 +123,10 @@ async fn create_captures_each_migration_atomically_and_keeps_local_tables_out() 
         Err(WriteRefusal::Provisional)
     ));
     assert_eq!(
-        query::<Turso>("SELECT id FROM text_records")
+        query::<Turso>("SELECT label FROM text_records")
             .fetch_one(reopened.reader())
             .await?
-            .try_get::<String, _>("id")?,
+            .try_get::<String, _>("label")?,
         "renamed"
     );
     assert_eq!(
@@ -268,7 +270,10 @@ async fn ordered_rebuilds_and_transitive_views_keep_existing_rows_on_reopen() ->
     let row = query::<Turso>("SELECT id,amount,label FROM nested_view")
         .fetch_one(database.reader())
         .await?;
-    assert_eq!(row.try_get::<String, _>("id")?, "initial");
+    assert_eq!(
+        row.try_get::<String, _>("id")?,
+        "019eef00-0000-7000-8000-000000000001"
+    );
     assert_eq!(row.try_get::<i64, _>("amount")?, 9_007_199_254_740_993);
     assert_eq!(row.try_get::<String, _>("label")?, "backfilled");
     let id = database.database();

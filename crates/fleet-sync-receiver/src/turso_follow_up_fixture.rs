@@ -193,8 +193,11 @@ pub(super) fn incoming() -> TestResult<Piece> {
             commit_id: CommitSequence::new(2),
             rows: vec![RowChange::upsert(
                 "records",
-                vec![SqlValue::Integer(1)],
-                vec![SqlValue::Integer(1), SqlValue::Text("body".into())],
+                vec![crate::turso_rule_fixture::uuid_key(1)],
+                vec![
+                    crate::turso_rule_fixture::uuid_key(1),
+                    SqlValue::Text("body".into()),
+                ],
             )?],
         }],
         part: None,
@@ -259,7 +262,7 @@ pub(super) async fn setup(store: &TursoStore<TestHost>, hook: Arc<Hook>) -> Test
                         commit_id: CommitSequence::new(1),
                         migration_version: 1,
                         statements: vec![
-                            "CREATE TABLE records(id INTEGER PRIMARY KEY,body TEXT)".into(),
+                            "CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY,body TEXT)".into(),
                         ],
                     }],
                     part: None,

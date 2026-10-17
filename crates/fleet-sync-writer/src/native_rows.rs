@@ -95,7 +95,7 @@ pub(crate) async fn read_rows(
 }
 
 pub(crate) fn row_key(table: &TableLayout, row: &[SqlValue]) -> Result<Vec<SqlValue>, OpenError> {
-    table
+    let key = table
         .primary_key()
         .iter()
         .map(|index| {
@@ -103,5 +103,28 @@ pub(crate) fn row_key(table: &TableLayout, row: &[SqlValue]) -> Result<Vec<SqlVa
                 .cloned()
                 .ok_or_else(|| OpenError::corrupt("snapshot.row_key"))
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    if key.is_empty() || key.iter().any(|value|!matches!(value,SqlValue::Text(key) if fleet_sync_protocol::canonical_uuid_v7(key))) {
+        return Err(OpenError::WriteRefused {refusal:crate::WriteRefusal::InvalidKey {table:table.name().into()}});
+    }
+    Ok(key)
+}
+
+pub(crate) async fn validate_stored_keys(
+    connection: &mut TursoConnection,
+    tables: &[TableLayout],
+) -> Result<(), OpenError> {
+    for table in tables {
+        let mut after = Vec::new();
+        loop {
+            let rows = read_rows(connection, table, &after, 256).await?;
+            if rows.is_empty() {
+                break;
+            }
+            for row in &rows {
+                after = row_key(table, row)?;
+            }
+        }
+    }
+    Ok(())
 }

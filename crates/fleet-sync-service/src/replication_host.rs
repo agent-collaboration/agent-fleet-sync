@@ -204,6 +204,9 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             Err(CopyRuleError::Receiver(ReceiverError::NotWriter { current })) => {
                 ReplicationAnswer::Refused(PieceRefusal::NotWriter { current })
             }
+            Err(CopyRuleError::Receiver(ReceiverError::SchemaUnsupported { form })) => {
+                ReplicationAnswer::Refused(PieceRefusal::SchemaUnsupported { form })
+            }
             Err(CopyRuleError::Storage(error)) => return Err(error.into()),
             Err(CopyRuleError::Apply(error)) => return Err(ServiceError::rule(error)),
             Err(CopyRuleError::Receiver(error)) => return Err(ServiceError::rule(error)),

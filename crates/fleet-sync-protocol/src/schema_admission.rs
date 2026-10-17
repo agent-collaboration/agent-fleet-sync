@@ -37,6 +37,11 @@ pub struct SchemaAdmissionError {
 }
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SchemaAdmissionReason {
+    #[error("replicated key column {column:?} of {table} must be TEXT NOT NULL")]
+    KeyNotUuidV7 {
+        table: String,
+        column: Option<String>,
+    },
     #[error("statement form is not admitted")]
     DisallowedForm,
     #[error("protected schema object {name}")]
@@ -50,8 +55,7 @@ pub fn admit_schema_statement(sql: &str) -> Result<(), SchemaAdmissionError> {
     admit_schema_command(&parse_schema_statement(sql)?)
 }
 
-/// Replication adds the allocation-state restriction; local schema admission
-/// continues to allow AUTOINCREMENT without changing any wire form.
+/// Replicated keys follow the UUIDv7 contract; local schema stays unrestricted.
 pub fn admit_replicated_schema_statement(sql: &str) -> Result<(), SchemaAdmissionError> {
     admit_replicated_schema_command(&parse_schema_statement(sql)?)
 }
@@ -60,10 +64,13 @@ pub fn admit_replicated_schema_command(
     command: &turso_parser::ast::Cmd,
 ) -> Result<(), SchemaAdmissionError> {
     admit_schema_command(command)?;
-    if crate::schema_autoincrement_table(command).is_some() {
+    if let Err(error) = crate::replicated_key_columns(command) {
         return Err(SchemaAdmissionError {
             form: statement_form(command),
-            reason: SchemaAdmissionReason::DisallowedForm,
+            reason: SchemaAdmissionReason::KeyNotUuidV7 {
+                table: error.table,
+                column: error.column,
+            },
         });
     }
     Ok(())

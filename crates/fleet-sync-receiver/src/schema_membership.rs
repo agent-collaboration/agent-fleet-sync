@@ -104,12 +104,40 @@ where
                 .pop()
                 .ok_or_else(|| invalid_schema("missing schema statement"))?;
             fleet_sync_protocol::admit_replicated_schema_command(&command)
-                .map_err(invalid_schema)?;
+                .map_err(|error| ReceiverError::SchemaUnsupported { form: error.form })?;
             let Cmd::Stmt(statement) = command else {
                 return Err(invalid_schema("expected schema statement"));
             };
             let mut add = None;
             let mut remove = None;
+            let assignment_target = match &statement {
+                Stmt::Insert { tbl_name, .. } => {
+                    Some((tbl_name, fleet_sync_protocol::SchemaStatementForm::Insert))
+                }
+                Stmt::Update(update) => Some((
+                    &update.tbl_name,
+                    fleet_sync_protocol::SchemaStatementForm::Update,
+                )),
+                _ => None,
+            };
+            if let Some((target, form)) = assignment_target {
+                require_member(&members, &name(target)?)?;
+                let columns = crate::schema_reads::SchemaReads(self.0)
+                    .table_columns(target.name.as_str())
+                    .await?;
+                if columns
+                    .iter()
+                    .filter(|column| column.key_order > 0)
+                    .any(|column| {
+                        fleet_sync_protocol::assigns_replicated_key(
+                            &Cmd::Stmt(statement.clone()),
+                            &column.name,
+                        )
+                    })
+                {
+                    return Err(ReceiverError::SchemaUnsupported { form });
+                }
+            }
             match &statement {
                 Stmt::CreateTable {
                     tbl_name,
@@ -176,6 +204,22 @@ where
                     .await
                     .map_err(crate::sql_transport::sql_error)?;
                 members.insert(target);
+            }
+            if matches!(statement, Stmt::AlterTable(_)) {
+                for entry in crate::schema_reads::SchemaReads(self.0).entries().await? {
+                    if entry.kind != fleet_sync_protocol::SchemaObjectKind::Table {
+                        continue;
+                    }
+                    let command = turso_parser::parser::Parser::new(entry.sql.as_bytes())
+                        .next_cmd()
+                        .map_err(invalid_schema)?
+                        .ok_or_else(|| invalid_schema("missing table definition"))?;
+                    if fleet_sync_protocol::replicated_key_columns(&command).is_err() {
+                        return Err(ReceiverError::SchemaUnsupported {
+                            form: fleet_sync_protocol::SchemaStatementForm::AlterTable,
+                        });
+                    }
+                }
             }
         }
         Ok(())

@@ -20,28 +20,28 @@ async fn explicit_and_implicit_keys_reject_persisted_orphans_without_rejecting_n
 -> TestResult {
     for (parent, child, good_parent, good_child, bad_child, null_child) in [
         (
-            "id INTEGER PRIMARY KEY",
-            "id TEXT NOT NULL PRIMARY KEY,parent_id INTEGER REFERENCES parents(id)",
-            "(1)",
-            "('good',1)",
-            "('orphan',9)",
-            "('null',NULL)",
+            "id TEXT NOT NULL PRIMARY KEY",
+            "id TEXT NOT NULL PRIMARY KEY,parent_id TEXT REFERENCES parents(id)",
+            "('019eef00-0000-7000-8000-000000000001')",
+            "('019eef00-0000-7000-8000-000000000002','019eef00-0000-7000-8000-000000000001')",
+            "('019eef00-0000-7000-8000-000000000003','019eef00-0000-7000-8000-000000000009')",
+            "('019eef00-0000-7000-8000-000000000004',NULL)",
         ),
         (
-            "a TEXT NOT NULL,b INTEGER NOT NULL,PRIMARY KEY(a,b)",
-            "id TEXT NOT NULL PRIMARY KEY,a TEXT,b INTEGER,FOREIGN KEY(a,b) REFERENCES parents(a,b)",
-            "('x',1)",
-            "('good','x',1)",
-            "('orphan','x',9)",
-            "('null','x',NULL)",
+            "a TEXT NOT NULL,b TEXT NOT NULL,PRIMARY KEY(a,b)",
+            "id TEXT NOT NULL PRIMARY KEY,a TEXT,b TEXT,FOREIGN KEY(a,b) REFERENCES parents(a,b)",
+            "('019eef00-0000-7000-8000-000000000001','019eef00-0000-7000-8000-000000000002')",
+            "('019eef00-0000-7000-8000-000000000003','019eef00-0000-7000-8000-000000000001','019eef00-0000-7000-8000-000000000002')",
+            "('019eef00-0000-7000-8000-000000000004','019eef00-0000-7000-8000-000000000001','019eef00-0000-7000-8000-000000000009')",
+            "('019eef00-0000-7000-8000-000000000005','019eef00-0000-7000-8000-000000000001',NULL)",
         ),
         (
-            "id INTEGER PRIMARY KEY",
-            "id TEXT NOT NULL PRIMARY KEY,parent_id INTEGER REFERENCES parents",
-            "(1)",
-            "('good',1)",
-            "('orphan',9)",
-            "('null',NULL)",
+            "id TEXT NOT NULL PRIMARY KEY",
+            "id TEXT NOT NULL PRIMARY KEY,parent_id TEXT REFERENCES parents",
+            "('019eef00-0000-7000-8000-000000000001')",
+            "('019eef00-0000-7000-8000-000000000002','019eef00-0000-7000-8000-000000000001')",
+            "('019eef00-0000-7000-8000-000000000003','019eef00-0000-7000-8000-000000000009')",
+            "('019eef00-0000-7000-8000-000000000004',NULL)",
         ),
     ] {
         let directory = tempfile::tempdir()?;
@@ -134,7 +134,7 @@ async fn implicit_references_without_a_matching_parent_key_fail_closed() -> Test
 async fn table_layout_keeps_declared_column_and_key_order_distinct() -> TestResult {
     let mut connection = TursoConnectOptions::new().connect().await?;
     connection
-        .execute("CREATE TABLE ordered_keys(b INTEGER NOT NULL,label TEXT,a TEXT NOT NULL,PRIMARY KEY(a,b))")
+        .execute("CREATE TABLE ordered_keys(b TEXT NOT NULL,label TEXT,a TEXT NOT NULL,PRIMARY KEY(a,b))")
         .await?;
     let layout = read_layout(&mut connection, &TableName::new("ORDERED_KEYS")?).await?;
     assert_eq!(layout.name(), "ordered_keys");
@@ -146,11 +146,11 @@ async fn table_layout_keeps_declared_column_and_key_order_distinct() -> TestResu
 #[tokio::test]
 async fn unsupported_schema_is_reported_at_its_table() -> TestResult {
     let mut connection = TursoConnectOptions::new().connect().await?;
-    connection.execute("CREATE TABLE no_key(payload TEXT); CREATE TABLE parents(id INTEGER PRIMARY KEY); CREATE TABLE children(id INTEGER PRIMARY KEY,parent_id INTEGER REFERENCES parents(id) ON DELETE CASCADE)").await?;
+    connection.execute("CREATE TABLE no_key(payload TEXT); CREATE TABLE parents(id TEXT NOT NULL PRIMARY KEY); CREATE TABLE children(id TEXT NOT NULL PRIMARY KEY,parent_id TEXT REFERENCES parents(id) ON DELETE CASCADE)").await?;
     assert!(matches!(
         inspect_replicated_tables(&mut connection, &[TableName::new("no_key")?]).await,
         Err(OpenError::SchemaUnsupported {
-            form: SchemaForm::NoPrimaryKey { .. }
+            form: SchemaForm::KeyNotUuidV7 { .. }
         })
     ));
     assert!(matches!(

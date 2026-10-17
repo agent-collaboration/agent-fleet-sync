@@ -21,7 +21,7 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 static MIGRATIONS: Migrator = sqlx::migrate!("./tests/fixtures/adoption");
 static TABLES: LazyLock<Result<Vec<TableName>, fleet_sync_protocol::TextValueError>> =
     LazyLock::new(|| {
-        ["text_records", "composite_records", "integer_records"]
+        ["text_records", "composite_records", "real_records"]
             .into_iter()
             .map(TableName::new)
             .collect()
@@ -72,13 +72,17 @@ async fn adoption_preserves_prefix_data_and_captures_only_later_migrations() -> 
         .run_direct(None, &mut connection, false)
         .await?;
     connection
-        .execute("UPDATE text_records SET amount=42 WHERE id='initial'")
+        .execute(
+            "UPDATE text_records SET amount=42 WHERE id='019eef00-0000-7000-8000-000000000001'",
+        )
         .await?;
     connection.close().await?;
     let writer = adopt(&path).await?;
-    let row = query::<Turso>("SELECT amount,label FROM text_records WHERE id='initial'")
-        .fetch_one(writer.reader())
-        .await?;
+    let row = query::<Turso>(
+        "SELECT amount,label FROM text_records WHERE id='019eef00-0000-7000-8000-000000000001'",
+    )
+    .fetch_one(writer.reader())
+    .await?;
     assert_eq!(
         row.try_get::<i64, _>("amount")?,
         43,
@@ -227,9 +231,11 @@ async fn seed_into_real_copy(
         matches!(fleet_sync_receiver::seed_complete(&mut scope, &done, &CopyHook, &authority).await?, fleet_sync_receiver::SeedDecision::Answer(SeedAnswer::Published { position }) if position == done.position)
     );
     transaction.commit().await?;
-    let row = query::<Turso>("SELECT amount,label FROM text_records WHERE id='initial'")
-        .fetch_one(&mut connection)
-        .await?;
+    let row = query::<Turso>(
+        "SELECT amount,label FROM text_records WHERE id='019eef00-0000-7000-8000-000000000001'",
+    )
+    .fetch_one(&mut connection)
+    .await?;
     assert_eq!(
         row.try_get::<i64, _>("amount")?,
         43,

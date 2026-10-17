@@ -58,6 +58,8 @@ use sql_transport::{BoundStatement, BoundValue};
 mod turso_autoincrement_tests;
 #[cfg(test)]
 mod turso_transport_tests;
+#[cfg(test)]
+mod turso_uuid_key_tests;
 
 #[cfg(test)]
 mod turso_rule_tests;

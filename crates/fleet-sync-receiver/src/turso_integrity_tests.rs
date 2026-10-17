@@ -29,8 +29,8 @@ async fn changed_receipt_content_conflicts_and_missing_receipt_never_acknowledge
             commit_id: incoming.through.sequence,
             rows: vec![RowChange::upsert(
                 "records",
-                vec![SqlValue::Integer(1)],
-                vec![SqlValue::Integer(1), SqlValue::Text("changed".into())],
+                vec![uuid_key(1)],
+                vec![uuid_key(1), SqlValue::Text("changed".into())],
             )?],
         }],
         part: None,
@@ -90,7 +90,8 @@ async fn late_row_constraint_rolls_back_schema_membership_rows_and_position_toge
                 commit_id: position(1)?.sequence,
                 migration_version: 2,
                 statements: vec![
-                    "CREATE TABLE required_rows(id INTEGER PRIMARY KEY, body TEXT NOT NULL)".into(),
+                    "CREATE TABLE required_rows(id TEXT NOT NULL PRIMARY KEY, body TEXT NOT NULL)"
+                        .into(),
                 ],
             },
             ReplicatedTransaction::Rows {
@@ -98,13 +99,13 @@ async fn late_row_constraint_rolls_back_schema_membership_rows_and_position_toge
                 rows: vec![
                     RowChange::upsert(
                         "required_rows",
-                        vec![SqlValue::Integer(1)],
-                        vec![SqlValue::Integer(1), SqlValue::Text("first".into())],
+                        vec![uuid_key(1)],
+                        vec![uuid_key(1), SqlValue::Text("first".into())],
                     )?,
                     RowChange::upsert(
                         "required_rows",
-                        vec![SqlValue::Integer(2)],
-                        vec![SqlValue::Integer(2), SqlValue::Null],
+                        vec![uuid_key(2)],
+                        vec![uuid_key(2), SqlValue::Null],
                     )?,
                 ],
             },
@@ -256,8 +257,8 @@ async fn a_mixed_case_reserved_row_target_cannot_change_copy_bookkeeping() -> Te
             commit_id: position(1)?.sequence,
             rows: vec![RowChange::upsert(
                 "_FLEET_SYNC_copy",
-                vec![SqlValue::Integer(1)],
-                vec![SqlValue::Integer(1), SqlValue::Text("forged copy".into())],
+                vec![uuid_key(1)],
+                vec![uuid_key(1), SqlValue::Text("forged copy".into())],
             )?],
         }],
         part: None,
@@ -299,8 +300,8 @@ async fn absent_copy_and_future_epoch_are_distinct_refusals_with_no_mutation() -
             commit_id: CommitSequence::new(1),
             rows: vec![RowChange::upsert(
                 "records",
-                vec![SqlValue::Integer(1)],
-                vec![SqlValue::Integer(1), SqlValue::Text("future".into())],
+                vec![uuid_key(1)],
+                vec![uuid_key(1), SqlValue::Text("future".into())],
             )?],
         }],
         part: None,

@@ -188,19 +188,13 @@ async fn copy_full_after_a_real_row_write_returns_the_typed_refusal_and_rolls_ba
             rows: vec![
                 RowChange::upsert(
                     "records",
-                    vec![SqlValue::Integer(1)],
-                    vec![
-                        SqlValue::Integer(1),
-                        SqlValue::Text("first real write".into()),
-                    ],
+                    vec![uuid_key(1)],
+                    vec![uuid_key(1), SqlValue::Text("first real write".into())],
                 )?,
                 RowChange::upsert(
                     "records",
-                    vec![SqlValue::Integer(2)],
-                    vec![
-                        SqlValue::Integer(2),
-                        SqlValue::Text("capacity failure".into()),
-                    ],
+                    vec![uuid_key(2)],
+                    vec![uuid_key(2), SqlValue::Text("capacity failure".into())],
                 )?,
             ],
         }],

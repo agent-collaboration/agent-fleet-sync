@@ -122,10 +122,10 @@ async fn positive_and_negative_infinity_remain_real_through_row_apply_and_exact_
     ];
     for (id, value) in [(1, f64::INFINITY), (2, f64::NEG_INFINITY)] {
         let change = RowChange::upsert(
-            "exact_values",
-            vec![SqlValue::Integer(id)],
+            "real_values",
+            vec![crate::turso_rule_fixture::uuid_key(id)],
             vec![
-                SqlValue::Integer(id),
+                crate::turso_rule_fixture::uuid_key(id),
                 SqlValue::Real(value),
                 SqlValue::Null,
                 SqlValue::Null,
@@ -137,7 +137,7 @@ async fn positive_and_negative_infinity_remain_real_through_row_apply_and_exact_
             .await?;
     }
     let rows = BoundStatement::query(
-        "SELECT real_value FROM exact_values ORDER BY id",
+        "SELECT real_value FROM real_values ORDER BY id",
         Vec::new(),
         vec!["real_value".into()],
     )
@@ -154,7 +154,7 @@ async fn positive_and_negative_infinity_remain_real_through_row_apply_and_exact_
     );
     transaction.commit().await?;
     let rows = sqlx_core::query::query::<Turso>(
-        "SELECT typeof(real_value) AS storage_class,real_value FROM exact_values ORDER BY id",
+        "SELECT typeof(real_value) AS storage_class,real_value FROM real_values ORDER BY id",
     )
     .fetch_all(&mut connection)
     .await?;
@@ -188,11 +188,14 @@ async fn composite_upsert_and_delete_use_declared_primary_key_order_on_turso() -
     for body in ["first", "updated"] {
         let row = RowChange::upsert(
             "composite_keys",
-            vec![SqlValue::Text("key".into()), SqlValue::Integer(7)],
             vec![
-                SqlValue::Integer(7),
+                SqlValue::Text("019eef00-0000-7000-8000-000000000001".into()),
+                SqlValue::Text("019eef00-0000-7000-8000-000000000002".into()),
+            ],
+            vec![
+                SqlValue::Text("019eef00-0000-7000-8000-000000000002".into()),
                 SqlValue::Text(body.into()),
-                SqlValue::Text("key".into()),
+                SqlValue::Text("019eef00-0000-7000-8000-000000000001".into()),
             ],
         )?;
         plan_row_change(&columns, &row)?.execute(&mut scope).await?;
@@ -211,7 +214,10 @@ async fn composite_upsert_and_delete_use_declared_primary_key_order_on_turso() -
     );
     let delete = RowChange::delete(
         "composite_keys",
-        vec![SqlValue::Text("key".into()), SqlValue::Integer(7)],
+        vec![
+            SqlValue::Text("019eef00-0000-7000-8000-000000000001".into()),
+            SqlValue::Text("019eef00-0000-7000-8000-000000000002".into()),
+        ],
     )?;
     plan_row_change(&columns, &delete)?
         .execute(&mut scope)
@@ -238,8 +244,13 @@ async fn escaped_identifiers_and_data_cannot_change_the_statement() -> TestResul
     let data = "'); DROP TABLE exact_values; --";
     let row = RowChange::upsert(
         "odd\"table",
-        vec![SqlValue::Text(data.into())],
-        vec![SqlValue::Text(data.into()), SqlValue::Text("body".into())],
+        vec![SqlValue::Text(
+            "019eef00-0000-7000-8000-000000000001".into(),
+        )],
+        vec![
+            SqlValue::Text("019eef00-0000-7000-8000-000000000001".into()),
+            SqlValue::Text(data.into()),
+        ],
     )?;
     let columns = [
         TableColumn {
@@ -253,14 +264,14 @@ async fn escaped_identifiers_and_data_cannot_change_the_statement() -> TestResul
     ];
     plan_row_change(&columns, &row)?.execute(&mut scope).await?;
     let rows = BoundStatement::query(
-        "SELECT \"odd\"\"key\" FROM \"odd\"\"table\"",
+        "SELECT body FROM \"odd\"\"table\"",
         Vec::new(),
-        vec!["odd\"key".into()],
+        vec!["body".into()],
     )
     .fetch_rows(&mut scope)
     .await?;
     assert_eq!(
-        rows.first().map(|row| row.text("odd\"key")).transpose()?,
+        rows.first().map(|row| row.text("body")).transpose()?,
         Some(data)
     );
     BoundStatement::new(

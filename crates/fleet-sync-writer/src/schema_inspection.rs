@@ -90,8 +90,9 @@ pub(crate) async fn read_layout(
     }
     if keys.is_empty() {
         return Err(OpenError::SchemaUnsupported {
-            form: SchemaForm::NoPrimaryKey {
+            form: SchemaForm::KeyNotUuidV7 {
                 table: table.clone(),
+                column: None,
             },
         });
     }
@@ -107,38 +108,27 @@ pub(crate) async fn read_layout(
         })
         .map(|(entry, _)| entry)
         .ok_or_else(|| OpenError::corrupt("schema.table_sql"))?;
-    // Use the pinned engine's own lowering: INTEGER PRIMARY KEY DESC and
-    // WITHOUT ROWID must not receive the rowid-alias exemption by type alone.
-    let definition = turso::core::schema::BTreeTable::from_sql(&entry.sql, 0)
-        .map_err(|_| OpenError::corrupt("schema.table_sql"))?;
-    let integer_primary_key = definition.get_rowid_alias_column().map(|(index, _)| index);
-    if integer_primary_key.is_some_and(|index| {
-        declared_types
-            .get(index)
-            .is_none_or(|name| !name.eq_ignore_ascii_case("INTEGER"))
-    }) {
-        return Err(OpenError::corrupt("schema.rowid_alias"));
-    }
     for index in &primary_key {
-        if Some(*index) != integer_primary_key && not_null.get(*index) != Some(&true) {
+        if not_null.get(*index) != Some(&true)
+            || declared_types
+                .get(*index)
+                .is_none_or(|kind| !kind.eq_ignore_ascii_case("TEXT"))
+        {
             return Err(OpenError::SchemaUnsupported {
-                form: SchemaForm::NullablePrimaryKey {
+                form: SchemaForm::KeyNotUuidV7 {
                     table: table.clone(),
-                    column: columns
-                        .get(*index)
-                        .cloned()
-                        .ok_or_else(|| OpenError::corrupt("schema.key_column"))?,
+                    column: Some(
+                        columns
+                            .get(*index)
+                            .cloned()
+                            .ok_or_else(|| OpenError::corrupt("schema.key_column"))?,
+                    ),
                 },
             });
         }
     }
-    TableLayout::new(
-        entry.name.clone(),
-        columns,
-        primary_key,
-        integer_primary_key,
-    )
-    .map_err(|_| OpenError::corrupt("schema.layout"))
+    TableLayout::new(entry.name.clone(), columns, primary_key)
+        .map_err(|_| OpenError::corrupt("schema.layout"))
 }
 
 pub(crate) async fn inspect_replicated_tables(
@@ -146,7 +136,7 @@ pub(crate) async fn inspect_replicated_tables(
     tables: &[TableName],
 ) -> Result<Vec<TableLayout>, OpenError> {
     let entries = schema_entries(connection).await?;
-    reject_autoincrement(&entries, tables)?;
+    reject_invalid_key_schemas(&entries, tables)?;
     let mut layouts = Vec::new();
     for table in tables {
         for (entry, owner) in &entries {
@@ -179,10 +169,11 @@ pub(crate) async fn inspect_replicated_tables(
         layouts.push(read_layout(connection, table).await?);
         crate::foreign_key_integrity::read_foreign_keys(connection, table).await?;
     }
+    crate::native_rows::validate_stored_keys(connection, &layouts).await?;
     Ok(layouts)
 }
 
-pub(crate) fn reject_autoincrement(
+pub(crate) fn reject_invalid_key_schemas(
     entries: &[(fleet_sync_protocol::SchemaEntry, String)],
     tables: &[TableName],
 ) -> Result<(), OpenError> {
@@ -196,11 +187,12 @@ pub(crate) fn reject_autoincrement(
             .next_cmd()
             .map_err(|_| OpenError::corrupt("schema.sql"))?
             .ok_or_else(|| OpenError::corrupt("schema.sql"))?;
-        if fleet_sync_protocol::schema_autoincrement_table(&command).is_some() {
+        if let Err(error) = fleet_sync_protocol::replicated_key_columns(&command) {
             return Err(OpenError::SchemaUnsupported {
-                form: SchemaForm::Autoincrement {
+                form: SchemaForm::KeyNotUuidV7 {
                     table: TableName::new(entry.name.clone())
                         .map_err(|_| OpenError::corrupt("schema.name"))?,
+                    column: error.column,
                 },
             });
         }

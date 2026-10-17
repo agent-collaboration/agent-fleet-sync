@@ -1,7 +1,9 @@
 use fleet_sync_protocol::*;
+mod key_contract;
 use fleet_sync_session::*;
 use fleet_sync_test_consumer::{ControlAnswer, ControlRequest, SampleProtocol, TestResult};
 use fleet_sync_transport_websocket::{WebSocketConnection, WebSocketTransport};
+pub use key_contract::assert_key_refusals;
 use std::{path::Path, process::Stdio, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, BufReader, Lines},

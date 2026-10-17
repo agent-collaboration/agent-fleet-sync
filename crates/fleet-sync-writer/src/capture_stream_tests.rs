@@ -21,7 +21,7 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 static REGULAR: Migrator = sqlx::migrate!("./tests/fixtures/regular");
 static TABLES: LazyLock<Result<Vec<TableName>, fleet_sync_protocol::TextValueError>> =
     LazyLock::new(|| {
-        ["text_records", "composite_records", "integer_records"]
+        ["text_records", "composite_records", "real_records"]
             .into_iter()
             .map(TableName::new)
             .collect()
@@ -55,8 +55,8 @@ fn policy() -> LeasePolicy {
 }
 
 #[tokio::test]
-async fn migrations_are_single_schema_steps_and_all_three_key_changes_leave_no_old_key()
--> TestResult {
+async fn migrations_are_single_schema_steps_and_payload_updates_keep_every_uuid_key() -> TestResult
+{
     let directory = tempfile::tempdir()?;
     let database = ReplicatedDatabase::create(
         &directory.path().join("writer.db"),
@@ -69,7 +69,7 @@ async fn migrations_are_single_schema_steps_and_all_three_key_changes_leave_no_o
     )
     .await?;
     let mut write = database.begin_write().await?;
-    (&mut write).execute("UPDATE text_records SET id='changed'; UPDATE composite_records SET account='changed',sequence=2; UPDATE integer_records SET id=11;").await?;
+    (&mut write).execute("UPDATE text_records SET amount=123; UPDATE composite_records SET payload=x'80ff'; UPDATE real_records SET ratio=2.5").await?;
     write.commit().await?;
     let mut connection = database.maintenance.acquire().await?;
     let mut transaction = connection.begin().await?;
@@ -82,41 +82,41 @@ async fn migrations_are_single_schema_steps_and_all_three_key_changes_leave_no_o
         &commit.transaction,
         ReplicatedTransaction::SchemaStep { .. }
     )));
-    let ReplicatedTransaction::Rows { rows, .. } =
-        &commits.last().ok_or("no last commit")?.transaction
+    let ReplicatedTransaction::Rows { rows, .. } = &commits
+        .last()
+        .ok_or("no captured payload update")?
+        .transaction
     else {
-        return Err("expected captured rows".into());
+        return Err("expected rows".into());
     };
-    assert_eq!(rows.len(), 6);
-    for (table, old_key, new_key) in [
+    assert_eq!(rows.len(), 3);
+    for (table, key) in [
         (
             "text_records",
-            vec![SqlValue::Text("initial".into())],
-            vec![SqlValue::Text("changed".into())],
+            vec![SqlValue::Text(
+                "019eef00-0000-7000-8000-000000000001".into(),
+            )],
         ),
         (
             "composite_records",
-            vec![SqlValue::Text("account".into()), SqlValue::Integer(1)],
-            vec![SqlValue::Text("changed".into()), SqlValue::Integer(2)],
+            vec![
+                SqlValue::Text("019eef00-0000-7000-8000-000000000002".into()),
+                SqlValue::Text("019eef00-0000-7000-8000-000000000003".into()),
+            ],
         ),
         (
-            "integer_records",
-            vec![SqlValue::Integer(10)],
-            vec![SqlValue::Integer(11)],
+            "real_records",
+            vec![SqlValue::Text(
+                "019eef00-0000-7000-8000-000000000004".into(),
+            )],
         ),
     ] {
-        let relevant =
-            rows.iter()
-                .filter(|change| match change {
-                    RowChange::Upsert { table: name, .. }
-                    | RowChange::Delete { table: name, .. } => name == table,
-                })
-                .collect::<Vec<_>>();
-        assert!(
-            matches!(relevant.as_slice(),[RowChange::Delete{key:deleted,..},RowChange::Upsert{key:inserted,..}] if **deleted==old_key && **inserted==new_key),
-            "{table}"
-        );
+        assert!(rows.iter().any(|row|matches!(row,RowChange::Upsert{table:name,key:found,..} if name==table && found==&key)),"{table}");
     }
+    assert!(
+        rows.iter()
+            .all(|row| matches!(row, RowChange::Upsert { .. }))
+    );
     transaction.commit().await?;
     drop(connection);
     database.close().await;
@@ -155,7 +155,7 @@ async fn historical_images_use_the_layout_at_their_commit_before_and_after_pruni
     .await?;
     let mut write = database.begin_write().await?;
     (&mut write)
-        .execute("INSERT INTO text_records VALUES('old',9007199254740993,'three columns')")
+        .execute("INSERT INTO text_records VALUES('019eef00-0000-7000-8000-000000000005',9007199254740993,'three columns')")
         .await?;
     write.commit().await?;
     let id = database.database();
@@ -173,7 +173,7 @@ async fn historical_images_use_the_layout_at_their_commit_before_and_after_pruni
     .await?;
     let mut write = database.begin_write().await?;
     (&mut write)
-        .execute("UPDATE text_records SET extra='four columns' WHERE id='old'")
+        .execute("UPDATE text_records SET extra='four columns' WHERE id='019eef00-0000-7000-8000-000000000005'")
         .await?;
     write.commit().await?;
     let mut connection = database.maintenance.acquire().await?;

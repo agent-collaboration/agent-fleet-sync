@@ -146,9 +146,11 @@ async fn lost_release_answer_replays_one_call_even_past_the_unsent_bound_and_kee
     assert_eq!(calls.first(), calls.last());
     let mut copies = host.copies.lock().await;
     let copy = copies.get_mut(&database()?).ok_or("copy missing")?;
-    let row = sqlx_core::query::query::<Turso>("SELECT body FROM records WHERE id=1")
-        .fetch_one(&mut *copy)
-        .await?;
+    let row = sqlx_core::query::query::<Turso>(
+        "SELECT body FROM records WHERE id='019eef00-0000-7000-8000-000000000001'",
+    )
+    .fetch_one(&mut *copy)
+    .await?;
     assert_eq!(row.try_get::<String, _>("body")?, "kept row");
     assert!(
         matches!(fleet_sync_receiver::copy_status(&mut CopyScope(copy)).await?,CopyStatusAnswer::Status(CopyStatus{fence,holder:Some(holder),acked,..}) if fence==Epoch::new(2)?&&holder==peer(2)?&&acked==final_position)

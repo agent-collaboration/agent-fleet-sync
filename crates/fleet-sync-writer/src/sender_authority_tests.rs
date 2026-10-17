@@ -38,7 +38,7 @@ async fn bounded_retention_releases_a_follower_but_keeps_every_unacknowledged_au
     let mut write = fixture.database.begin_write().await?;
     (&mut write)
         .execute(
-            "INSERT INTO text_records VALUES('while-authoritative-absent',99,'retained until ack')",
+            "INSERT INTO text_records VALUES('019eef00-0000-7000-8000-000000000008',99,'retained until ack')",
         )
         .await?;
     write.commit().await?;
@@ -98,10 +98,12 @@ async fn bounded_retention_releases_a_follower_but_keeps_every_unacknowledged_au
             .await;
         let connection = connection.as_mut().ok_or("closed copy")?;
         assert_eq!(
-            query::<Turso>("SELECT amount FROM text_records WHERE id='while-authoritative-absent'")
-                .fetch_one(connection)
-                .await?
-                .try_get::<i64, _>("amount")?,
+            query::<Turso>(
+                "SELECT amount FROM text_records WHERE id='019eef00-0000-7000-8000-000000000008'"
+            )
+            .fetch_one(connection)
+            .await?
+            .try_get::<i64, _>("amount")?,
             99
         );
     }
@@ -122,7 +124,7 @@ async fn release_stops_writes_but_sender_drains_every_accepted_commit_to_its_fin
     fixture.migrate_copies().await?;
     let mut write = fixture.database.begin_write().await?;
     (&mut write)
-        .execute("INSERT INTO text_records VALUES('accepted-before-release',42,'must arrive')")
+        .execute("INSERT INTO text_records VALUES('019eef00-0000-7000-8000-000000000009',42,'must arrive')")
         .await?;
     write.commit().await?;
     let answer = fixture
@@ -158,10 +160,12 @@ async fn release_stops_writes_but_sender_drains_every_accepted_commit_to_its_fin
             .await;
         let connection = connection.as_mut().ok_or("closed copy")?;
         assert_eq!(
-            query::<Turso>("SELECT amount FROM text_records WHERE id='accepted-before-release'")
-                .fetch_one(&mut *connection)
-                .await?
-                .try_get::<i64, _>("amount")?,
+            query::<Turso>(
+                "SELECT amount FROM text_records WHERE id='019eef00-0000-7000-8000-000000000009'"
+            )
+            .fetch_one(&mut *connection)
+            .await?
+            .try_get::<i64, _>("amount")?,
             42
         );
         let CopyStatusAnswer::Status(status) =

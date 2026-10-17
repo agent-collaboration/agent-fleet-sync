@@ -75,7 +75,7 @@ async fn lost_final_answer_replays_parts_without_repeating_rows_hooks_or_bookkee
     let fixture = SenderFixture::open().await?;
     fixture.migrate_copies().await?;
     let mut write = fixture.database.begin_write().await?;
-    (&mut write).execute("UPDATE text_records SET id='changed'; UPDATE composite_records SET account='changed',sequence=2; UPDATE integer_records SET id=11;").await?;
+    (&mut write).execute("UPDATE text_records SET amount=123; UPDATE composite_records SET payload=x'80ff'; UPDATE real_records SET ratio=2.5;").await?;
     write.commit().await?;
     *fixture.transport.lose_answer.lock().await = Some(fixture.first);
     assert!(matches!(
@@ -102,14 +102,14 @@ async fn lost_final_answer_replays_parts_without_repeating_rows_hooks_or_bookkee
                 .fetch_one(&mut *connection)
                 .await?
                 .try_get::<String, _>("id")?,
-            "changed"
+            "019eef00-0000-7000-8000-000000000001"
         );
         assert_eq!(
-            query::<Turso>("SELECT id FROM integer_records")
+            query::<Turso>("SELECT id FROM real_records")
                 .fetch_one(&mut *connection)
                 .await?
-                .try_get::<i64, _>("id")?,
-            11
+                .try_get::<String, _>("id")?,
+            "019eef00-0000-7000-8000-000000000004"
         );
         assert_eq!(
             query::<Turso>("SELECT position FROM hook_calls")
@@ -119,10 +119,10 @@ async fn lost_final_answer_replays_parts_without_repeating_rows_hooks_or_bookkee
             3
         );
         assert!(
-            query::<Turso>("SELECT id FROM text_records WHERE id='initial'")
+            query::<Turso>("SELECT id FROM text_records WHERE id='019eef00-0000-7000-8000-000000000001' AND amount=123")
                 .fetch_optional(&mut *connection)
                 .await?
-                .is_none()
+                .is_some()
         );
     }
     assert_eq!(
@@ -146,7 +146,7 @@ async fn lost_final_answer_replays_parts_without_repeating_rows_hooks_or_bookkee
     let mut write = fixture.database.begin_write().await?;
     (&mut write)
         .execute(
-            "INSERT INTO text_records VALUES('after prune',-9007199254740993,'retained layout')",
+            "INSERT INTO text_records VALUES('019eef00-0000-7000-8000-000000000006',-9007199254740993,'retained layout')",
         )
         .await?;
     write.commit().await?;
@@ -157,7 +157,7 @@ async fn lost_final_answer_replays_parts_without_repeating_rows_hooks_or_bookkee
         let mut connection = file.connection.lock().await;
         let connection = connection.as_mut().ok_or("closed copy")?;
         let row = query::<Turso>(
-            "SELECT amount,typeof(amount) AS class FROM text_records WHERE id='after prune'",
+            "SELECT amount,typeof(amount) AS class FROM text_records WHERE id='019eef00-0000-7000-8000-000000000006'",
         )
         .fetch_one(&mut *connection)
         .await?;
@@ -452,7 +452,7 @@ async fn a_refusing_copy_changes_nothing_and_does_not_stop_another_copy_or_write
     fixture.sender.replicate_once(fixture.second).await?;
     let mut write = fixture.database.begin_write().await?;
     (&mut write)
-        .execute("INSERT INTO text_records VALUES('during refusal',7,'accepted')")
+        .execute("INSERT INTO text_records VALUES('019eef00-0000-7000-8000-000000000007',7,'019eef00-0000-7000-8000-00000000000a')")
         .await?;
     write.commit().await?;
     let copies = fixture.sender.copies().await?;

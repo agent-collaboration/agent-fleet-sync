@@ -26,6 +26,80 @@ struct CaptureRow {
     after: Option<Vec<u8>>,
 }
 
+impl CaptureRow {
+    fn change(self) -> Result<CaptureChange, OpenError> {
+        Ok(match self.kind {
+            -1 => CaptureChange::Delete {
+                before: self
+                    .before
+                    .ok_or_else(|| OpenError::corrupt("capture.before"))?,
+            },
+            0 => CaptureChange::Update {
+                before: self
+                    .before
+                    .ok_or_else(|| OpenError::corrupt("capture.before"))?,
+                after: self
+                    .after
+                    .ok_or_else(|| OpenError::corrupt("capture.after"))?,
+            },
+            1 => CaptureChange::Insert { after: self.after },
+            _ => return Err(OpenError::corrupt("capture.kind")),
+        })
+    }
+}
+
+pub(crate) async fn key_validation_start(
+    connection: &mut TursoConnection,
+) -> Result<u64, OpenError> {
+    let head = checked_queries::read_capture_head(&mut WriterScope(connection)).await?;
+    match (head.marker, head.marker_class.as_deref()) {
+        (None, Some("null")) => Ok(0),
+        (Some(value), Some("integer")) => value
+            .parse()
+            .map_err(|_| OpenError::corrupt("capture.head")),
+        _ => Err(OpenError::corrupt("capture.head")),
+    }
+}
+
+/// CDC rows are visible inside the writer transaction. Validate both images,
+/// including inserted-then-deleted rows, before their commit can be accepted.
+pub(crate) async fn validate_pending_keys(
+    connection: &mut TursoConnection,
+    tables: &[TableLayout],
+    mut after: u64,
+) -> Result<(), OpenError> {
+    loop {
+        let rows = checked_queries::read_capture(
+            &mut WriterScope(connection),
+            i64::try_from(after).map_err(|_| OpenError::corrupt("capture.cursor"))?,
+            256,
+        )
+        .await?;
+        if rows.is_empty() {
+            return Ok(());
+        }
+        for row in rows {
+            let row = CaptureRow::try_from(row)?;
+            if row.change_id <= after {
+                return Err(OpenError::corrupt("capture.order"));
+            }
+            after = row.change_id;
+            if row.kind == 2 {
+                continue;
+            }
+            let Some(table) = tables.iter().find(|table| {
+                row.table
+                    .as_ref()
+                    .is_some_and(|name| table.name().eq_ignore_ascii_case(name))
+            }) else {
+                continue;
+            };
+            normalize_capture_change(table, row.change()?)
+                .map_err(|error| OpenError::Capture { error })?;
+        }
+    }
+}
+
 fn integer(value: Option<String>, class: Option<String>, field: &str) -> Result<i64, OpenError> {
     if class.as_deref() != Some("integer") {
         return Err(OpenError::corrupt(field));
@@ -176,33 +250,15 @@ fn normalize_commit(
         for row in rows {
             let table = row
                 .table
+                .as_ref()
                 .ok_or_else(|| OpenError::corrupt("capture.table"))?;
             let Some(table) = layout
                 .iter()
-                .find(|candidate| candidate.name().eq_ignore_ascii_case(&table))
+                .find(|candidate| candidate.name().eq_ignore_ascii_case(table))
             else {
                 continue;
             };
-            let change = match row.kind {
-                -1 => CaptureChange::Delete {
-                    before: row
-                        .before
-                        .ok_or_else(|| OpenError::corrupt("capture.before"))?,
-                },
-                0 => CaptureChange::Update {
-                    before: row
-                        .before
-                        .ok_or_else(|| OpenError::corrupt("capture.before"))?,
-                    after: row
-                        .after
-                        .ok_or_else(|| OpenError::corrupt("capture.after"))?,
-                },
-                1 => CaptureChange::Insert {
-                    before: row.before,
-                    after: row.after,
-                },
-                _ => return Err(OpenError::corrupt("capture.kind")),
-            };
+            let change = row.change()?;
             changes.extend(
                 normalize_capture_change(table, change)
                     .map_err(|error| OpenError::Capture { error })?,

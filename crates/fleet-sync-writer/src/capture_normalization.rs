@@ -7,21 +7,17 @@ use turso::core::{
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CaptureChange {
-    Insert {
-        before: Option<Vec<u8>>,
-        after: Option<Vec<u8>>,
-    },
-    Update {
-        before: Vec<u8>,
-        after: Vec<u8>,
-    },
-    Delete {
-        before: Vec<u8>,
-    },
+    Insert { after: Option<Vec<u8>> },
+    Update { before: Vec<u8>, after: Vec<u8> },
+    Delete { before: Vec<u8> },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum CaptureError {
+    #[error("captured key of {table} is not a canonical UUIDv7")]
+    InvalidKey { table: String },
+    #[error("capture changed an immutable key of {table}")]
+    KeyChange { table: String },
     #[error("malformed capture image: {detail}")]
     InvalidImage { detail: String },
     #[error("captured row does not match table {table}")]
@@ -37,14 +33,10 @@ pub fn normalize_capture_change(
     change: CaptureChange,
 ) -> Result<Vec<RowChange>, CaptureError> {
     match change {
-        CaptureChange::Insert { before, after } => {
-            // Turso 0.8.1 puts an INTEGER PRIMARY KEY-changing UPDATE's INSERT
-            // image in before. Restrict this workaround to that table shape.
-            let image = after
-                .or_else(|| table.has_integer_primary_key().then_some(before).flatten())
-                .ok_or_else(|| CaptureError::MissingInsertImage {
-                    table: table.name().into(),
-                })?;
+        CaptureChange::Insert { after } => {
+            let image = after.ok_or_else(|| CaptureError::MissingInsertImage {
+                table: table.name().into(),
+            })?;
             Ok(vec![upsert_row(table, decode_row(table, &image)?)?])
         }
         CaptureChange::Update { before, after } => {
@@ -52,19 +44,16 @@ pub fn normalize_capture_change(
             let new_values = decode_row(table, &after)?;
             let old_key = row_key(table, &old_values)?;
             let new_key = row_key(table, &new_values)?;
-            let mut changes = Vec::new();
             if old_key != new_key {
-                changes.push(RowChange::Delete {
+                return Err(CaptureError::KeyChange {
                     table: table.name().into(),
-                    key: old_key,
                 });
             }
-            changes.push(RowChange::Upsert {
+            Ok(vec![RowChange::Upsert {
                 table: table.name().into(),
                 key: new_key,
                 values: new_values,
-            });
-            Ok(changes)
+            }])
         }
         CaptureChange::Delete { before } => {
             let values = decode_row(table, &before)?;
@@ -110,7 +99,7 @@ pub(crate) fn decode_image(image: &[u8]) -> Result<Vec<SqlValue>, CaptureError> 
 }
 
 fn row_key(table: &TableLayout, values: &[SqlValue]) -> Result<Vec<SqlValue>, CaptureError> {
-    table
+    let key = table
         .primary_key()
         .iter()
         .map(|index| {
@@ -121,7 +110,11 @@ fn row_key(table: &TableLayout, values: &[SqlValue]) -> Result<Vec<SqlValue>, Ca
                     table: table.name().into(),
                 })
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    if key.is_empty() || key.iter().any(|value|!matches!(value,SqlValue::Text(key) if fleet_sync_protocol::canonical_uuid_v7(key))) {
+        return Err(CaptureError::InvalidKey {table:table.name().into()});
+    }
+    Ok(key)
 }
 
 fn upsert_row(table: &TableLayout, values: Vec<SqlValue>) -> Result<RowChange, CaptureError> {

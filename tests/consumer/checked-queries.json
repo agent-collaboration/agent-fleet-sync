@@ -121,7 +121,7 @@
       "parameters": [
         {
           "name": "id",
-          "kind": "integer",
+          "kind": "text",
           "nullable": false
         },
         {
@@ -137,13 +137,13 @@
       "result": "execute",
       "parameters": [
         {
-          "name": "source",
+          "name": "source_id",
           "kind": "text",
           "nullable": false
         },
         {
-          "name": "sequence",
-          "kind": "integer",
+          "name": "event_id",
+          "kind": "text",
           "nullable": false
         },
         {

@@ -32,7 +32,7 @@ static LOCAL: Migrator = sqlx::migrate!("./tests/fixtures/sender_local");
 static HOOK: Migrator = sqlx::migrate!("./tests/fixtures/copy_hook");
 static TABLES: LazyLock<Result<Vec<TableName>, fleet_sync_protocol::TextValueError>> =
     LazyLock::new(|| {
-        ["text_records", "composite_records", "integer_records"]
+        ["text_records", "composite_records", "real_records"]
             .into_iter()
             .map(TableName::new)
             .collect()

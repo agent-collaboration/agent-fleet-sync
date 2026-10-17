@@ -134,6 +134,13 @@ async fn native_writer_to_service_preserves_cells_hook_rollback_and_follow_up_ac
         .await?;
     sender.replicate_once(receiver()?).await?;
     assert_eq!(effects(&mut control, 1).await?.len(), 1);
+    assert_key_refusals(
+        &writer,
+        &mut *transport.socket.lock().await,
+        directory.path(),
+        peer()?,
+    )
+    .await?;
 
     let values = [
         f64::from_bits(1),
@@ -147,15 +154,26 @@ async fn native_writer_to_service_preserves_cells_hook_rollback_and_follow_up_ac
     let mut write = writer.begin_write().await?;
     insert_sample(
         &mut write,
-        "alpha".into(),
+        "019eef00-0000-7000-8000-000000000001".into(),
         "measurement α".into(),
         9_007_199_254_740_993,
         vec![0, 255, 128],
     )
     .await?;
-    insert_source(&mut write, "sensor".into(), i64::MAX, "alpha".into()).await?;
+    insert_source(
+        &mut write,
+        "019eef00-0000-7000-8000-000000000002".into(),
+        "019eef00-0000-7000-8000-000000000005".into(),
+        "019eef00-0000-7000-8000-000000000001".into(),
+    )
+    .await?;
     for (index, value) in values.into_iter().enumerate() {
-        insert_reading(&mut write, i64::try_from(index)?, value).await?;
+        insert_reading(
+            &mut write,
+            format!("019eef00-0000-7000-8001-{index:012x}"),
+            value,
+        )
+        .await?;
     }
     write.commit().await?;
     sender.replicate_once(receiver()?).await?;
@@ -174,20 +192,20 @@ async fn native_writer_to_service_preserves_cells_hook_rollback_and_follow_up_ac
     assert_eq!(readings.len(), values.len());
     for (row, value) in readings.iter().zip(values) {
         assert!(
-            matches!(row.as_slice(),[SqlValue::Integer(_),SqlValue::Real(actual),SqlValue::Null] if actual.to_bits()==value.to_bits()),
+            matches!(row.as_slice(),[SqlValue::Text(id),SqlValue::Real(actual),SqlValue::Null] if canonical_uuid_v7(id) && actual.to_bits()==value.to_bits()),
             "REAL storage class or bits changed: {row:?}"
         );
     }
     assert!(
-        matches!(copied.get("samples").map(Vec::as_slice),Some([row]) if matches!(row.as_slice(),[SqlValue::Text(id),SqlValue::Text(label),SqlValue::Integer(9_007_199_254_740_993),SqlValue::Blob(blob)] if id=="alpha" && label=="measurement α" && blob==&[0,255,128]))
+        matches!(copied.get("samples").map(Vec::as_slice),Some([row]) if matches!(row.as_slice(),[SqlValue::Text(id),SqlValue::Text(label),SqlValue::Integer(9_007_199_254_740_993),SqlValue::Blob(blob)] if id=="019eef00-0000-7000-8000-000000000001" && label=="measurement α" && blob==&[0,255,128]))
     );
     assert!(
-        matches!(copied.get("samples_by_source").map(Vec::as_slice),Some([row]) if matches!(row.as_slice(),[SqlValue::Text(source),SqlValue::Integer(i64::MAX),SqlValue::Text(id)] if source=="sensor" && id=="alpha"))
+        matches!(copied.get("samples_by_source").map(Vec::as_slice),Some([row]) if matches!(row.as_slice(),[SqlValue::Text(source),SqlValue::Text(event),SqlValue::Text(id)] if source=="019eef00-0000-7000-8000-000000000002" && event=="019eef00-0000-7000-8000-000000000005" && id=="019eef00-0000-7000-8000-000000000001"))
     );
     assert_eq!(copied.len(), 3, "hook local table leaked into snapshot");
     drop(socket);
     println!(
-        "OBS real writer -> localhost service: TEXT/INTEGER/composite keys, binary/text/NULL, signed exact integers and seven REAL bit/storage-class cases preserved; split commits publish once"
+        "OBS real writer -> localhost service: single/composite UUIDv7 keys, binary/text/NULL, signed exact integers and seven REAL bit/storage-class cases preserved; split commits publish once"
     );
 
     let before = sender.copies().await?.first().ok_or("no copy")?.acked;
@@ -197,7 +215,14 @@ async fn native_writer_to_service_preserves_cells_hook_rollback_and_follow_up_ac
     )
     .await?;
     let mut write = writer.begin_write().await?;
-    insert_sample(&mut write, "rollback".into(), "retry".into(), 42, vec![]).await?;
+    insert_sample(
+        &mut write,
+        "019eef00-0000-7000-8000-000000000003".into(),
+        "retry".into(),
+        42,
+        vec![],
+    )
+    .await?;
     write.commit().await?;
     assert!(matches!(
         sender.replicate_once(receiver()?).await,
@@ -234,7 +259,7 @@ async fn native_writer_to_service_preserves_cells_hook_rollback_and_follow_up_ac
     let mut write = writer.begin_write().await?;
     insert_sample(
         &mut write,
-        "after-effect".into(),
+        "019eef00-0000-7000-8000-000000000004".into(),
         "kill".into(),
         43,
         vec![1],

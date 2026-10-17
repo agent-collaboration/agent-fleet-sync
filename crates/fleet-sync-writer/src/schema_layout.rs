@@ -7,7 +7,6 @@ pub struct TableLayout {
     name: String,
     columns: Vec<String>,
     primary_key: Vec<usize>,
-    integer_primary_key: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -16,17 +15,11 @@ struct StoredTableLayout {
     name: String,
     columns: Vec<String>,
     primary_key: Vec<usize>,
-    integer_primary_key: Option<usize>,
 }
 impl TryFrom<StoredTableLayout> for TableLayout {
     type Error = LayoutError;
     fn try_from(stored: StoredTableLayout) -> Result<Self, Self::Error> {
-        Self::new(
-            stored.name,
-            stored.columns,
-            stored.primary_key,
-            stored.integer_primary_key,
-        )
+        Self::new(stored.name, stored.columns, stored.primary_key)
     }
 }
 
@@ -47,7 +40,6 @@ impl TableLayout {
         name: String,
         columns: Vec<String>,
         primary_key: Vec<usize>,
-        integer_primary_key: Option<usize>,
     ) -> Result<Self, LayoutError> {
         if name.is_empty() || columns.iter().any(String::is_empty) {
             return Err(LayoutError::EmptyName);
@@ -67,7 +59,6 @@ impl TableLayout {
             || unique_columns.len() != columns.len()
             || unique_key.len() != primary_key.len()
             || primary_key.iter().any(|index| *index >= columns.len())
-            || integer_primary_key.is_some_and(|index| primary_key.as_slice() != [index])
         {
             return Err(LayoutError::InvalidColumns { table: name });
         }
@@ -75,7 +66,6 @@ impl TableLayout {
             name,
             columns,
             primary_key,
-            integer_primary_key,
         })
     }
 
@@ -87,15 +77,5 @@ impl TableLayout {
     }
     pub fn primary_key(&self) -> &[usize] {
         &self.primary_key
-    }
-    pub(crate) fn has_integer_primary_key(&self) -> bool {
-        self.integer_primary_key.is_some()
-    }
-
-    pub(crate) fn is_primary_key_column(&self, column: &str) -> bool {
-        self.primary_key
-            .iter()
-            .filter_map(|index| self.columns.get(*index))
-            .any(|name| name.eq_ignore_ascii_case(column))
     }
 }

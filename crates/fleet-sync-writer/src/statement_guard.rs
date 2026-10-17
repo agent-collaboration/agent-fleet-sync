@@ -3,14 +3,14 @@ use crate::{OpenError, SchemaForm, TableLayout};
 use fleet_sync_protocol::{SchemaEntry, TableName};
 use std::collections::{BTreeMap, HashMap};
 use turso_parser::{
-    ast::{Cmd, InsertBody, Stmt, UpsertDo},
+    ast::{Cmd, Stmt},
     parser::Parser,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum StatementForm {
-    #[error("upsert assigns a declared primary-key column of {table}")]
-    KeyChangingUpsert { table: String },
+    #[error("statement assigns an immutable primary-key column of {table}")]
+    KeyChange { table: String },
     #[error("invalid SQL: {message}")]
     InvalidSql { message: String },
     #[error("writes are not admitted on a reader")]
@@ -254,32 +254,20 @@ fn check_statements(
         {
             profiles.write = Err(refuse(form));
         }
-        if let Cmd::Stmt(Stmt::Insert {
-            tbl_name,
-            body: InsertBody::Select(_, upsert),
-            ..
-        }) = command
+        if let Some(target) = target
             && let Some(table) = tables
                 .iter()
-                .find(|table| table.name().eq_ignore_ascii_case(tbl_name.name.as_str()))
+                .find(|table| table.name().eq_ignore_ascii_case(target.name.as_str()))
+            && table
+                .primary_key()
+                .iter()
+                .filter_map(|index| table.columns().get(*index))
+                .any(|key| fleet_sync_protocol::assigns_replicated_key(&command, key))
+            && profiles.write.is_ok()
         {
-            let mut clause = upsert.as_deref();
-            while let Some(upsert) = clause {
-                if let UpsertDo::Set { sets, .. } = &upsert.do_clause
-                    && sets
-                        .iter()
-                        .flat_map(|assignment| &assignment.col_names)
-                        .any(|column| table.is_primary_key_column(column.as_str()))
-                    && profiles.write.is_ok()
-                {
-                    profiles.write = Err(StatementRefusal {
-                        form: StatementForm::KeyChangingUpsert {
-                            table: table.name().to_owned(),
-                        },
-                    });
-                }
-                clause = upsert.next.as_deref();
-            }
+            profiles.write = Err(refuse(StatementForm::KeyChange {
+                table: table.name().into(),
+            }));
         }
     }
     if profiles.write.is_err() {

@@ -42,11 +42,8 @@ where
         }
     }
     for sql in &first.contents.schema_steps {
-        fleet_sync_protocol::admit_replicated_schema_statement(sql).map_err(|error| {
-            ReceiverError::InvalidInput {
-                field: error.to_string(),
-            }
-        })?;
+        fleet_sync_protocol::admit_replicated_schema_statement(sql)
+            .map_err(|error| ReceiverError::SchemaUnsupported { form: error.form })?;
     }
     crate::schema_membership::SchemaMembership(scope)
         .apply(&first.contents.schema_steps)

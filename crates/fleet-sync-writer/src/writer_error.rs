@@ -2,12 +2,11 @@ use fleet_sync_protocol::{Epoch, GateReason, SyncTime, TableName, TransferId};
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SchemaForm {
-    #[error(
-        "replicated table {table:?} uses AUTOINCREMENT, whose allocation state does not replicate"
-    )]
-    Autoincrement { table: TableName },
-    #[error("primary-key column {column} of {table:?} permits NULL")]
-    NullablePrimaryKey { table: TableName, column: String },
+    #[error("replicated key column {column:?} of {table:?} must be TEXT NOT NULL")]
+    KeyNotUuidV7 {
+        table: TableName,
+        column: Option<String>,
+    },
     #[error("migration accesses undeclared table {table:?}")]
     UndeclaredTable { table: TableName },
     #[error("local migration changes replicated table {table:?}")]
@@ -18,8 +17,6 @@ pub enum SchemaForm {
     InvalidMigration { statement: String, detail: String },
     #[error("migration statement calls nondeterministic function {function}: {statement}")]
     NonDeterministicMigration { statement: String, function: String },
-    #[error("replicated table {table:?} has no primary key")]
-    NoPrimaryKey { table: TableName },
     #[error("replicated table {table:?} is missing")]
     MissingTable { table: TableName },
     #[error("replicated table has trigger {name}")]
@@ -77,6 +74,10 @@ pub enum OpenError {
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum WriteRefusal {
+    #[error("replicated row key in {table} is not a canonical UUIDv7")]
+    InvalidKey { table: String },
+    #[error("statement assigns the immutable key of {table}")]
+    KeyChange { table: String },
     #[error("database has not registered")]
     Provisional,
     #[error("registration rejected: {reason:?}")]
@@ -103,9 +104,11 @@ pub enum WriteRefusal {
 
 impl From<crate::StatementRefusal> for sqlx_core::Error {
     fn from(refusal: crate::StatementRefusal) -> Self {
-        Self::Configuration(Box::new(WriteRefusal::StatementRefused {
-            form: refusal.form,
-        }))
+        let refusal = match refusal.form {
+            crate::StatementForm::KeyChange { table } => WriteRefusal::KeyChange { table },
+            form => WriteRefusal::StatementRefused { form },
+        };
+        Self::Configuration(Box::new(refusal))
     }
 }
 

@@ -85,7 +85,7 @@
     "sql/read_seed_attempt.sql": "42dee6e1535ed9ea8bbc8a089cd60d70e2be2e6bb2e4e8a173c93f85f6dd23d5",
     "sql/read_seed_page.sql": "f4c6b1c4c8ec825fafe22fb3b144146a402fc07f6ec078c7a77d678e3368bc76",
     "sql/read_seed_pages.sql": "62e5a03f04136dd683c5d3d53e95015c2aea01f1d59e545186325348529505c9",
-    "sql/read_table_columns.sql": "4f65f1232345bc456070539e0051ef892bbdeb04bf0bca73c011bbccea2f59d9",
+    "sql/read_table_columns.sql": "8d7c2cee8576f340ac8c7cf47801f9a8ed0e050be2e3518d1ac9fe6cb434fede",
     "sql/schema_object_exists.sql": "20de7c236f57ae4fe86733d732553d3ff37299d1e426dafd8403578ca35ba692",
     "sql/write_copy.sql": "cfac4e7193c23ffbf5f54b56819616552bbb4a2e5e54a3ac393c662cf395bdcb",
     "sql/write_copy_table.sql": "a77c9cb1ab23750f8310ee875ca3873dada19ee3045482e19cc4e067ef6b13cc",
@@ -100,7 +100,7 @@
     "sql/write_seed.sql": "1760686d585a282c49d7eee530ebe6bcd883d49623d339587ba861adfb372783",
     "sql/write_seed_attempt.sql": "6b7bb9dd642308388c49521b264703c0291d95870d6c172caece780aecd583eb",
     "sql/write_seed_page.sql": "2f10b3342821b1a27f8683e064f8445dd16f74c761b5d095a0c56e0f991c95d8",
-    "src/checked_queries.rs": "81a0b117c33093bc0e586cd4aa297fb3e14eb87961ef0f50d3631373a8c27f54"
+    "src/checked_queries.rs": "1b762b2e7da2461443c24a19396b1e24513b023127bd79c09c236c48cb665a0c"
   },
   "queries": [
     {
@@ -273,6 +273,34 @@
         },
         {
           "name": "key_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "declared_type",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "type_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "not_null",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "not_null_class",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,

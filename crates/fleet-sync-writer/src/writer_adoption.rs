@@ -58,7 +58,7 @@ pub(crate) async fn validate_adoption(
             });
         }
     }
-    crate::schema_inspection::reject_autoincrement(entries, schema.replicated_tables())?;
+    crate::schema_inspection::reject_invalid_key_schemas(entries, schema.replicated_tables())?;
     for (entry, _) in entries {
         // SQLite's own sequence table is engine metadata. The caller must not
         // supply pre-existing replication/CDC metadata under a reserved name.

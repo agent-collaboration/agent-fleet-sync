@@ -26,7 +26,7 @@ pub async fn insert_sample(
 }
 pub async fn insert_reading(
     write: &mut WriteTransaction,
-    id: i64,
+    id: String,
     measured: f64,
 ) -> Result<(), sqlx_core::Error> {
     checked_queries::insert_reading(&mut CapturedScope(write), id, measured).await?;
@@ -34,10 +34,11 @@ pub async fn insert_reading(
 }
 pub async fn insert_source(
     write: &mut WriteTransaction,
-    source: String,
-    sequence: i64,
+    source_id: String,
+    event_id: String,
     sample_id: String,
 ) -> Result<(), sqlx_core::Error> {
-    checked_queries::insert_source(&mut CapturedScope(write), source, sequence, sample_id).await?;
+    checked_queries::insert_source(&mut CapturedScope(write), source_id, event_id, sample_id)
+        .await?;
     Ok(())
 }
