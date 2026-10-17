@@ -42,10 +42,7 @@ pub(crate) struct ServiceState<
     pub copies: Mutex<BTreeMap<DatabaseId, Arc<OnceCell<Arc<CopyOwner>>>>>,
     pub copy_added: Notify,
     pub delivery: Mutex<
-        BTreeMap<
-            crate::delivery_owner::DeliveryObject,
-            Arc<OnceCell<Arc<crate::delivery_owner::DeliveryOwner>>>,
-        >,
+        BTreeMap<crate::delivery_owner::DeliveryObject, Arc<crate::delivery_owner::DeliverySlot>>,
     >,
     pub delivery_added: Notify,
     pub sessions: OnceLock<Weak<ServiceSessions<P, C, A>>>,

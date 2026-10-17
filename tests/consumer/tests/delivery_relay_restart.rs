@@ -101,6 +101,11 @@ async fn relay_kills_after_committed_custody_receipt_report_and_publication_pres
         assert_eq!(disk_bytes, before_bytes);
         relay = ServiceProcess::start(&relay_path).await?;
         control = relay.connect("control", "Bearer consumer-control").await?;
+        control_request(
+            &mut control,
+            ControlRequest::WaitDeliveryOwner { mailbox: peer(4)? },
+        )
+        .await?;
         let ControlAnswer::DeliverySnapshot(after) = control_request(
             &mut control,
             ControlRequest::DeliverySnapshot {

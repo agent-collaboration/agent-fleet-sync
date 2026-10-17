@@ -44,6 +44,21 @@ impl DeliveryObject {
         }))
     }
 }
+pub(crate) struct DeliverySlot {
+    pub owner: OnceCell<Arc<DeliveryOwner>>,
+    #[cfg(feature = "test-support")]
+    pub acquired: watch::Sender<()>,
+}
+impl Default for DeliverySlot {
+    fn default() -> Self {
+        Self {
+            owner: OnceCell::new(),
+            #[cfg(feature = "test-support")]
+            acquired: watch::channel(()).0,
+        }
+    }
+}
+
 pub(crate) struct DeliveryOwner {
     pub object: Arc<ServiceObject>,
     pub engine: Arc<Engine<ServiceObject, ServiceHost>>,
@@ -94,10 +109,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             .delivery
             .ok_or_else(|| ServiceError::rule("delivery is not installed"))
     }
-    pub(crate) async fn delivery_slot(
-        &self,
-        key: DeliveryObject,
-    ) -> Arc<OnceCell<Arc<DeliveryOwner>>> {
+    pub(crate) async fn delivery_slot(&self, key: DeliveryObject) -> Arc<DeliverySlot> {
         let slot = self.delivery.lock().await.entry(key).or_default().clone();
         // An empty slot still needs an owned retry runner if acquisition fails.
         self.delivery_added.notify_one();
@@ -109,10 +121,11 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
     ) -> Result<Arc<DeliveryOwner>, ServiceError> {
         self.delivery_limits()?;
         let slot = self.delivery_slot(key).await;
-        if let Some(owner) = slot.get() {
+        if let Some(owner) = slot.owner.get() {
             return Ok(owner.clone());
         }
         let owner = slot
+            .owner
             .get_or_try_init(|| async {
                 let host = Arc::new(ServiceHost::new(self.calls.clone(), SystemClock));
                 let object = self
@@ -138,6 +151,8 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             })
             .await?
             .clone();
+        #[cfg(feature = "test-support")]
+        slot.acquired.send_replace(());
         self.delivery_added.notify_one();
         Ok(owner)
     }

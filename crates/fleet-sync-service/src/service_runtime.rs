@@ -327,7 +327,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             .lock()
             .await
             .iter()
-            .map(|(key, slot)| (*key, slot.get().cloned()))
+            .map(|(key, slot)| (*key, slot.owner.get().cloned()))
             .collect::<Vec<_>>();
         for (key, owner) in owners {
             if started.contains(&key) {

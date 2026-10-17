@@ -36,6 +36,10 @@ pub enum ControlRequest {
         receiver: ReceiverId,
     },
     #[cfg(feature = "test-support")]
+    WaitDeliveryOwner {
+        mailbox: PeerId,
+    },
+    #[cfg(feature = "test-support")]
     DeliverySnapshot {
         mailbox: PeerId,
         origin: PeerId,
@@ -280,6 +284,11 @@ impl ControlState {
                     )
                     .await??,
                 ),
+                #[cfg(feature = "test-support")]
+                ControlRequest::WaitDeliveryOwner { mailbox } => {
+                    self.service.wait_delivery_owner(mailbox).await?;
+                    ControlAnswer::Ok
+                },
                 #[cfg(feature = "test-support")]
                 ControlRequest::DeliverySnapshot { mailbox, origin } => {
                     ControlAnswer::DeliverySnapshot(

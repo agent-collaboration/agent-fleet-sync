@@ -312,13 +312,20 @@ async fn killing_a_process_at_every_committed_hop_recovers_without_duplicate_eff
     .into_iter()
     .enumerate()
     {
+        eprintln!("OBS kill {hop}: beginning case");
         let directory = tempfile::tempdir()?;
         let sender_path = directory.path().join("sender");
         let recipient_path = directory.path().join("recipient");
-        let mut relay = ServiceProcess::start(&directory.path().join("relay")).await?;
+        let mut relay = ServiceProcess::start(&directory.path().join("relay"))
+            .await
+            .map_err(|error| format!("kill {hop} relay initialization: {error}"))?;
         let mut control = relay.connect("control", "Bearer consumer-control").await?;
-        let mut sender = DeliveryNode::start(&sender_path, 2).await?;
-        let mut recipient = DeliveryNode::start(&recipient_path, 4).await?;
+        let mut sender = DeliveryNode::start(&sender_path, 2)
+            .await
+            .map_err(|error| format!("kill {hop} sender initialization: {error}"))?;
+        let mut recipient = DeliveryNode::start(&recipient_path, 4)
+            .await
+            .map_err(|error| format!("kill {hop} recipient initialization: {error}"))?;
         sender.connect(&relay).await?;
         recipient.connect(&relay).await?;
         let sender_fault = matches!(hop, "submit" | "publication");
@@ -333,10 +340,14 @@ async fn killing_a_process_at_every_committed_hop_recovers_without_duplicate_eff
         let item = enqueue(&mut sender, 300 + index as u64, peer(4)?).await?;
         if sender_fault {
             sender.command(NodeCommand::WaitBarrier).await?;
-            inspect_live_hop(&mut control, &mut sender, &mut recipient, item, hop).await?;
+            inspect_live_hop(&mut control, &mut sender, &mut recipient, item, hop)
+                .await
+                .map_err(|error| format!("kill {hop} live snapshot: {error}"))?;
             sender.kill().await?;
             inspect_killed_hop(&sender_path, hop).await?;
-            sender = DeliveryNode::start(&sender_path, 2).await?;
+            sender = DeliveryNode::start(&sender_path, 2)
+                .await
+                .map_err(|error| format!("kill {hop} sender initialization: {error}"))?;
             sender.connect(&relay).await?;
         }
         sender.wait(item, CustodySide::Outbox, "sent").await?;
@@ -355,10 +366,14 @@ async fn killing_a_process_at_every_committed_hop_recovers_without_duplicate_eff
             .await?;
         if !sender_fault {
             recipient.command(NodeCommand::WaitBarrier).await?;
-            inspect_live_hop(&mut control, &mut sender, &mut recipient, item, hop).await?;
+            inspect_live_hop(&mut control, &mut sender, &mut recipient, item, hop)
+                .await
+                .map_err(|error| format!("kill {hop} live snapshot: {error}"))?;
             recipient.kill().await?;
             inspect_killed_hop(&recipient_path, hop).await?;
-            recipient = DeliveryNode::start(&recipient_path, 4).await?;
+            recipient = DeliveryNode::start(&recipient_path, 4)
+                .await
+                .map_err(|error| format!("kill {hop} recipient initialization: {error}"))?;
             recipient.connect(&relay).await?;
         }
         let expected = if hop == "local" {
@@ -384,8 +399,17 @@ async fn killing_a_process_at_every_committed_hop_recovers_without_duplicate_eff
         eprintln!(
             "OBS kill {hop}: recovered from real drive lease, both custodians {expected}, one external effect"
         );
-        recipient.stop().await?;
-        sender.stop().await?;
+        eprintln!("OBS kill {hop}: stopping recipient");
+        recipient
+            .stop()
+            .await
+            .map_err(|error| format!("kill {hop} recipient shutdown: {error}"))?;
+        eprintln!("OBS kill {hop}: stopping sender");
+        sender
+            .stop()
+            .await
+            .map_err(|error| format!("kill {hop} sender shutdown: {error}"))?;
+        eprintln!("OBS kill {hop}: stopping relay");
         relay.kill().await?;
     }
     Ok(())

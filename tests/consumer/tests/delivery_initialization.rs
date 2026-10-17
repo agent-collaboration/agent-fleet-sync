@@ -178,106 +178,121 @@ async fn mailbox_native_initialization_retries_while_healthy_service_owners_prog
         "OBS A10 startup actual pre-owner native journal initialization failure: {:?}",
         initialization.fields
     );
-    origin.connect(&relay).await?;
-    healthy_origin.connect(&relay).await?;
-    healthy.connect(&relay).await?;
-    probe.connect(&relay).await?;
-    assert!(
-        probe
-            .command(NodeCommand::Query {
-                mailbox: peer(8)?,
-                items: vec![retained]
+    let mut waiting_control = relay.connect("control", "Bearer consumer-control").await?;
+    let opened = control_request(
+        &mut waiting_control,
+        ControlRequest::WaitDeliveryOwner { mailbox: peer(8)? },
+    );
+    tokio::pin!(opened);
+    let healthy_progress = async {
+        origin.connect(&relay).await?;
+        healthy_origin.connect(&relay).await?;
+        healthy.connect(&relay).await?;
+        probe.connect(&relay).await?;
+        assert!(
+            probe
+                .command(NodeCommand::Query {
+                    mailbox: peer(8)?,
+                    items: vec![retained]
+                })
+                .await
+                .is_err(),
+            "initializing mailbox requests must use backend failure, not an item answer"
+        );
+        assert_eq!(
+            origin
+                .command(NodeCommand::Inspect { item: retained })
+                .await?["outbox"]["state"]["value"]["status"]["kind"],
+            "sent"
+        );
+        let good = enqueue(&mut healthy_origin, 883, peer(4)?).await?;
+        healthy_origin
+            .wait(good, CustodySide::Outbox, "sent")
+            .await?;
+        healthy
+            .command(NodeCommand::Receive {
+                stream: DeliveryStream::Items,
             })
-            .await
-            .is_err(),
-        "initializing mailbox requests must use backend failure, not an item answer"
-    );
-    assert_eq!(
-        origin
-            .command(NodeCommand::Inspect { item: retained })
-            .await?["outbox"]["state"]["value"]["status"]["kind"],
-        "sent"
-    );
-    let good = enqueue(&mut healthy_origin, 883, peer(4)?).await?;
-    healthy_origin
-        .wait(good, CustodySide::Outbox, "sent")
-        .await?;
-    healthy
-        .command(NodeCommand::Receive {
-            stream: DeliveryStream::Items,
-        })
-        .await?;
-    assert_eq!(
-        effect_count(
-            &healthy.wait(good, CustodySide::Inbox, "delivered").await?,
-            good
-        ),
-        1
-    );
-    healthy_origin
-        .wait(good, CustodySide::Outbox, "delivered")
-        .await?;
-    let mut fresh = relay
-        .peer(14, SessionId::new(durable_steps::Uuid::now_v7())?)
-        .await?;
-    assert!(
-        matches!(request(&mut fresh, OperationRequest::Consumer(SampleRequest::Echo { text: "initialization isolated".into() })).await?,
+            .await?;
+        assert_eq!(
+            effect_count(
+                &healthy.wait(good, CustodySide::Inbox, "delivered").await?,
+                good
+            ),
+            1
+        );
+        healthy_origin
+            .wait(good, CustodySide::Outbox, "delivered")
+            .await?;
+        let mut fresh = relay
+            .peer(14, SessionId::new(durable_steps::Uuid::now_v7())?)
+            .await?;
+        assert!(
+            matches!(request(&mut fresh, OperationRequest::Consumer(SampleRequest::Echo { text: "initialization isolated".into() })).await?,
         OperationAnswer::Consumer(SampleAnswer::Echo { text, .. }) if text == "initialization isolated")
-    );
-    *transport.0.lock().await = relay
-        .peer(6, SessionId::new(durable_steps::Uuid::now_v7())?)
+        );
+        *transport.0.lock().await = relay
+            .peer(6, SessionId::new(durable_steps::Uuid::now_v7())?)
+            .await?;
+        let started = SystemClock.now();
+        let renewed = match request(
+            &mut *transport.0.lock().await,
+            OperationRequest::Lease(LeaseRequest::Renew(RenewRequest {
+                attempt: RequestId::new(durable_steps::Uuid::now_v7())?,
+                database: writer.database(),
+                epoch: lease.epoch,
+            })),
+        )
+        .await?
+        {
+            OperationAnswer::Lease(LeaseAnswer::Renew(answer)) => answer,
+            _ => return Err("no renewal during mailbox initialization failure".into()),
+        };
+        writer.observe_renewal(renewed, started).await?;
+        let mut write = writer.begin_write().await?;
+        insert_sample(
+            &mut write,
+            "01900000-0000-7000-8000-000000000390".into(),
+            "copy alive during initialization fault".into(),
+            1,
+            vec![1, 2],
+        )
         .await?;
-    let started = SystemClock.now();
-    let renewed = match request(
-        &mut *transport.0.lock().await,
-        OperationRequest::Lease(LeaseRequest::Renew(RenewRequest {
-            attempt: RequestId::new(durable_steps::Uuid::now_v7())?,
-            database: writer.database(),
-            epoch: lease.epoch,
-        })),
-    )
-    .await?
-    {
-        OperationAnswer::Lease(LeaseAnswer::Renew(answer)) => answer,
-        _ => return Err("no renewal during mailbox initialization failure".into()),
+        write.commit().await?;
+        replication.replicate_once(receiver).await?;
+        assert_eq!(
+            copy_rows(&mut *transport.0.lock().await, writer.database())
+                .await?
+                .get("samples")
+                .ok_or("missing healthy copy")?
+                .len(),
+            1
+        );
+        let ControlAnswer::ServiceEvents(events) =
+            control_request(&mut control, ControlRequest::ServiceEvents).await?
+        else {
+            return Err("no service events".into());
+        };
+        assert!(
+            !events
+                .iter()
+                .any(|event| event.fields.get("message").map(String::as_str)
+                    == Some("delivery mailbox unavailable"))
+        );
+        assert!(relay.child.try_wait()?.is_none());
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
     };
-    writer.observe_renewal(renewed, started).await?;
-    let mut write = writer.begin_write().await?;
-    insert_sample(
-        &mut write,
-        "01900000-0000-7000-8000-000000000390".into(),
-        "copy alive during initialization fault".into(),
-        1,
-        vec![1, 2],
-    )
-    .await?;
-    write.commit().await?;
-    replication.replicate_once(receiver).await?;
-    assert_eq!(
-        copy_rows(&mut *transport.0.lock().await, writer.database())
-            .await?
-            .get("samples")
-            .ok_or("missing healthy copy")?
-            .len(),
-        1
-    );
-    let ControlAnswer::ServiceEvents(events) =
-        control_request(&mut control, ControlRequest::ServiceEvents).await?
-    else {
-        return Err("no service events".into());
-    };
-    assert!(
-        !events
-            .iter()
-            .any(|event| event.fields.get("message").map(String::as_str)
-                == Some("delivery mailbox unavailable"))
-    );
-    assert!(relay.child.try_wait()?.is_none());
+    tokio::select! {
+        biased;
+        _ = &mut opened => return Err("owner acquisition observer completed before releasing its BEGIN lock".into()),
+        result = healthy_progress => result?,
+    }
     control_request(
         &mut control,
         ControlRequest::ReleaseDeliveryWrite { mailbox: peer(8)? },
     )
     .await?;
+    assert!(matches!(opened.await?, ControlAnswer::Ok));
     // No Fetch, Query, Submit or peer reconnect touches mailbox8 after release.
     // Its per-key runner must reacquire the native object and expire custody by itself.
     origin
