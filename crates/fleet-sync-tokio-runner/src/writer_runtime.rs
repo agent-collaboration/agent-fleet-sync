@@ -21,6 +21,7 @@ pub struct NativeWriterRuntime<S: ReplicatedSchema, P: ConsumerProtocol> {
     host: Arc<WriterHost<S, P>>,
     store: Arc<NativeWriterStore<S, P>>,
     engine: Arc<Engine<NativeWriterStore<S, P>, WriterHost<S, P>>>,
+    installer: Option<Arc<crate::writer_installer::WriterInstaller<S, P>>>,
 }
 impl<S: ReplicatedSchema, P: ConsumerProtocol> NativeWriterRuntime<S, P> {
     pub async fn new(
@@ -51,7 +52,80 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> NativeWriterRuntime<S, P> {
             host,
             store,
             engine: Arc::new(engine),
+            installer: None,
         })
+    }
+    pub async fn enable_snapshot_installs(
+        &mut self,
+        directory: &std::path::Path,
+    ) -> Result<(), StoreError> {
+        if self.installer.is_some() {
+            return Err(StoreError::Aborted {
+                reason: "writer install owner is already configured".into(),
+            });
+        }
+        let installer = crate::writer_installer::WriterInstaller::open(
+            directory,
+            self.database.clone(),
+            self.receiver,
+            self.calls.clone(),
+        )
+        .await?;
+        self.calls.attach_installer(&installer)?;
+        self.installer = Some(installer);
+        Ok(())
+    }
+    pub async fn install_snapshot(
+        &self,
+        attempt: durable_steps::Uuid,
+    ) -> Result<crate::InstallHandle<WriterHost<S, P>>, durable_steps::StartRefusal> {
+        self.installer
+            .as_ref()
+            .ok_or_else(|| StoreError::Aborted {
+                reason: "writer install owner is not configured".into(),
+            })?
+            .start(attempt)
+            .await
+    }
+    pub async fn wait_install(
+        &self,
+        attempt: durable_steps::Uuid,
+    ) -> Result<crate::InstallRecord, StoreError> {
+        self.installer
+            .as_ref()
+            .ok_or_else(|| StoreError::Aborted {
+                reason: "writer install owner is not configured".into(),
+            })?
+            .wait(attempt)
+            .await
+    }
+    pub async fn install_record(
+        &self,
+        install: durable_steps::Uuid,
+    ) -> Result<crate::InstallRecord, StoreError> {
+        self.installer
+            .as_ref()
+            .ok_or_else(|| StoreError::Aborted {
+                reason: "writer install owner is not configured".into(),
+            })?
+            .record(install)
+            .await
+    }
+    pub async fn answer_release(
+        &self,
+        frame: fleet_sync_protocol::FrameId,
+        call: durable_steps::CallId,
+        request: &fleet_sync_protocol::ReleaseRequest,
+    ) -> Result<(), StoreError> {
+        let answer = self
+            .database
+            .request_release(request, call)
+            .await
+            .map_err(StoreError::backend)?;
+        self.calls
+            .answer_release(frame, answer)
+            .await
+            .map_err(StoreError::backend)
     }
     pub fn transport(&self) -> Arc<WriterSessionCalls<S, P>> {
         self.calls.clone()
@@ -97,7 +171,19 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> NativeWriterRuntime<S, P> {
             self.host.clone(),
             self.database.engine_lock(),
         );
-        let result = runner.run(shutdown).await;
+        let result = if let Some(installer) = &self.installer {
+            let installing = TokioRunner::new(
+                installer.engine.clone(),
+                installer.host.clone(),
+                installer.control.engine_lock(),
+            );
+            let result = tokio::try_join!(runner.run(shutdown.clone()), installing.run(shutdown))
+                .map(|_| ());
+            let closed = installer.objects.close().await;
+            result.and(closed)
+        } else {
+            runner.run(shutdown).await
+        };
         self.calls.close_seed().await;
         result
     }

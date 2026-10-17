@@ -7,7 +7,10 @@ use fleet_sync_writer::{
     WriterSnapshot,
 };
 use serde::{Serialize, de::DeserializeOwned};
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, OnceLock, Weak},
+};
 use tokio::sync::Mutex;
 
 struct SeedSession {
@@ -23,6 +26,7 @@ pub struct WriterSessionCalls<S: ReplicatedSchema, P: ConsumerProtocol> {
     receiver: ReceiverId,
     requests: SessionRequests<P>,
     seed: Mutex<Option<SeedSession>>,
+    installer: OnceLock<Weak<crate::writer_installer::WriterInstaller<S, P>>>,
     #[cfg(feature = "test-support")]
     probe: crate::seed_answer_probe::SeedAnswerProbe,
 }
@@ -37,9 +41,35 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterSessionCalls<S, P> {
             receiver,
             requests,
             seed: Mutex::new(None),
+            installer: OnceLock::new(),
             #[cfg(feature = "test-support")]
             probe: Default::default(),
         }
+    }
+    pub(crate) fn requests(&self) -> SessionRequests<P> {
+        self.requests.clone()
+    }
+    pub(crate) fn attach_installer(
+        &self,
+        installer: &Arc<crate::writer_installer::WriterInstaller<S, P>>,
+    ) -> Result<(), durable_steps::StoreError> {
+        self.installer.set(Arc::downgrade(installer)).map_err(|_| {
+            durable_steps::StoreError::Aborted {
+                reason: "writer install owner is already attached".into(),
+            }
+        })
+    }
+    pub(crate) async fn answer_release(
+        &self,
+        frame: FrameId,
+        answer: ReleaseAnswer,
+    ) -> Result<(), fleet_sync_session::ClientError> {
+        self.requests
+            .answer(
+                frame,
+                ClientAnswer::Crate(ServerCallAnswer::Release(answer)),
+            )
+            .await
     }
     pub async fn close_seed(&self) {
         self.seed.lock().await.take();
@@ -294,6 +324,14 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterSessionCalls<S, P> {
 impl<S: ReplicatedSchema, P: ConsumerProtocol> CallRouter for WriterSessionCalls<S, P> {
     async fn dispatch(&self, call: CallEnvelope) -> Result<serde_json::Value, CallFailure> {
         match call.kind {
+            crate::InstallSource::KIND | crate::InstallFile::KIND => {
+                let installer = self
+                    .installer
+                    .get()
+                    .and_then(Weak::upgrade)
+                    .ok_or_else(unavailable)?;
+                installer.dispatch(call).await
+            }
             RegistryRegistration::KIND => {
                 let target: RegistryRegistration = decode(call.target)?;
                 if target.receiver != self.receiver {
@@ -434,13 +472,13 @@ fn refused(code: &str, detail: impl std::fmt::Display) -> SeedHostError {
         detail: detail.to_string(),
     })
 }
-fn decode<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, CallFailure> {
+pub(crate) fn decode<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, CallFailure> {
     serde_json::from_value(value).map_err(|_| CallFailure::AnswerLost)
 }
-fn encode<T: Serialize>(value: T) -> Result<serde_json::Value, CallFailure> {
+pub(crate) fn encode<T: Serialize>(value: T) -> Result<serde_json::Value, CallFailure> {
     serde_json::to_value(value).map_err(|_| CallFailure::AnswerLost)
 }
-fn unavailable() -> CallFailure {
+pub(crate) fn unavailable() -> CallFailure {
     CallFailure::NotSent {
         reason: durable_steps::NotSentReason::Unreachable { last_seen: None },
     }

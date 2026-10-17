@@ -21,7 +21,13 @@ use tokio::{
     task::JoinSet,
 };
 
-struct Annotation;
+pub(crate) struct Annotation;
+pub(crate) type WriterSender = ReplicationSender<
+    SampleSchema,
+    Annotation,
+    (),
+    fleet_sync_tokio_runner::WriterSessionCalls<SampleSchema, SampleProtocol>,
+>;
 impl PieceAnnotation for Annotation {
     type Protocol = SampleProtocol;
     fn annotate(&self, _: &[CapturedTransaction<'_>]) -> Option<String> {
@@ -148,6 +154,8 @@ pub async fn run_writer(
         database: database.clone(),
         runtime: runtime.clone(),
         acked: acked_state,
+        sender: sender.clone(),
+        receiver,
     });
     let mut tasks = JoinSet::<TestResult>::new();
     let pumping = stopped.clone();

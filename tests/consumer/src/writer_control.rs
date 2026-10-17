@@ -48,6 +48,8 @@ pub(crate) struct WriterControl {
     pub database: Arc<ReplicatedDatabase<SampleSchema>>,
     pub runtime: Arc<NativeWriterRuntime<SampleSchema, SampleProtocol>>,
     pub acked: watch::Receiver<Option<ReplicationPosition>>,
+    pub sender: Arc<crate::writer_actor::WriterSender>,
+    pub receiver: ReceiverId,
 }
 impl WriterControl {
     pub async fn dispatch(&self, command: WriterCommand) -> WriterReply {
@@ -106,7 +108,13 @@ impl WriterControl {
                 WriterCommand::WaitAcked { through } => {
                     let mut acked = self.acked.clone();
                     loop {
-                        if acked.borrow().is_some_and(|position| position >= through) {
+                        let saved = self
+                            .sender
+                            .copies()
+                            .await?
+                            .into_iter()
+                            .find(|copy| copy.copy == self.receiver);
+                        if saved.is_some_and(|copy| copy.acked >= through) {
                             break;
                         }
                         acked.changed().await?;

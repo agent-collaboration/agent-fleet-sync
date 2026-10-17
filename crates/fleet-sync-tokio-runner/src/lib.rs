@@ -4,6 +4,7 @@ mod call_host;
 mod client_pump;
 #[cfg(feature = "test-support")]
 mod seed_answer_probe;
+mod writer_installer;
 mod writer_runtime;
 #[cfg(feature = "test-support")]
 pub use seed_answer_probe::SeedPageObservation;
