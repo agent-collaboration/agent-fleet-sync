@@ -1,17 +1,12 @@
 use crate::TokioObject;
 use durable_steps::{
-    AtomicStore, Host, StoreError, storage::TransactionScope, turso_store::TursoScope,
+    AtomicStore, Host, StoreError, Uuid, storage::TransactionScope, turso_store::TursoScope,
 };
 use fleet_sync_protocol::*;
 use fleet_sync_session::*;
 use sqlx_core::migrate::Migrator;
 use sqlx_turso::{Turso, TursoConnection};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    future::Future,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::BTreeMap, future::Future, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, mpsc, oneshot, watch};
 
 #[derive(Debug, thiserror::Error)]
@@ -52,17 +47,28 @@ pub trait SessionHandler<P: ConsumerProtocol>: Send + Sync + 'static {
     ) -> impl Future<Output = Result<OperationAnswer<P>, SessionHostError>> + Send;
 }
 
+/// One verified admission for its native host. The host consumes it once and
+/// checks that no revocation occurred during verification or before Opening.
+#[derive(Debug)]
+pub struct SessionAdmission {
+    pub(crate) verified: VerifiedPeer,
+    pub(crate) revocation_generation: Option<Uuid>,
+    pub(crate) owner: Arc<()>,
+}
+
 pub struct SessionHost<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host> {
     pub(crate) object: Arc<TokioObject<H>>,
     pub(crate) authenticator: Arc<A>,
     pub(crate) handler: Arc<D>,
     pub(crate) runtime: Mutex<SessionRuntime<P>>,
     pub(crate) send_timeout: Duration,
+    pub(crate) admission_owner: Arc<()>,
     #[cfg(feature = "test-support")]
     registration_changes: watch::Sender<()>,
 }
 pub(crate) struct SocketPeer {
     pub binding: ConnectionBinding,
+    pub revocation_generation: Option<Uuid>,
     pub outgoing: mpsc::Sender<Bytes>,
     pub close: watch::Sender<Option<CloseReason>>,
 }
@@ -73,7 +79,7 @@ pub(crate) struct PendingPeerCall<P: ConsumerProtocol> {
 pub(crate) struct SessionRuntime<P: ConsumerProtocol> {
     pub registrations: BTreeMap<ConnectionId, ConnectionRegistration>,
     pub sockets: BTreeMap<ConnectionId, SocketPeer>,
-    pub revoked: BTreeSet<PeerId>,
+    pub revocations: Arc<BTreeMap<PeerId, Uuid>>,
     pub pending: BTreeMap<(SessionKey, FrameId), PendingPeerCall<P>>,
 }
 pub(crate) enum SessionInput {
@@ -161,24 +167,37 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
             runtime: Mutex::new(SessionRuntime {
                 registrations: BTreeMap::new(),
                 sockets: BTreeMap::new(),
-                revoked: BTreeSet::new(),
+                revocations: Arc::new(BTreeMap::new()),
                 pending: BTreeMap::new(),
             }),
             send_timeout,
+            admission_owner: Arc::new(()),
             #[cfg(feature = "test-support")]
             registration_changes: watch::channel(()).0,
         })
     }
 
-    pub async fn authenticate(&self, material: A::Material) -> Result<VerifiedPeer, AuthRefusal> {
+    pub async fn authenticate(
+        &self,
+        material: A::Material,
+    ) -> Result<SessionAdmission, AuthRefusal> {
+        // A shared immutable snapshot spans external verification without
+        // holding the host lock or rejecting an unrelated peer's revocation.
+        let before = self.runtime.lock().await.revocations.clone();
         let verified = self.authenticator.verify(material).await?;
-        if self.runtime.lock().await.revoked.contains(&verified.peer) {
+        let runtime = self.runtime.lock().await;
+        let revocation_generation = runtime.revocations.get(&verified.peer).copied();
+        if before.get(&verified.peer).copied() != revocation_generation {
             return Err(AuthRefusal::Revoked);
         }
         if verified.expires_at <= self.object.host().now() {
             return Err(AuthRefusal::Expired);
         }
-        Ok(verified)
+        Ok(SessionAdmission {
+            verified,
+            revocation_generation,
+            owner: self.admission_owner.clone(),
+        })
     }
 
     /// The consumer commits its credential revocation before calling this.
@@ -204,9 +223,14 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
         let mut runtime = self.runtime.lock().await;
         let revoke = matches!(input, SessionInput::Revoke);
         if revoke {
-            runtime.revoked.insert(binding.peer);
+            Arc::make_mut(&mut runtime.revocations)
+                .insert(binding.peer, self.object.host().new_id());
         }
-        let revoked = runtime.revoked.contains(&binding.peer);
+        let generation = runtime.revocations.get(&binding.peer).copied();
+        let revoked = runtime
+            .sockets
+            .get(&binding.connection)
+            .is_none_or(|socket| socket.revocation_generation != generation);
         let registrations = runtime.registrations.clone();
         let connections = runtime
             .sockets

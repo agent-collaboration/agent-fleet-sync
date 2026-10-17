@@ -67,6 +67,6 @@ pub use native_object::{ObjectOptions, ObjectStore, TokioObject};
 pub use native_publish::PublishError;
 pub use object_key::{InvalidObjectKey, ObjectKey};
 pub use object_runner::TokioRunner;
-pub use session_host::{SessionHandler, SessionHost, SessionHostError};
+pub use session_host::{SessionAdmission, SessionHandler, SessionHost, SessionHostError};
 #[cfg(test)]
 mod native_publish_tests;

@@ -237,7 +237,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 accepted=incoming.recv()=>if let Some(accepted)=accepted {
                     let sessions=self.sessions.clone();let socket_timeout=self.state.options.socket_timeout;let shutdown=stopped.clone();
                     tasks.spawn(async move {
-                        let result=sessions.serve_connection(fleet_sync_transport_websocket::AxumConnection::new(accepted.socket,socket_timeout),accepted.peer,shutdown).await.map_err(ServiceError::rule);
+                        let result=sessions.serve_connection(fleet_sync_transport_websocket::AxumConnection::new(accepted.socket,socket_timeout),accepted.admission,shutdown).await.map_err(ServiceError::rule);
                         let _=accepted.done.send(());
                         result
                     });

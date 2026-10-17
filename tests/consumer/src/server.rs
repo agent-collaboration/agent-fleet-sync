@@ -96,10 +96,11 @@ pub async fn run_server_with_policy(
         call_timeout: Duration::from_secs(10),
         socket_timeout: Duration::from_secs(5),
     };
+    let authenticator = Arc::new(FixtureAuthenticator::default());
     let service = FleetService::<SampleProtocol, _, _>::open(
         options,
         consumer.clone(),
-        Arc::new(FixtureAuthenticator),
+        authenticator.clone(),
     )
     .await?;
     let (shutdown, stopped) = watch::channel(false);
@@ -107,6 +108,7 @@ pub async fn run_server_with_policy(
         mpsc::channel::<fleet_sync_service::AttachedSource<SampleProtocol>>(8);
     let control = Arc::new(ControlState {
         consumer,
+        authenticator,
         service: service.handle(),
         shutdown: shutdown.clone(),
         source_events,

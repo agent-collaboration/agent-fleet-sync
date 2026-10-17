@@ -20,15 +20,13 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
         let (answer, received) = oneshot::channel();
         let (connection, session) = {
             let mut runtime = self.runtime.lock().await;
-            if runtime.revoked.contains(&peer) {
-                return Err(unsent());
-            }
             let current = runtime
                 .sockets
                 .iter()
                 .find_map(|(connection, socket)| {
                     if socket.binding.peer != peer
                         || socket.binding.expires_at <= self.object.host().now()
+                        || socket.revocation_generation != runtime.revocations.get(&peer).copied()
                     {
                         return None;
                     }

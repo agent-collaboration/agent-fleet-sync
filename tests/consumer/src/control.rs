@@ -107,6 +107,16 @@ pub enum ControlRequest {
     Revoke {
         peer: PeerId,
     },
+    AllowPeer {
+        peer: PeerId,
+    },
+    HoldNextVerification {
+        peer: PeerId,
+    },
+    WaitVerification {
+        peer: PeerId,
+    },
+    ResumeVerification,
     Shutdown,
 }
 #[derive(Serialize, Deserialize)]
@@ -137,6 +147,7 @@ pub enum ControlAnswer {
 }
 pub(crate) struct ControlState {
     pub consumer: Arc<Consumer>,
+    pub authenticator: Arc<FixtureAuthenticator>,
     pub service: ConsumerHandle,
     pub shutdown: watch::Sender<bool>,
     pub source_events:
@@ -393,7 +404,24 @@ impl ControlState {
                     ControlAnswer::HolderChange(self.service.wait_holder_change(request).await?)
                 }
                 ControlRequest::Revoke { peer } => {
+                    self.authenticator.set_allowed(peer, false).await;
                     self.service.revoke(peer).await?;
+                    ControlAnswer::Ok
+                }
+                ControlRequest::AllowPeer { peer } => {
+                    self.authenticator.set_allowed(peer, true).await;
+                    ControlAnswer::Ok
+                }
+                ControlRequest::HoldNextVerification { peer } => {
+                    self.authenticator.hold_next(peer).await;
+                    ControlAnswer::Ok
+                }
+                ControlRequest::WaitVerification { peer } => {
+                    self.authenticator.wait_verification(peer).await?;
+                    ControlAnswer::Ok
+                }
+                ControlRequest::ResumeVerification => {
+                    self.authenticator.resume_verification();
                     ControlAnswer::Ok
                 }
                 ControlRequest::Shutdown => {

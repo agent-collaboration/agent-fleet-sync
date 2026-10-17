@@ -8,12 +8,7 @@ use fleet_sync_receiver::{
     AppliedPiece, FollowUpDone, FollowUpFailure, InstalledSnapshot, ReceiverHook,
 };
 use fleet_sync_service::{ConsumerHandler, ServiceConsumer, ServiceError, ServiceScope};
-use fleet_sync_session::{PeerAuthenticator, VerifiedPeer};
-use runtime_primitives::{Clock, SystemClock};
-use std::{
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
-    time::Duration,
-};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 pub struct Consumer {
     pub store: ConsumerStore,
@@ -217,20 +212,5 @@ impl HolderChangeGate for Consumer {
             std::future::pending::<()>().await;
         }
         Ok(())
-    }
-}
-pub struct FixtureAuthenticator;
-impl PeerAuthenticator for FixtureAuthenticator {
-    type Material = String;
-    async fn verify(&self, material: String) -> Result<VerifiedPeer, AuthRefusal> {
-        let peer = material
-            .strip_prefix("Bearer peer-")
-            .and_then(|value| value.parse::<u128>().ok())
-            .and_then(|value| PeerId::new(durable_steps::Uuid::from_u128(value)).ok())
-            .ok_or(AuthRefusal::Unknown)?;
-        Ok(VerifiedPeer {
-            peer,
-            expires_at: SystemClock.now().after(Duration::from_secs(3600)),
-        })
     }
 }

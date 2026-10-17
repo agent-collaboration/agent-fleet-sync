@@ -7,7 +7,8 @@ use axum::{
     routing::get,
 };
 use fleet_sync_protocol::ConsumerProtocol;
-use fleet_sync_session::{PeerAuthenticator, VerifiedPeer};
+use fleet_sync_session::PeerAuthenticator;
+use fleet_sync_tokio_runner::SessionAdmission;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 
@@ -15,7 +16,7 @@ use tokio::sync::{mpsc, oneshot};
 // service's owner channel and waits until that owned connection task is joined.
 pub(crate) struct AcceptedConnection {
     pub socket: axum::extract::ws::WebSocket,
-    pub peer: VerifiedPeer,
+    pub admission: SessionAdmission,
     pub done: oneshot::Sender<()>,
 }
 struct UpgradeState<
@@ -66,15 +67,19 @@ async fn upgrade<
         .and_then(|header| header.to_str().ok())
         .unwrap_or_default()
         .to_owned();
-    let peer = match state.sessions.authenticate(material).await {
-        Ok(peer) => peer,
+    let admission = match state.sessions.authenticate(material).await {
+        Ok(admission) => admission,
         Err(_) => return StatusCode::UNAUTHORIZED.into_response(),
     };
     upgrade.on_upgrade(move |socket| async move {
         let (done, finished) = oneshot::channel();
         if state
             .accepted
-            .send(AcceptedConnection { socket, peer, done })
+            .send(AcceptedConnection {
+                socket,
+                admission,
+                done,
+            })
             .await
             .is_ok()
         {

@@ -1,5 +1,5 @@
 use crate::{
-    SessionHandler, SessionHost, SessionHostError,
+    SessionAdmission, SessionHandler, SessionHost, SessionHostError,
     session_host::{SessionInput, SocketPeer},
 };
 use durable_steps::Host;
@@ -19,12 +19,20 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
     pub async fn serve_connection<T: TransportConnection>(
         self: Arc<Self>,
         connection: T,
-        verified: VerifiedPeer,
+        admission: SessionAdmission,
         shutdown: watch::Receiver<bool>,
     ) -> Result<(), SessionHostError> {
+        if !Arc::ptr_eq(&self.admission_owner, &admission.owner) {
+            connection
+                .close(CloseReason::CredentialRejected(AuthRefusal::Revoked))
+                .await;
+            return Err(SessionHostError::rule(
+                "admission belongs to another session host",
+            ));
+        }
         let binding = ConnectionBinding::new(
             ConnectionId::new(self.object.host().new_id()).map_err(SessionHostError::rule)?,
-            verified,
+            admission.verified,
         );
         let (outgoing, incoming) = mpsc::channel(64);
         let (close, closed) = watch::channel(None);
@@ -32,6 +40,7 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
             binding.connection,
             SocketPeer {
                 binding,
+                revocation_generation: admission.revocation_generation,
                 outgoing,
                 close,
             },
@@ -139,7 +148,12 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
 
     async fn route_allowed(&self, binding: ConnectionBinding, session: SessionKey) -> bool {
         let runtime = self.runtime.lock().await;
-        !runtime.revoked.contains(&binding.peer)
+        runtime
+            .sockets
+            .get(&binding.connection)
+            .is_some_and(|socket| {
+                socket.revocation_generation == runtime.revocations.get(&binding.peer).copied()
+            })
             && binding.peer == session.peer
             && binding.expires_at > self.object.host().now()
             && matches!(runtime.registrations.get(&binding.connection),Some(ConnectionRegistration::Attached {session_id,..}) if *session_id==session.session_id)

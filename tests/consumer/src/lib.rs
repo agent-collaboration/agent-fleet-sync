@@ -3,6 +3,7 @@ mod consumer;
 mod consumer_claim_gate;
 mod consumer_store;
 mod control;
+mod fixture_authenticator;
 mod protocol;
 mod sample_writes;
 pub use sample_writes::{insert_reading, insert_sample, insert_source};
@@ -11,9 +12,10 @@ mod writer_actor;
 mod writer_bootstrap;
 mod writer_control;
 mod writer_move;
-pub use consumer::{Consumer, FixtureAuthenticator};
+pub use consumer::Consumer;
 pub use consumer_store::ConsumerStore;
 pub use control::{ControlAnswer, ControlRequest};
+pub use fixture_authenticator::FixtureAuthenticator;
 pub use protocol::{
     ClaimGateReceipt, ClaimSettlementReceipt, EffectReceipt, HookEffect, SampleAnswer,
     SampleProtocol, SampleRequest, SampleSchema, SavedEffect,
