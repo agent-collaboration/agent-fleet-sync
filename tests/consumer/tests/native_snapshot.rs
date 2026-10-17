@@ -268,6 +268,9 @@ async fn refused_snapshot_ready_rolls_back_hook_rows_and_follow_up_admission() -
         );
     }
     file.close().await?;
+    let store = ConsumerStore::open(&target_path.join("consumer.db")).await?;
+    assert!(store.effects().await?.is_empty());
+    store.close().await;
     let mut control = source.connect("control", "Bearer consumer-control").await?;
     source.stop(&mut control).await?;
     Ok(())
