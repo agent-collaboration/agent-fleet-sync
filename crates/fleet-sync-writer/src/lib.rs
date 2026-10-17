@@ -99,6 +99,8 @@ mod schema_metadata_tests;
 #[cfg(test)]
 mod sender_authority_tests;
 #[cfg(test)]
+mod sender_copy_authority_tests;
+#[cfg(test)]
 mod sender_snapshot_recovery_tests;
 #[cfg(test)]
 mod sender_test_fixture;

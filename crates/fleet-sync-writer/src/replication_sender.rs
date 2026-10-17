@@ -357,7 +357,10 @@ where
                 }
                 true
             }
-            ReplicationAnswer::Refused(PieceRefusal::StaleEpoch { newer, ended_at }) => {
+            ReplicationAnswer::Refused(reason @ PieceRefusal::StaleEpoch { newer, ended_at }) => {
+                if status.role != CopyRole::Authoritative {
+                    return Err(SenderError::Refused { copy, reason });
+                }
                 let head = crate::capture_stream::capture_head(&mut transaction, &record).await?;
                 if newer <= record.epoch || ended_at > head {
                     return Err(SenderError::Invalid {
