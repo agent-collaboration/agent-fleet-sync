@@ -1,0 +1,169 @@
+{
+  "migrations": [
+    "migrations",
+    "hook-migrations",
+    "replicated-migrations"
+  ],
+  "output": "src/checked_queries.rs",
+  "metadata": "checked-query-metadata.json",
+  "queries": [
+    {
+      "name": "insert_effect",
+      "sql": "sql/insert_effect.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "call_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_effects",
+      "sql": "sql/read_effects.sql",
+      "row": "EffectRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "read_effect",
+      "sql": "sql/read_effect.sql",
+      "row": "EffectRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "call_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "insert_hook_event",
+      "sql": "sql/insert_hook_event.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "event_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "annotation",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "count_hook_events",
+      "sql": "sql/count_hook_events.sql",
+      "row": "HookCountRow",
+      "result": "one",
+      "parameters": []
+    },
+    {
+      "name": "read_client_session",
+      "sql": "sql/read_client_session.sql",
+      "row": "SessionRow",
+      "result": "optional",
+      "parameters": []
+    },
+    {
+      "name": "save_client_session",
+      "sql": "sql/save_client_session.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "insert_sample",
+      "sql": "sql/insert_sample.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "label",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "exact_value",
+          "kind": "integer",
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "kind": "blob",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "insert_reading",
+      "sql": "sql/insert_reading.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "id",
+          "kind": "integer",
+          "nullable": false
+        },
+        {
+          "name": "measured",
+          "kind": "real",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "insert_source",
+      "sql": "sql/insert_source.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "source",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "sequence",
+          "kind": "integer",
+          "nullable": false
+        },
+        {
+          "name": "sample_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "increment_effect_attempts",
+      "sql": "sql/increment_effect_attempts.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "call_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    }
+  ]
+}

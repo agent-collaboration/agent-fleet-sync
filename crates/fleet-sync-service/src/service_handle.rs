@@ -30,6 +30,13 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
     ) -> Result<CopyStatusAnswer, ServiceError> {
         self.state.copy_status(database).await
     }
+    #[cfg(feature = "test-support")]
+    pub async fn wait_opening(&self, peer: PeerId) -> Result<ConnectionId, ServiceError> {
+        self.sessions
+            .wait_opening(peer)
+            .await
+            .map_err(ServiceError::rule)
+    }
     pub async fn lifecycle(
         &self,
         database: DatabaseId,

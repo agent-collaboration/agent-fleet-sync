@@ -1,0 +1,2 @@
+CREATE TABLE effect_receipts(call_id TEXT NOT NULL PRIMARY KEY, record TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE client_session(singleton INTEGER PRIMARY KEY, record TEXT NOT NULL);

@@ -9,6 +9,9 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+test-support = ["fleet-sync-tokio-runner/test-support"]
+
 [dependencies]
 axum = {version="0.8.9",features=["ws"]}
 durable-steps = {path="../durable-steps",features=["turso"]}

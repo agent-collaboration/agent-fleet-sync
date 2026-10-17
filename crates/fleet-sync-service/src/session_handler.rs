@@ -140,6 +140,16 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             let Some(lease) = lease.filter(|lease| lease.holder == peer) else {
                 continue;
             };
+            if let Ok(copy) = self.copy(database).await
+                && let Some(reason) = copy.health.lock().await.clone()
+            {
+                summaries.push(DatabaseStatus::Unavailable {
+                    database,
+                    lease: Some(lease),
+                    reason,
+                });
+                continue;
+            }
             match self.copy_status(database).await {
                 Ok(CopyStatusAnswer::Status(status)) => summaries.push(DatabaseStatus::Ready {
                     database,

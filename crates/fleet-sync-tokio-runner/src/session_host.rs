@@ -58,6 +58,8 @@ pub struct SessionHost<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHand
     pub(crate) handler: Arc<D>,
     pub(crate) runtime: Mutex<SessionRuntime<P>>,
     pub(crate) send_timeout: Duration,
+    #[cfg(feature = "test-support")]
+    registration_changes: watch::Sender<()>,
 }
 pub(crate) struct SocketPeer {
     pub binding: ConnectionBinding,
@@ -110,6 +112,28 @@ impl<H: Host> SessionScope for SessionTransaction<'_, '_, H> {
 impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
     SessionHost<P, A, D, H>
 {
+    /// Observe the committed host registration without changing session order.
+    #[cfg(feature = "test-support")]
+    pub async fn wait_opening(&self, peer: PeerId) -> Result<ConnectionId, SessionHostError> {
+        let mut changes = self.registration_changes.subscribe();
+        loop {
+            {
+                let runtime = self.runtime.lock().await;
+                if let Some(connection) = runtime.sockets.iter().find_map(|(connection, socket)| {
+                    (socket.binding.peer == peer
+                        && matches!(
+                            runtime.registrations.get(connection),
+                            Some(ConnectionRegistration::Opening)
+                        ))
+                    .then_some(*connection)
+                }) {
+                    return Ok(connection);
+                }
+            }
+            changes.changed().await.map_err(SessionHostError::rule)?;
+        }
+    }
+
     pub async fn open(
         object: Arc<TokioObject<H>>,
         authenticator: Arc<A>,
@@ -141,6 +165,8 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
                 pending: BTreeMap::new(),
             }),
             send_timeout,
+            #[cfg(feature = "test-support")]
+            registration_changes: watch::channel(()).0,
         })
     }
 
@@ -232,6 +258,8 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
             }
         };
         runtime.registrations = registrations;
+        #[cfg(feature = "test-support")]
+        self.registration_changes.send_replace(());
         Ok(effects)
     }
 
