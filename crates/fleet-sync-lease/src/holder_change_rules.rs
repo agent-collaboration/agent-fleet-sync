@@ -111,7 +111,9 @@ where
                     .await;
                 }
             };
-            if final_position.epoch != *from_epoch {
+            // An idle holder still ends at the position inherited from its predecessor.
+            // The copy must acknowledge and fence at that exact position below.
+            if final_position.epoch > *from_epoch {
                 return Err(LeaseError::InvalidInput {
                     field: "release position belongs to another epoch".into(),
                 });
