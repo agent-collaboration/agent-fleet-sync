@@ -17,12 +17,14 @@ durable-steps = { path = "../durable-steps", features = ["turso"] }
 futures-util.workspace = true
 turso.workspace = true
 fleet-sync-protocol = {path="../fleet-sync-protocol"}
+fleet-sync-receiver = {path="../fleet-sync-receiver"}
 fleet-sync-session = {path="../fleet-sync-session"}
 runtime-primitives = { path = "../runtime-primitives", features = ["tokio"] }
 serde.workspace = true
 serde_json.workspace = true
 sqlx-turso.workspace = true
 sqlx-core.workspace = true
+sqlx.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs"] }
 tracing.workspace = true

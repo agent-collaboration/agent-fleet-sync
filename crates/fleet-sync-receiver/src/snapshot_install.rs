@@ -83,6 +83,15 @@ where
                 ready: marker.ready,
             }))
     }
+    /// Membership includes replicated views as well as tables. Native publish
+    /// uses the rules' recorded ownership instead of inferring it from names.
+    pub async fn replicated_objects(
+        &mut self,
+    ) -> Result<std::collections::BTreeSet<String>, SnapshotInstallError> {
+        Ok(crate::schema_membership::SchemaMembership(self.0)
+            .names()
+            .await?)
+    }
     pub async fn page_receipt(
         &mut self,
         install: &SnapshotInstall,
@@ -96,123 +105,133 @@ where
             .into_iter()
             .find(|receipt| receipt.page == page))
     }
-    pub async fn stage_page(
-        &mut self,
-        install: &SnapshotInstall,
+    // Explicit Send is required by borrowed-scope native host dispatch.
+    #[allow(clippy::manual_async_fn)]
+    pub fn stage_page<'call>(
+        &'call mut self,
+        install: &'call SnapshotInstall,
         index: u32,
-        cursor: Option<&SnapshotCursor>,
-        page: &SnapshotPage,
-    ) -> Result<InstallPageReceipt, SnapshotInstallError> {
-        let mut marker = InstallStorage(self.0).load().await?;
-        check_identity(&marker, install)?;
-        if page.database != install.database
-            || page.position != install.position
-            || page.schema != install.schema
-            || page.rows.len() > crate::snapshot_reads::PAGE_SIZE
-        {
-            return Err(SnapshotInstallError::IdentityConflict);
-        }
-        let digest =
-            PageDigest::of(page).map_err(|_| SnapshotInstallError::PageConflict { page: index })?;
-        let receipts = InstallStorage(self.0).pages(install.install_id).await?;
-        if let Some(receipt) = receipts.iter().find(|receipt| receipt.page == index) {
-            return if receipt.digest == digest {
-                Ok(receipt.clone())
-            } else {
-                Err(SnapshotInstallError::PageConflict { page: index })
-            };
-        }
-        if marker.verified.is_some()
-            || usize::try_from(index).ok() != Some(receipts.len())
-            || (index == 0 && cursor.is_some())
-            || (index > 0
-                && (receipts
-                    .last()
-                    .and_then(|receipt| receipt.next.as_ref())
-                    .is_none()
-                    || receipts.last().and_then(|receipt| receipt.next.as_ref()) != cursor))
-        {
-            return Err(SnapshotInstallError::PageConflict { page: index });
-        }
-        if let Some(cursor) = cursor
-            && (cursor.position != install.position || cursor.table != page.table)
-        {
-            return Err(SnapshotInstallError::PageConflict { page: index });
-        }
-        if let Some(statements) = &marker.schema_steps {
-            if statements != &page.schema_steps {
-                return Err(SnapshotInstallError::SchemaMismatch);
+        cursor: Option<&'call SnapshotCursor>,
+        page: &'call SnapshotPage,
+    ) -> impl std::future::Future<Output = Result<InstallPageReceipt, SnapshotInstallError>> + Send + 'call
+    {
+        async move {
+            let mut marker = InstallStorage(self.0).load().await?;
+            check_identity(&marker, install)?;
+            if page.database != install.database
+                || page.position != install.position
+                || page.schema != install.schema
+                || page.rows.len() > crate::snapshot_reads::PAGE_SIZE
+            {
+                return Err(SnapshotInstallError::IdentityConflict);
             }
-        } else {
-            crate::schema_membership::SchemaMembership(self.0)
-                .apply(&page.schema_steps)
+            let digest = PageDigest::of(page)
+                .map_err(|_| SnapshotInstallError::PageConflict { page: index })?;
+            let receipts = InstallStorage(self.0).pages(install.install_id).await?;
+            if let Some(receipt) = receipts.iter().find(|receipt| receipt.page == index) {
+                return if receipt.digest == digest {
+                    Ok(receipt.clone())
+                } else {
+                    Err(SnapshotInstallError::PageConflict { page: index })
+                };
+            }
+            if marker.verified.is_some()
+                || usize::try_from(index).ok() != Some(receipts.len())
+                || (index == 0 && cursor.is_some())
+                || (index > 0
+                    && (receipts
+                        .last()
+                        .and_then(|receipt| receipt.next.as_ref())
+                        .is_none()
+                        || receipts.last().and_then(|receipt| receipt.next.as_ref()) != cursor))
+            {
+                return Err(SnapshotInstallError::PageConflict { page: index });
+            }
+            if let Some(cursor) = cursor
+                && (cursor.position != install.position || cursor.table != page.table)
+            {
+                return Err(SnapshotInstallError::PageConflict { page: index });
+            }
+            if let Some(statements) = &marker.schema_steps {
+                if statements != &page.schema_steps {
+                    return Err(SnapshotInstallError::SchemaMismatch);
+                }
+            } else {
+                crate::schema_membership::SchemaMembership(self.0)
+                    .apply(&page.schema_steps)
+                    .await?;
+                crate::snapshot_rows::clear_snapshot_rows(self.0).await?;
+                if SchemaReads(self.0).fingerprint().await? != install.schema.fingerprint {
+                    return Err(SnapshotInstallError::SchemaMismatch);
+                }
+                let record = crate::row_transactions::SchemaStepRecord {
+                    version: install.schema.version,
+                    statements: page.schema_steps.clone(),
+                };
+                checked_queries::write_schema_step(
+                    self.0,
+                    install.schema.version.to_string(),
+                    encode_record(&record)?,
+                )
                 .await?;
-            crate::snapshot_rows::clear_snapshot_rows(self.0).await?;
-            if SchemaReads(self.0).fingerprint().await? != install.schema.fingerprint {
-                return Err(SnapshotInstallError::SchemaMismatch);
+                marker.schema_steps = Some(page.schema_steps.clone());
             }
-            let record = crate::row_transactions::SchemaStepRecord {
-                version: install.schema.version,
-                statements: page.schema_steps.clone(),
+            crate::snapshot_rows::insert_snapshot_rows(self.0, page).await?;
+            let receipt = InstallPageReceipt {
+                install_id: install.install_id,
+                page: index,
+                digest,
+                rows: u64::try_from(page.rows.len())
+                    .map_err(|_| SnapshotInstallError::PageConflict { page: index })?,
+                next: page.next.clone(),
             };
-            checked_queries::write_schema_step(
-                self.0,
-                install.schema.version.to_string(),
-                encode_record(&record)?,
-            )
-            .await?;
-            marker.schema_steps = Some(page.schema_steps.clone());
+            InstallStorage(self.0).save_page(&receipt).await?;
+            InstallStorage(self.0).save(&marker).await?;
+            Ok(receipt)
         }
-        crate::snapshot_rows::insert_snapshot_rows(self.0, page).await?;
-        let receipt = InstallPageReceipt {
-            install_id: install.install_id,
-            page: index,
-            digest,
-            rows: u64::try_from(page.rows.len())
-                .map_err(|_| SnapshotInstallError::PageConflict { page: index })?,
-            next: page.next.clone(),
-        };
-        InstallStorage(self.0).save_page(&receipt).await?;
-        InstallStorage(self.0).save(&marker).await?;
-        Ok(receipt)
     }
-    pub async fn verify(
-        &mut self,
-        install: &SnapshotInstall,
-        manifest: &SnapshotManifest,
-    ) -> Result<(), SnapshotInstallError> {
-        let mut marker = InstallStorage(self.0).load().await?;
-        check_identity(&marker, install)?;
-        if manifest.database != install.database
-            || manifest.position != install.position
-            || manifest.schema != install.schema
-        {
-            return Err(SnapshotInstallError::IdentityConflict);
+    // Explicit Send is required by borrowed-scope native host dispatch.
+    #[allow(clippy::manual_async_fn)]
+    pub fn verify<'call>(
+        &'call mut self,
+        install: &'call SnapshotInstall,
+        manifest: &'call SnapshotManifest,
+    ) -> impl std::future::Future<Output = Result<(), SnapshotInstallError>> + Send + 'call {
+        async move {
+            let mut marker = InstallStorage(self.0).load().await?;
+            check_identity(&marker, install)?;
+            if manifest.database != install.database
+                || manifest.position != install.position
+                || manifest.schema != install.schema
+            {
+                return Err(SnapshotInstallError::IdentityConflict);
+            }
+            if let Some(saved) = marker.verified {
+                return if saved == *manifest {
+                    Ok(())
+                } else {
+                    Err(SnapshotInstallError::ManifestMismatch)
+                };
+            }
+            let pages = InstallStorage(self.0).pages(install.install_id).await?;
+            if marker.schema_steps.is_none()
+                || pages.is_empty()
+                || pages.last().is_some_and(|page| page.next.is_some())
+            {
+                return Err(SnapshotInstallError::Incomplete);
+            }
+            let status = starting_status(self.0, install).await?;
+            let actual =
+                crate::snapshot_manifest::compute_manifest(self.0, install.position, status)
+                    .await?;
+            if actual != SnapshotManifestAnswer::Manifest(manifest.clone())
+                || SchemaReads(self.0).fingerprint().await? != install.schema.fingerprint
+            {
+                return Err(SnapshotInstallError::ManifestMismatch);
+            }
+            marker.verified = Some(manifest.clone());
+            InstallStorage(self.0).save(&marker).await
         }
-        if let Some(saved) = marker.verified {
-            return if saved == *manifest {
-                Ok(())
-            } else {
-                Err(SnapshotInstallError::ManifestMismatch)
-            };
-        }
-        let pages = InstallStorage(self.0).pages(install.install_id).await?;
-        if marker.schema_steps.is_none()
-            || pages.is_empty()
-            || pages.last().is_some_and(|page| page.next.is_some())
-        {
-            return Err(SnapshotInstallError::Incomplete);
-        }
-        let status = starting_status(self.0, install).await?;
-        let actual =
-            crate::snapshot_manifest::compute_manifest(self.0, install.position, status).await?;
-        if actual != SnapshotManifestAnswer::Manifest(manifest.clone())
-            || SchemaReads(self.0).fingerprint().await? != install.schema.fingerprint
-        {
-            return Err(SnapshotInstallError::ManifestMismatch);
-        }
-        marker.verified = Some(manifest.clone());
-        InstallStorage(self.0).save(&marker).await
     }
     pub async fn mark_ready<H: ReceiverHook<S>>(
         &mut self,

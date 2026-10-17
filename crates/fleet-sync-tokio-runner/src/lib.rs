@@ -17,6 +17,11 @@ mod object_runner;
 mod session_host;
 mod session_peer_call;
 mod session_socket;
+mod staging_publish;
+mod staging_store;
+pub use staging_store::{StagedPage, StagingError, StagingStore};
+#[cfg(test)]
+mod staging_store_tests;
 
 pub use call_host::{CallEnvelope, CallRouter, TokioHost};
 pub use native_object::{ObjectOptions, ObjectStore, TokioObject};
