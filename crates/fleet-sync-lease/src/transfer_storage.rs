@@ -108,6 +108,7 @@ where
         outcome: Option<String>,
         phase: Option<String>,
         history: Option<String>,
+        cleanup_failed: Option<String>,
     ) -> Result<TransferRecord, LeaseError> {
         let admission = self
             .admission(id)
@@ -125,6 +126,9 @@ where
                 .transpose()?,
             phase: decode(phase, "holder-change phase")?,
             phase_history: decode(history, "holder-change phase history")?,
+            cleanup_failed: cleanup_failed
+                .map(|value| decode(Some(value), "holder-change cleanup failure"))
+                .transpose()?,
         };
         record.validate()?;
         Ok(record)
@@ -137,9 +141,16 @@ where
         else {
             return Ok(None);
         };
-        self.transfer_row(id, row.intent, row.outcome, row.phase, row.phase_history)
-            .await
-            .map(Some)
+        self.transfer_row(
+            id,
+            row.intent,
+            row.outcome,
+            row.phase,
+            row.phase_history,
+            row.cleanup_failed,
+        )
+        .await
+        .map(Some)
     }
     pub(crate) async fn active_transfer(
         &mut self,
@@ -155,7 +166,14 @@ where
             "active transfer attempt",
         )?;
         let record = self
-            .transfer_row(id, row.intent, row.outcome, row.phase, row.phase_history)
+            .transfer_row(
+                id,
+                row.intent,
+                row.outcome,
+                row.phase,
+                row.phase_history,
+                row.cleanup_failed,
+            )
             .await?;
         if record.intent.database() != database || record.outcome.is_some() {
             return Err(LeaseError::Corrupt {
@@ -184,7 +202,9 @@ where
         if let Some(existing) = self.transfer(id).await?
             && (existing.intent != record.intent
                 || (existing.outcome.is_some() && existing.outcome != record.outcome)
-                || !record.phase_history.starts_with(&existing.phase_history))
+                || !record.phase_history.starts_with(&existing.phase_history)
+                || (existing.cleanup_failed.is_some()
+                    && existing.cleanup_failed != record.cleanup_failed))
         {
             return Err(LeaseError::Corrupt {
                 field: "immutable transfer state".into(),
@@ -227,6 +247,37 @@ where
             id.as_uuid().to_string(),
         )
         .await?;
+        Ok(())
+    }
+    pub(crate) async fn save_cleanup_failure(
+        &mut self,
+        id: TransferId,
+        failure: &CleanupFailure,
+    ) -> Result<(), LeaseError> {
+        let mut record = self
+            .transfer(id)
+            .await?
+            .ok_or_else(|| LeaseError::Corrupt {
+                field: "cleanup transfer missing".into(),
+            })?;
+        if let Some(existing) = &record.cleanup_failed {
+            return if existing == failure {
+                Ok(())
+            } else {
+                Err(LeaseError::Corrupt {
+                    field: "immutable cleanup failure".into(),
+                })
+            };
+        }
+        record.cleanup_failed = Some(failure.clone());
+        record.validate()?;
+        if record.outcome.is_some() {
+            return Err(LeaseError::Corrupt {
+                field: "cleanup failure after terminal outcome".into(),
+            });
+        }
+        checked_queries::write_cleanup_failure(self.0, encode(failure)?, id.as_uuid().to_string())
+            .await?;
         Ok(())
     }
 }

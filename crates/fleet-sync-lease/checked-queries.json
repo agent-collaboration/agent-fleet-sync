@@ -440,6 +440,24 @@
           "nullable": false
         }
       ]
+    },
+    {
+      "name": "write_cleanup_failure",
+      "sql": "sql/write_cleanup_failure.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "cleanup_failed",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
     }
   ]
 }

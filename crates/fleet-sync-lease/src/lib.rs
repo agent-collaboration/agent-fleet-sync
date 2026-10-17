@@ -131,3 +131,6 @@ mod turso_workflow_race_tests;
 
 #[cfg(test)]
 mod turso_workflow_storage_tests;
+
+#[cfg(test)]
+mod turso_workflow_failure_tests;

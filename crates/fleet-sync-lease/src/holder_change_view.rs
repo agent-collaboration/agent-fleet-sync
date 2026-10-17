@@ -36,14 +36,20 @@ where
             None,
         ),
     };
-    let (mut waiting, parent_running, reserved) = pending(
+    let parent = read_journal_progress(
         scope,
         admission.operation,
         "fleet-sync.holder-change",
         &holder_change_request_key(attempt)?,
     )
     .await?;
-    let mut follow_running = false;
+    let (mut waiting, parent_unresolved, parent_failed, reserved) = match parent {
+        JournalProgress::Running { waiting, reserved } => (waiting, true, false, reserved),
+        JournalProgress::Completed => (None, false, false, false),
+        JournalProgress::Failed { .. } => (None, true, true, false),
+    };
+    let mut follow_unresolved = None;
+    let mut follow_up_failure = None;
     if let Some(id) = admission.follow_up {
         let (kind, key) = if matches!(admission.request, HolderChangeRequest::Move { .. }) {
             (
@@ -59,17 +65,33 @@ where
                     })?,
             )
         };
-        let (follow_waiting, running, _) = pending(scope, id, kind, &key).await?;
-        follow_running = running;
-        if running {
-            waiting = follow_waiting;
+        match read_journal_progress(scope, id, kind, &key).await? {
+            JournalProgress::Running {
+                waiting: child_waiting,
+                ..
+            } => {
+                follow_unresolved = Some(true);
+                waiting = child_waiting;
+            }
+            JournalProgress::Completed => {
+                follow_unresolved = Some(false);
+                waiting = None;
+            }
+            JournalProgress::Failed { reason } => {
+                follow_unresolved = Some(true);
+                waiting = None;
+                follow_up_failure = Some(reason);
+            }
         }
     }
     let settlement_owed = matches!(admission.request, HolderChangeRequest::Claim { .. })
         && outcome.is_some()
-        && (follow_running
-            || (parent_running
-                && (reserved || matches!(outcome, Some(HolderChangeAnswer::Granted { .. })))));
+        && follow_unresolved.unwrap_or(
+            parent_unresolved
+                && (parent_failed
+                    || reserved
+                    || matches!(outcome, Some(HolderChangeAnswer::Granted { .. }))),
+        );
     Ok(Some(HolderChangeView {
         request: admission.request,
         requested_by: admission.requested_by,
@@ -77,17 +99,18 @@ where
         history,
         waiting,
         settlement_owed,
+        follow_up_failure,
         cancel,
         outcome,
     }))
 }
 
-async fn pending<S>(
+async fn read_journal_progress<S>(
     scope: &mut S,
     id: OperationId,
     kind: &str,
     key: &durable_steps::RequestKey,
-) -> Result<(Option<Waiting>, bool, bool), LeaseError>
+) -> Result<JournalProgress, LeaseError>
 where
     S: TransactionScope + JournalStorage,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
@@ -98,13 +121,18 @@ where
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
     let operation = crate::transfer_admission::bound_operation(scope, id, kind, key).await?;
-    let OperationExecution::Running {
-        attempt,
-        next_attempt_at,
-        ..
-    } = operation.execution
-    else {
-        return Ok((None, false, false));
+    let (attempt, next_attempt_at) = match operation.execution {
+        OperationExecution::Running {
+            attempt,
+            next_attempt_at,
+            ..
+        } => (attempt, next_attempt_at),
+        OperationExecution::Completed { .. } => return Ok(JournalProgress::Completed),
+        OperationExecution::Failed { reason, .. } => {
+            return Ok(JournalProgress::Failed {
+                reason: crate::operation_support::failure_code(&reason).map_err(journal_error)?,
+            });
+        }
     };
     let count = scope.step_count(id).await.map_err(journal_error)?;
     let mut waiting = None;
@@ -117,15 +145,17 @@ where
             .ok_or_else(|| LeaseError::Corrupt {
                 field: "holder-change journal step".into(),
             })?;
-        if step.name.as_str() == "reserve" {
-            reserved = match &step.state {
-                StepState::CallPending { .. } => true,
-                StepState::CallDone { output, .. } => matches!(
-                    serde_json::from_slice::<GateAnswer>(output),
-                    Ok(GateAnswer::Reserved)
-                ),
-                StepState::Local { .. } => false,
-            };
+        if let StepState::CallDone { intent, output, .. } = &step.state {
+            let (kind, _): (String, serde_json::Value) = serde_json::from_str(&intent.target)
+                .map_err(|_| LeaseError::Corrupt {
+                    field: "holder-change waiting target".into(),
+                })?;
+            let answered_reservation = validate_saved_answer(&kind, output)?;
+            if step.name.as_str() == "reserve" {
+                reserved = answered_reservation;
+            }
+        } else if step.name.as_str() == "reserve" {
+            reserved = matches!(step.state, StepState::CallPending { .. });
         }
         if let StepState::CallPending {
             intent,
@@ -189,5 +219,65 @@ where
             });
         }
     }
-    Ok((waiting, true, reserved))
+    Ok(JournalProgress::Running { waiting, reserved })
+}
+
+enum JournalProgress {
+    Running {
+        waiting: Option<Waiting>,
+        reserved: bool,
+    },
+    Completed,
+    Failed {
+        reason: FailureCode,
+    },
+}
+
+fn saved_answer<A: serde::de::DeserializeOwned>(
+    output: &[u8],
+    allow_never_sent: bool,
+) -> Result<Option<A>, LeaseError> {
+    match serde_json::from_slice::<durable_steps::CallResult<A>>(output) {
+        Ok(durable_steps::CallResult::Answered(answer)) => Ok(Some(answer)),
+        Ok(durable_steps::CallResult::NeverSent { .. }) if allow_never_sent => Ok(None),
+        _ => Err(LeaseError::Corrupt {
+            field: "holder-change saved call answer".into(),
+        }),
+    }
+}
+
+/// Validate each exact call wrapper and report whether it reserved the claim.
+fn validate_saved_answer(kind: &str, output: &[u8]) -> Result<bool, LeaseError> {
+    match kind {
+        "fleet-sync.claim-reservation" => {
+            return Ok(matches!(
+                saved_answer::<GateAnswer>(output, false)?,
+                Some(GateAnswer::Reserved)
+            ));
+        }
+        "fleet-sync.holder-release" => {
+            saved_answer::<ReleaseAnswer>(output, true)?;
+        }
+        "fleet-sync.holder-withdrawal" => {
+            saved_answer::<WithdrawAnswer>(output, false)?;
+        }
+        "fleet-sync.copy-fence" => {
+            saved_answer::<FenceResult>(output, false)?;
+        }
+        "fleet-sync.copy-status" => {
+            saved_answer::<CopyStatusAnswer>(output, false)?;
+        }
+        "fleet-sync.copy-acknowledged" => {
+            saved_answer::<AwaitAckedAnswer>(output, false)?;
+        }
+        "fleet-sync.claim-settlement" => {
+            saved_answer::<SettlementRecorded>(output, false)?;
+        }
+        _ => {
+            return Err(LeaseError::Corrupt {
+                field: "unknown holder-change saved target".into(),
+            });
+        }
+    }
+    Ok(false)
 }

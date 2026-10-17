@@ -57,6 +57,14 @@ pub(crate) struct TransferRecord {
     pub outcome: Option<HolderChangeAnswer>,
     pub phase: crate::HolderChangePhase,
     pub phase_history: Vec<crate::PhaseEntry>,
+    pub cleanup_failed: Option<CleanupFailure>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CleanupFailure {
+    pub reason: FailureCode,
+    pub at: SyncTime,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -78,6 +86,7 @@ impl TransferRecord {
                 phase: crate::HolderChangePhase::Requested,
                 entered_at: at,
             }],
+            cleanup_failed: None,
         }
     }
     pub(crate) fn enter(
@@ -144,6 +153,19 @@ impl TransferRecord {
                     .as_ref()
                     .is_some_and(|answer| !matches!(answer, HolderChangeAnswer::Pending { .. })))
             && (self.outcome.is_none() || self.phase == P::Ended)
+            && self.cleanup_failed.as_ref().is_none_or(|failure| {
+                matches!(self.intent.request, HolderChangeRequest::Move { .. })
+                    && (self.phase == P::Cancelling
+                        || matches!(
+                            self.outcome,
+                            Some(HolderChangeAnswer::Refused(
+                                HolderChangeRefusal::Superseded { .. }
+                            ))
+                        ))
+                    && history
+                        .last()
+                        .is_some_and(|entry| failure.at >= entry.entered_at || self.phase == P::Ended)
+            })
             && (!matches!(self.phase, P::Cancelling) || self.outcome.is_none());
         if !valid {
             return Err(crate::LeaseError::Corrupt {

@@ -136,6 +136,7 @@ pub struct HolderChangeView {
     pub history: Vec<PhaseEntry>,
     pub waiting: Option<Waiting>,
     pub settlement_owed: bool,
+    pub follow_up_failure: Option<FailureCode>,
     pub cancel: Option<CancelRecord>,
     pub outcome: Option<HolderChangeAnswer>,
 }

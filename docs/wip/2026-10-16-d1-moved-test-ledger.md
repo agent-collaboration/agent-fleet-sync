@@ -2,7 +2,7 @@
 
 Source inventory: `crates/collaboration-central-core` at M3 commit `9cc19dd2`. All **163 test declarations** are accounted for: **70 adapted** to generic contracts and **93 excluded** with the outside-D1 reason below. A property declaration counts once; generated cases do not inflate the inventory. Adapted means the named generic obligation is exercised, with changed or excluded M3 assertions stated explicitly; it does not mean a byte-for-byte test move.
 
-The D1 test links resolve against this branch. The final-base workspace all-features suite passes 330 tests with zero failures and two inherited opt-in tests ignored; this includes all 61 receiver and 57 lease tests, with zero scoped ignores. Format, workspace clippy with warnings denied, query metadata freshness and wasm checks pass. This ledger does not claim hosted CI, process-kill, WebSocket, or D2 writer verification.
+The D1 test links resolve against this branch. The final-base workspace all-features suite passes 335 tests with zero failures and two inherited opt-in tests ignored; this includes all 61 receiver and 62 lease tests, with zero scoped ignores. Format, workspace clippy with warnings denied, query metadata freshness and wasm checks pass. This ledger does not claim hosted CI, process-kill, WebSocket, or D2 writer verification.
 
 Copy rules run against actual Turso transactions. Durable-operation tests use the actual engine and file-backed Turso journal, copy rules and call-keyed consumer gate receipts. Reopen cases close and reopen files in one process. Holder release/drain is a receipted stand-in for D2's writer; it cannot establish the real writer interaction. The controlled capacity case injects SQLITE_FULL after a real write, not physical disk exhaustion. Pure SQL planning and fragment assembly tests remain pure.
 
@@ -216,9 +216,9 @@ Approved adaptations: copy-first initialization replaces pending-lease publicati
 | T34 | [`claim_repairs_above_a_restored_imported_copys_fence_before_granting`](../../crates/fleet-sync-lease/src/turso_claim_replay_tests.rs#L185) |
 | T35 | [`integer_real_text_blob_and_null_keep_exact_values_and_storage_classes`](../../crates/fleet-sync-receiver/src/turso_transport_tests.rs#L41) |
 | T36 | [`positive_and_negative_infinity_remain_real_through_row_apply_and_exact_readback`](../../crates/fleet-sync-receiver/src/turso_transport_tests.rs#L96) |
-| T37 | [`renewal_replay_never_extends_expiry_and_an_expired_current_holder_can_renew_the_same_epoch`](../../crates/fleet-sync-lease/src/turso_renew_tests.rs#L92) |
-| T38 | [`replay_preserves_recorded_answer_but_returns_current_lease_after_later_renewal_and_takeover`](../../crates/fleet-sync-lease/src/turso_renew_tests.rs#L139) |
-| T39 | [`changed_renewal_identity_is_an_error_and_cannot_extend_the_lease`](../../crates/fleet-sync-lease/src/turso_renew_tests.rs#L287) |
+| T37 | [`renewal_replay_never_extends_expiry_and_an_expired_current_holder_can_renew_the_same_epoch`](../../crates/fleet-sync-lease/src/turso_renew_tests.rs#L94) |
+| T38 | [`replay_preserves_recorded_answer_but_returns_current_lease_after_later_renewal_and_takeover`](../../crates/fleet-sync-lease/src/turso_renew_tests.rs#L141) |
+| T39 | [`changed_renewal_identity_is_an_error_and_cannot_extend_the_lease`](../../crates/fleet-sync-lease/src/turso_renew_tests.rs#L289) |
 | T40 | [`refused_registration_changes_no_copy_or_authority_and_a_new_attempt_can_succeed`](../../crates/fleet-sync-lease/src/turso_lifecycle_tests.rs#L142) |
 | T41 | [`register_creates_copy_before_grant_and_replay_never_issues_another_epoch`](../../crates/fleet-sync-lease/src/turso_lifecycle_tests.rs#L35) |
 | T42 | [`restored_registry_reserves_above_the_fresh_previews_copy_fence`](../../crates/fleet-sync-lease/src/turso_floor_repair_tests.rs#L39) |
@@ -251,3 +251,5 @@ Additional real-store regressions cover successive idle Moves and Move immediate
 T57 retains the M3 copy-side metadata identity obligation at the receiver boundary. Three real-Turso regressions corrupt only the pending seed's database, then reject begin replay/new generation, page replay/new staging and completion with a typed corruption error. Committed error transactions preserve copy, seed, pages, attempts, creation, schema, hook rows and journal identities; no snapshot callback, new follow-up admission or transition to following occurs. T32 remains separate registry identity coverage and does not substitute for the receiver check. The inventory stays 70 adapted / 93 excluded; this corrects the adaptation target for the existing M3 declaration.
 
 The workflow extension adds admission identity, phase/history and admin inspection, cancellation before fencing, move withdrawal and claim settlement debt. It retains the existing holder-change, renewal, floor and supersession assertions against the same real stores and engine. Original M3 declarations remain 163; additional workflow regressions do not change that inventory.
+
+The permanent follow-up failure regressions add five tests beyond the M3 inventory. They cover exact saved-answer wrappers, failed withdrawal visibility and takeover, failed Claim settlement after Granted or Cancelled, reopen, and a successful settlement control. They do not change the 70 adapted / 93 excluded dispositions.

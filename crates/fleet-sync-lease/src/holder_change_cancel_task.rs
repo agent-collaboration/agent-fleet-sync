@@ -161,4 +161,44 @@ where
             })
         })
     }
+    fn on_failed<'s, 't>(
+        &'s self,
+        scope: &'s mut S::Scope<'t>,
+        key: &'s RequestKey,
+        failure: &'s OperationFailure,
+    ) -> BoxFuture<'s, Result<(), StoreError>> {
+        Box::pin(async move {
+            let now = self.clock.now();
+            let raw = key
+                .as_str()
+                .strip_prefix("holder-change-cancel:")
+                .ok_or_else(|| StoreError::backend("invalid withdrawal task key"))?;
+            let id = TransferId::new(uuid::Uuid::parse_str(raw).map_err(StoreError::backend)?)
+                .map_err(StoreError::backend)?;
+            let mut record = RegistryStorage(scope)
+                .transfer(id)
+                .await
+                .map_err(storage_error)?
+                .ok_or_else(|| StoreError::backend("missing withdrawal transfer"))?;
+            if record.outcome.is_none() && record.cleanup_failed.is_none() {
+                if record.phase != HolderChangePhase::Cancelling {
+                    return Err(StoreError::backend("failed withdrawal is not cancelling"));
+                }
+                record.cleanup_failed = Some(crate::registry_records::CleanupFailure {
+                    reason: crate::operation_support::failure_code(failure)?,
+                    at: record
+                        .phase_history
+                        .last()
+                        .map_or(now, |entry| now.max(entry.entered_at)),
+                });
+                if let Some(failure) = &record.cleanup_failed {
+                    RegistryStorage(scope)
+                        .save_cleanup_failure(id, failure)
+                        .await
+                        .map_err(storage_error)?;
+                }
+            }
+            Ok(())
+        })
+    }
 }

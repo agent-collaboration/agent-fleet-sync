@@ -49,7 +49,9 @@ async fn setup() -> TestResult<TursoConnection> {
     sqlx_core::raw_sql::raw_sql(concat!(
         include_str!("../migrations/0001_registry_rules.sql"),
         "\n",
-        include_str!("../migrations/0002_holder_workflow.sql")
+        include_str!("../migrations/0002_holder_workflow.sql"),
+        "\n",
+        include_str!("../migrations/0003_cleanup_failure.sql")
     ))
     .execute(&mut *transaction)
     .await?;

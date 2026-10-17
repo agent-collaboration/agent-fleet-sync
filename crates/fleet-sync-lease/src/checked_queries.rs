@@ -317,6 +317,7 @@ pub(crate) struct StoredTransferRow {
     pub outcome: Option<String>,
     pub phase: Option<String>,
     pub phase_history: Option<String>,
+    pub cleanup_failed: Option<String>,
 }
 pub(crate) fn read_transfer<S>(
     scope: &mut S,
@@ -343,6 +344,7 @@ where
                     outcome: row.try_get("outcome")?,
                     phase: row.try_get("phase")?,
                     phase_history: row.try_get("phase_history")?,
+                    cleanup_failed: row.try_get("cleanup_failed")?,
                 })
             })
             .transpose()
@@ -446,6 +448,7 @@ pub(crate) struct StoredActiveTransferRow {
     pub outcome: Option<String>,
     pub phase: Option<String>,
     pub phase_history: Option<String>,
+    pub cleanup_failed: Option<String>,
 }
 pub(crate) fn active_transfer<S>(
     scope: &mut S,
@@ -473,6 +476,7 @@ where
                     outcome: row.try_get("outcome")?,
                     phase: row.try_get("phase")?,
                     phase_history: row.try_get("phase_history")?,
+                    cleanup_failed: row.try_get("cleanup_failed")?,
                 })
             })
             .transpose()
@@ -701,6 +705,27 @@ where
         )))
         .bind(attempt)
         .bind(record);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn write_cleanup_failure<S>(
+    scope: &mut S,
+    cleanup_failed: String,
+    attempt: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_cleanup_failure.sql"
+        )))
+        .bind(cleanup_failed)
+        .bind(attempt);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
