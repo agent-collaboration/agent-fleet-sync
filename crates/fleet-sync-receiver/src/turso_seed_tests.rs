@@ -54,7 +54,9 @@ pub(super) async fn setup_with_holder(
     sqlx_core::raw_sql::raw_sql(concat!(
         include_str!("../migrations/0001_copy_rules.sql"),
         "\n",
-        include_str!("../migrations/0002_replicated_schema.sql")
+        include_str!("../migrations/0002_replicated_schema.sql"),
+        "\n",
+        include_str!("../migrations/0003_snapshot_install.sql")
     ))
     .execute(&mut *transaction)
     .await?;

@@ -491,6 +491,79 @@
           "nullable": false
         }
       ]
+    },
+    {
+      "name": "read_install",
+      "sql": "sql/read_install.sql",
+      "row": "InstallRow",
+      "result": "optional",
+      "parameters": []
+    },
+    {
+      "name": "write_install",
+      "sql": "sql/write_install.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_install_pages",
+      "sql": "sql/read_install_pages.sql",
+      "row": "InstallRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "install_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_install_page",
+      "sql": "sql/write_install_page.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "install_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "page",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_all_fences",
+      "sql": "sql/read_all_fences.sql",
+      "row": "StoredFenceCarryRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "erase_install",
+      "sql": "sql/erase_install.sql",
+      "result": "execute",
+      "parameters": []
+    },
+    {
+      "name": "erase_install_pages",
+      "sql": "sql/erase_install_pages.sql",
+      "result": "execute",
+      "parameters": []
     }
   ]
 }

@@ -997,3 +997,170 @@ where
             .transpose()
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct InstallRow {
+    pub record: Option<String>,
+}
+pub(crate) fn read_install<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Option<InstallRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_install.sql"
+        )));
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(InstallRow {
+                    record: row.try_get("record")?,
+                })
+            })
+            .transpose()
+    }
+}
+pub(crate) fn write_install<S>(
+    scope: &mut S,
+    record: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_install.sql"
+        )))
+        .bind(record);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn read_install_pages<S>(
+    scope: &mut S,
+    install_id: String,
+) -> impl std::future::Future<Output = Result<Vec<InstallRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_install_pages.sql"
+        )))
+        .bind(install_id);
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(InstallRow {
+                    record: row.try_get("record")?,
+                })
+            })
+            .collect()
+    }
+}
+pub(crate) fn write_install_page<S>(
+    scope: &mut S,
+    install_id: String,
+    page: String,
+    record: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_install_page.sql"
+        )))
+        .bind(install_id)
+        .bind(page)
+        .bind(record);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredFenceCarryRow {
+    pub transfer: Option<String>,
+    pub request: Option<String>,
+    pub old_epoch: Option<String>,
+    pub old_holder: Option<String>,
+    pub result: Option<String>,
+}
+pub(crate) fn read_all_fences<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<StoredFenceCarryRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_all_fences.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredFenceCarryRow {
+                    transfer: row.try_get("transfer")?,
+                    request: row.try_get("request")?,
+                    old_epoch: row.try_get("old_epoch")?,
+                    old_holder: row.try_get("old_holder")?,
+                    result: row.try_get("result")?,
+                })
+            })
+            .collect()
+    }
+}
+pub(crate) fn erase_install<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/erase_install.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn erase_install_pages<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/erase_install_pages.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}

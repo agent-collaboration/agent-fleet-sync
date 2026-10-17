@@ -159,7 +159,9 @@ where
         };
         let status = match copy {
             CopyRecord::Retired { .. } => return Ok(RetireCopyAnswer::Retired),
-            CopyRecord::Seeding { status, .. } | CopyRecord::Following(status) => status,
+            CopyRecord::Starting { status, .. }
+            | CopyRecord::Seeding { status, .. }
+            | CopyRecord::Following(status) => status,
         };
         if status.database != request.database {
             return Ok(RetireCopyAnswer::NotInitialized);

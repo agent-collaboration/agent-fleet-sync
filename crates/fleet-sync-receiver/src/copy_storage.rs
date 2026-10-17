@@ -123,6 +123,12 @@ where
         checked_queries::erase_copy_tables(self.0)
             .await
             .map_err(crate::sql_transport::sql_error)?;
+        checked_queries::erase_install(self.0)
+            .await
+            .map_err(crate::sql_transport::sql_error)?;
+        checked_queries::erase_install_pages(self.0)
+            .await
+            .map_err(crate::sql_transport::sql_error)?;
         Ok(())
     }
 

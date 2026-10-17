@@ -266,9 +266,16 @@ where
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
     let status = match copy {
-        CopyRecord::Seeding { status, .. } | CopyRecord::Following(status) => status,
+        CopyRecord::Starting { status, .. }
+        | CopyRecord::Seeding { status, .. }
+        | CopyRecord::Following(status) => status,
         CopyRecord::Retired { .. } => return Err(ReceiverError::Retired),
     };
+    if status.role != fleet_sync_protocol::CopyRole::Authoritative {
+        return Err(ReceiverError::NotWriter {
+            current: Some(status.fence),
+        });
+    }
     let original = CopyStorage(scope)
         .creation()
         .await?

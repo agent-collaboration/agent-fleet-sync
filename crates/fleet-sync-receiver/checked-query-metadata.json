@@ -49,27 +49,33 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "ce5405c46486c44da931ee6be0d08a52ceb086b8495b8800cdc8628b5f8c12db",
+    "checked-queries.json": "2a4bd1f0a0a624db88ec928b76064d30dd59f8562d6d3e479b3825475345a549",
     "migrations/0001_copy_rules.sql": "3e6e6233512d8fa0e3e4150a0a8861c856d3d35a6e4f181e8bea2ea7d7395db5",
     "migrations/0002_replicated_schema.sql": "bdb0761347ddd2254ab65c92afeb2c88ff42d73a452cfffe14fe19ed14596b34",
+    "migrations/0003_snapshot_install.sql": "cccd97bc8517afc90d74f3b0094805b3f3c0265c777bb1d069170ea8f46c0e04",
     "sql/drop_copy_table.sql": "8112c8faca8e402ef60bc3bf3954c9ba048aa240ffdc7b02f89f9df7e92abac4",
     "sql/drop_parts.sql": "1e9b957ad66ac0c9fe34732322431b167dcd9f0c8d319c7976f2a2bc04b1bbbc",
     "sql/drop_seed_pages.sql": "0e30e843bd90a7b2386f84cef9e78a0c5eb11e9eeb5ee52b07eefa6fc9dcfd1e",
     "sql/erase_copy_tables.sql": "bf03e6a59e72a07c875127dab289b704cad60dd69a570b7ae3ebd87fd4a73557",
     "sql/erase_creation.sql": "9de2f985ddd4def44cc372bca949b70ff8472716853c51f5004664ef81a6fe3b",
     "sql/erase_fence_receipts.sql": "8e079903ceb75fdcae89bed1eedf2e4d37b695ebf3c3c06db65394c319559b41",
+    "sql/erase_install.sql": "67ab649a322fbb5787a26d9cde08efdd78b80fb8b119c3bd65531791b8f2cb3e",
+    "sql/erase_install_pages.sql": "0faaf30d6e2e77fa85be4f95ba307950ab02f57f5207137c6d6de0ca59cdb7ba",
     "sql/erase_receipts.sql": "0160eeec039b9a701406877df83eb0d5ae0250a9649526635c15bed5fe8efa42",
     "sql/erase_schema_steps.sql": "9cabe2c4559ed5261483d0b572879cb890f2b6e015adefa0a629ef3cb274e318",
     "sql/erase_seed.sql": "a6aa6c4a720e7b0d53308b6598493e98c9ca852005455d366f5fe1757a18b73b",
     "sql/erase_seed_attempts.sql": "d885d21f37acf84426392bb8d5213ecf206b0e63d3c1974df1a5f597ab169501",
     "sql/erase_seed_pages.sql": "0e30e843bd90a7b2386f84cef9e78a0c5eb11e9eeb5ee52b07eefa6fc9dcfd1e",
     "sql/erase_staged_parts.sql": "5303b59430283e428f491aff8434e1811560a5a428e187399f949d4a13e816d5",
+    "sql/read_all_fences.sql": "1460334bf9735bd5140ae057dd9f0616018564d88e8ce0182ce3e25883b8f0b8",
     "sql/read_copy.sql": "c792d6ad745e9f0063ca16578d81eeaf43ceef22997b2304542397f513a9e405",
     "sql/read_copy_tables.sql": "450a5674cefb0ec14f4a11ce06a940b795fa8488ffe0c23fd1ac382daea1bbbb",
     "sql/read_creation.sql": "b244300fe028cbc187dfe0b20f7a48b781c9349b5c5dbef81efd6b5d9ac07c33",
     "sql/read_epoch_fence.sql": "f455e28f2ecbde42be7c8cc044dd31b65b51f61efaa5bbaac28fe4dcb477325b",
     "sql/read_fence_receipt.sql": "bde95c4e455efd2ddd0b1f20468d6987067931a1bca91b6bcb76d1bd1ae13ce8",
     "sql/read_hook_migrations.sql": "48772108665c87eb58ddc8cd533860d4fa607be9fa5389ba5e6e6a95bd4b424a",
+    "sql/read_install.sql": "58204d10e3a2a0f9f50985f5415c92e18c4804357cf83c850e57d81dc231bac6",
+    "sql/read_install_pages.sql": "0ddb1b3a121970a77056e7976ccfac991eabad9409077aecf7cdbe2bed7728d5",
     "sql/read_parts.sql": "2fe22ce90680daad8cb3383c1b56df163c14c99dd133035f1dd5c448ed8b46ac",
     "sql/read_receipt.sql": "ce1cc00141af64623c12bd8454c45b4d242c0e22a747a3ae30a5831bd7136ac6",
     "sql/read_schema_entries.sql": "dd4e747eba02bdc39bc4a562d74a6509b71e7eb5deced1ab596ba9712dd28fdf",
@@ -86,13 +92,15 @@
     "sql/write_creation.sql": "1f459ccb509d1a52e09df02494b92c27980795632d509711881f07c338e8fd6d",
     "sql/write_fence_receipt.sql": "96763c9ef34e03898784cbb4a3b256c18c6e5590460fcd77bf6c08131c8922cd",
     "sql/write_hook_migration.sql": "50a9a1a5e71a1a8010d385d1aa00a5fa63d26fc8d73ba9586fde9926491e392d",
+    "sql/write_install.sql": "46ac95e13a81f62d6cb978aa0ad0c6cf191f26581790fb88a9f78d1b55a88d12",
+    "sql/write_install_page.sql": "cadf4805f3927d7f8206c2dd90bf938b3733d86297b3aa7cc57b6308883cbffa",
     "sql/write_part.sql": "bda6c2e03a637c6b7b98df8bf004384031e849d4495899e70df3278e2f9cbad3",
     "sql/write_receipt.sql": "225f5f8d4f331869b557dea5aea1d5ff0ef8a3dbec7a6e6e13ab1c70c11e0d1a",
     "sql/write_schema_step.sql": "11524d63bc25514441607348a6f347c089839a9ad21b38239c172490cdf0db9f",
     "sql/write_seed.sql": "1760686d585a282c49d7eee530ebe6bcd883d49623d339587ba861adfb372783",
     "sql/write_seed_attempt.sql": "6b7bb9dd642308388c49521b264703c0291d95870d6c172caece780aecd583eb",
     "sql/write_seed_page.sql": "2f10b3342821b1a27f8683e064f8445dd16f74c761b5d095a0c56e0f991c95d8",
-    "src/checked_queries.rs": "13737154bba43011b9480b988eeec824a18b432b9236dae38b351a1bbae2b8ce"
+    "src/checked_queries.rs": "81a0b117c33093bc0e586cd4aa297fb3e14eb87961ef0f50d3631373a8c27f54"
   },
   "queries": [
     {
@@ -576,6 +584,93 @@
           "type_source": "typeof"
         }
       ]
+    },
+    {
+      "name": "read_install",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_install",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "read_install_pages",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_install_page",
+      "bind_slots": 3,
+      "columns": []
+    },
+    {
+      "name": "read_all_fences",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "transfer",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "request",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "old_epoch",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "old_holder",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "result",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "erase_install",
+      "bind_slots": 0,
+      "columns": []
+    },
+    {
+      "name": "erase_install_pages",
+      "bind_slots": 0,
+      "columns": []
     }
   ]
 }
