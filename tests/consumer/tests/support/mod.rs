@@ -115,6 +115,9 @@ pub async fn request(
                 body,
             } if answered == frame => return Ok(body),
             ServerFrame::Notice { .. } => {}
+            ServerFrame::Closed { reason } => {
+                return Err(format!("peer closed while awaiting answer: {reason:?}").into());
+            }
             _ => return Err("unexpected peer frame while awaiting answer".into()),
         }
     }

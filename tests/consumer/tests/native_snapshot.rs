@@ -189,6 +189,7 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
         &mut control,
         ControlRequest::AttachSource {
             receiver,
+            peer: 2,
             endpoint: format!("ws://127.0.0.1:{}/session", source.port),
         },
     )
@@ -225,6 +226,7 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
         &mut control,
         ControlRequest::AttachSource {
             receiver,
+            peer: 2,
             endpoint: format!("ws://127.0.0.1:{}/session", source.port),
         },
     )
@@ -351,6 +353,7 @@ async fn failed_installs_project_file_owned_positions_in_status_and_fresh_welcom
             &mut control,
             ControlRequest::AttachSource {
                 receiver: source_receiver,
+                peer: 2,
                 endpoint: format!("ws://127.0.0.1:{}/session", source.port),
             },
         )

@@ -14,6 +14,7 @@ pub enum ControlRequest {
     AttachSource {
         receiver: ReceiverId,
         endpoint: String,
+        peer: u128,
     },
     InstallSnapshot {
         attempt: durable_steps::Uuid,
@@ -118,7 +119,11 @@ impl ControlState {
     pub async fn dispatch(&self, request: ControlRequest) -> ControlAnswer {
         let result: crate::TestResult<ControlAnswer> = async {
             Ok(match request {
-                ControlRequest::AttachSource { receiver, endpoint } => {
+                ControlRequest::AttachSource {
+                    receiver,
+                    endpoint,
+                    peer,
+                } => {
                     let client = fleet_sync_session::SessionClient::<_, _, SampleProtocol>::load(
                         fleet_sync_transport_websocket::WebSocketTransport::default(),
                         self.consumer.store.clone(),
@@ -137,7 +142,9 @@ impl ControlState {
                             receiver,
                             client,
                             fleet_sync_session::Endpoint::new(&endpoint)?,
-                            fleet_sync_session::PeerCredential::new("Bearer peer-2")?,
+                            fleet_sync_session::PeerCredential::new(&format!(
+                                "Bearer peer-{peer}"
+                            ))?,
                         )
                         .await?;
                     self.source_events.send(attached).await?;
