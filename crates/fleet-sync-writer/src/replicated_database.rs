@@ -25,8 +25,8 @@ pub struct ReplicatedDatabase<S: ReplicatedSchema> {
     pub(crate) path: PathBuf,
     pub(crate) database: DatabaseId,
     pub(crate) schema: S,
-    pub(crate) writer: Pool<Turso>,
-    pub(crate) maintenance: Pool<Turso>,
+    pub(crate) writer: crate::native_pool::NativePool,
+    pub(crate) maintenance: crate::native_pool::NativePool,
     pub(crate) readers: ReadPool,
     pub(crate) control: Arc<Mutex<WriterControl>>,
     pub(crate) clock: Arc<dyn Clock>,
@@ -35,13 +35,13 @@ pub struct ReplicatedDatabase<S: ReplicatedSchema> {
 }
 
 #[derive(Clone, Copy)]
-enum CaptureMode {
+pub(crate) enum CaptureMode {
     Adoption,
     Writer,
     Maintenance,
     Reader,
 }
-async fn open_pool(path: &Path, mode: CaptureMode) -> Result<Pool<Turso>, OpenError> {
+pub(crate) async fn open_pool(path: &Path, mode: CaptureMode) -> Result<Pool<Turso>, OpenError> {
     let limit = if matches!(mode, CaptureMode::Reader) {
         4
     } else {
@@ -273,8 +273,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             path: path.into(),
             database,
             schema,
-            writer,
-            maintenance,
+            writer: crate::native_pool::NativePool::new(writer),
+            maintenance: crate::native_pool::NativePool::new(maintenance),
             readers,
             control: Arc::new(Mutex::new(WriterControl {
                 holder,
@@ -333,7 +333,12 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                     message: error.to_string(),
                 })?;
         }
-        WriteTransaction::begin(&self.writer, control, self.clock.clone()).await
+        WriteTransaction::begin(
+            &self.writer.current().map_err(WriteRefusal::from_sqlx)?,
+            control,
+            self.clock.clone(),
+        )
+        .await
     }
     pub async fn writer_state(&self) -> Result<WriterState, OpenError> {
         let mut control = self.control.lock().await;

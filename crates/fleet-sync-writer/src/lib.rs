@@ -12,6 +12,10 @@ mod maintenance_transaction;
 mod migration_execution;
 mod migration_inspection;
 mod migration_ownership;
+pub mod native_file;
+#[cfg(test)]
+mod native_file_tests;
+mod native_pool;
 mod native_rows;
 mod piece_builder;
 mod read_pool;

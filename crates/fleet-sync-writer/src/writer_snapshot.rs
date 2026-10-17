@@ -18,6 +18,7 @@ const PAGE_ROWS: usize = 256;
 /// One read transaction pins rows, schema and capture position for every page.
 pub struct WriterSnapshot {
     transaction: Transaction<'static, Turso>,
+    _reader: tokio::sync::OwnedRwLockReadGuard<()>,
     database: DatabaseId,
     position: ReplicationPosition,
     schema: SchemaIdentity,
@@ -28,7 +29,8 @@ pub struct WriterSnapshot {
 impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
     pub async fn snapshot(&self) -> Result<WriterSnapshot, OpenError> {
         let _control = self.control.lock().await;
-        let mut transaction = self.readers.pool.begin().await?;
+        let (pool, reader) = self.readers.pin()?;
+        let mut transaction = pool.begin().await?;
         let record = read_file_record(&mut transaction)
             .await?
             .ok_or_else(|| OpenError::corrupt("writer.record"))?;
@@ -40,6 +42,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             snapshot_schema(&mut transaction, self.schema.replicated_tables(), &tables).await?;
         Ok(WriterSnapshot {
             transaction,
+            _reader: reader,
             database: record.database,
             position,
             schema,
