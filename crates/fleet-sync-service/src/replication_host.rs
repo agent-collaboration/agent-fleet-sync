@@ -92,11 +92,43 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                                 .await
                                 .map_err(CopyRuleError::Receiver)?,
                         ),
-                        ReplicationRequest::SeedComplete(done) => ReplicationAnswer::SeedComplete(
-                            fleet_sync_receiver::seed_complete(scope, &done)
-                                .await
-                                .map_err(CopyRuleError::Receiver)?,
-                        ),
+                        ReplicationRequest::SeedComplete(done) => {
+                            match fleet_sync_receiver::seed_complete(
+                                scope,
+                                &done,
+                                consumer.as_ref(),
+                            )
+                            .await
+                            .map_err(CopyRuleError::Receiver)?
+                            {
+                                fleet_sync_receiver::SeedDecision::Published {
+                                    position,
+                                    follow_ups,
+                                } => {
+                                    let installed = fleet_sync_receiver::InstalledSnapshot {
+                                        database: done.database,
+                                        position,
+                                        schema: done.schema.clone(),
+                                    };
+                                    fleet_sync_receiver::admit_snapshot_follow_ups::<
+                                        ServiceObject,
+                                        C::HookItem,
+                                    >(
+                                        scope, &installed, follow_ups
+                                    )
+                                    .await
+                                    .map_err(|error| {
+                                        CopyRuleError::Storage(StoreError::backend(error))
+                                    })?;
+                                    ReplicationAnswer::SeedComplete(SeedAnswer::Published {
+                                        position,
+                                    })
+                                }
+                                fleet_sync_receiver::SeedDecision::Answer(answer) => {
+                                    ReplicationAnswer::SeedComplete(answer)
+                                }
+                            }
+                        }
                         ReplicationRequest::SnapshotPage { cursor, .. } => {
                             ReplicationAnswer::SnapshotPage(
                                 fleet_sync_receiver::snapshot_page(scope, cursor)

@@ -30,6 +30,9 @@ impl<S: AtomicStore, R: CallRouter, C: Clock + 'static> TokioRunner<S, R, C> {
                 let _work = self.engine_work.lock().await;
                 self.engine.drive_due().await?
             };
+            for (operation, failure) in &report.failed {
+                tracing::warn!(operation=%operation.0,?failure,"durable operation failed");
+            }
             if let Some(error) = report.wake_failure {
                 return Err(StoreError::backend(error));
             }

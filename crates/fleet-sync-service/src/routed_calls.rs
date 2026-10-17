@@ -29,6 +29,26 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             call,
         } = envelope;
         match kind {
+            "fleet-sync.apply-follow-up" => {
+                let _: fleet_sync_receiver::FollowUpCall<C::HookItem> = decode(target)?;
+                let item: C::HookItem = decode(request)?;
+                let answer =
+                    <C as fleet_sync_receiver::ReceiverHook<crate::ServiceScope<'_>>>::follow_up(
+                        self.consumer.as_ref(),
+                        &item,
+                        call,
+                    )
+                    .await;
+                match answer {
+                    Ok(_) => encode(fleet_sync_receiver::FollowUpAnswer::Done),
+                    Err(fleet_sync_receiver::FollowUpFailure::Failed { reason }) => {
+                        encode(fleet_sync_receiver::FollowUpAnswer::Failed { reason })
+                    }
+                    Err(fleet_sync_receiver::FollowUpFailure::Retry) => {
+                        Err(CallFailure::AnswerLost)
+                    }
+                }
+            }
             fleet_sync_lease::RegistrationAdmission::KIND => {
                 let request: fleet_sync_protocol::RegistrationAdmission = decode(request)?;
                 encode(
