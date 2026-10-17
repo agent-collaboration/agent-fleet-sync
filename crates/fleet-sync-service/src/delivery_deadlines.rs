@@ -1,8 +1,13 @@
-use crate::{ServiceObject, delivery_owner::DeliveryOwner};
+use crate::{
+    ServiceConsumer, ServiceObject,
+    delivery_owner::{DeliveryObject, DeliveryOwner},
+    service_state::ServiceState,
+};
 use fleet_sync_delivery::{
     DeliveryError, DeliveryLimits, Mailbox, PublishStatus, admit_publications,
 };
-use fleet_sync_protocol::{DeliveryTypes, PeerId};
+use fleet_sync_protocol::{ConsumerProtocol, DeliveryTypes, PeerId};
+use fleet_sync_session::PeerAuthenticator;
 use runtime_primitives::{Backoff, Clock, WakeScheduler};
 use sqlx_turso::Turso;
 use std::{sync::Arc, time::Duration};
@@ -76,7 +81,44 @@ async fn mailbox_pass<D: DeliveryTypes>(
     Ok(())
 }
 
-pub(crate) async fn run_mailbox<D: DeliveryTypes>(
+pub(crate) async fn run_mailbox<P, C, A>(
+    state: Arc<ServiceState<P, C, A>>,
+    mailbox: PeerId,
+    limits: DeliveryLimits,
+    mut shutdown: watch::Receiver<bool>,
+) where
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<Material = String>,
+{
+    let mut attempt = 0_u32;
+    loop {
+        if *shutdown.borrow() {
+            return;
+        }
+        let result = tokio::select! {
+            result = state.delivery_owner(DeliveryObject::Mailbox(mailbox)) => result,
+            _ = shutdown.changed() => return,
+        };
+        match result {
+            Ok(owner) => {
+                run_initialized_mailbox::<P::Delivery>(owner, mailbox, limits, shutdown).await;
+                return;
+            }
+            Err(cause) => {
+                let delay = RETRY.delay(attempt);
+                attempt = attempt.saturating_add(1);
+                tracing::warn!(?mailbox, phase="initialization", %cause, ?delay, "delivery mailbox operation retry");
+                tokio::select! {
+                    _ = tokio::time::sleep(delay) => {},
+                    _ = shutdown.changed() => return,
+                }
+            }
+        }
+    }
+}
+
+async fn run_initialized_mailbox<D: DeliveryTypes>(
     owner: Arc<DeliveryOwner>,
     mailbox: PeerId,
     limits: DeliveryLimits,

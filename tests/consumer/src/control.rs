@@ -303,11 +303,7 @@ impl ControlState {
                 }
                 #[cfg(feature = "test-support")]
                 ControlRequest::HoldDeliveryWrite { mailbox } => {
-                    use sqlx_turso::sqlx::ConnectOptions;
-                    let mut db = sqlx_turso::TursoConnectOptions::new()
-                        .filename(self.delivery_directory.join(format!("delivery-mailbox-{}.db", mailbox.as_uuid())))
-                        .create_if_missing(false).connect().await?;
-                    sqlx_core::query::query::<sqlx_turso::Turso>("BEGIN IMMEDIATE").execute(&mut db).await?;
+                    let db = crate::delivery_faults::lock_mailbox(&self.delivery_directory, mailbox).await?;
                     if self.delivery_locks.lock().await.insert(mailbox, db).is_some() {
                         return Err("delivery write barrier already held".into());
                     }

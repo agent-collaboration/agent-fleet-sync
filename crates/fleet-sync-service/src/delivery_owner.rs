@@ -94,12 +94,21 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             .delivery
             .ok_or_else(|| ServiceError::rule("delivery is not installed"))
     }
+    pub(crate) async fn delivery_slot(
+        &self,
+        key: DeliveryObject,
+    ) -> Arc<OnceCell<Arc<DeliveryOwner>>> {
+        let slot = self.delivery.lock().await.entry(key).or_default().clone();
+        // An empty slot still needs an owned retry runner if acquisition fails.
+        self.delivery_added.notify_one();
+        slot
+    }
     pub(crate) async fn delivery_owner(
         &self,
         key: DeliveryObject,
     ) -> Result<Arc<DeliveryOwner>, ServiceError> {
         self.delivery_limits()?;
-        let slot = self.delivery.lock().await.entry(key).or_default().clone();
+        let slot = self.delivery_slot(key).await;
         if let Some(owner) = slot.get() {
             return Ok(owner.clone());
         }

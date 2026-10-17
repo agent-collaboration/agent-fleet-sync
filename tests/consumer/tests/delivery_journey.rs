@@ -69,11 +69,20 @@ async fn a_first_submit_that_is_already_expired_converges_to_the_canonical_recei
 
 #[tokio::test]
 async fn queued_relay_offline_then_recipient_offline_drains_real_custody_once() -> TestResult {
+    for order in [[101, 102], [102, 101]] {
+        queued_offline_in_order(order).await?;
+    }
+    Ok(())
+}
+async fn queued_offline_in_order(order: [u64; 2]) -> TestResult {
     let directory = tempfile::tempdir()?;
     let mut sender = DeliveryNode::start(&directory.path().join("sender"), 2).await?;
     let mut recipient = DeliveryNode::start(&directory.path().join("recipient"), 4).await?;
-    let first = enqueue(&mut sender, 101, peer(4)?).await?;
-    let second = enqueue(&mut sender, 102, peer(4)?).await?;
+    for id in order {
+        enqueue(&mut sender, id, peer(4)?).await?;
+    }
+    let first = item_id(101)?;
+    let second = item_id(102)?;
     sender.wait(first, CustodySide::Outbox, "queued").await?;
     let mut relay = ServiceProcess::start(&directory.path().join("relay")).await?;
     sender.connect(&relay).await?;
@@ -82,30 +91,57 @@ async fn queued_relay_offline_then_recipient_offline_drains_real_custody_once() 
         assert_eq!(effect_count(&sent, item), 0);
         let untouched = recipient.command(NodeCommand::Inspect { item }).await?;
         assert!(untouched["inbox"].is_null());
-        eprintln!("OBS relay custody accepted {item:?}; recipient process offline from relay");
+        eprintln!(
+            "OBS relay custody accepted {item:?}; status={}; enqueue order={order:?}; recipient process offline",
+            sent["outbox"]
+        );
     }
     // Disconnect origin while outcomes advance; reconnect uses the explicit StatusFetch gap path.
     sender.command(NodeCommand::Disconnect).await?;
     recipient.connect(&relay).await?;
+    // Target the gate explicitly: independent offline submissions may be
+    // admitted in either relay order. A generic report gate could pause the
+    // other item while this driver waits for the targeted item's local effect.
+    recipient
+        .command(NodeCommand::ArmItem {
+            hop: "report".into(),
+            item: first,
+            mode: FaultMode::Pause,
+        })
+        .await?;
+    recipient
+        .command(NodeCommand::Receive {
+            stream: DeliveryStream::Items,
+        })
+        .await?;
+    recipient.command(NodeCommand::WaitBarrier).await?;
+    recipient.command(NodeCommand::Resume).await?;
     for item in [first, second] {
-        recipient
-            .command(NodeCommand::Arm {
-                hop: "report".into(),
-                mode: FaultMode::Pause,
-            })
-            .await?;
-        recipient
-            .command(NodeCommand::Receive {
-                stream: DeliveryStream::Items,
-            })
-            .await?;
-        let delivered = recipient
-            .wait(item, CustodySide::Inbox, "delivered")
-            .await?;
+        let delivered = match recipient.wait(item, CustodySide::Inbox, "delivered").await {
+            Ok(delivered) => delivered,
+            Err(error) => {
+                eprintln!(
+                    "OBS offline drain failed for {item:?}; first={}; second={}",
+                    recipient
+                        .command(NodeCommand::Inspect { item: first })
+                        .await?,
+                    recipient
+                        .command(NodeCommand::Inspect { item: second })
+                        .await?
+                );
+                eprintln!(
+                    "OBS offline drain reached barrier={}",
+                    recipient.command(NodeCommand::WaitBarrier).await?
+                );
+                return Err(error);
+            }
+        };
         assert_eq!(effect_count(&delivered, item), 1);
-        // The relay committed its terminal report before the reply barrier opens.
-        recipient.command(NodeCommand::WaitBarrier).await?;
-        recipient.command(NodeCommand::Resume).await?;
+        // Retirement requires the relay's committed Report acknowledgment;
+        // it observes each report's completion regardless of their order.
+        recipient
+            .command(NodeCommand::WaitReportRetired { item })
+            .await?;
         eprintln!("OBS recipient committed body and exactly one external effect for {item:?}");
     }
     sender.connect(&relay).await?;

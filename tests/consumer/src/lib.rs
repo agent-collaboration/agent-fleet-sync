@@ -7,6 +7,8 @@ mod fixture_authenticator;
 mod protocol;
 mod sample_writes;
 pub use sample_writes::{insert_reading, insert_sample, insert_source};
+#[cfg(feature = "test-support")]
+mod delivery_faults;
 mod server;
 #[cfg(feature = "test-support")]
 mod service_events;

@@ -100,6 +100,21 @@ pub async fn run_server_with_policy(
         socket_timeout: Duration::from_secs(5),
     };
     let authenticator = Arc::new(FixtureAuthenticator::default());
+    #[cfg(feature = "test-support")]
+    let delivery_locks = {
+        let mut locks = std::collections::BTreeMap::new();
+        match std::env::var("FLEET_SYNC_TEST_LOCK_MAILBOX_INIT") {
+            Ok(identity) => {
+                let mailbox = fleet_sync_protocol::PeerId::new(identity.parse()?)?;
+                let db = crate::delivery_faults::lock_mailbox(&directory.join("service"), mailbox)
+                    .await?;
+                locks.insert(mailbox, db);
+            }
+            Err(std::env::VarError::NotPresent) => {}
+            Err(error) => return Err(error.into()),
+        }
+        locks
+    };
     let service = FleetService::<SampleProtocol, _, _>::open(
         options,
         consumer.clone(),
@@ -113,7 +128,7 @@ pub async fn run_server_with_policy(
         #[cfg(feature = "test-support")]
         delivery_directory: directory.join("service"),
         #[cfg(feature = "test-support")]
-        delivery_locks: Default::default(),
+        delivery_locks: tokio::sync::Mutex::new(delivery_locks),
         #[cfg(feature = "test-support")]
         events,
         consumer,

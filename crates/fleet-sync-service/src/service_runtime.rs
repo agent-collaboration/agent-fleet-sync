@@ -154,7 +154,14 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                     .transpose()?
                     .flatten()
             {
-                state.delivery_owner(key).await?;
+                match key {
+                    crate::delivery_owner::DeliveryObject::Mailbox(_) => {
+                        state.delivery_slot(key).await;
+                    }
+                    crate::delivery_owner::DeliveryObject::Status(_) => {
+                        state.delivery_owner(key).await?;
+                    }
+                }
                 continue;
             }
             let Some(id) = name
@@ -320,26 +327,29 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             .lock()
             .await
             .iter()
-            .filter_map(|(key, slot)| slot.get().map(|owner| (*key, owner.clone())))
+            .map(|(key, slot)| (*key, slot.get().cloned()))
             .collect::<Vec<_>>();
         for (key, owner) in owners {
-            if !started.insert(key) {
+            if started.contains(&key) {
                 continue;
             }
             if let crate::delivery_owner::DeliveryObject::Mailbox(mailbox) = key {
+                started.insert(key);
+                let state = self.state.clone();
                 let shutdown = shutdown.clone();
                 let Some(limits) = self.state.options.delivery else {
                     continue;
                 };
                 tasks.spawn(async move {
-                    crate::delivery_deadlines::run_mailbox::<P::Delivery>(
-                        owner, mailbox, limits, shutdown,
-                    )
-                    .await;
+                    crate::delivery_deadlines::run_mailbox(state, mailbox, limits, shutdown).await;
                     Ok(())
                 });
                 continue;
             }
+            let Some(owner) = owner else {
+                continue;
+            };
+            started.insert(key);
             let runner = TokioRunner::new(
                 owner.engine.clone(),
                 owner.object.host(),
