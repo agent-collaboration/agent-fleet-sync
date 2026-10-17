@@ -42,23 +42,25 @@ impl<A> InboxProgress<A> {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct InboxHeader<A> {
+#[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
+pub(crate) struct InboxHeader<D: DeliveryTypes> {
     pub id: ItemId,
     pub digest: String,
-    pub recipient: PeerId,
+    pub sender: D::Sender,
+    pub recipient: Recipient<D::Address>,
+    pub cancel_target: Option<ItemId>,
     pub valid_until: Option<SyncTime>,
     pub stream: DeliveryStream,
     pub route: InboxRoute,
-    pub progress: InboxProgress<A>,
+    pub progress: InboxProgress<D::Acceptance>,
     pub report_seq: ReportSeq,
     pub settlement_bytes: u32,
     pub release_requested: bool,
 }
 
 pub(crate) struct InboxRecord<D: DeliveryTypes> {
-    pub header: InboxHeader<D::Acceptance>,
-    pub payload: DeliveryEnvelope<D>,
+    pub header: InboxHeader<D>,
+    pub payload: Option<DeliveryEnvelope<D>>,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -67,7 +69,24 @@ pub(crate) enum InboxRoute {
     Local,
     Relayed,
 }
-impl<A> InboxHeader<A> {
+impl<D: DeliveryTypes> InboxHeader<D> {
+    pub fn compact_local(&self) -> bool {
+        matches!(self.route, InboxRoute::Local)
+            && matches!(self.progress, InboxProgress::Final { .. })
+    }
+    pub fn delivery_header(&self) -> Result<DeliveryHeader<D>, DeliveryError> {
+        let digest =
+            ItemDigest::try_from(self.digest.clone()).map_err(|_| DeliveryError::Corrupt {
+                field: "inbox header digest",
+            })?;
+        crate::custody_record::delivery_header::<D>(
+            self.id,
+            &self.sender,
+            &self.recipient,
+            self.valid_until,
+            &digest,
+        )
+    }
     pub fn validate(&self, owner: PeerId) -> Result<(), DeliveryError> {
         let processing_failed = matches!(
             &self.progress,
@@ -83,7 +102,8 @@ impl<A> InboxHeader<A> {
                 field: "inbox header digest",
             })?;
         }
-        if self.recipient != owner
+        if (self.stream == DeliveryStream::Controls) != self.cancel_target.is_some()
+            || self.recipient.peer != owner
             || self.progress.attempt() > i64::MAX as u64
             || self.report_seq.value() > i64::MAX as u64
             || (self.stream == DeliveryStream::Controls)
@@ -123,12 +143,17 @@ impl<D: DeliveryTypes> InboxRecord<D> {
         route: InboxRoute,
         progress: InboxProgress<D::Acceptance>,
         settlement_bytes: u32,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, DeliveryError> {
+        Ok(Self {
             header: InboxHeader {
                 id: payload.id(),
-                digest: payload.digest().as_str().to_owned(),
-                recipient: payload.recipient().peer,
+                digest: payload.digest().as_str().into(),
+                sender: crate::custody_record::copy_wire(payload.sender())?,
+                recipient: crate::custody_record::copy_wire(payload.recipient())?,
+                cancel_target: match &payload {
+                    DeliveryEnvelope::Item(_) => None,
+                    DeliveryEnvelope::Cancel(cancel) => Some(cancel.target()),
+                },
                 valid_until: payload.valid_until(),
                 stream: payload.stream(),
                 route,
@@ -137,20 +162,48 @@ impl<D: DeliveryTypes> InboxRecord<D> {
                 settlement_bytes,
                 release_requested: false,
             },
-            payload,
-        }
+            payload: Some(payload),
+        })
     }
     pub fn validate(&self, owner: PeerId) -> Result<(), DeliveryError> {
         self.header.validate(owner)?;
-        if self.header.id != self.payload.id()
-            || self.header.digest != self.payload.digest().as_str()
-            || self.header.recipient != self.payload.recipient().peer
-            || self.header.valid_until != self.payload.valid_until()
-            || self.header.stream != self.payload.stream()
-        {
-            return Err(DeliveryError::Corrupt {
-                field: "inbox payload identity",
-            });
+        match &self.payload {
+            Some(payload) => {
+                if self.header.id != payload.id()
+                    || self.header.digest != payload.digest().as_str()
+                    || self.header.recipient.peer != payload.recipient().peer
+                    || self.header.valid_until != payload.valid_until()
+                    || self.header.stream != payload.stream()
+                    || self.header.cancel_target
+                        != match payload {
+                            DeliveryEnvelope::Item(_) => None,
+                            DeliveryEnvelope::Cancel(cancel) => Some(cancel.target()),
+                        }
+                    || crate::status_stream::canonical_encode(&self.header.sender)?
+                        != crate::status_stream::canonical_encode(payload.sender())?
+                    || crate::status_stream::canonical_encode(&self.header.recipient)?
+                        != crate::status_stream::canonical_encode(payload.recipient())?
+                {
+                    return Err(DeliveryError::Corrupt {
+                        field: "inbox payload identity",
+                    });
+                }
+            }
+            None => {
+                if !self.header.compact_local()
+                    && !matches!(
+                        self.header.progress,
+                        InboxProgress::Final {
+                            outcome: RecipientOutcome::Refused {
+                                reason: DeliveryRefusal::ProcessingFailed { .. }
+                            },
+                            ..
+                        }
+                    )
+                {
+                    return Err(DeliveryError::CustodyMissing);
+                }
+            }
         }
         Ok(())
     }

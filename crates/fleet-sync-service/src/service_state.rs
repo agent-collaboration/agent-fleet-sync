@@ -41,6 +41,13 @@ pub(crate) struct ServiceState<
     pub install_page_probe: crate::install_page_probe::InstallPageProbe,
     pub copies: Mutex<BTreeMap<DatabaseId, Arc<OnceCell<Arc<CopyOwner>>>>>,
     pub copy_added: Notify,
+    pub delivery: Mutex<
+        BTreeMap<
+            crate::delivery_owner::DeliveryObject,
+            Arc<OnceCell<Arc<crate::delivery_owner::DeliveryOwner>>>,
+        >,
+    >,
+    pub delivery_added: Notify,
     pub sessions: OnceLock<Weak<ServiceSessions<P, C, A>>>,
 }
 impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>

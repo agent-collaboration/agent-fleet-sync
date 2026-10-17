@@ -28,6 +28,9 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             request,
             call,
         } = envelope;
+        if kind == fleet_sync_delivery::PublishCall::<P::Delivery>::KIND {
+            return self.delivery_publication(target, request, call).await;
+        }
         match kind {
             fleet_sync_tokio_runner::InstallSource::KIND => {
                 encode(self.install_source(decode(target)?).await?)

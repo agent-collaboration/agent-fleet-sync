@@ -158,7 +158,7 @@ where
             } else {
                 RecipientOutcome::Refused {
                     reason: DeliveryRefusal::ProcessingFailed {
-                        code: failure_code(failure),
+                        kind: failure_kind(failure),
                     },
                 }
             };

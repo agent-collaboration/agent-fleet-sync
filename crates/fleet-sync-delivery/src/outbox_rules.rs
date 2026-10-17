@@ -173,9 +173,9 @@ where
                 version: record.version,
                 cancel: record.cancel,
             },
-            Some(OutboxHeaderState::Unresolvable { code, .. }) => OutboxStatusState::Known {
+            Some(OutboxHeaderState::Unresolvable { kind, .. }) => OutboxStatusState::Known {
                 status: DeliveryStatus::Refused {
-                    reason: DeliveryRefusal::ProcessingFailed { code },
+                    reason: DeliveryRefusal::ProcessingFailed { kind },
                 },
                 version: StatusVersion::new(0),
                 cancel: None,
@@ -188,13 +188,13 @@ where
     pub async fn record_failure(
         &mut self,
         item: ItemId,
-        code: FailureCode,
+        kind: DeliveryFailureKind,
     ) -> Result<(), DeliveryError> {
         match self.recovery_header(item).await {
             Ok(Some(OutboxHeaderState::Item(mut header))) => {
                 if !header.status.is_terminal() {
                     header.status = DeliveryStatus::Refused {
-                        reason: DeliveryRefusal::ProcessingFailed { code },
+                        reason: DeliveryRefusal::ProcessingFailed { kind },
                     };
                     self.save_header(&header, None).await?;
                 }
@@ -202,14 +202,14 @@ where
             Ok(Some(OutboxHeaderState::Recovered(mut record))) => {
                 if !record.status.is_terminal() {
                     record.status = DeliveryStatus::Refused {
-                        reason: DeliveryRefusal::ProcessingFailed { code },
+                        reason: DeliveryRefusal::ProcessingFailed { kind },
                     };
                     self.save_recovered(&record).await?;
                 }
             }
             Ok(Some(OutboxHeaderState::Unresolvable { .. })) => {}
             Ok(None) | Err(DeliveryError::Corrupt { .. }) => {
-                let failed = OutboxHeaderState::<D::Acceptance>::Unresolvable { item, code };
+                let failed = OutboxHeaderState::<D::Acceptance>::Unresolvable { item, kind };
                 queries::write_outbox_item(
                     self.scope,
                     item_key(item),
@@ -231,12 +231,12 @@ where
     pub async fn record_submission_failure(
         &mut self,
         input: &SubmitInput,
-        code: FailureCode,
+        kind: DeliveryFailureKind,
     ) -> Result<(), DeliveryError> {
         self.recover_answer(
             input,
             SubmitResult::Refused {
-                reason: DeliveryRefusal::ProcessingFailed { code },
+                reason: DeliveryRefusal::ProcessingFailed { kind },
             },
         )
         .await
@@ -310,6 +310,11 @@ where
         let valid = match &state {
             OutboxHeaderState::Item(header) => {
                 header.validate()?;
+                crate::delivery_sizes::check_status::<D>(&header.status).map_err(|_| {
+                    DeliveryError::Corrupt {
+                        field: "stored outbox status bounds",
+                    }
+                })?;
                 live == u64::from(!header.status.is_terminal())
                     && slot == u64::from(header.capacity_slot)
                     && bytes
@@ -387,8 +392,8 @@ where
         let header = match state {
             OutboxHeaderState::Item(header) => header,
             OutboxHeaderState::Recovered(_) => return Err(DeliveryError::CustodyMissing),
-            OutboxHeaderState::Unresolvable { code, .. } => {
-                return Err(DeliveryError::ProcessingFailed { code });
+            OutboxHeaderState::Unresolvable { kind, .. } => {
+                return Err(DeliveryError::ProcessingFailed { kind });
             }
         };
         let raw_size = row.payload.as_ref().map_or(0, String::len);
@@ -398,6 +403,16 @@ where
             .transpose()?;
         let record = OutboxRecord { header, payload };
         record.validate()?;
+        crate::delivery_sizes::check_status::<D>(&record.header.status).map_err(|_| {
+            DeliveryError::Corrupt {
+                field: "stored outbox status bounds",
+            }
+        })?;
+        if let Some(payload) = &record.payload {
+            crate::delivery_sizes::check_envelope(payload).map_err(|_| DeliveryError::Corrupt {
+                field: "stored outbox envelope bounds",
+            })?;
+        }
         let bytes = integer(row.payload_bytes, row.payload_class, "outbox payload bytes")?;
         let live = integer(row.live, row.live_class, "outbox live flag")?;
         let slot = integer(row.capacity_slot, row.slot_class, "outbox capacity slot")?;

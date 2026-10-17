@@ -58,12 +58,16 @@ where
         let Some(publication) = publication else {
             return Ok(());
         };
-        ctx.call(
-            step("publish")?,
-            PublishCall::<D>::new(input.target),
-            publication,
-        )
-        .await?;
+        let answer = ctx
+            .call(
+                step("publish")?,
+                PublishCall::<D>::new(input.target),
+                publication,
+            )
+            .await?;
+        if let StatusPublicationResult::Refused { reason } = answer {
+            return Err(step_error(DeliveryError::Refused { reason }).into());
+        }
         ctx.local(step("retire_publication")?, move |scope| {
             Box::pin(async move { retire_publication(scope, input).await.map_err(step_error) })
         })

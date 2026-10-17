@@ -31,14 +31,17 @@ pub(crate) fn store_error(error: DeliveryError) -> StoreError {
         },
     }
 }
-pub(crate) fn failure_code(failure: &OperationFailure) -> crate::FailureCode {
+// This classifies generic engine failures; delivery wire kinds are deserialized
+// directly as the closed enum and never pass through this string classifier.
+pub(crate) fn failure_kind(failure: &OperationFailure) -> DeliveryFailureKind {
     match failure {
-        OperationFailure::Refused { code, .. } => crate::FailureCode::new(code.clone())
-            .unwrap_or_else(|_| DeliveryFailureKind::ExecutionFailed.into()),
-        OperationFailure::Nondeterministic { .. } => DeliveryFailureKind::Nondeterministic.into(),
-        OperationFailure::VersionMismatch { .. } => DeliveryFailureKind::VersionMismatch.into(),
-        OperationFailure::InvalidPayload { .. } => DeliveryFailureKind::InvalidPayload.into(),
-        _ => DeliveryFailureKind::ExecutionFailed.into(),
+        OperationFailure::Refused { code, .. } => {
+            DeliveryFailureKind::from_code(code).unwrap_or(DeliveryFailureKind::ExecutionFailed)
+        }
+        OperationFailure::Nondeterministic { .. } => DeliveryFailureKind::Nondeterministic,
+        OperationFailure::VersionMismatch { .. } => DeliveryFailureKind::VersionMismatch,
+        OperationFailure::InvalidPayload { .. } => DeliveryFailureKind::InvalidPayload,
+        _ => DeliveryFailureKind::ExecutionFailed,
     }
 }
 pub(crate) async fn admit_effects<S, T, R>(

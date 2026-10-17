@@ -1,1 +1,1 @@
-INSERT INTO _fleet_sync_reports(item_id,report_seq,record) VALUES(?1,CAST(?2 AS INTEGER),?3);
+INSERT INTO _fleet_sync_reports(item_id,report_seq,record) VALUES(?1,CAST(?2 AS INTEGER),?3) ON CONFLICT(item_id) DO UPDATE SET report_seq=excluded.report_seq,record=excluded.record WHERE excluded.report_seq > _fleet_sync_reports.report_seq;

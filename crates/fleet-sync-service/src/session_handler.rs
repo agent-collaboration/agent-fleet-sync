@@ -90,7 +90,12 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                     .await
                     .map_err(unavailable)?,
             ),
-            OperationRequest::Delivery(_) => return Err(unavailable("delivery is not installed")),
+            OperationRequest::Delivery(request) => OperationAnswer::Delivery(
+                state
+                    .delivery_request(session.peer, request)
+                    .await
+                    .map_err(unavailable)?,
+            ),
         };
         Ok(answer)
     }

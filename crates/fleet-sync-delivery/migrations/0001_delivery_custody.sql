@@ -17,7 +17,7 @@ CREATE TABLE _fleet_sync_mail_state (singleton INTEGER PRIMARY KEY, record TEXT 
 CREATE TABLE _fleet_sync_outbox_items (item_id TEXT PRIMARY KEY, capacity_slot INTEGER NOT NULL CHECK (capacity_slot IN (0, 1)), live INTEGER NOT NULL CHECK (live IN (0, 1)), payload_bytes INTEGER NOT NULL, settlement_bytes INTEGER NOT NULL, record TEXT NOT NULL, payload TEXT);
 CREATE TABLE _fleet_sync_inbox_items (item_id TEXT PRIMARY KEY, live INTEGER NOT NULL CHECK (live IN (0, 1)), payload_bytes INTEGER NOT NULL, settlement_bytes INTEGER NOT NULL, record TEXT NOT NULL, payload TEXT);
 CREATE TABLE _fleet_sync_inbox_state (singleton INTEGER PRIMARY KEY, record TEXT NOT NULL);
-CREATE TABLE _fleet_sync_reports (item_id TEXT NOT NULL, report_seq INTEGER NOT NULL, record TEXT NOT NULL, PRIMARY KEY(item_id, report_seq));
+CREATE TABLE _fleet_sync_reports (item_id TEXT PRIMARY KEY, report_seq INTEGER NOT NULL, record TEXT NOT NULL);
 CREATE TABLE _fleet_sync_status_owed (item_id TEXT NOT NULL, target TEXT NOT NULL, version INTEGER NOT NULL, record TEXT NOT NULL, PRIMARY KEY(item_id, target));
 CREATE TABLE _fleet_sync_status_events (cursor INTEGER PRIMARY KEY, item_id TEXT NOT NULL, version INTEGER NOT NULL, record TEXT NOT NULL, UNIQUE(item_id, version));
 CREATE TABLE _fleet_sync_status_state (singleton INTEGER PRIMARY KEY, record TEXT NOT NULL);

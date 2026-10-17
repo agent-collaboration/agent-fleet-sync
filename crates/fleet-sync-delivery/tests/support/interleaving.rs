@@ -6,10 +6,14 @@ use durable_steps::{
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum AfterAnswer {
     Release,
     Cancel,
+    Checkpoint {
+        reached: Arc<tokio::sync::Notify>,
+        resume: Arc<tokio::sync::Notify>,
+    },
 }
 pub struct InterleavedDeliver {
     inner: DeliverTask,
@@ -42,7 +46,7 @@ impl Task for InterleavedDeliver {
         let mut intercepted = InterceptContext {
             inner: ctx,
             store: self.store.clone(),
-            action: self.action,
+            action: self.action.clone(),
             performed: self.performed.clone(),
         };
         self.inner.run(&mut intercepted, input).await
@@ -74,7 +78,11 @@ impl<O: OperationContext<Store = TestStore>> InterceptContext<'_, O> {
         if self.performed.swap(true, Ordering::SeqCst) {
             return Ok(());
         }
-        match self.action {
+        match &self.action {
+            AfterAnswer::Checkpoint { reached, resume } => {
+                reached.notify_one();
+                resume.notified().await;
+            }
             AfterAnswer::Release => {
                 // Separate commits after the durable call answer and before outcome.
                 for _ in 0..3 {

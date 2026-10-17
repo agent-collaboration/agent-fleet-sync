@@ -1,4 +1,4 @@
-use crate::{DeliverySeq, FailureCode, ItemDigest, ItemId};
+use crate::{DeliverySeq, ItemDigest, ItemId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
     deny_unknown_fields
 )]
 pub enum DeliveryRefusal {
-    ProcessingFailed { code: FailureCode },
+    ProcessingFailed { kind: DeliveryFailureKind },
+    TooLarge { field: DeliverySizeField },
     MailboxFull,
     ItemConflict { existing: ItemDigest },
     RecipientUnknown,
@@ -137,4 +138,12 @@ pub enum RecipientOutcome<A> {
     TooLate { cancel: ItemId, at: TooLateAt },
     Dropped,
     Refused { reason: DeliveryRefusal },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DeliverySizeField {
+    Sender,
+    Address,
+    Acceptance,
 }

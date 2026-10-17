@@ -65,6 +65,8 @@ where
 
         now: SyncTime,
     ) -> Result<SubmitResult<D::Acceptance>, DeliveryError> {
+        self.limits.validate::<D>()?;
+        crate::delivery_sizes::check_envelope(&item)?;
         let mut state = self.storage.state().await?;
         if let Some(existing) = self.storage.item::<D>(item.id()).await? {
             return if existing.digest() == item.digest() {
@@ -265,6 +267,7 @@ where
         recipient: PeerId,
         report: RecipientReport<D>,
     ) -> Result<ReportResult<D::Acceptance>, DeliveryError> {
+        crate::delivery_sizes::check_outcome::<D>(&report.outcome)?;
         if recipient != self.storage.owner
             || report.report_seq.value() == 0
             || report.report_seq.value() > i64::MAX as u64
@@ -330,7 +333,7 @@ where
             }
             self.storage.save_live(live).await?;
         }
-        Ok(ReportResult {
+        Ok(ReportResult::Applied {
             item: report.item,
             acknowledged: report.report_seq,
             status: copy_wire(record.status())?,

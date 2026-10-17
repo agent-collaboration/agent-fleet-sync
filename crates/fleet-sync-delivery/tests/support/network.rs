@@ -45,11 +45,11 @@ impl TestNetwork {
         target: Value,
         request: Value,
         _call: CallId,
+        now: SyncTime,
     ) -> Result<Value, CallFailure> {
         if kind != DeliverCall::<TestTypes>::KIND && !self.relay_up.load(Ordering::SeqCst) {
             return Err(unreachable());
         }
-        let now = SyncTime::from_unix_millis(0);
         let result: Result<Value, StoreError> = match kind {
             SubmitCall::<TestTypes>::KIND => {
                 let target: SubmitCall<TestTypes> = serde_json::from_value(target).unwrap();
@@ -216,10 +216,10 @@ impl TestNetwork {
                         if self.lose_delivery.swap(false, Ordering::SeqCst) {
                             return Err(CallFailure::AnswerLost);
                         }
-                        DispatchOutcome::Answered(answer)
+                        DeliverCall::<TestTypes>::validated_answer(answer)
                     }
                     Err(error) => DispatchOutcome::Unresolvable {
-                        reason: error.failure_code(),
+                        reason: error.failure_kind(),
                     },
                 };
                 Ok(value(answer))
@@ -287,7 +287,7 @@ impl TestNetwork {
                 if self.lose_publication.swap(false, Ordering::SeqCst) {
                     return Err(CallFailure::AnswerLost);
                 }
-                Ok(Value::Null)
+                Ok(value(StatusPublicationResult::Applied))
             }
             _ => return Err(unreachable()),
         };
@@ -402,4 +402,37 @@ pub fn config() -> DeliveryTaskConfig {
         fetch_items: 10,
         fetch_bytes: 100_000,
     }
+}
+
+pub async fn drain(engine: &Engine<TestStore, TestHost>) {
+    let mut report = durable_steps::DriveReport::default();
+    for _ in 0..20 {
+        report = engine.drive_due().await.unwrap();
+        assert!(report.failed.is_empty(), "{report:?}");
+        assert!(report.retried.is_empty(), "{report:?}");
+        if report.completed.is_empty() && report.yielded.is_empty() {
+            return;
+        }
+    }
+    assert!(
+        report.completed.is_empty() && report.yielded.is_empty(),
+        "fixture failed to reach an idle journal: {report:?}"
+    );
+}
+
+pub async fn sender_status(network: &NetworkFixture, id: u64) -> OutboxStatusState<Acceptance> {
+    network
+        .sender
+        .store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                Ok(Outbox::<_, TestTypes>::new(scope, limits())
+                    .status(item_id(id))
+                    .await
+                    .map_err(storage_error)?
+                    .state)
+            })
+        })
+        .await
+        .unwrap()
 }

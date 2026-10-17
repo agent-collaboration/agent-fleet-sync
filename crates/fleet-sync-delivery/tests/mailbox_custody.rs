@@ -28,15 +28,15 @@ async fn count_and_bytes_refuse_independently_before_sequence_allocation() {
             .store
             .transaction(move |scope| {
                 Box::pin(async move {
-                    let mut configured = limits();
-                    if count_limited {
-                        configured.mailbox_items = 1;
+                    let configured = if count_limited {
+                        configured_limits(100_000, 1, 100_000)
                     } else {
-                        configured.mailbox_payload_bytes =
+                        let mailbox_bytes =
                             u64::try_from(serde_json::to_vec(&item(1, "body")).unwrap().len())
                                 .unwrap()
-                                + 2048;
-                    }
+                                + u64::from(limits().settlement_allowance());
+                        configured_limits(mailbox_bytes, 20, 100_000)
+                    };
                     let mut mailbox = Mailbox::<_, TestTypes>::new(scope, peer(2), configured);
                     assert!(matches!(
                         mailbox
@@ -75,14 +75,13 @@ async fn receipt_releases_payload_once_and_a_late_report_cannot_regress_status()
         mailbox.submit(peer(1),item(1,"body"),SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         mailbox.fetch(peer(2),DeliveryStream::Items,DeliverySeq::new(0),10,100_000,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         let newer=mailbox.report(peer(2),RecipientReport{item:item_id(1),report_seq:ReportSeq::new(2),outcome:RecipientOutcome::Delivered{acceptance:Acceptance{receipt:"one effect".into()}}}).await.map_err(storage_error)?;
-        assert_eq!(newer.version.value(),2);
+        assert!(matches!(newer,ReportResult::Applied{version,..} if version.value()==2));
         let received=mailbox.received(peer(2),DeliveryStream::Items,DeliverySeq::new(1),SyncTime::from_unix_millis(1)).await.map_err(storage_error)?;
         assert_eq!(received.released_through.value(),1);
         let received_again=mailbox.received(peer(2),DeliveryStream::Items,DeliverySeq::new(1),SyncTime::from_unix_millis(2)).await.map_err(storage_error)?;
         assert_eq!(received_again.released_through.value(),1);
         let old=mailbox.report(peer(2),RecipientReport{item:item_id(1),report_seq:ReportSeq::new(1),outcome:RecipientOutcome::Held}).await.map_err(storage_error)?;
-        assert_eq!(old.version.value(),2);
-        assert!(matches!(old.status,DeliveryStatus::Delivered{acceptance} if acceptance.receipt=="one effect"));
+        assert!(matches!(old,ReportResult::Applied{status:DeliveryStatus::Delivered{acceptance},version,..} if version.value()==2&&acceptance.receipt=="one effect"));
         Ok(())
     })).await.unwrap();
 }
@@ -119,8 +118,7 @@ async fn a_full_mailbox_uses_the_originals_reserved_cancel_and_replays_a_second_
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut configured = limits();
-                configured.mailbox_items = 1;
+                let configured = configured_limits(100_000, 1, 100_000);
                 let mut mailbox = Mailbox::<_, TestTypes>::new(scope, peer(2), configured);
                 mailbox
                     .submit(
@@ -179,7 +177,7 @@ async fn a_full_mailbox_uses_the_originals_reserved_cancel_and_replays_a_second_
 }
 
 #[tokio::test]
-async fn a_valid_large_sender_cannot_exhaust_an_accepted_items_cancel_reserve() {
+async fn a_sender_above_its_declared_bound_is_refused_before_custody() {
     let fixture = Fixture::new().await;
     fixture
         .store
@@ -188,24 +186,13 @@ async fn a_valid_large_sender_cannot_exhaust_an_accepted_items_cancel_reserve() 
                 let sender = "sender".repeat(800);
                 let original = DeliveryItem::<TestTypes>::new(
                     item_id(1),
-                    sender.clone(),
-                    Recipient {
-                        peer: peer(2),
-                        address: "inbox".into(),
-                    },
-                    None,
-                    "small body".into(),
-                )
-                .unwrap();
-                let cancel = DeliveryCancel::<TestTypes>::new(
-                    item_id(2),
                     sender,
                     Recipient {
                         peer: peer(2),
                         address: "inbox".into(),
                     },
                     None,
-                    CancelBody { target: item_id(1) },
+                    "small body".into(),
                 )
                 .unwrap();
                 let mut mailbox = Mailbox::<_, TestTypes>::new(scope, peer(2), limits());
@@ -216,10 +203,60 @@ async fn a_valid_large_sender_cannot_exhaust_an_accepted_items_cancel_reserve() 
                             DeliveryEnvelope::Item(original),
                             SyncTime::from_unix_millis(0)
                         )
+                        .await,
+                    Err(DeliveryError::Refused {
+                        reason: DeliveryRefusal::TooLarge {
+                            field: DeliverySizeField::Sender
+                        }
+                    })
+                ));
+                assert!(matches!(
+                    mailbox
+                        .query(&[item_id(1)])
+                        .await
+                        .map_err(storage_error)?
+                        .statuses[0]
+                        .state,
+                    ItemStatusState::Unknown
+                ));
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+}
+#[tokio::test]
+async fn a_cancel_at_the_requester_bound_fits_the_originals_derived_reserve() {
+    let fixture = Fixture::new().await;
+    fixture
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let mut mailbox = Mailbox::<_, TestTypes>::new(
+                    scope,
+                    peer(2),
+                    configured_limits(100_000, 1, 100_000),
+                );
+                assert!(matches!(
+                    mailbox
+                        .submit(peer(1), item(1, "small"), SyncTime::from_unix_millis(0))
                         .await
                         .map_err(storage_error)?,
                     SubmitResult::Accepted { .. }
                 ));
+                let requester =
+                    "x".repeat(usize::try_from(TestTypes::MAX_SENDER_BYTES).unwrap() - 2);
+                let cancel = DeliveryCancel::<TestTypes>::new(
+                    item_id(2),
+                    requester,
+                    Recipient {
+                        peer: peer(2),
+                        address: "inbox".into(),
+                    },
+                    None,
+                    CancelBody { target: item_id(1) },
+                )
+                .unwrap();
                 assert!(matches!(
                     mailbox
                         .submit(
@@ -236,4 +273,11 @@ async fn a_valid_large_sender_cannot_exhaust_an_accepted_items_cancel_reserve() 
         })
         .await
         .unwrap();
+}
+#[test]
+fn a_configured_allowance_below_the_derived_minimum_is_rejected() {
+    let minimum = minimum_settlement_allowance::<TestTypes>().unwrap();
+    assert!(
+        matches!(DeliveryLimits::new::<TestTypes>(100_000,20,100_000,20,100_000,minimum-1),Err(DeliveryConfigError::SettlementAllowanceTooSmall{supplied,minimum:required}) if supplied==minimum-1&&required==minimum)
+    );
 }

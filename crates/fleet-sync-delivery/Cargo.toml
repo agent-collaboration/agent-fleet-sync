@@ -7,6 +7,9 @@ license.workspace = true
 publish.workspace = true
 description = "Durable custody rules and delivery hop tasks over borrowed SQLx transactions"
 
+[features]
+test-support = []
+
 [dependencies]
 durable-steps = { path = "../durable-steps" }
 fleet-sync-protocol = { path = "../fleet-sync-protocol" }

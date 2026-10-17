@@ -29,6 +29,9 @@ impl<'de> Deserialize<'de> for ConsumerMap {
 }
 struct MapDelivery;
 impl DeliveryTypes for MapDelivery {
+    const MAX_SENDER_BYTES: u32 = 1024;
+    const MAX_ADDRESS_BYTES: u32 = 1024;
+    const MAX_ACCEPTANCE_BYTES: u32 = 1024;
     type Body = ConsumerMap;
     type Sender = ();
     type Address = ();

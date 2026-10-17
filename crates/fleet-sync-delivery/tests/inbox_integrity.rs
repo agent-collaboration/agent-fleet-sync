@@ -64,7 +64,7 @@ async fn a_full_inbox_still_stores_a_reserved_cancel_from_controls() {
     let fixture = Fixture::new().await;
     fixture.store.transaction(|scope|Box::pin(async move {
         let original=item(1,"held original");
-        let mut configured=limits();configured.inbox_bytes=serde_json::to_vec(&original).unwrap().len() as u64+2048;
+        let configured=configured_limits(100_000,20,serde_json::to_vec(&original).unwrap().len() as u64+u64::from(limits().settlement_allowance()));
         let DeliveryEnvelope::Item(original)=original else {return Err(durable_steps::StoreError::backend("fixture is not an item"));};
         let mut inbox=Inbox::<_,TestTypes>::new(scope,peer(2),configured);
         inbox.enqueue_local(original,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
@@ -129,8 +129,8 @@ async fn failure_outcome_survives_corrupted_recipient_custody() {
         .unwrap();
     fixture.store.transaction(move|scope|Box::pin(async move {
         let mut inbox=Inbox::<_,TestTypes>::new(scope,peer(2),limits());
-        inbox.record_failure(attempt,DeliveryFailureKind::CustodyCorrupt.into(),&TestConsumer,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
-        assert!(matches!(inbox.local_outcome(item_id(1)).await.map_err(storage_error)?,Some(RecipientOutcome::Refused{reason:DeliveryRefusal::ProcessingFailed{code}}) if code.as_str()=="custodyCorrupt"));
+        inbox.record_failure(attempt,DeliveryFailureKind::CustodyCorrupt,&TestConsumer,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
+        assert!(matches!(inbox.local_outcome(item_id(1)).await.map_err(storage_error)?,Some(RecipientOutcome::Refused{reason:DeliveryRefusal::ProcessingFailed{kind}}) if kind.as_str()=="custodyCorrupt"));
         Ok(())
     })).await.unwrap();
 }

@@ -1,42 +1,11 @@
 #![allow(clippy::unwrap_used)]
 mod support;
-use durable_steps::{AtomicStore, Engine, storage::TransactionScope};
+use durable_steps::{AtomicStore, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use sqlx_core::row::Row;
 use std::sync::atomic::Ordering;
 use support::{network::*, *};
 
-async fn drain(engine: &Engine<TestStore, TestHost>) {
-    let mut report = durable_steps::DriveReport::default();
-    for _ in 0..20 {
-        report = engine.drive_due().await.unwrap();
-        assert!(report.failed.is_empty(), "{report:?}");
-        assert!(report.retried.is_empty(), "{report:?}");
-        if report.completed.is_empty() && report.yielded.is_empty() {
-            return;
-        }
-    }
-    assert!(
-        report.completed.is_empty() && report.yielded.is_empty(),
-        "fixture failed to reach an idle journal: {report:?}"
-    );
-}
-async fn sender_status(network: &NetworkFixture, id: u64) -> OutboxStatusState<Acceptance> {
-    network
-        .sender
-        .store
-        .transaction(move |scope| {
-            Box::pin(async move {
-                Ok(Outbox::<_, TestTypes>::new(scope, limits())
-                    .status(item_id(id))
-                    .await
-                    .map_err(storage_error)?
-                    .state)
-            })
-        })
-        .await
-        .unwrap()
-}
 async fn corrupt_sender(network: &NetworkFixture, id: u64, drop_header: bool) {
     network
         .sender
@@ -274,172 +243,6 @@ async fn header_loss_before_first_gate_reconciles_same_digest_conflict_and_unkno
     }
 }
 #[tokio::test]
-async fn non_deduplicating_local_answer_loss_is_uncertain_and_never_repeated() {
-    let network = NetworkFixture::new().await;
-    network.enqueue(1, "one possible effect").await;
-    drain(&network.engine(&network.sender)).await;
-    network.routes.lose_delivery.store(true, Ordering::SeqCst);
-    network.receive(DeliveryStream::Items).await;
-    let recipient = network.engine(&network.recipient);
-    assert_eq!(recipient.drive_due().await.unwrap().completed.len(), 1);
-    let report = recipient.drive_due().await.unwrap();
-    assert_eq!(report.failed.len(), 1);
-    assert!(matches!(
-        report.failed[0].1,
-        durable_steps::OperationFailure::Uncertain { .. }
-    ));
-    assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
-    network.advance();
-    drain(&network.engine(&network.recipient)).await;
-    drain(&network.engine(&network.mailbox)).await;
-    drain(&network.engine(&network.status)).await;
-    assert!(matches!(
-        sender_status(&network, 1).await,
-        OutboxStatusState::Known {
-            status: DeliveryStatus::Uncertain,
-            ..
-        }
-    ));
-    network.receive(DeliveryStream::Items).await;
-    drain(&network.engine(&network.recipient)).await;
-    assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
-}
-
-fn interleaved_engine(
-    network: &NetworkFixture,
-    action: support::interleaving::AfterAnswer,
-) -> Engine<TestStore, TestHost> {
-    let mut engine = Engine::new(
-        network.recipient.store.clone(),
-        network.recipient.host.clone(),
-    );
-    engine
-        .register(support::interleaving::InterleavedDeliver::new(
-            network.recipient.store.clone(),
-            network.recipient.host.clone(),
-            action,
-        ))
-        .unwrap();
-    engine.register(ReportTask::new(config())).unwrap();
-    engine
-        .register(ReceiveTask::new(
-            config(),
-            std::sync::Arc::new(TestConsumer),
-        ))
-        .unwrap();
-    engine
-}
-#[tokio::test]
-async fn a_release_after_the_saved_held_answer_survives_until_outcome_once() {
-    let network = NetworkFixture::new().await;
-    network.enqueue(1, "held then released").await;
-    drain(&network.engine(&network.sender)).await;
-    network
-        .routes
-        .local_answers
-        .lock()
-        .unwrap()
-        .push_back(LocalOutcome::Held { until: None });
-    network.receive(DeliveryStream::Items).await;
-    drain(&interleaved_engine(
-        &network,
-        support::interleaving::AfterAnswer::Release,
-    ))
-    .await;
-    assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 2);
-    network
-        .recipient
-        .store
-        .transaction(|scope| {
-            Box::pin(async move {
-                assert!(matches!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                        .local_outcome(item_id(1))
-                        .await
-                        .map_err(storage_error)?,
-                    Some(RecipientOutcome::Delivered { .. })
-                ));
-                Ok(())
-            })
-        })
-        .await
-        .unwrap();
-}
-#[tokio::test]
-async fn cancel_waiting_for_a_saved_delivered_answer_becomes_too_late() {
-    let network = NetworkFixture::new().await;
-    network.enqueue(1, "delivered before outcome").await;
-    drain(&network.engine(&network.sender)).await;
-    network.receive(DeliveryStream::Items).await;
-    let engine = interleaved_engine(&network, support::interleaving::AfterAnswer::Cancel);
-    assert_eq!(engine.drive_due().await.unwrap().completed.len(), 1);
-    assert!(engine.drive_due().await.unwrap().failed.is_empty());
-    network
-        .recipient
-        .store
-        .transaction(|scope| {
-            Box::pin(async move {
-                let row = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT record FROM _fleet_sync_reports WHERE item_id=?1",
-                )
-                .bind(item_id(2).as_uuid().to_string())
-                .fetch_one(scope.executor())
-                .await
-                .map_err(durable_steps::StoreError::backend)?;
-                let report: RecipientReport<TestTypes> =
-                    serde_json::from_str(&row.try_get::<String, _>("record").unwrap()).unwrap();
-                assert!(matches!(
-                    report.outcome,
-                    RecipientOutcome::TooLate {
-                        at: TooLateAt::Delivered,
-                        ..
-                    }
-                ));
-                Ok(())
-            })
-        })
-        .await
-        .unwrap();
-}
-#[tokio::test]
-async fn cancel_waiting_for_an_uncertain_attempt_becomes_too_late() {
-    let network = NetworkFixture::new().await;
-    network.enqueue(1, "possible effect").await;
-    drain(&network.engine(&network.sender)).await;
-    network.receive(DeliveryStream::Items).await;
-    network.routes.lose_delivery.store(true, Ordering::SeqCst);
-    let engine = interleaved_engine(&network, support::interleaving::AfterAnswer::Cancel);
-    assert_eq!(engine.drive_due().await.unwrap().completed.len(), 1);
-    assert_eq!(engine.drive_due().await.unwrap().failed.len(), 1);
-    network
-        .recipient
-        .store
-        .transaction(|scope| {
-            Box::pin(async move {
-                let row = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT record FROM _fleet_sync_reports WHERE item_id=?1",
-                )
-                .bind(item_id(2).as_uuid().to_string())
-                .fetch_one(scope.executor())
-                .await
-                .map_err(durable_steps::StoreError::backend)?;
-                let report: RecipientReport<TestTypes> =
-                    serde_json::from_str(&row.try_get::<String, _>("record").unwrap()).unwrap();
-                assert!(matches!(
-                    report.outcome,
-                    RecipientOutcome::TooLate {
-                        at: TooLateAt::Uncertain,
-                        ..
-                    }
-                ));
-                Ok(())
-            })
-        })
-        .await
-        .unwrap();
-}
-
-#[tokio::test]
 async fn malformed_header_before_gate_and_on_resume_routes_to_reconciliation() {
     for prior_attempt in [false, true] {
         let network = NetworkFixture::new().await;
@@ -518,7 +321,7 @@ async fn atomic_settlement_fences_a_submit_that_was_already_in_flight() {
     );
     let delayed = network.routes.deferred.lock().unwrap().take().unwrap();
     network.mailbox.store.transaction(move|scope|Box::pin(async move {
-        assert!(matches!(Mailbox::<_,TestTypes>::new(scope,peer(2),limits()).submit(peer(1),delayed.item,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,SubmitResult::Replayed{status:DeliveryStatus::Refused{reason:DeliveryRefusal::ProcessingFailed{code}},version,..} if code.as_str()=="custodyUnresolvable"&&version.value()==1));
+        assert!(matches!(Mailbox::<_,TestTypes>::new(scope,peer(2),limits()).submit(peer(1),delayed.item,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,SubmitResult::Replayed{status:DeliveryStatus::Refused{reason:DeliveryRefusal::ProcessingFailed{kind}},version,..} if kind.as_str()=="custodyUnresolvable"&&version.value()==1));
         let row=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT stream,seq,live,capacity_slot,payload_bytes FROM _fleet_sync_mail_items").fetch_one(scope.executor()).await.map_err(durable_steps::StoreError::backend)?;
         assert_eq!(row.try_get::<Option<String>,_>("stream").unwrap(),None);assert_eq!(row.try_get::<Option<i64>,_>("seq").unwrap(),None);assert_eq!(row.try_get::<i64,_>("live").unwrap(),0);assert_eq!(row.try_get::<i64,_>("capacity_slot").unwrap(),0);assert_eq!(row.try_get::<i64,_>("payload_bytes").unwrap(),0);Ok(())
     })).await.unwrap();
@@ -526,6 +329,47 @@ async fn atomic_settlement_fences_a_submit_that_was_already_in_flight() {
     drain(&network.engine(&network.recipient)).await;
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 0);
     assert!(
-        matches!(sender_status(&network,1).await,OutboxStatusState::Known{status:DeliveryStatus::Refused{reason:DeliveryRefusal::ProcessingFailed{code}},..} if code.as_str()=="custodyUnresolvable")
+        matches!(sender_status(&network,1).await,OutboxStatusState::Known{status:DeliveryStatus::Refused{reason:DeliveryRefusal::ProcessingFailed{kind}},..} if kind.as_str()=="custodyUnresolvable")
     );
+}
+
+#[tokio::test]
+async fn a_terminal_local_item_releases_body_custody_without_a_relay_retirement() {
+    let network = NetworkFixture::new().await;
+    network
+        .recipient
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let DeliveryEnvelope::Item(item) = item(1, "local body") else {
+                    return Err(durable_steps::StoreError::backend("fixture item"));
+                };
+                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    .enqueue_local_and_admit::<DeliverTask>(item, SyncTime::from_unix_millis(0))
+                    .await
+                    .map_err(storage_error)?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+    drain(&network.engine(&network.recipient)).await;
+    network
+        .recipient
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let row = sqlx_core::query::query::<sqlx_turso::Turso>(
+                    "SELECT payload_bytes FROM _fleet_sync_inbox_items WHERE item_id=?1",
+                )
+                .bind(item_id(1).as_uuid().to_string())
+                .fetch_one(scope.executor())
+                .await
+                .map_err(durable_steps::StoreError::backend)?;
+                assert_eq!(row.try_get::<i64, _>("payload_bytes").unwrap(), 0);
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
 }

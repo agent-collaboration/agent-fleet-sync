@@ -112,6 +112,8 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             install_page_probe: Default::default(),
             copies: Mutex::new(BTreeMap::new()),
             copy_added: Notify::new(),
+            delivery: Mutex::new(BTreeMap::new()),
+            delivery_added: Notify::new(),
             sessions: OnceLock::new(),
         });
         let session_object = objects
@@ -145,6 +147,16 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             .map_err(ServiceError::io)?;
         while let Some(entry) = files.next_entry().await.map_err(ServiceError::io)? {
             let name = entry.file_name();
+            if state.options.delivery.is_some()
+                && let Some(key) = name
+                    .to_str()
+                    .map(crate::delivery_owner::DeliveryObject::from_file)
+                    .transpose()?
+                    .flatten()
+            {
+                state.delivery_owner(key).await?;
+                continue;
+            }
             let Some(id) = name
                 .to_str()
                 .and_then(|name| name.strip_prefix(&prefix))
@@ -221,6 +233,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 .map_err(ServiceError::from)
         });
         let mut started = BTreeSet::new();
+        let mut delivery_started = BTreeSet::new();
         let mut server_finished = false;
         let result = loop {
             if *shutdown.borrow() {
@@ -229,7 +242,10 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             self.start_copy_runners(&mut started, &mut tasks, &stopped)
                 .await;
             self.start_source_runners(&mut tasks, &stopped).await;
+            self.start_delivery_runners(&mut delivery_started, &mut tasks, &stopped)
+                .await;
             tokio::select! {
+                _=self.state.delivery_added.notified()=>{},
                 result=&mut server=>{server_finished=true;break result.map_err(ServiceError::io);}
                 changed=shutdown.changed()=>if changed.is_err() || *shutdown.borrow() {break Ok(());},
                 _=self.state.copy_added.notified()=>{},
@@ -291,6 +307,33 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 .map_err(ServiceError::io)?;
         }
         result
+    }
+    async fn start_delivery_runners(
+        &self,
+        started: &mut BTreeSet<crate::delivery_owner::DeliveryObject>,
+        tasks: &mut JoinSet<Result<(), ServiceError>>,
+        shutdown: &watch::Receiver<bool>,
+    ) {
+        let owners = self
+            .state
+            .delivery
+            .lock()
+            .await
+            .iter()
+            .filter_map(|(key, slot)| slot.get().map(|owner| (*key, owner.clone())))
+            .collect::<Vec<_>>();
+        for (key, owner) in owners {
+            if !started.insert(key) {
+                continue;
+            }
+            let runner = TokioRunner::new(
+                owner.engine.clone(),
+                owner.object.host(),
+                owner.object.engine_lock(),
+            );
+            let shutdown = shutdown.clone();
+            tasks.spawn(async move { runner.run(shutdown).await.map_err(ServiceError::from) });
+        }
     }
     async fn start_copy_runners(
         &self,

@@ -8,6 +8,7 @@ use std::{future::Future, path::PathBuf, time::Duration};
 #[derive(Clone, Debug)]
 pub struct ServiceOptions {
     pub directory: PathBuf,
+    pub delivery: Option<fleet_sync_delivery::DeliveryLimits>,
     pub receiver: ReceiverId,
     pub registry: RegistryConfig,
     pub call_timeout: Duration,

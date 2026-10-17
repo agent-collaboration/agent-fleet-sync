@@ -49,6 +49,7 @@ where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        self.limits.validate::<D>()?;
         let mut state = self.state().await?;
         let progress = state.stream(input.stream);
         if batch.stream != input.stream
@@ -65,6 +66,9 @@ where
                 return Err(DeliveryError::InvalidBatch);
             }
             previous = entry.sequence();
+            if let FetchEntry::Item { item, .. } = entry {
+                crate::delivery_sizes::check_envelope(item)?;
+            }
             match entry {
                 FetchEntry::Item { item, .. }
                     if item.stream() != input.stream || item.recipient().peer != self.owner =>
@@ -84,13 +88,16 @@ where
                 FetchEntry::Item { item, .. } => {
                     let id = item.id();
                     if let Some(mut record) = self.load(id).await? {
-                        if record.payload.digest() != item.digest() {
+                        if record.header.digest != item.digest().as_str() {
                             return Err(DeliveryError::Corrupt {
                                 field: "received item conflict",
                             });
                         }
                         if matches!(record.header.route, InboxRoute::Local) {
                             record.header.route = InboxRoute::Relayed;
+                            if record.payload.is_none() {
+                                record.payload = Some(item);
+                            }
                             if let InboxProgress::Final { outcome, .. } = &record.header.progress {
                                 let outcome = copy_wire(outcome)?;
                                 effects
@@ -109,7 +116,7 @@ where
                         let item_progress = match &item {
                             DeliveryEnvelope::Item(_) => {
                                 if let Some(cancel) = self.pending_cancel(id).await? {
-                                    settlement=settlement.checked_sub(u32::try_from(encode(&cancel.payload)?.len()).map_err(|_|DeliveryError::Corrupt{field:"cancel exceeds inbox settlement allowance"})?).ok_or(DeliveryError::Corrupt{field:"cancel exceeds inbox settlement allowance"})?;
+                                    settlement=settlement.checked_sub(u32::try_from(cancel.payload.as_ref().map(encode).transpose()?.map_or(0,|raw|raw.len())).map_err(|_|DeliveryError::Corrupt{field:"cancel exceeds inbox settlement allowance"})?).ok_or(DeliveryError::Corrupt{field:"cancel exceeds inbox settlement allowance"})?;
                                 }
                                 let accounting = queries::read_inbox_accounting(self.scope)
                                     .await
@@ -166,20 +173,15 @@ where
                             }
                         };
                         let record =
-                            InboxRecord::new(item, InboxRoute::Relayed, item_progress, settlement);
+                            InboxRecord::new(item, InboxRoute::Relayed, item_progress, settlement)?;
                         self.save(&record).await?;
                     }
-                    let target = match &self
-                        .load(id)
+                    let target = self
+                        .header(id)
                         .await?
-                        .ok_or(DeliveryError::Corrupt {
-                            field: "received item vanished",
-                        })?
-                        .payload
-                    {
-                        DeliveryEnvelope::Item(_) => id,
-                        DeliveryEnvelope::Cancel(cancel) => cancel.target(),
-                    };
+                        .ok_or(DeliveryError::CustodyMissing)?
+                        .cancel_target
+                        .unwrap_or(id);
                     let cancel_effects = self
                         .apply_pending_cancel(target, consumer, now, false)
                         .await?;
@@ -215,11 +217,13 @@ where
         item: DeliveryItem<D>,
         now: SyncTime,
     ) -> Result<Option<DeliveryAttempt>, DeliveryError> {
+        self.limits.validate::<D>()?;
+        crate::delivery_sizes::check_item(&item)?;
         if item.recipient().peer != self.owner {
             return Err(DeliveryError::InvalidBatch);
         }
         if let Some(existing) = self.load(item.id()).await? {
-            if existing.payload.digest() != item.digest() {
+            if existing.header.digest != item.digest().as_str() {
                 return Err(DeliveryError::Corrupt {
                     field: "local item conflict",
                 });
@@ -239,7 +243,7 @@ where
                 not_before: now,
             },
             self.limits.settlement_allowance,
-        );
+        )?;
         let accounting = queries::read_inbox_accounting(self.scope)
             .await
             .map_err(sql_error)?;
@@ -251,8 +255,15 @@ where
             })?;
         if used
             .checked_add(
-                u64::try_from(encode(&record.payload)?.len())
-                    .map_err(|_| DeliveryError::SequenceExhausted)?,
+                u64::try_from(
+                    record
+                        .payload
+                        .as_ref()
+                        .map(encode)
+                        .transpose()?
+                        .map_or(0, |raw| raw.len()),
+                )
+                .map_err(|_| DeliveryError::SequenceExhausted)?,
             )
             .and_then(|bytes| bytes.checked_add(u64::from(record.header.settlement_bytes)))
             .is_none_or(|bytes| bytes > self.limits.inbox_bytes)

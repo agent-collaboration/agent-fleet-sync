@@ -45,7 +45,7 @@ where
         let cancel = self.load(id).await?.ok_or(DeliveryError::Corrupt {
             field: "inbox cancel item missing",
         })?;
-        if !matches!(&cancel.payload,DeliveryEnvelope::Cancel(cancel) if cancel.target()==target) {
+        if cancel.header.cancel_target != Some(target) {
             return Err(DeliveryError::Corrupt {
                 field: "inbox cancel target mismatch",
             });
@@ -76,50 +76,25 @@ where
         ) {
             return Ok(effects);
         }
-        if let Some(header) = self.header(target).await?
-            && let InboxProgress::Final {
-                outcome:
-                    RecipientOutcome::Refused {
-                        reason: DeliveryRefusal::ProcessingFailed { code },
-                    },
-                ..
-            } = header.progress
-        {
-            // Rejection needs no sender authorization or damaged original body.
-            let reason = DeliveryRefusal::ProcessingFailed { code };
-            cancel.header.progress = InboxProgress::Control {
-                outcome: ControlOutcome::Refused {
-                    reason: reason.clone(),
-                },
-            };
-            effects.reports.extend(
-                self.record_outcome(&mut cancel, RecipientOutcome::Refused { reason })
-                    .await?,
-            );
-            self.save(&cancel).await?;
-            return Ok(effects);
-        }
-        let Some(mut original) = self.load(target).await? else {
+        let Some(mut original) = self.header(target).await? else {
             return Ok(effects);
         };
-        let (requester, item) = match (&cancel.payload, &original.payload) {
-            (DeliveryEnvelope::Cancel(cancel), DeliveryEnvelope::Item(item)) => {
-                (cancel.sender(), item)
-            }
-            _ => return Err(DeliveryError::InvalidBatch),
-        };
-        let outcome = if cancel
-            .payload
-            .valid_until()
-            .is_some_and(|until| now >= until)
-        {
+        original.validate(self.owner)?;
+        let authority = original.delivery_header();
+        let outcome = if cancel.header.valid_until.is_some_and(|until| now >= until) {
             ControlOutcome::Expired
-        } else if !consumer.may_cancel(requester, item) {
+        } else if let Err(DeliveryError::Corrupt { .. }) = authority {
+            ControlOutcome::Refused {
+                reason: DeliveryRefusal::ProcessingFailed {
+                    kind: DeliveryFailureKind::CustodyCorrupt,
+                },
+            }
+        } else if !consumer.may_cancel(&cancel.header.sender, &authority?) {
             ControlOutcome::Refused {
                 reason: DeliveryRefusal::CancelSenderMismatch,
             }
         } else {
-            match &original.header.progress {
+            match &original.progress {
                 InboxProgress::Pending { .. } | InboxProgress::Held { .. } => {
                     ControlOutcome::Prevented
                 }
@@ -141,28 +116,45 @@ where
                     outcome: RecipientOutcome::Prevented { .. },
                     ..
                 } => ControlOutcome::Prevented,
+                InboxProgress::Final {
+                    outcome: RecipientOutcome::Expired,
+                    ..
+                } => ControlOutcome::Expired,
+                InboxProgress::Final {
+                    outcome: RecipientOutcome::Refused { reason },
+                    ..
+                } => ControlOutcome::Refused {
+                    reason: reason.clone(),
+                },
+                InboxProgress::Final {
+                    outcome: RecipientOutcome::Dropped,
+                    ..
+                } => ControlOutcome::Refused {
+                    reason: DeliveryRefusal::DroppedByPolicy,
+                },
                 InboxProgress::Final { .. } | InboxProgress::Control { .. } => {
-                    ControlOutcome::Refused {
-                        reason: DeliveryRefusal::DroppedByPolicy,
-                    }
+                    return Err(DeliveryError::Corrupt {
+                        field: "original item control outcome",
+                    });
                 }
             }
         };
-        let cancel_id = cancel.payload.id();
+        let cancel_id = cancel.header.id;
         let report_outcome = match &outcome {
             ControlOutcome::Pending => return Ok(effects),
             ControlOutcome::Prevented => {
-                if !matches!(original.header.progress, InboxProgress::Final { .. }) {
+                if !matches!(original.progress, InboxProgress::Final { .. }) {
                     let original_outcome = RecipientOutcome::Prevented { cancel: cancel_id };
-                    original.header.progress = InboxProgress::Final {
-                        attempt: original.header.progress.attempt(),
+                    original.progress = InboxProgress::Final {
+                        attempt: original.progress.attempt(),
                         outcome: copy_wire(&original_outcome)?,
                     };
-                    original.header.release_requested = false;
-                    effects
-                        .reports
-                        .extend(self.record_outcome(&mut original, original_outcome).await?);
-                    self.save(&original).await?;
+                    original.release_requested = false;
+                    effects.reports.extend(
+                        self.record_header_outcome(&mut original, original_outcome)
+                            .await?,
+                    );
+                    self.update_header(&original).await?;
                 }
                 RecipientOutcome::Prevented { cancel: cancel_id }
             }

@@ -55,7 +55,10 @@ impl<A> OutboxHeader<A> {
 pub(crate) enum OutboxHeaderState<A> {
     Item(OutboxHeader<A>),
     Recovered(RecoveredOutbox<A>),
-    Unresolvable { item: ItemId, code: FailureCode },
+    Unresolvable {
+        item: ItemId,
+        kind: DeliveryFailureKind,
+    },
 }
 
 pub(crate) struct OutboxRecord<D: DeliveryTypes> {

@@ -22,6 +22,7 @@ where
         &mut self,
         publication: StatusPublication<D::Acceptance>,
     ) -> Result<(), DeliveryError> {
+        crate::delivery_sizes::check_status::<D>(&publication.status)?;
         if publication.version.value() == 0 || publication.status.rank() == 0 {
             return Err(DeliveryError::InvalidBatch);
         }
@@ -78,11 +79,17 @@ where
             return Err(DeliveryError::InvalidBatch);
         }
         let mut previous = after;
-        for event in batch.events {
+        for event in &batch.events {
+            crate::delivery_sizes::check_status::<D>(&event.status)?;
             if event.cursor <= previous || event.cursor > batch.through {
                 return Err(DeliveryError::InvalidBatch);
             }
             previous = event.cursor;
+        }
+        if batch.through != previous {
+            return Err(DeliveryError::InvalidBatch);
+        }
+        for event in batch.events {
             self.publish_status(StatusPublication {
                 item: event.item,
                 status: event.status,
@@ -90,9 +97,6 @@ where
                 cancel: event.cancel,
             })
             .await?;
-        }
-        if batch.through != previous {
-            return Err(DeliveryError::InvalidBatch);
         }
         queries::write_outbox_status(self.scope, encode(&current.max(batch.through))?)
             .await

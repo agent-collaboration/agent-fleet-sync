@@ -55,3 +55,15 @@ pub use submit_task::SubmitItem;
 mod outbox_admission;
 
 mod mailbox_settlement;
+
+mod delivery_sizes;
+
+mod delivery_limits;
+mod settlement_reserve;
+pub use delivery_limits::{DeliveryConfigError, DeliveryLimits};
+pub use settlement_reserve::minimum_settlement_allowance;
+
+#[cfg(feature = "test-support")]
+mod checked_inspection_queries;
+#[cfg(feature = "test-support")]
+pub mod test_support;

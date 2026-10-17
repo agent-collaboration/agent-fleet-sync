@@ -35,15 +35,13 @@ where
                 })
             };
         }
-        let reason: FailureCode = DeliveryFailureKind::CustodyUnresolvable.into();
+        let reason = DeliveryFailureKind::CustodyUnresolvable;
         let version = StatusVersion::new(1);
         let record = MailRecord::<D>::Compacted(CompactedMail {
             id: item,
             digest,
             status: DeliveryStatus::Refused {
-                reason: DeliveryRefusal::ProcessingFailed {
-                    code: reason.clone(),
-                },
+                reason: DeliveryRefusal::ProcessingFailed { kind: reason },
             },
             version,
             cancel: None,

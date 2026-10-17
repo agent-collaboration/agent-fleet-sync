@@ -101,7 +101,11 @@ where
         C: crate::DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        self.limits.validate::<D>()?;
         let envelope = DeliveryEnvelope::Cancel(cancel);
+        self.limits.validate::<D>()?;
+        crate::delivery_sizes::check_envelope(&envelope)?;
+        crate::delivery_sizes::check_envelope(&envelope)?;
         if let Some(answer) = self.existing_admission(&envelope).await? {
             return Ok(answer);
         }
@@ -128,7 +132,14 @@ where
                 let Some(DeliveryEnvelope::Item(item)) = &original.payload else {
                     return Err(DeliveryError::CustodyMissing);
                 };
-                if !consumer.may_cancel(cancel.sender(), item) {
+                let header = delivery_header::<D>(
+                    item.id(),
+                    item.sender(),
+                    item.recipient(),
+                    item.valid_until(),
+                    item.digest(),
+                )?;
+                if !consumer.may_cancel(cancel.sender(), &header) {
                     return Ok(OutboxAdmission::Refused {
                         reason: DeliveryRefusal::CancelSenderMismatch,
                     });
@@ -150,8 +161,8 @@ where
             return Ok(None);
         };
         let (digest, status, version) = match state {
-            OutboxHeaderState::Unresolvable { code, .. } => {
-                return Err(DeliveryError::ProcessingFailed { code });
+            OutboxHeaderState::Unresolvable { kind, .. } => {
+                return Err(DeliveryError::ProcessingFailed { kind });
             }
             OutboxHeaderState::Recovered(record) => (record.digest, record.status, record.version),
             OutboxHeaderState::Item(header) => {
@@ -180,6 +191,8 @@ where
 
         withdrawn: bool,
     ) -> Result<OutboxAdmission<D::Acceptance>, DeliveryError> {
+        self.limits.validate::<D>()?;
+        crate::delivery_sizes::check_envelope(&envelope)?;
         if let Some(answer) = self.existing_admission(&envelope).await? {
             return Ok(answer);
         }

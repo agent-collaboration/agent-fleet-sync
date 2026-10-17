@@ -114,6 +114,7 @@ where
         &mut self,
         publication: &StatusPublication<D::Acceptance>,
     ) -> Result<(StatusEvent<D::Acceptance>, Option<PublicationRef>), DeliveryError> {
+        crate::delivery_sizes::check_status::<D>(&publication.status)?;
         if publication.version.value() == 0
             || publication.version.value() > i64::MAX as u64
             || publication.status.rank() == 0

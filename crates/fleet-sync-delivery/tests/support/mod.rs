@@ -46,11 +46,14 @@ impl<S: durable_steps::storage::TransactionScope> DeliveryConsumer<S> for TestCo
             },
         }
     }
-    fn may_cancel(&self, requester: &String, item: &DeliveryItem<TestTypes>) -> bool {
+    fn may_cancel(&self, requester: &String, item: &DeliveryHeader<TestTypes>) -> bool {
         requester == item.sender()
     }
 }
 impl DeliveryTypes for TestTypes {
+    const MAX_SENDER_BYTES: u32 = 64;
+    const MAX_ADDRESS_BYTES: u32 = 64;
+    const MAX_ACCEPTANCE_BYTES: u32 = 128;
     type Body = String;
     type Sender = String;
     type Address = String;
@@ -99,7 +102,9 @@ impl Host for TestHost {
         };
         let target = serde_json::to_value(target).unwrap();
         let request = serde_json::to_value(request).unwrap();
-        let answer = routes.dispatch(C::KIND, target, request, call).await?;
+        let answer = routes
+            .dispatch(C::KIND, target, request, call, self.now())
+            .await?;
         Ok(serde_json::from_value(answer).unwrap())
     }
 }
@@ -144,14 +149,30 @@ impl Fixture {
     }
 }
 pub fn limits() -> DeliveryLimits {
-    DeliveryLimits {
-        mailbox_payload_bytes: 100_000,
-        mailbox_items: 20,
-        outbox_bytes: 100_000,
-        outbox_items: 20,
-        inbox_bytes: 100_000,
-        settlement_allowance: 2048,
-    }
+    DeliveryLimits::new::<TestTypes>(
+        100_000,
+        20,
+        100_000,
+        20,
+        100_000,
+        minimum_settlement_allowance::<TestTypes>().unwrap(),
+    )
+    .unwrap()
+}
+pub fn configured_limits(
+    mailbox_bytes: u64,
+    mailbox_items: u64,
+    inbox_bytes: u64,
+) -> DeliveryLimits {
+    DeliveryLimits::new::<TestTypes>(
+        mailbox_bytes,
+        mailbox_items,
+        100_000,
+        20,
+        inbox_bytes,
+        minimum_settlement_allowance::<TestTypes>().unwrap(),
+    )
+    .unwrap()
 }
 pub fn peer(value: u128) -> PeerId {
     PeerId::new(durable_steps::Uuid::from_u128(value)).unwrap()

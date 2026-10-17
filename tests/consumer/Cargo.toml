@@ -6,7 +6,17 @@ publish = false
 
 [workspace]
 
+[features]
+test-support = ["fleet-sync-delivery/test-support"]
+
+[[bin]]
+name = "delivery_node"
+path = "src/bin/delivery_node.rs"
+required-features = ["test-support"]
+
 [dependencies]
+fleet-sync-delivery = { path = "../../crates/fleet-sync-delivery" }
+fleet-sync-tokio-runner = { path = "../../crates/fleet-sync-tokio-runner" }
 axum = { version = "0.8.9", features = ["ws"] }
 durable-steps = { path = "../../crates/durable-steps", features = ["turso"] }
 fleet-sync-lease = { path = "../../crates/fleet-sync-lease" }

@@ -1,7 +1,8 @@
 use crate::task_support::*;
 use crate::*;
 use durable_steps::{
-    AtomicStore, OperationContext, OperationFailure, Task, storage::TransactionScope,
+    AtomicStore, BoxFuture, OperationContext, OperationFailure, RequestKey, Resume, StoreError,
+    Task, storage::TransactionScope,
 };
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
@@ -62,10 +63,18 @@ where
                 report,
             )
             .await?;
-        if answer.item != input.item || answer.acknowledged < input.report_seq {
-            return Err(OperationFailure::InvalidPayload {
-                message: "report acknowledgment has another identity".into(),
-            });
+        match answer {
+            ReportResult::Applied {
+                item, acknowledged, ..
+            } if item == input.item && acknowledged >= input.report_seq => {}
+            ReportResult::Refused { reason } => {
+                return Err(step_error(DeliveryError::Refused { reason }).into());
+            }
+            _ => {
+                return Err(OperationFailure::InvalidPayload {
+                    message: "report acknowledgment has another identity".into(),
+                });
+            }
         }
         ctx.local(step("retire_report")?, move |scope| {
             Box::pin(async move {
@@ -77,5 +86,25 @@ where
         })
         .await?;
         Ok(())
+    }
+    fn before_resume<'s, 't>(
+        &'s self,
+        scope: &'s mut S::Scope<'t>,
+        key: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Resume<()>, StoreError>> {
+        Box::pin(async move {
+            let (item, report_seq): (ItemId, ReportSeq) =
+                serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
+            let reference = ReportRef { item, report_seq };
+            if Inbox::<_, D>::new(scope, self.config.owner, self.config.limits)
+                .report_superseded(reference)
+                .await
+                .map_err(store_error)?
+            {
+                Ok(Resume::Finish(()))
+            } else {
+                Ok(Resume::Continue)
+            }
+        })
     }
 }

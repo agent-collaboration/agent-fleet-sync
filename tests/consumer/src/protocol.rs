@@ -6,6 +6,7 @@ use std::sync::LazyLock;
 
 pub struct SampleProtocol;
 impl ConsumerProtocol for SampleProtocol {
+    type Delivery = crate::SampleDelivery;
     type Request = SampleRequest;
     type Answer = SampleAnswer;
     type ServerRequest = String;

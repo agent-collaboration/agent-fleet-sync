@@ -26,6 +26,11 @@ where
         return Ok(None);
     };
     let publication: StatusPublication<D::Acceptance> = decode(row.record, "owed publication")?;
+    crate::delivery_sizes::check_status::<D>(&publication.status).map_err(|_| {
+        DeliveryError::Corrupt {
+            field: "stored publication bounds",
+        }
+    })?;
     let version = integer(row.version, row.version_class, "owed publication version")?;
     if publication.item != reference.item || publication.version.value() != version || version == 0
     {

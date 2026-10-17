@@ -22,7 +22,7 @@ where
     pub async fn record_failure<C>(
         &mut self,
         input: DeliveryAttempt,
-        code: FailureCode,
+        kind: DeliveryFailureKind,
         _consumer: &C,
         _now: SyncTime,
     ) -> Result<InboxEffects, DeliveryError>
@@ -33,7 +33,7 @@ where
         self.record_terminal(
             input,
             RecipientOutcome::Refused {
-                reason: DeliveryRefusal::ProcessingFailed { code },
+                reason: DeliveryRefusal::ProcessingFailed { kind },
             },
         )
         .await
@@ -144,6 +144,11 @@ where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        if let LocalOutcome::Delivered { acceptance } = &outcome {
+            crate::delivery_sizes::check_status::<D>(&DeliveryStatus::Delivered {
+                acceptance: copy_wire(acceptance)?,
+            })?;
+        }
         let mut effects = if matches!(&outcome, LocalOutcome::Held { .. }) {
             self.apply_pending_cancel(input.item, consumer, now, true)
                 .await?
@@ -166,7 +171,7 @@ where
                 let deadline = if record.header.release_requested {
                     Some(now)
                 } else {
-                    match (until, record.payload.valid_until()) {
+                    match (until, record.header.valid_until) {
                         (Some(until), Some(expiry)) => Some(until.min(expiry)),
                         (Some(until), None) => Some(until),
                         (None, expiry) => expiry,

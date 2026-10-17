@@ -81,6 +81,7 @@ pub async fn run_server_with_policy(
     let consumer = Arc::new(Consumer::new(store.clone())?);
     let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(receiver))?;
     let options = ServiceOptions {
+        delivery: Some(crate::delivery_limits()?),
         directory: directory.join("service"),
         receiver,
         registry: RegistryConfig {

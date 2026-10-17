@@ -854,6 +854,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "durable-steps",
+ "fleet-sync-delivery",
  "fleet-sync-lease",
  "fleet-sync-protocol",
  "fleet-sync-receiver",

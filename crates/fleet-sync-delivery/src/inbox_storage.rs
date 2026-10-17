@@ -49,10 +49,18 @@ where
         row: queries::StoredInboxRow,
         expected: Option<ItemId>,
     ) -> Result<InboxRecord<D>, DeliveryError> {
-        let header: InboxHeader<D::Acceptance> = decode(row.record, "inbox header")?;
-        let payload = decode(row.payload, "inbox custody payload")?;
+        let header: InboxHeader<D> = decode(row.record, "inbox header")?;
+        let payload = row
+            .payload
+            .map(|raw| decode(Some(raw), "inbox custody payload"))
+            .transpose()?;
         let record = InboxRecord { header, payload };
         record.validate(self.owner)?;
+        if let Some(payload) = &record.payload {
+            crate::delivery_sizes::check_envelope(payload).map_err(|_| DeliveryError::Corrupt {
+                field: "stored inbox envelope bounds",
+            })?;
+        }
         let bytes = integer(row.payload_bytes, row.payload_class, "inbox payload bytes")?;
         let live = integer(row.live, row.live_class, "inbox live flag")?;
         let settlement = integer(
@@ -60,13 +68,25 @@ where
             row.settlement_class,
             "inbox settlement bytes",
         )?;
-        if expected.is_some_and(|item| item != record.payload.id())
-            || row.item_id.as_deref() != Some(item_key(record.payload.id()).as_str())
-            || live != 1
+        if expected.is_some_and(|item| item != record.header.id)
+            || row.item_id.as_deref() != Some(item_key(record.header.id).as_str())
+            || live != u64::from(!record.header.compact_local())
             || bytes
-                != u64::try_from(encode(&record.payload)?.len())
-                    .map_err(|_| DeliveryError::SequenceExhausted)?
-            || settlement != u64::from(record.header.settlement_bytes)
+                != u64::try_from(
+                    record
+                        .payload
+                        .as_ref()
+                        .map(encode)
+                        .transpose()?
+                        .map_or(0, |raw| raw.len()),
+                )
+                .map_err(|_| DeliveryError::SequenceExhausted)?
+            || settlement
+                != if record.header.compact_local() {
+                    0
+                } else {
+                    u64::from(record.header.settlement_bytes)
+                }
         {
             return Err(DeliveryError::Corrupt {
                 field: "inbox row metadata",
@@ -76,20 +96,30 @@ where
     }
     pub(crate) async fn save(&mut self, record: &InboxRecord<D>) -> Result<(), DeliveryError> {
         record.validate(self.owner)?;
-        self.save_header(&record.header, Some(encode(&record.payload)?))
-            .await
+        self.save_header(
+            &record.header,
+            record.payload.as_ref().map(encode).transpose()?,
+        )
+        .await
     }
     pub(crate) async fn header(
         &mut self,
         item: ItemId,
-    ) -> Result<Option<InboxHeader<D::Acceptance>>, DeliveryError> {
+    ) -> Result<Option<InboxHeader<D>>, DeliveryError> {
         let Some(row) = queries::read_inbox_item(self.scope, item_key(item))
             .await
             .map_err(sql_error)?
         else {
             return Ok(None);
         };
-        let header: InboxHeader<D::Acceptance> = decode(row.record, "inbox header")?;
+        let header: InboxHeader<D> = decode(row.record, "inbox header")?;
+        if let InboxProgress::Final { outcome, .. } = &header.progress {
+            crate::delivery_sizes::check_outcome::<D>(outcome).map_err(|_| {
+                DeliveryError::Corrupt {
+                    field: "stored inbox outcome bounds",
+                }
+            })?;
+        }
         if header.id != item {
             return Err(DeliveryError::Corrupt {
                 field: "inbox header identity",
@@ -99,16 +129,19 @@ where
     }
     pub(crate) async fn save_header(
         &mut self,
-        header: &InboxHeader<D::Acceptance>,
+        header: &InboxHeader<D>,
         payload: Option<String>,
     ) -> Result<(), DeliveryError> {
         header.validate(self.owner)?;
+        // Only the recipient retains the full cancellation header; relay/outbox compacts keep identity/digest/status.
+        let compact = header.compact_local();
+        let payload = if compact { None } else { payload };
         queries::write_inbox_item(
             self.scope,
             item_key(header.id),
-            "1".into(),
+            u8::from(!compact).to_string(),
             payload.as_ref().map_or(0, String::len).to_string(),
-            header.settlement_bytes.to_string(),
+            if compact { 0 } else { header.settlement_bytes }.to_string(),
             encode(header)?,
             payload,
         )
@@ -117,7 +150,7 @@ where
     }
     pub(crate) async fn update_header(
         &mut self,
-        header: &InboxHeader<D::Acceptance>,
+        header: &InboxHeader<D>,
     ) -> Result<(), DeliveryError> {
         let row = queries::read_inbox_item(self.scope, item_key(header.id))
             .await
@@ -152,17 +185,27 @@ where
             .ok_or(DeliveryError::Corrupt {
                 field: "local delivery custody row missing",
             })?;
-        if record.payload.digest() != &reference.digest {
+        if record.header.digest != reference.digest.as_str() {
             return Err(DeliveryError::Corrupt {
                 field: "local delivery custody digest",
             });
         }
         match record.payload {
-            DeliveryEnvelope::Item(item) => Ok(item),
-            DeliveryEnvelope::Cancel(_) => Err(DeliveryError::Corrupt {
+            Some(DeliveryEnvelope::Item(item)) => Ok(item),
+            None => Err(DeliveryError::CustodyMissing),
+            Some(DeliveryEnvelope::Cancel(_)) => Err(DeliveryError::Corrupt {
                 field: "cancel resolved as external delivery",
             }),
         }
+    }
+    pub(crate) async fn report_superseded(
+        &mut self,
+        reference: ReportRef,
+    ) -> Result<bool, DeliveryError> {
+        Ok(self
+            .header(reference.item)
+            .await?
+            .is_some_and(|header| header.report_seq > reference.report_seq))
     }
     pub async fn resolve_report(
         &mut self,
@@ -179,6 +222,11 @@ where
             field: "report custody row missing",
         })?;
         let report: RecipientReport<D> = decode(row.record, "recipient report")?;
+        crate::delivery_sizes::check_outcome::<D>(&report.outcome).map_err(|_| {
+            DeliveryError::Corrupt {
+                field: "stored report bounds",
+            }
+        })?;
         if report.item != reference.item || report.report_seq != reference.report_seq {
             return Err(DeliveryError::Corrupt {
                 field: "report identity",
@@ -205,7 +253,7 @@ where
     }
     pub(crate) async fn record_header_outcome(
         &mut self,
-        header: &mut InboxHeader<D::Acceptance>,
+        header: &mut InboxHeader<D>,
         outcome: RecipientOutcome<D::Acceptance>,
     ) -> Result<Option<ReportRef>, DeliveryError> {
         header.report_seq = header

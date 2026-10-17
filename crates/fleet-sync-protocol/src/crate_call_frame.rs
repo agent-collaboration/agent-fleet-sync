@@ -36,7 +36,7 @@ pub enum ServerCall<D: DeliveryTypes = NoDelivery> {
 pub enum ServerCallAnswer {
     WithdrawRelease(WithdrawAnswer),
     Release(ReleaseAnswer),
-    PublishStatus,
+    Published(StatusPublicationResult),
 }
 
 #[derive(Serialize, Deserialize)]

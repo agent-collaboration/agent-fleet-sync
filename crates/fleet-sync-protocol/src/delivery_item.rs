@@ -2,6 +2,9 @@ use crate::{DigestError, ItemDigest, ItemId, PeerId, SyncTime};
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 
 pub trait DeliveryTypes: Send + Sync + 'static {
+    const MAX_SENDER_BYTES: u32;
+    const MAX_ADDRESS_BYTES: u32;
+    const MAX_ACCEPTANCE_BYTES: u32;
     type Body: Serialize + DeserializeOwned + Send + Sync;
     type Sender: Serialize + DeserializeOwned + Send + Sync;
     type Address: Serialize + DeserializeOwned + Send + Sync;
@@ -11,10 +14,41 @@ pub trait DeliveryTypes: Send + Sync + 'static {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NoDelivery;
 impl DeliveryTypes for NoDelivery {
+    const MAX_SENDER_BYTES: u32 = 0;
+    const MAX_ADDRESS_BYTES: u32 = 0;
+    const MAX_ACCEPTANCE_BYTES: u32 = 0;
     type Body = ();
     type Sender = ();
     type Address = ();
     type Acceptance = ();
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
+/// The recipient retains this identity to authorize cancels after releasing a body.
+pub struct DeliveryHeader<D: DeliveryTypes> {
+    pub id: ItemId,
+    pub sender: D::Sender,
+    pub recipient: Recipient<D::Address>,
+    pub valid_until: Option<SyncTime>,
+    pub digest: ItemDigest,
+}
+impl<D: DeliveryTypes> DeliveryHeader<D> {
+    pub const fn id(&self) -> ItemId {
+        self.id
+    }
+    pub fn sender(&self) -> &D::Sender {
+        &self.sender
+    }
+    pub fn recipient(&self) -> &Recipient<D::Address> {
+        &self.recipient
+    }
+    pub const fn valid_until(&self) -> Option<SyncTime> {
+        self.valid_until
+    }
+    pub fn digest(&self) -> &ItemDigest {
+        &self.digest
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

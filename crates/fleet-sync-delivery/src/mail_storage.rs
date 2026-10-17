@@ -60,6 +60,18 @@ where
     ) -> Result<MailRecord<D>, DeliveryError> {
         let record: MailRecord<D> = decode(row.record, "mail item record")?;
         record.validate(self.owner)?;
+        crate::delivery_sizes::check_status::<D>(record.status()).map_err(|_| {
+            DeliveryError::Corrupt {
+                field: "stored mail status bounds",
+            }
+        })?;
+        if let MailRecord::Live(record) = &record
+            && let Some(payload) = &record.payload
+        {
+            crate::delivery_sizes::check_envelope(payload).map_err(|_| DeliveryError::Corrupt {
+                field: "stored mail envelope bounds",
+            })?;
+        }
         if row.item_id.as_deref() != Some(item_key(record.id()).as_str())
             || expected.is_some_and(|expected| expected != record.id())
         {

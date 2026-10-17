@@ -166,11 +166,17 @@ pub struct RecipientReport<D: DeliveryTypes> {
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ReportResult<A> {
-    pub item: ItemId,
-    pub acknowledged: ReportSeq,
-    pub status: DeliveryStatus<A>,
-    pub version: StatusVersion,
+#[serde(tag = "kind", content = "value", rename_all_fields = "camelCase")]
+pub enum ReportResult<A> {
+    Applied {
+        item: ItemId,
+        acknowledged: ReportSeq,
+        status: DeliveryStatus<A>,
+        version: StatusVersion,
+    },
+    Refused {
+        reason: DeliveryRefusal,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -242,7 +248,7 @@ pub struct RetireResult {
 )]
 pub enum SettleResult<A> {
     Settled {
-        reason: FailureCode,
+        reason: DeliveryFailureKind,
         version: StatusVersion,
     },
     Replayed {
@@ -253,4 +259,16 @@ pub enum SettleResult<A> {
     ItemConflict {
         existing: ItemDigest,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "camelCase",
+    deny_unknown_fields
+)]
+pub enum StatusPublicationResult {
+    Applied,
+    Refused { reason: DeliveryRefusal },
 }

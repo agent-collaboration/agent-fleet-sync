@@ -52,6 +52,20 @@ impl<D: DeliveryTypes> CallTarget for DeliverCall<D> {
     type Request = DeliveryItemRef;
     type Answer = LocalDeliveryOutcome<D::Acceptance>;
 }
+impl<D: DeliveryTypes> DeliverCall<D> {
+    /// Hosts must adapt the consumer's result before returning it to the engine.
+    /// An invalid receipt cannot undo an external effect: persist Uncertain and never resend.
+    pub fn validated_answer(
+        outcome: LocalOutcome<D::Acceptance>,
+    ) -> LocalDeliveryOutcome<D::Acceptance> {
+        let outcome = if crate::delivery_sizes::check_local_outcome::<D>(&outcome).is_ok() {
+            outcome
+        } else {
+            LocalOutcome::Uncertain
+        };
+        DispatchOutcome::Answered(outcome)
+    }
+}
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -141,5 +155,5 @@ impl<D> PublishCall<D> {
 impl<D: DeliveryTypes> CallTarget for PublishCall<D> {
     const KIND: &'static str = "fleet-sync.delivery.publish";
     type Request = StatusPublication<D::Acceptance>;
-    type Answer = ();
+    type Answer = StatusPublicationResult;
 }

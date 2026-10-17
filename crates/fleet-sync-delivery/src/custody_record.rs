@@ -242,3 +242,19 @@ pub(crate) fn fits_mailbox(
             .and_then(|size| bytes.checked_add(size))
             .is_some_and(|total| total <= limits.mailbox_payload_bytes)
 }
+
+pub(crate) fn delivery_header<D: DeliveryTypes>(
+    id: ItemId,
+    sender: &D::Sender,
+    recipient: &Recipient<D::Address>,
+    valid_until: Option<SyncTime>,
+    digest: &ItemDigest,
+) -> Result<DeliveryHeader<D>, DeliveryError> {
+    Ok(DeliveryHeader {
+        id,
+        sender: copy_wire(sender)?,
+        recipient: copy_wire(recipient)?,
+        valid_until,
+        digest: digest.clone(),
+    })
+}

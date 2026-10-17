@@ -28,3 +28,9 @@ pub use writer_control::{WriterCommand, WriterReply};
 pub use writer_move::run_move;
 
 pub type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+mod delivery_protocol;
+pub use delivery_protocol::{SampleDelivery, delivery_limits};
+
+#[cfg(feature = "test-support")]
+pub mod delivery_node;

@@ -1,18 +1,8 @@
+use crate::DeliveryLimits;
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::*;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DeliveryLimits {
-    pub mailbox_payload_bytes: u64,
-    pub mailbox_items: u64,
-    pub outbox_bytes: u64,
-    pub outbox_items: u64,
-    pub inbox_bytes: u64,
-    pub settlement_allowance: u32,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(
@@ -52,7 +42,7 @@ pub enum LocalOutcome<A> {
 )]
 pub enum DispatchOutcome<A> {
     Answered(A),
-    Unresolvable { reason: FailureCode },
+    Unresolvable { reason: DeliveryFailureKind },
 }
 pub type SubmitOutcome<A> = DispatchOutcome<SubmitResult<A>>;
 pub type LocalDeliveryOutcome<A> = DispatchOutcome<LocalOutcome<A>>;
@@ -61,6 +51,10 @@ pub type LocalDeliveryOutcome<A> = DispatchOutcome<LocalOutcome<A>>;
 pub enum DeliveryError {
     #[error("delivery storage: {0}")]
     Storage(String),
+    #[error(transparent)]
+    Config(#[from] crate::DeliveryConfigError),
+    #[error("delivery refused: {reason:?}")]
+    Refused { reason: DeliveryRefusal },
     #[error("invalid stored delivery field {field}")]
     Corrupt { field: &'static str },
     #[error("delivery encoding: {0}")]
@@ -75,22 +69,22 @@ pub enum DeliveryError {
     CustodyMissing,
     #[error("custody digest differs from its call reference")]
     DigestMismatch,
-    #[error("delivery processing failed: {}",code.as_str())]
-    ProcessingFailed { code: FailureCode },
+    #[error("delivery processing failed: {}",kind.as_str())]
+    ProcessingFailed { kind: DeliveryFailureKind },
 }
 
 impl DeliveryError {
-    pub fn failure_code(&self) -> FailureCode {
-        if let Self::ProcessingFailed { code } = self {
-            return code.clone();
-        }
+    pub fn failure_kind(&self) -> DeliveryFailureKind {
         match self {
+            Self::ProcessingFailed { kind } => *kind,
             Self::CustodyMissing => DeliveryFailureKind::CustodyMissing,
             Self::DigestMismatch => DeliveryFailureKind::DigestMismatch,
             Self::Corrupt { .. } => DeliveryFailureKind::CustodyCorrupt,
             _ => DeliveryFailureKind::ExecutionFailed,
         }
-        .into()
+    }
+    pub fn failure_code(&self) -> FailureCode {
+        self.failure_kind().into()
     }
 }
 
@@ -113,7 +107,7 @@ pub trait DeliveryConsumer<S: TransactionScope>: Send + Sync + 'static {
     fn may_cancel(
         &self,
         requester: &<<Self::Protocol as ConsumerProtocol>::Delivery as DeliveryTypes>::Sender,
-        item: &DeliveryItem<<Self::Protocol as ConsumerProtocol>::Delivery>,
+        item: &DeliveryHeader<<Self::Protocol as ConsumerProtocol>::Delivery>,
     ) -> bool;
 }
 
@@ -144,5 +138,11 @@ pub fn submit_settlement_outcome<A>(result: SettleResult<A>) -> SubmitOutcome<A>
                 reason: DeliveryRefusal::ItemConflict { existing },
             })
         }
+    }
+}
+
+impl From<durable_steps::StoreError> for DeliveryError {
+    fn from(error: durable_steps::StoreError) -> Self {
+        Self::Storage(error.to_string())
     }
 }

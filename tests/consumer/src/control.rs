@@ -35,6 +35,11 @@ pub enum ControlRequest {
     WaitSourceUnattached {
         receiver: ReceiverId,
     },
+    #[cfg(feature = "test-support")]
+    DeliverySnapshot {
+        mailbox: PeerId,
+        origin: PeerId,
+    },
     RequestCount,
     WaitAttempts {
         call: durable_steps::CallId,
@@ -125,9 +130,13 @@ pub enum ControlRequest {
 pub enum ControlAnswer {
     Install(fleet_sync_tokio_runner::InstallRecord),
     Staged(fleet_sync_receiver::InstallPageReceipt),
+    #[cfg(feature = "test-support")]
+    DeliverySnapshot(fleet_sync_service::DeliveryServiceSnapshot),
     RequestCount(u64),
     PrivateHistoryChecks(u64),
-    Opening { connection: ConnectionId },
+    Opening {
+        connection: ConnectionId,
+    },
     Ok,
     Effects(Vec<EffectReceipt>),
     Effect(EffectReceipt),
@@ -146,7 +155,9 @@ pub enum ControlAnswer {
     Cancel(fleet_sync_lease::CancelAnswer),
     HolderChangeView(Option<fleet_sync_lease::HolderChangeView>),
     Release(ReleaseAnswer),
-    Error { message: String },
+    Error {
+        message: String,
+    },
 }
 pub(crate) struct ControlState {
     pub consumer: Arc<Consumer>,
@@ -233,6 +244,12 @@ impl ControlState {
                     )
                     .await??,
                 ),
+                #[cfg(feature = "test-support")]
+                ControlRequest::DeliverySnapshot { mailbox, origin } => {
+                    ControlAnswer::DeliverySnapshot(
+                        self.service.delivery_snapshot(mailbox, origin).await?,
+                    )
+                }
                 ControlRequest::RequestCount => ControlAnswer::RequestCount(
                     self.consumer.handled_requests.load(Ordering::SeqCst),
                 ),

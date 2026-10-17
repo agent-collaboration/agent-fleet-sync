@@ -99,11 +99,11 @@ where
                 Ok(())
             }
             DispatchOutcome::Unresolvable { reason } => {
-                let code = reason.clone();
+                let kind = reason;
                 ctx.local(step("mark_failed")?, move |scope| {
                     Box::pin(async move {
                         Outbox::<_, D>::new(scope, limits)
-                            .record_submission_failure(&input, code)
+                            .record_submission_failure(&input, kind)
                             .await
                             .map_err(step_error)
                     })
@@ -144,7 +144,7 @@ where
         Box::pin(async move {
             let item: ItemId = serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
             Outbox::<_, D>::new(scope, self.limits)
-                .record_failure(item, failure_code(failure))
+                .record_failure(item, failure_kind(failure))
                 .await
                 .map_err(store_error)
         })

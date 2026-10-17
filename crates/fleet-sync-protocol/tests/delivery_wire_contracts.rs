@@ -43,7 +43,7 @@ fn all_eight_delivery_answers_preserve_their_typed_bodies() {
         json!({"kind":"submit","value":{"kind":"accepted","value":{"seq":1,"version":1}}}),
         json!({"kind":"fetch","value":{"stream":"controls","entries":[{"kind":"retired","value":{"seq":2,"items":[ITEM]}}],"through":2}}),
         json!({"kind":"received","value":{"stream":"controls","releasedThrough":2}}),
-        json!({"kind":"report","value":{"item":ITEM,"acknowledged":2,"status":{"kind":"delivered","value":{"acceptance":null}},"version":4}}),
+        json!({"kind":"report","value":{"kind":"applied","value":{"item":ITEM,"acknowledged":2,"status":{"kind":"delivered","value":{"acceptance":null}},"version":4}}}),
         json!({"kind":"statusFetch","value":{"events":[{"cursor":5,"item":ITEM,"status":{"kind":"held"},"version":3,"cancel":null}],"through":5}}),
         json!({"kind":"query","value":{"statuses":[{"item":ITEM,"state":{"kind":"known","value":{"digest":"9f53c2e6152e4beca49916373f25f8e55daccea42063cfde30b00688eae644ec","status":{"kind":"held"},"version":3,"cancel":null}}}]}}),
         json!({"kind":"retire","value":{"retired":[ITEM],"unknown":[]}}),
@@ -81,4 +81,61 @@ fn submit_cannot_choose_another_peers_status_stream() {
         "digest":"9f53c2e6152e4beca49916373f25f8e55daccea42063cfde30b00688eae644ec"
     }},"statusTarget":PEER}}});
     assert!(serde_json::from_value::<OperationRequest>(wire).is_err());
+}
+
+#[test]
+fn typed_refusals_cross_report_and_publication_answers() {
+    let report = json!({"kind":"delivery","value":{"kind":"report","value":{"kind":"refused","value":{"reason":{"kind":"tooLarge","value":{"field":"acceptance"}}}}}});
+    let decoded: OperationAnswer = serde_json::from_value(report.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), report);
+    for value in [
+        json!({"kind":"applied"}),
+        json!({"kind":"refused","value":{"reason":{"kind":"tooLarge","value":{"field":"acceptance"}}}}),
+    ] {
+        let wire = json!({"kind":"crate","value":{"kind":"published","value":value}});
+        let decoded: fleet_sync_protocol::ClientAnswer =
+            serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+    }
+}
+
+#[test]
+fn processing_failure_kinds_are_closed_on_the_wire() {
+    for kind in [
+        "custodyMissing",
+        "custodyUnresolvable",
+        "custodyCorrupt",
+        "digestMismatch",
+        "versionMismatch",
+        "nondeterministic",
+        "invalidPayload",
+        "executionFailed",
+    ] {
+        let wire = json!({"kind":"processingFailed","value":{"kind":kind}});
+        let decoded: fleet_sync_protocol::DeliveryRefusal =
+            serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+    }
+    assert!(
+        serde_json::from_value::<fleet_sync_protocol::DeliveryRefusal>(
+            json!({"kind":"processingFailed","value":{"kind":"unknown"}})
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn delivery_header_preserves_identity_and_rejects_a_body() {
+    let header = json!({"id":ITEM,"sender":null,"recipient":{"peer":PEER,"address":null},"validUntil":null,"digest":"9f53c2e6152e4beca49916373f25f8e55daccea42063cfde30b00688eae644ec"});
+    let decoded: fleet_sync_protocol::DeliveryHeader<fleet_sync_protocol::NoDelivery> =
+        serde_json::from_value(header.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), header);
+    let mut with_body = header;
+    with_body["body"] = json!("forbidden");
+    assert!(
+        serde_json::from_value::<
+            fleet_sync_protocol::DeliveryHeader<fleet_sync_protocol::NoDelivery>,
+        >(with_body)
+        .is_err()
+    );
 }
