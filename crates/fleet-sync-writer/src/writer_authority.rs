@@ -92,6 +92,41 @@ pub(crate) async fn save_observation(
     let mut record = read_file_record(connection)
         .await?
         .ok_or_else(|| OpenError::corrupt("writer.record"))?;
+    let ended_at = match &observation {
+        AuthorityObservation::Renewal {
+            answer: RenewAnswer::Refused(LeaseRefusal::StaleEpoch { epoch_ended_at, .. }),
+            ..
+        } => Some(*epoch_ended_at),
+        AuthorityObservation::RegistrationRejected { .. } => Some(record.start),
+        _ => None,
+    };
+    if let Some(ended_at) = ended_at {
+        let head = crate::capture_stream::capture_head(connection, &record).await?;
+        if ended_at < record.start
+            || ended_at > head
+            || record.epoch_ended_at.is_some_and(|end| end != ended_at)
+        {
+            return Err(OpenError::corrupt("writer.epoch_ended_at"));
+        }
+        let first_end = record.epoch_ended_at.is_none();
+        record.epoch_ended_at = Some(ended_at);
+        if head > ended_at && first_end {
+            crate::sender_storage::save_rejected_tail(
+                connection,
+                &crate::RejectedTail {
+                    database: record.database,
+                    epoch: record.epoch,
+                    ended_at,
+                    last_commit: head,
+                },
+            )
+            .await
+            .map_err(|error| match error {
+                crate::SenderError::Storage(error) => error,
+                _ => OpenError::corrupt("writer.rejected_tail"),
+            })?;
+        }
+    }
     let observation = match record.authority {
         Some(existing)
             if existing.terminal()
@@ -157,6 +192,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         observation.restore(&mut holder, file_epoch)?;
         transaction.commit().await?;
         control.holder = holder;
+        self.authority_changes.send_replace(());
         Ok(())
     }
 }

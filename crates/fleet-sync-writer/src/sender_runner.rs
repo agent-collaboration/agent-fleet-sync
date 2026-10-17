@@ -35,7 +35,10 @@ where
                 field: "sender.retry_after",
             });
         }
+        let mut authority_changes = self.database.authority_changes.subscribe();
+        let mut seen_tails = BTreeSet::new();
         for tail in self.rejected_tails().await? {
+            seen_tails.insert(tail.epoch);
             tokio::select! { sent=events.send(Ok(ReplicationEvents::RejectedTail(tail)))=>{if sent.is_err(){return Ok(());}}, _=wait_for_shutdown(&mut shutdown)=>return Ok(()) }
         }
         let mut started = BTreeSet::new();
@@ -58,6 +61,18 @@ where
             tokio::select! {
                 result=shutdown.changed()=>{if result.is_err(){workers.abort_all();while workers.join_next().await.is_some(){}return Ok(());}},
                 _=discovery.tick()=>{},
+                changed=authority_changes.changed()=>{
+                    if changed.is_ok() {
+                        for tail in self.rejected_tails().await? {
+                            if seen_tails.insert(tail.epoch) {
+                                tokio::select! {
+                                    sent=events.send(Ok(ReplicationEvents::RejectedTail(tail)))=>{if sent.is_err(){break;}},
+                                    _=wait_for_shutdown(&mut shutdown)=>break,
+                                }
+                            }
+                        }
+                    }
+                },
                 result=workers.join_next(),if !workers.is_empty()=>{
                     match result {
                         Some(Ok(()))=>{},

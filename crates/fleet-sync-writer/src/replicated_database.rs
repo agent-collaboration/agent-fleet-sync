@@ -30,6 +30,7 @@ pub struct ReplicatedDatabase<S: ReplicatedSchema> {
     pub(crate) readers: ReadPool,
     pub(crate) control: Arc<Mutex<WriterControl>>,
     pub(crate) clock: Arc<dyn Clock>,
+    pub(crate) authority_changes: tokio::sync::watch::Sender<()>,
 }
 
 #[derive(Clone, Copy)]
@@ -201,6 +202,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         }
         let writer = open_pool(path, CaptureMode::Writer).await?;
         let readers = ReadPool::new(open_pool(path, CaptureMode::Reader).await?);
+        let (authority_changes, _) = tokio::sync::watch::channel(());
         let database = Self {
             path: path.into(),
             database,
@@ -214,6 +216,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                 provisional_writes: options.allow_provisional_writes,
             })),
             clock,
+            authority_changes,
         };
         if let Err(error) = database.migrate().await {
             database.close().await;

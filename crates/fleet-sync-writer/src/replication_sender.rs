@@ -171,16 +171,21 @@ where
         &self,
         copy: ReceiverId,
     ) -> Result<CopyPreparation<<A::Protocol as ConsumerProtocol>::Annotation>, SenderError> {
-        let control = self.database.control.lock().await;
+        let mut control = self.database.control.lock().await;
+        let mut connection = self.database.maintenance.acquire().await?;
+        crate::writer_authority::restore_authority(&mut connection, &mut control.holder).await?;
+        let state = control.holder.writer_state(self.database.clock.now());
+        let superseded = matches!(state, Ok(WriterState::Superseded { .. }));
         if !matches!(
-            control.holder.writer_state(self.database.clock.now()),
+            state,
             Ok(WriterState::Writing { .. }
                 | WriterState::Paused { .. }
-                | WriterState::Draining { .. })
+                | WriterState::Draining { .. }
+                | WriterState::Released { .. }
+                | WriterState::Superseded { .. })
         ) {
             return Ok(CopyPreparation::Idle);
         }
-        let mut connection = self.database.maintenance.acquire().await?;
         let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
         let record = read_file_record(&mut transaction)
             .await?
@@ -192,6 +197,16 @@ where
             .ok_or(SenderError::Invalid {
                 field: "copy.unknown",
             })?;
+        if superseded
+            && (status.role != CopyRole::Authoritative
+                || record.epoch_ended_at.is_some()
+                || sender_storage::rejected_tails(&mut transaction)
+                    .await?
+                    .iter()
+                    .any(|tail| tail.epoch == record.epoch))
+        {
+            return Ok(CopyPreparation::Idle);
+        }
         if status.needs_snapshot {
             return Ok(CopyPreparation::NeedsSnapshot);
         }
@@ -357,6 +372,13 @@ where
                     if !existing {
                         events.push(ReplicationEvents::RejectedTail(tail));
                     }
+                } else if status.acked < head {
+                    status.acked = head;
+                    sender_storage::save_copy(&mut transaction, &status).await?;
+                    events.push(ReplicationEvents::Acknowledged {
+                        copy,
+                        through: head,
+                    });
                 }
                 let observation = crate::writer_authority::save_observation(
                     &mut transaction,

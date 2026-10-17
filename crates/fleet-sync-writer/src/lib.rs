@@ -61,6 +61,8 @@ mod guarded_executor_tests;
 mod schema_metadata_tests;
 
 #[cfg(test)]
+mod sender_authority_tests;
+#[cfg(test)]
 mod sender_test_fixture;
 #[cfg(test)]
 mod sender_tests;

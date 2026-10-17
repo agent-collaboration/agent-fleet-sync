@@ -16,12 +16,27 @@ where
     T: ReplicationTransport<A::Protocol>,
 {
     pub(crate) async fn enforce_retention(&self) -> Result<Vec<ReplicationEvents>, SenderError> {
-        let control = self.database.control.lock().await;
+        let mut control = self.database.control.lock().await;
         let mut connection = self.database.maintenance.acquire().await?;
         let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+        crate::writer_authority::restore_authority(&mut transaction, &mut control.holder).await?;
         let mut record = read_file_record(&mut transaction)
             .await?
             .ok_or_else(|| OpenError::corrupt("writer.record"))?;
+        if matches!(
+            control.holder.writer_state(self.database.clock.now()),
+            Ok(fleet_sync_lease::WriterState::Superseded { .. })
+        ) && record.epoch_ended_at.is_none()
+            && sender_storage::rejected_tails(&mut transaction)
+                .await?
+                .is_empty()
+        {
+            // A replayed renewal can reveal the newer lease before a piece
+            // refusal supplies this file's ended position. Keep its capture
+            // intact until the authoritative probe can identify the tail.
+            transaction.commit().await?;
+            return Ok(Vec::new());
+        }
         let mut copies = sender_storage::copies(&mut transaction, &record).await?;
         if copies.is_empty() {
             transaction.commit().await?;
@@ -30,6 +45,14 @@ where
         let head = crate::capture_stream::capture_head(&mut transaction, &record).await?;
         let mut events = Vec::new();
         for copy in &mut copies {
+            if copy.role == fleet_sync_protocol::CopyRole::Authoritative {
+                if copy.needs_snapshot || copy.acked < record.retained_after {
+                    return Err(SenderError::Invalid {
+                        field: "authoritative.capture_floor",
+                    });
+                }
+                continue;
+            }
             if copy.needs_snapshot {
                 continue;
             }

@@ -18,6 +18,7 @@ pub(crate) struct WriterFileRecord {
     pub retained_change_id: u64,
     pub retained_layout: Vec<crate::TableLayout>,
     pub authority: Option<crate::writer_authority::AuthorityObservation>,
+    pub epoch_ended_at: Option<ReplicationPosition>,
 }
 
 impl WriterFileRecord {
@@ -35,6 +36,7 @@ impl WriterFileRecord {
             retained_change_id: 0,
             retained_layout: Vec::new(),
             authority: None,
+            epoch_ended_at: None,
         }
     }
 }
@@ -62,6 +64,9 @@ pub(crate) async fn read_file_record(
     if record.start.epoch > record.epoch
         || record.retained_after < record.start
         || record.retained_after.epoch > record.epoch
+        || record
+            .epoch_ended_at
+            .is_some_and(|end| end < record.start || end.epoch > record.epoch)
     {
         return Err(OpenError::corrupt("writer.positions"));
     }
