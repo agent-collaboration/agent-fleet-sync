@@ -5,7 +5,7 @@ use fleet_sync_protocol::{
     ReplicatedTransaction, ReplicationPosition, TransactionKey,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use std::{future::Future, time::Duration};
+use std::future::Future;
 
 pub struct AppliedPiece<'piece, A> {
     pub database: DatabaseId,
@@ -61,11 +61,20 @@ pub trait ReceiverHook<S: TransactionScope>: Send + Sync + 'static {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FollowUpDone;
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum FollowUpAnswer {
+    Done,
+    Failed { reason: FailureCode },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum FollowUpFailure {
-    #[error("follow-up should retry after {after:?}")]
-    Retry { after: Duration },
+    /// Dispatch as CallFailure::AnswerLost: the hook may have had effects. The
+    /// engine retries the same CallId with its bounded backoff; no answer is saved.
+    #[error("follow-up should retry")]
+    Retry,
     #[error("follow-up failed: {reason:?}")]
     Failed { reason: FailureCode },
 }

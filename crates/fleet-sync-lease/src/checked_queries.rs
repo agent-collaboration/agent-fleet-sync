@@ -38,6 +38,37 @@ where
             .transpose()
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct StoredDatabaseIdentityRow {
+    pub database: Option<String>,
+    pub record: Option<String>,
+}
+pub(crate) fn read_databases<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<StoredDatabaseIdentityRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_databases.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredDatabaseIdentityRow {
+                    database: row.try_get("database")?,
+                    record: row.try_get("record")?,
+                })
+            })
+            .collect()
+    }
+}
 pub(crate) fn write_database<S>(
     scope: &mut S,
     database: String,

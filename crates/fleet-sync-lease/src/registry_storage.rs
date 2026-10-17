@@ -39,6 +39,21 @@ where
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
+    pub(crate) async fn database_ids(&mut self) -> Result<Vec<DatabaseId>, LeaseError> {
+        let mut databases = Vec::new();
+        for row in checked_queries::read_databases(self.0).await? {
+            let record: DatabaseRecord = decode(row.record, "database record")?;
+            if row.database.as_deref() != Some(record.database.as_uuid().to_string().as_str()) {
+                return Err(LeaseError::Corrupt {
+                    field: "database record".into(),
+                });
+            }
+            if !matches!(record.lifecycle, DatabaseLifecycle::Retired { .. }) {
+                databases.push(record.database);
+            }
+        }
+        Ok(databases)
+    }
     pub(crate) async fn database(
         &mut self,
         database: DatabaseId,

@@ -5,8 +5,10 @@
 mod checked_queries;
 mod lease_values;
 mod registry_contract;
+mod registry_reads;
 mod registry_records;
 mod registry_storage;
+pub use registry_reads::database_ids;
 
 pub use fleet_sync_protocol::{
     Epoch, HolderChangeAnswer, HolderChangeRefusal, HolderChangeRequest, LeaseRefusal, LeaseState,
@@ -92,10 +94,14 @@ mod turso_floor_repair_tests;
 #[cfg(test)]
 mod turso_claim_recovery_tests;
 #[cfg(test)]
+mod turso_claim_refusal_tests;
+#[cfg(test)]
 mod turso_claim_replay_tests;
 #[cfg(test)]
 mod turso_move_refusal_tests;
 #[cfg(test)]
 mod turso_registry_integrity_tests;
+#[cfg(test)]
+mod turso_registry_read_tests;
 #[cfg(test)]
 mod turso_retirement_recovery_tests;

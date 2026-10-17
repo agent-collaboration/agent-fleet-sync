@@ -49,11 +49,12 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "5422744106abb70a26c94a0df0eb8809b41ce69a6a26630cd7d10818c4a7a385",
+    "checked-queries.json": "39caf306ebb478da6fc1536ba86dbfbdc5fe20ee258205cd2bbfe5ca4ddbdaaa",
     "migrations/0001_registry_rules.sql": "36df9f576906fe7af85d23ef33173c287873a52f83b52f6a2ac58415d19362ca",
     "sql/active_lifecycle.sql": "64bc3b0185802ec8bbea6de02e9c919033177065c9bf7858eaac9e53db149ced",
     "sql/active_transfer.sql": "b470ec59359105858f4982d733bd12543bcf5212c2fc1f30058dd2531773309c",
     "sql/read_database.sql": "a4bbb901cb140530037a78b7523f4809e40cb4b1c191f12044bbd449dfb94573",
+    "sql/read_databases.sql": "03df15dee14d8a8d04e27aaac5a692d219df917f94144d6319795e172749205b",
     "sql/read_floor.sql": "ae9cfc61011a959ed812863fef30b179195e1515349fc13c6ffc3a03449adf9c",
     "sql/read_history.sql": "d8ffe715ed13f4527185a81e60e55e99d44225c42df99347d33eca9d10118c57",
     "sql/read_lease.sql": "d58a0d085190d36f4f8e42da1809fb09c9d7f1be916765ab1b6d34750b79f138",
@@ -70,13 +71,33 @@
     "sql/write_preview.sql": "3394d8da7cef6adb1f85433dfd713e70a7e41a2132b8eeeb98815744b251f28a",
     "sql/write_renewal.sql": "c24b06a98fc0e0d1542af9d711fad9a1e9be335d85a0853114383947b4d69e4e",
     "sql/write_transfer.sql": "36cb611ddb484c599bf36a9b45249757dbe873a483ac7d55c7863cf8233054be",
-    "src/checked_queries.rs": "53caf04013450d30e28335d4fbbb3c2c7eacd0edd7d8936fed6b3e69cf74538b"
+    "src/checked_queries.rs": "ec9718f320388beac730f4bea9b29dfa6a1ea9de0209a1899580ee16848450e0"
   },
   "queries": [
     {
       "name": "read_database",
       "bind_slots": 1,
       "columns": [
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "read_databases",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "database",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
         {
           "name": "record",
           "sql_type": "TEXT",

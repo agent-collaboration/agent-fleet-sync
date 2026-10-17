@@ -16,6 +16,11 @@ same scope, then commit before answering. Register `ApplyFollowUp<Store, Item>` 
 the engine. Its one `FollowUpCall<Item>` carries the database and item; the host's
 `dispatch` routes it to the configured hook's `follow_up(item, call_id)`. Deliveries
 can repeat under the same call ID, so the consumer owns their deduplication.
+Dispatch maps `Ok(FollowUpDone)` to `FollowUpAnswer::Done` and a permanent
+`FollowUpFailure::Failed { reason }` to `FollowUpAnswer::Failed { reason }`.
+That answer is saved, and the operation ends with the same refusal code.
+`FollowUpFailure::Retry` maps to `CallFailure::AnswerLost`: the hook may already
+have had effects, so the engine retries the same CallId with its bounded backoff.
 
 An apply error requires rollback. `RefusedDiscardingParts` additionally requires
 `discard_staged_parts` in a separate committed transaction before answering the

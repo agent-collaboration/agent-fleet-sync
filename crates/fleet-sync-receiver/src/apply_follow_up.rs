@@ -1,4 +1,4 @@
-use crate::FollowUpDone;
+use crate::{FollowUpAnswer, FollowUpDone};
 use durable_steps::{
     Admitted, AtomicStore, CallTarget, JournalScope, OperationContext, OperationFailure,
     RequestKey, StartRefusal, StepName, Task,
@@ -40,7 +40,7 @@ where
 {
     const KIND: &'static str = "fleet-sync.apply-follow-up";
     type Request = F;
-    type Answer = FollowUpDone;
+    type Answer = FollowUpAnswer;
 }
 
 /// A single receipted call; piece receipts already own repeat answers.
@@ -76,9 +76,16 @@ where
             serde_json::from_slice(&serde_json::to_vec(&input.item).map_err(payload_failure)?)
                 .map_err(payload_failure)?;
         let step = StepName::new("follow_up").map_err(payload_failure)?;
-        Ok(ctx
+        let answer = ctx
             .call(step, FollowUpCall::<F>::new(input.database), item)
-            .await?)
+            .await?;
+        match answer {
+            FollowUpAnswer::Done => Ok(FollowUpDone),
+            FollowUpAnswer::Failed { reason } => Err(OperationFailure::Refused {
+                code: reason.as_str().to_owned(),
+                detail: "consumer follow-up failed".into(),
+            }),
+        }
     }
 }
 fn payload_failure(error: impl std::fmt::Display) -> OperationFailure {

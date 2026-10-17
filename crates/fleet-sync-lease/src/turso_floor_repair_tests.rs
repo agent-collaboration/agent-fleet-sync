@@ -57,18 +57,23 @@ async fn restored_registry_reserves_above_the_fresh_previews_copy_fence() -> Tes
     )
     .await?;
     assert_eq!(preview.fence, Epoch::new(5)?);
-    let answer = task_answer::<HolderChangeTask<TestStore, Turso>>(
-        &engine,
-        &holder_change_request_key(transfer(911)?)?,
-        HolderChangeRequest::Takeover {
-            attempt: transfer(911)?,
-            database: database()?,
-            preview,
-            to: peer(2)?,
-        },
-    )
-    .await?;
+    let request = HolderChangeRequest::Takeover {
+        attempt: transfer(911)?,
+        database: database()?,
+        preview,
+        to: peer(2)?,
+    };
+    let key = holder_change_request_key(transfer(911)?)?;
+    let answer =
+        task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request.clone()).await?;
     assert!(matches!(answer,HolderChangeAnswer::Granted{epoch,..} if epoch == Epoch::new(6)?));
+    let calls = host.calls.lock().await.len();
+    host.advance();
+    assert_eq!(
+        task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request).await?,
+        answer
+    );
+    assert_eq!(host.calls.lock().await.len(), calls);
     assert_eq!(
         scalar(&store, "SELECT epoch AS value FROM _fleet_sync_epoch_floor").await?,
         "6"

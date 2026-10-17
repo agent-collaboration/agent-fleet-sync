@@ -29,6 +29,8 @@ pub(super) struct Hook {
     pub(super) delivered: Mutex<TursoConnection>,
     pub(super) snapshot_refuse: AtomicBool,
     pub(super) snapshot_calls: AtomicU64,
+    pub(super) follow_up_calls: AtomicU64,
+    pub(super) next_failure: Mutex<Option<FollowUpFailure>>,
 }
 impl ReceiverHook<TursoScope<'_, TestHost>> for Hook {
     type Protocol = NoConsumer;
@@ -65,6 +67,10 @@ impl ReceiverHook<TursoScope<'_, TestHost>> for Hook {
         item: &String,
         call: CallId,
     ) -> Result<FollowUpDone, FollowUpFailure> {
+        self.follow_up_calls.fetch_add(1, Ordering::SeqCst);
+        if let Some(failure) = self.next_failure.lock().await.take() {
+            return Err(failure);
+        }
         let mut connection = self.delivered.lock().await;
         let call = serde_json::to_string(&call).map_err(follow_up_failure)?;
         sqlx_core::query::query::<Turso>(
@@ -114,9 +120,7 @@ impl ReceiverHook<TursoScope<'_, TestHost>> for Hook {
     }
 }
 fn follow_up_failure(_: impl std::fmt::Display) -> FollowUpFailure {
-    FollowUpFailure::Retry {
-        after: std::time::Duration::ZERO,
-    }
+    FollowUpFailure::Retry
 }
 impl Clock for TestHost {
     fn now(&self) -> SyncTime {
@@ -148,10 +152,17 @@ impl Host for TestHost {
         let item: String =
             serde_json::from_value(serde_json::to_value(request).map_err(lost)?).map_err(lost)?;
         self.calls.lock().await.push(call.clone());
-        let answer =
-            <Hook as ReceiverHook<TursoScope<'_, TestHost>>>::follow_up(&*self.hook, &item, call)
-                .await
-                .map_err(lost)?;
+        let answer = match <Hook as ReceiverHook<TursoScope<'_, TestHost>>>::follow_up(
+            &*self.hook,
+            &item,
+            call,
+        )
+        .await
+        {
+            Ok(FollowUpDone) => FollowUpAnswer::Done,
+            Err(FollowUpFailure::Failed { reason }) => FollowUpAnswer::Failed { reason },
+            Err(FollowUpFailure::Retry) => return Err(CallFailure::AnswerLost),
+        };
         if self.lose_answer.swap(false, Ordering::SeqCst) {
             return Err(CallFailure::AnswerLost);
         }
@@ -209,6 +220,8 @@ pub(super) async fn host(path: &std::path::Path) -> TestResult<Arc<TestHost>> {
             delivered: Mutex::new(delivered),
             snapshot_refuse: AtomicBool::new(false),
             snapshot_calls: AtomicU64::new(0),
+            follow_up_calls: AtomicU64::new(0),
+            next_failure: Mutex::new(None),
         }),
         calls: Mutex::new(Vec::new()),
     }))
