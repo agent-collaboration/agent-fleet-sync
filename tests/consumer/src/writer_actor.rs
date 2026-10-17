@@ -139,6 +139,16 @@ pub async fn run_writer(
             )
             .await?
         }
+        "rename-adopt" => {
+            ReplicatedDatabase::adopt(
+                &path,
+                SampleSchema::rename_bundle()?,
+                peer,
+                policy(),
+                options,
+            )
+            .await?
+        }
         "rename-source" => {
             ReplicatedDatabase::create(
                 &path,

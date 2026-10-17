@@ -351,14 +351,11 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             let mut connection = database.maintenance.acquire().await?;
             crate::writer_authority::restore_authority(&mut connection, &mut control.holder)
                 .await?;
-            crate::migration_execution::inspect_present_tables(
-                &mut connection,
-                database.schema.replicated_tables(),
-            )
-            .await
-            .map(|layouts| {
-                control.statements = StatementGuard::new(layouts);
-            })
+            crate::capture_stream::committed_layout(&mut connection)
+                .await
+                .map(|layouts| {
+                    control.statements = StatementGuard::new(layouts);
+                })
         } else {
             database.migrate().await
         };

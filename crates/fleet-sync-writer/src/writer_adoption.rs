@@ -1,6 +1,7 @@
 use crate::{
     AdoptionHistory, OpenError, ReplicatedSchema, TableLayout, checked_queries,
     migration_execution::{inspect_present_tables, offered_migrations},
+    migration_lineage::migration_lineage,
     writer_scope::WriterScope,
 };
 use fleet_sync_protocol::{SchemaEntry, SchemaObjectKind, TableName, reserved_namespace};
@@ -28,6 +29,7 @@ pub(crate) async fn validate_adoption(
         return Err(invalid(AdoptionHistory::Missing));
     }
     let at_latest = history.len() == offered.len();
+    let applied_count = history.len();
     for (index, row) in history.into_iter().enumerate() {
         let version = text_integer(row.version, row.version_class, "version")?;
         let Some(expected) = offered
@@ -58,7 +60,25 @@ pub(crate) async fn validate_adoption(
             });
         }
     }
-    crate::schema_inspection::reject_invalid_key_schemas(entries, schema.replicated_tables())?;
+    let lineage = if at_latest {
+        None
+    } else {
+        Some(migration_lineage(&offered, schema.replicated_tables())?)
+    };
+    let tables = match &lineage {
+        Some(lineage) => {
+            // The file is at the boundary before its first unapplied migration.
+            let next = offered
+                .get(applied_count)
+                .ok_or_else(|| OpenError::corrupt("adoption.prefix"))?;
+            lineage
+                .get(&next.version)
+                .ok_or_else(|| OpenError::corrupt("migration.lineage"))?
+                .as_slice()
+        }
+        None => schema.replicated_tables(),
+    };
+    crate::schema_inspection::reject_invalid_key_schemas(entries, tables)?;
     for (entry, _) in entries {
         // SQLite's own sequence table is engine metadata. The caller must not
         // supply pre-existing replication/CDC metadata under a reserved name.
@@ -85,7 +105,7 @@ pub(crate) async fn validate_adoption(
             .await?;
         Ok(layouts)
     } else {
-        inspect_present_tables(connection, schema.replicated_tables()).await
+        inspect_present_tables(connection, tables).await
     }
 }
 
