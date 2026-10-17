@@ -8,6 +8,17 @@ use fleet_sync_protocol::*;
 use fleet_sync_session::PeerAuthenticator;
 use sqlx_turso::Turso;
 
+/// Seed data supplied through the consumer's authenticated import surface.
+/// Peer sessions always use their writer identity instead.
+pub enum ImportSeedRequest {
+    Begin {
+        database: DatabaseId,
+        attempt: durable_steps::Uuid,
+    },
+    Page(SeedPage),
+    Complete(SeedComplete),
+}
+
 /// Trusted consumer entry points. The peer WebSocket exposes none of these
 /// admin operations; the consumer authenticates its own admin surface.
 impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
@@ -45,6 +56,21 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
         let key = lifecycle_request_key(request.attempt).map_err(ServiceError::rule)?;
         self.state
             .execute_registry::<ImportTask<ServiceObject, Turso>>(key, request)
+            .await
+    }
+    pub async fn seed_import(
+        &self,
+        request: ImportSeedRequest,
+    ) -> Result<ReplicationAnswer, ServiceError> {
+        let request = match request {
+            ImportSeedRequest::Begin { database, attempt } => {
+                ReplicationRequest::SeedBegin { database, attempt }
+            }
+            ImportSeedRequest::Page(page) => ReplicationRequest::SeedPage(Box::new(page)),
+            ImportSeedRequest::Complete(done) => ReplicationRequest::SeedComplete(done),
+        };
+        self.state
+            .replicate_with_authority(fleet_sync_receiver::SeedAuthority::Admin, request)
             .await
     }
     pub async fn retire(&self, request: Retirement) -> Result<RetirementAnswer, ServiceError> {

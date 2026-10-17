@@ -7,6 +7,13 @@
   "metadata": "checked-query-metadata.json",
   "queries": [
     {
+      "name": "read_adoption_history",
+      "sql": "sql/read_adoption_history.sql",
+      "row": "StoredAdoptionHistoryRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
       "name": "read_table_columns",
       "sql": "sql/read_table_columns.sql",
       "row": "StoredColumnRow",

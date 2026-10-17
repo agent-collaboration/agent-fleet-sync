@@ -49,11 +49,12 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "201ee1d9ff756bba7c795382dfbc2987e49603f7e34e537992d614aa734ae6a3",
+    "checked-queries.json": "42e1b613d2c88c6689127a6eb2f10f1b2a3465c3210097315a06e835d1876d03",
     "migrations/0001_writer_bookkeeping.sql": "b21f22f18dbb1544d0964ac419ba309db198b365f72d1acd74f3e665ae133bda",
     "query-schema/99990001_capture_query_schema.sql": "1e1ee98953e04f6edcd18b85abc33326819a0e0210f3fc42717e4cd30e4b1c98",
     "sql/delete_rejected_tail.sql": "0de2677b858fc5052ee8bcf70581bfd4b80659215aa10eda7861fc7304266c37",
     "sql/prune_capture.sql": "dae53de9d01be7b35bfe30848e8277de952923ec5166a0c2dff0b612131e68b3",
+    "sql/read_adoption_history.sql": "d9cc2923628f9925e18fecf595132b5e9048f705f1730a2e4c359f7b5ad00020",
     "sql/read_applied_migrations.sql": "d28e0c75869577acf37e787e52b1e1213c7f0f5c529ea5b66371c655c86cec48",
     "sql/read_capture.sql": "500b858e7d0312b55d556107a7c8d03296edbf75b7f7d5959c9b95103373ff56",
     "sql/read_capture_assignment.sql": "f976d8be5e478fa71067ad61a5d54679338c89f583467e3db21525fe4b65808e",
@@ -72,9 +73,57 @@
     "sql/write_release.sql": "3d870ecf5b0fb14556afbf069454a0fa7e0f94e53afc68bc1bcf44bc6d6bcd67",
     "sql/write_schema_step.sql": "25bf187503cdca23522d2da0d086a329b812bf5c06e904308956aa8a2f8687cc",
     "sql/write_writer.sql": "2897299ed63abcbcf3162c1bd725e8ff664020aa9a384d7820028341460282bf",
-    "src/checked_queries.rs": "32631e1b648b486788e282fe89c6babcae3fa3921ccbb3bab1996373eda9cec3"
+    "src/checked_queries.rs": "4e7c8889b247c59056131bf40fc3f81306df965f9386a686e927981cb53d6417"
   },
   "queries": [
+    {
+      "name": "read_adoption_history",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "version",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "version_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "success",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "success_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "checksum",
+          "sql_type": "BLOB",
+          "rust_type": "Option<Vec<u8>>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "checksum_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
     {
       "name": "read_table_columns",
       "bind_slots": 1,

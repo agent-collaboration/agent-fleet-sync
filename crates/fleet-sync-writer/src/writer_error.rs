@@ -34,7 +34,23 @@ pub enum SchemaForm {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum AdoptionHistory {
+    #[error("the file has no SQLx migration history")]
+    Missing,
+    #[error("migration {version} is not the next bundle version {expected:?}")]
+    NonPrefix { version: i64, expected: Option<i64> },
+    #[error("migration {version} has a different checksum")]
+    Checksum { version: i64 },
+    #[error("migration {version} did not succeed")]
+    Failed { version: i64 },
+    #[error("migration history has an invalid {field}")]
+    Malformed { field: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum OpenError {
+    #[error("cannot adopt migration history: {reason}")]
+    AdoptionHistory { reason: AdoptionHistory },
     #[error("writer authority refused: {error}")]
     Holder {
         error: fleet_sync_lease::HolderError,

@@ -30,6 +30,9 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             .entry(database)
             .or_default()
             .clone();
+        if let Some(owner) = slot.get() {
+            return Ok(owner.clone());
+        }
         let owner = slot
             .get_or_try_init(|| async {
                 let key = ObjectKey::new(format!(

@@ -24,6 +24,7 @@ mod sender_storage;
 mod snapshot_schema;
 mod statement_guard;
 mod write_transaction;
+mod writer_adoption;
 mod writer_authority;
 mod writer_error;
 mod writer_file_record;
@@ -49,7 +50,7 @@ pub use sender_runner::CopyFailure;
 pub use sender_storage::SenderCopyStatus;
 pub use statement_guard::{StatementForm, StatementGuard, StatementRefusal};
 pub use write_transaction::WriteTransaction;
-pub use writer_error::{OpenError, SchemaForm, WriteRefusal};
+pub use writer_error::{AdoptionHistory, OpenError, SchemaForm, WriteRefusal};
 pub use writer_journal::{WriterJournalScope, WriterJournalStore};
 pub use writer_snapshot::WriterSnapshot;
 

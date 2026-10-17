@@ -8,6 +8,46 @@ use sqlx_core::{
 };
 
 #[derive(Debug)]
+pub(crate) struct StoredAdoptionHistoryRow {
+    pub version: Option<String>,
+    pub version_class: Option<String>,
+    pub success: Option<String>,
+    pub success_class: Option<String>,
+    pub checksum: Option<Vec<u8>>,
+    pub checksum_class: Option<String>,
+}
+pub(crate) fn read_adoption_history<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<StoredAdoptionHistoryRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> Option<Vec<u8>>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_adoption_history.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredAdoptionHistoryRow {
+                    version: row.try_get("version")?,
+                    version_class: row.try_get("version_class")?,
+                    success: row.try_get("success")?,
+                    success_class: row.try_get("success_class")?,
+                    checksum: row.try_get("checksum")?,
+                    checksum_class: row.try_get("checksum_class")?,
+                })
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct StoredColumnRow {
     pub column_index: Option<String>,
     pub index_class: Option<String>,

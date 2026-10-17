@@ -35,6 +35,7 @@ pub struct ReplicatedDatabase<S: ReplicatedSchema> {
 
 #[derive(Clone, Copy)]
 enum CaptureMode {
+    Adoption,
     Writer,
     Maintenance,
     Reader,
@@ -51,6 +52,7 @@ async fn open_pool(path: &Path, mode: CaptureMode) -> Result<Pool<Turso>, OpenEr
         .after_connect(move |connection, _| {
             Box::pin(async move {
                 let statement = match mode {
+                    CaptureMode::Adoption => return Ok(()),
                     CaptureMode::Writer => "PRAGMA capture_data_changes_conn('full')",
                     CaptureMode::Maintenance | CaptureMode::Reader => {
                         "PRAGMA capture_data_changes_conn('off')"
@@ -63,13 +65,35 @@ async fn open_pool(path: &Path, mode: CaptureMode) -> Result<Pool<Turso>, OpenEr
         .connect_with(
             TursoConnectOptions::new()
                 .filename(path)
-                .create_if_missing(true)
+                .create_if_missing(!matches!(mode, CaptureMode::Adoption))
                 .foreign_keys(true),
         )
         .await?)
 }
 
 impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
+    /// Adopt a pre-capture file whose SQLx history matches the schema bundle.
+    pub async fn adopt(
+        path: &Path,
+        schema: S,
+        peer: PeerId,
+        policy: LeasePolicy,
+        options: WriterOptions,
+    ) -> Result<Self, OpenError> {
+        let database =
+            DatabaseId::new(UuidV7Ids.new_id()).map_err(|_| OpenError::corrupt("database.id"))?;
+        Self::open_internal(
+            path,
+            database,
+            schema,
+            LeaseHolder::provisional(database, peer, policy),
+            Arc::new(SystemClock),
+            options,
+            true,
+        )
+        .await
+    }
+
     pub async fn create(
         path: &Path,
         schema: S,
@@ -115,24 +139,51 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         clock: Arc<dyn Clock>,
         options: WriterOptions,
     ) -> Result<Self, OpenError> {
+        Self::open_internal(path, database, schema, holder, clock, options, false).await
+    }
+
+    async fn open_internal(
+        path: &Path,
+        database: DatabaseId,
+        schema: S,
+        holder: LeaseHolder,
+        clock: Arc<dyn Clock>,
+        options: WriterOptions,
+        adopting: bool,
+    ) -> Result<Self, OpenError> {
         if holder.database() != database {
             return Err(OpenError::corrupt("writer.database"));
         }
-        let maintenance = open_pool(path, CaptureMode::Maintenance).await?;
+        let maintenance = open_pool(
+            path,
+            if adopting {
+                CaptureMode::Adoption
+            } else {
+                CaptureMode::Maintenance
+            },
+        )
+        .await?;
         let setup = async {
             let mut connection = maintenance.acquire().await?;
-            let entries = schema_entries(&mut connection).await?;
+            let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+            let entries = schema_entries(&mut transaction).await?;
             let managed = entries
                 .iter()
                 .any(|(entry, _)| entry.name == "_fleet_sync_writer");
             if !managed
+                && !adopting
                 && entries
                     .iter()
                     .any(|(entry, _)| !fleet_sync_protocol::reserved_namespace(&entry.name))
             {
                 return Err(OpenError::UnmanagedFile);
             }
-            let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+            let adopted_layout = if adopting && !managed {
+                crate::writer_adoption::validate_adoption(&mut transaction, &schema, &entries)
+                    .await?
+            } else {
+                Vec::new()
+            };
             let mut bookkeeping = sqlx::migrate!("./migrations");
             bookkeeping.dangerous_set_table_name("_fleet_sync_writer_engine_history");
             bookkeeping
@@ -185,11 +236,9 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                             return Err(OpenError::corrupt("writer.initial_state"));
                         }
                     };
-                    write_file_record(
-                        &mut transaction,
-                        &WriterFileRecord::new(database, holder.peer(), epoch),
-                    )
-                    .await?;
+                    let mut record = WriterFileRecord::new(database, holder.peer(), epoch);
+                    record.retained_layout = adopted_layout;
+                    write_file_record(&mut transaction, &record).await?;
                 }
             }
             transaction.commit().await?;

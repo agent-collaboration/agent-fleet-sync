@@ -23,6 +23,15 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
         peer: PeerId,
         request: ReplicationRequest<P::Annotation>,
     ) -> Result<ReplicationAnswer, ServiceError> {
+        self.replicate_with_authority(fleet_sync_receiver::SeedAuthority::Writer(peer), request)
+            .await
+    }
+
+    pub(crate) async fn replicate_with_authority(
+        &self,
+        authority: fleet_sync_receiver::SeedAuthority,
+        request: ReplicationRequest<P::Annotation>,
+    ) -> Result<ReplicationAnswer, ServiceError> {
         let database = match &request {
             ReplicationRequest::Piece(piece) => piece.database,
             ReplicationRequest::SeedPage(page) => page.contents.database,
@@ -40,55 +49,65 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             .rule_transaction(move |scope| {
                 Box::pin(async move {
                     Ok(match request {
-                        ReplicationRequest::Piece(piece) => match fleet_sync_receiver::apply_piece(
-                            scope,
-                            &piece,
-                            &peer,
-                            consumer.as_ref(),
-                            now,
-                        )
-                        .await
-                        .map_err(CopyRuleError::Apply)?
-                        {
-                            ApplyDecision::Applied {
-                                through,
-                                follow_ups,
-                            } => {
-                                admit_follow_ups::<ServiceObject, C::HookItem>(
-                                    scope,
-                                    database,
-                                    piece.epoch,
+                        ReplicationRequest::Piece(piece) => {
+                            let fleet_sync_receiver::SeedAuthority::Writer(peer) = &authority
+                            else {
+                                return Ok(ReplicationAnswer::Refused(PieceRefusal::NotWriter {
+                                    current: None,
+                                }));
+                            };
+                            match fleet_sync_receiver::apply_piece(
+                                scope,
+                                &piece,
+                                peer,
+                                consumer.as_ref(),
+                                now,
+                            )
+                            .await
+                            .map_err(CopyRuleError::Apply)?
+                            {
+                                ApplyDecision::Applied {
                                     through,
                                     follow_ups,
-                                )
-                                .await
-                                .map_err(|error| {
-                                    CopyRuleError::Storage(StoreError::backend(error))
-                                })?;
-                                ReplicationAnswer::Applied { through }
+                                } => {
+                                    admit_follow_ups::<ServiceObject, C::HookItem>(
+                                        scope,
+                                        database,
+                                        piece.epoch,
+                                        through,
+                                        follow_ups,
+                                    )
+                                    .await
+                                    .map_err(|error| {
+                                        CopyRuleError::Storage(StoreError::backend(error))
+                                    })?;
+                                    ReplicationAnswer::Applied { through }
+                                }
+                                ApplyDecision::AlreadyApplied { through } => {
+                                    ReplicationAnswer::AlreadyApplied { through }
+                                }
+                                ApplyDecision::PartStaged {
+                                    transaction,
+                                    index,
+                                    acked,
+                                } => ReplicationAnswer::PartStaged {
+                                    transaction,
+                                    index,
+                                    acked,
+                                },
                             }
-                            ApplyDecision::AlreadyApplied { through } => {
-                                ReplicationAnswer::AlreadyApplied { through }
-                            }
-                            ApplyDecision::PartStaged {
-                                transaction,
-                                index,
-                                acked,
-                            } => ReplicationAnswer::PartStaged {
-                                transaction,
-                                index,
-                                acked,
-                            },
-                        },
+                        }
                         ReplicationRequest::SeedBegin { attempt, .. } => {
                             ReplicationAnswer::SeedStarted {
-                                seed: fleet_sync_receiver::seed_begin(scope, database, attempt)
-                                    .await
-                                    .map_err(CopyRuleError::Receiver)?,
+                                seed: fleet_sync_receiver::seed_begin(
+                                    scope, database, attempt, &authority,
+                                )
+                                .await
+                                .map_err(CopyRuleError::Receiver)?,
                             }
                         }
                         ReplicationRequest::SeedPage(page) => ReplicationAnswer::SeedPage(
-                            fleet_sync_receiver::seed_page(scope, &page)
+                            fleet_sync_receiver::seed_page(scope, &page, &authority)
                                 .await
                                 .map_err(CopyRuleError::Receiver)?,
                         ),
@@ -97,6 +116,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                                 scope,
                                 &done,
                                 consumer.as_ref(),
+                                &authority,
                             )
                             .await
                             .map_err(CopyRuleError::Receiver)?
@@ -180,6 +200,9 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             }
             Err(CopyRuleError::Receiver(ReceiverError::NotInitialized)) => {
                 ReplicationAnswer::Refused(PieceRefusal::NotInitialized)
+            }
+            Err(CopyRuleError::Receiver(ReceiverError::NotWriter { current })) => {
+                ReplicationAnswer::Refused(PieceRefusal::NotWriter { current })
             }
             Err(CopyRuleError::Storage(error)) => return Err(error.into()),
             Err(CopyRuleError::Apply(error)) => return Err(ServiceError::rule(error)),

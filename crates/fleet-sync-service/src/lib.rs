@@ -14,4 +14,5 @@ mod websocket_server;
 
 pub use call_router::{ServiceCalls, ServiceHost, ServiceObject, ServiceScope};
 pub use service_contract::{ConsumerHandler, ServiceConsumer, ServiceError, ServiceOptions};
+pub use service_handle::ImportSeedRequest;
 pub use service_runtime::{FleetService, ServiceHandle};

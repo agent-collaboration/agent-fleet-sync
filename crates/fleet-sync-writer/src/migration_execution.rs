@@ -14,7 +14,7 @@ use sqlx_core::{
 };
 use sqlx_turso::TursoConnection;
 
-async fn inspect_present_tables(
+pub(crate) async fn inspect_present_tables(
     connection: &mut TursoConnection,
     tables: &[TableName],
 ) -> Result<Vec<crate::TableLayout>, OpenError> {
@@ -34,6 +34,28 @@ async fn inspect_present_tables(
     Ok(layouts)
 }
 
+pub(crate) fn offered_migrations(
+    schema: &impl ReplicatedSchema,
+) -> Result<Vec<Migration>, OpenError> {
+    let offered = schema
+        .migrations()
+        .iter()
+        .filter(|migration| migration.migration_type.is_up_migration())
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut previous = 0_i64;
+    for migration in &offered {
+        if migration.version <= previous || migration.no_tx {
+            return Err(OpenError::SchemaUnsupported { form: SchemaForm::InvalidMigration {
+                statement: migration.sql.as_str().into(),
+                detail: "migrations must have increasing positive versions and use an owned transaction".into()
+            }});
+        }
+        previous = migration.version;
+    }
+    Ok(offered)
+}
+
 impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
     pub async fn migrate(&self) -> Result<(), OpenError> {
         let mut control = self.control.lock().await;
@@ -42,20 +64,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             crate::writer_authority::restore_authority(&mut connection, &mut control.holder)
                 .await?;
         }
-        let offered = self
-            .schema
-            .migrations()
-            .iter()
-            .filter(|migration| migration.migration_type.is_up_migration())
-            .cloned()
-            .collect::<Vec<_>>();
-        let mut previous = 0_i64;
-        for migration in &offered {
-            if migration.version <= previous || migration.no_tx {
-                return Err(OpenError::SchemaUnsupported {form:SchemaForm::InvalidMigration {statement:migration.sql.as_str().into(),detail:"migrations must have increasing positive versions and use an owned transaction".into()}});
-            }
-            previous = migration.version;
-        }
+        let offered = offered_migrations(&self.schema)?;
+        let previous = offered.last().map_or(0, |migration| migration.version);
         let mut maintenance = self.maintenance.acquire().await?;
         let applied =
             checked_queries::read_applied_migrations(&mut WriterScope(&mut maintenance)).await?;
