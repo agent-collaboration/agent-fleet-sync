@@ -22,3 +22,13 @@ pub use call_router::{ServiceCalls, ServiceHost, ServiceObject, ServiceScope};
 pub use service_contract::{ConsumerHandler, ServiceConsumer, ServiceError, ServiceOptions};
 pub use service_handle::ImportSeedRequest;
 pub use service_runtime::{FleetService, ServiceHandle};
+
+mod delivery_deadlines;
+mod delivery_owner;
+mod delivery_publication;
+mod delivery_requests;
+
+#[cfg(feature = "test-support")]
+mod delivery_inspection;
+#[cfg(feature = "test-support")]
+pub use delivery_inspection::DeliveryServiceSnapshot;

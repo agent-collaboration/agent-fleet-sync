@@ -1,0 +1,12 @@
+{
+  "migrations": ["migrations"],
+  "output": "src/checked_inspection_queries.rs",
+  "metadata": "checked-inspection-query-metadata.json",
+  "queries": [{
+    "name": "read_delivery_snapshot",
+    "sql": "sql/read_delivery_snapshot.sql",
+    "result": "many",
+    "row": "DeliveryObservationRow",
+    "parameters": []
+  }]
+}

@@ -1,0 +1,721 @@
+{
+  "migrations": [
+    "migrations"
+  ],
+  "output": "src/checked_queries.rs",
+  "metadata": "checked-query-metadata.json",
+  "queries": [
+    {
+      "name": "read_mail_item",
+      "sql": "sql/read_mail_item.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredMailRow"
+    },
+    {
+      "name": "read_mail_deadlines",
+      "sql": "sql/read_mail_deadlines.sql",
+      "result": "many",
+      "parameters": [],
+      "row": "StoredMailRow"
+    },
+    {
+      "name": "list_mail_items",
+      "sql": "sql/list_mail_items.sql",
+      "result": "many",
+      "parameters": [],
+      "row": "StoredMailRow"
+    },
+    {
+      "name": "read_outbox_item",
+      "sql": "sql/read_outbox_item.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredOutboxRow"
+    },
+    {
+      "name": "write_outbox_item",
+      "sql": "sql/write_outbox_item.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "live",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "payload_bytes",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "settlement_bytes",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "kind": "text",
+          "nullable": true
+        },
+        {
+          "name": "capacity_slot",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_inbox_item",
+      "sql": "sql/read_inbox_item.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredInboxRow"
+    },
+    {
+      "name": "drop_inbox_item",
+      "sql": "sql/drop_inbox_item.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_inbox_item",
+      "sql": "sql/write_inbox_item.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "live",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "payload_bytes",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "settlement_bytes",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "kind": "text",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "name": "write_mail_item",
+      "sql": "sql/write_mail_item.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "stream",
+          "kind": "text",
+          "nullable": true
+        },
+        {
+          "name": "seq",
+          "kind": "text",
+          "nullable": true
+        },
+        {
+          "name": "live",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "payload_bytes",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "settlement_bytes",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "capacity_slot",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_mail_state",
+      "sql": "sql/read_mail_state.sql",
+      "result": "optional",
+      "parameters": [],
+      "row": "StoredStateRow"
+    },
+    {
+      "name": "write_mail_state",
+      "sql": "sql/write_mail_state.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_inbox_state",
+      "sql": "sql/read_inbox_state.sql",
+      "result": "optional",
+      "parameters": [],
+      "row": "StoredStateRow"
+    },
+    {
+      "name": "write_inbox_state",
+      "sql": "sql/write_inbox_state.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_status_state",
+      "sql": "sql/read_status_state.sql",
+      "result": "optional",
+      "parameters": [],
+      "row": "StoredStateRow"
+    },
+    {
+      "name": "write_status_state",
+      "sql": "sql/write_status_state.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_mail_accounting",
+      "sql": "sql/read_mail_accounting.sql",
+      "result": "one",
+      "parameters": [],
+      "row": "StoredAccountingRow"
+    },
+    {
+      "name": "read_mail_batch",
+      "sql": "sql/read_mail_batch.sql",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "stream",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "after",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "limit",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredMailRow"
+    },
+    {
+      "name": "read_mail_receipt_batch",
+      "sql": "sql/read_mail_receipt_batch.sql",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "stream",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "previous",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "through",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredMailRow"
+    },
+    {
+      "name": "read_controls",
+      "sql": "sql/read_controls.sql",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "after",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "limit",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredControlRow"
+    },
+    {
+      "name": "write_control",
+      "sql": "sql/write_control.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "seq",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "drop_controls",
+      "sql": "sql/drop_controls.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "through",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_receipt",
+      "sql": "sql/read_receipt.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "call_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredReceiptRow"
+    },
+    {
+      "name": "write_receipt",
+      "sql": "sql/write_receipt.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "call_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "request_digest",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "answer",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_publication",
+      "sql": "sql/read_publication.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredPublicationRow"
+    },
+    {
+      "name": "write_publication",
+      "sql": "sql/write_publication.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "retire_publication",
+      "sql": "sql/retire_publication.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_status_event",
+      "sql": "sql/write_status_event.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "cursor",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_status_events",
+      "sql": "sql/read_status_events.sql",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "after",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "limit",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredStatusEventRow"
+    },
+    {
+      "name": "write_report",
+      "sql": "sql/write_report.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "report_seq",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_report",
+      "sql": "sql/read_report.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "report_seq",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredStateRow"
+    },
+    {
+      "name": "retire_report",
+      "sql": "sql/retire_report.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "report_seq",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_outbox_accounting",
+      "sql": "sql/read_outbox_accounting.sql",
+      "result": "one",
+      "row": "StoredAccountingRow",
+      "parameters": []
+    },
+    {
+      "name": "read_inbox_accounting",
+      "sql": "sql/read_inbox_accounting.sql",
+      "result": "one",
+      "row": "StoredAccountingRow",
+      "parameters": []
+    },
+    {
+      "name": "read_mail_cancel_link",
+      "sql": "sql/read_mail_cancel_link.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredCancelLinkRow"
+    },
+    {
+      "name": "write_mail_cancel_link",
+      "sql": "sql/write_mail_cancel_link.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "cancel_item",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_outbox_cancel_link",
+      "sql": "sql/read_outbox_cancel_link.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredCancelLinkRow"
+    },
+    {
+      "name": "write_outbox_cancel_link",
+      "sql": "sql/write_outbox_cancel_link.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "cancel_item",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_status_revision",
+      "sql": "sql/read_status_revision.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredStatusEventRow"
+    },
+    {
+      "name": "read_outbox_status",
+      "sql": "sql/read_outbox_status.sql",
+      "result": "optional",
+      "parameters": [],
+      "row": "StoredStateRow"
+    },
+    {
+      "name": "write_outbox_status",
+      "sql": "sql/write_outbox_status.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_inbox_cancel_link",
+      "sql": "sql/read_inbox_cancel_link.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredCancelLinkRow"
+    },
+    {
+      "name": "write_inbox_cancel_link",
+      "sql": "sql/write_inbox_cancel_link.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "cancel_item",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "drop_inbox_cancel_link",
+      "sql": "sql/drop_inbox_cancel_link.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "list_publications",
+      "sql": "sql/list_publications.sql",
+      "result": "many",
+      "parameters": [],
+      "row": "StoredOwedPublicationRow"
+    }
+  ]
+}

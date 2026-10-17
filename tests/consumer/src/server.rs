@@ -76,11 +76,14 @@ pub async fn run_server_with_policy(
     lease_duration: Duration,
     move_renewal_within: Duration,
 ) -> TestResult {
+    #[cfg(feature = "test-support")]
+    let events = crate::service_events::ServiceEvents::install()?;
     tokio::fs::create_dir_all(directory).await?;
     let store = ConsumerStore::open(&directory.join("consumer.db")).await?;
     let consumer = Arc::new(Consumer::new(store.clone())?);
     let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(receiver))?;
     let options = ServiceOptions {
+        delivery: Some(crate::delivery_limits()?),
         directory: directory.join("service"),
         receiver,
         registry: RegistryConfig {
@@ -97,6 +100,21 @@ pub async fn run_server_with_policy(
         socket_timeout: Duration::from_secs(5),
     };
     let authenticator = Arc::new(FixtureAuthenticator::default());
+    #[cfg(feature = "test-support")]
+    let delivery_locks = {
+        let mut locks = std::collections::BTreeMap::new();
+        match std::env::var("FLEET_SYNC_TEST_LOCK_MAILBOX_INIT") {
+            Ok(identity) => {
+                let mailbox = fleet_sync_protocol::PeerId::new(identity.parse()?)?;
+                let db = crate::delivery_faults::lock_mailbox(&directory.join("service"), mailbox)
+                    .await?;
+                locks.insert(mailbox, db);
+            }
+            Err(std::env::VarError::NotPresent) => {}
+            Err(error) => return Err(error.into()),
+        }
+        locks
+    };
     let service = FleetService::<SampleProtocol, _, _>::open(
         options,
         consumer.clone(),
@@ -107,6 +125,12 @@ pub async fn run_server_with_policy(
     let (source_events, mut source_incoming) =
         mpsc::channel::<fleet_sync_service::AttachedSource<SampleProtocol>>(8);
     let control = Arc::new(ControlState {
+        #[cfg(feature = "test-support")]
+        delivery_directory: directory.join("service"),
+        #[cfg(feature = "test-support")]
+        delivery_locks: tokio::sync::Mutex::new(delivery_locks),
+        #[cfg(feature = "test-support")]
+        events,
         consumer,
         authenticator,
         service: service.handle(),

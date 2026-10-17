@@ -39,13 +39,18 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --target wasm32-unknown-unknown -p sqlx-durable-object -p sqlx-durable-object-core -p probe-core -p probe-worker -p runtime-primitives -p durable-steps -p fleet-sync-protocol -p fleet-sync-session -p fleet-sync-receiver -p fleet-sync-lease --locked
+      - run: cargo check --target wasm32-unknown-unknown -p sqlx-durable-object -p sqlx-durable-object-core -p probe-core -p probe-worker -p runtime-primitives -p durable-steps -p fleet-sync-protocol -p fleet-sync-session -p fleet-sync-receiver -p fleet-sync-lease -p fleet-sync-delivery --locked
       - run: cargo check --target wasm32-unknown-unknown -p durable-steps-worker --locked
       - run: cargo check --target wasm32-unknown-unknown -p durable-steps --no-default-features --locked
       - run: |
           cargo tree --target wasm32-unknown-unknown -p durable-steps --no-default-features --edges normal > core-dependencies.txt
           if grep -q tokio core-dependencies.txt; then
             cat core-dependencies.txt
+            exit 1
+          fi
+          cargo tree --target wasm32-unknown-unknown -p fleet-sync-delivery --no-default-features --edges normal > delivery-dependencies.txt
+          if grep -q tokio delivery-dependencies.txt; then
+            cat delivery-dependencies.txt
             exit 1
           fi
   consumer:
@@ -58,7 +63,7 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --manifest-path tests/consumer/Cargo.toml -- --check
+      - run: cargo fmt --manifest-path tests/consumer/Cargo.toml --all -- --check
       - run: cargo clippy --manifest-path tests/consumer/Cargo.toml --all-targets --all-features --locked -- -D warnings
       - run: cargo test --manifest-path tests/consumer/Cargo.toml --all-features --locked
       - run: cargo run -p fleet-sync-query-gen --features native --locked -- --manifest tests/consumer/checked-queries.json --check

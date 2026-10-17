@@ -1,0 +1,1 @@
+INSERT INTO _fleet_sync_inbox_items(item_id,live,payload_bytes,settlement_bytes,record,payload) VALUES(?1,CAST(?2 AS INTEGER),CAST(?3 AS INTEGER),CAST(?4 AS INTEGER),?5,?6) ON CONFLICT(item_id) DO UPDATE SET live=excluded.live,payload_bytes=excluded.payload_bytes,settlement_bytes=excluded.settlement_bytes,record=excluded.record,payload=excluded.payload;

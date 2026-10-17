@@ -1,4 +1,6 @@
 use fleet_sync_protocol::*;
+#[cfg(feature = "test-support")]
+pub mod delivery_mail;
 mod key_contract;
 #[allow(dead_code)]
 pub mod writer_process;
@@ -34,7 +36,31 @@ impl ServiceProcess {
         lease_ms: u64,
         move_renewal_ms: u64,
     ) -> TestResult<Self> {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_fleet-sync-test-consumer"))
+        Self::start_with_initialization_lock(path, receiver, lease_ms, move_renewal_ms, None).await
+    }
+    #[cfg(feature = "test-support")]
+    #[allow(
+        dead_code,
+        reason = "startup fault is used by its dedicated native journey"
+    )]
+    pub async fn start_with_mailbox_init_lock(path: &Path, mailbox: PeerId) -> TestResult<Self> {
+        Self::start_with_initialization_lock(path, 3, 600_000, 60_000, Some(mailbox)).await
+    }
+    async fn start_with_initialization_lock(
+        path: &Path,
+        receiver: u128,
+        lease_ms: u64,
+        move_renewal_ms: u64,
+        mailbox: Option<PeerId>,
+    ) -> TestResult<Self> {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_fleet-sync-test-consumer"));
+        if let Some(mailbox) = mailbox {
+            command.env(
+                "FLEET_SYNC_TEST_LOCK_MAILBOX_INIT",
+                mailbox.as_uuid().to_string(),
+            );
+        }
+        let mut child = command
             .arg(path)
             .arg("0")
             .arg(receiver.to_string())

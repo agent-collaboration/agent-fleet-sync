@@ -7,7 +7,13 @@ mod fixture_authenticator;
 mod protocol;
 mod sample_writes;
 pub use sample_writes::{insert_reading, insert_sample, insert_source};
+#[cfg(feature = "test-support")]
+mod delivery_faults;
 mod server;
+#[cfg(feature = "test-support")]
+mod service_events;
+#[cfg(feature = "test-support")]
+pub use service_events::ServiceEvent;
 mod writer_actor;
 mod writer_bootstrap;
 mod writer_control;
@@ -28,3 +34,9 @@ pub use writer_control::{WriterCommand, WriterReply};
 pub use writer_move::run_move;
 
 pub type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+mod delivery_protocol;
+pub use delivery_protocol::{SampleDelivery, delivery_limits};
+
+#[cfg(feature = "test-support")]
+pub mod delivery_node;

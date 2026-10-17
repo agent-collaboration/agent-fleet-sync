@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// The consumer owns these payloads; synchronization never interprets them.
 pub trait ConsumerProtocol: Send + Sync + 'static {
+    type Delivery: DeliveryTypes;
     type Request: Serialize + DeserializeOwned + Send + Sync;
     type Answer: Serialize + DeserializeOwned + Send + Sync;
     type ServerRequest: Serialize + DeserializeOwned + Send + Sync;
@@ -14,6 +15,7 @@ pub trait ConsumerProtocol: Send + Sync + 'static {
 /// A protocol with no application payload, useful to replication-only consumers.
 pub struct NoConsumer;
 impl ConsumerProtocol for NoConsumer {
+    type Delivery = NoDelivery;
     type Request = ();
     type Answer = ();
     type ServerRequest = ();
@@ -176,7 +178,7 @@ pub enum ReplicationAnswer {
 pub enum OperationRequest<P: ConsumerProtocol = NoConsumer> {
     Replication(ReplicationRequest<P::Annotation>),
     Lease(LeaseRequest),
-    Delivery(DeliveryRequest),
+    Delivery(DeliveryRequest<P::Delivery>),
     Consumer(P::Request),
 }
 
@@ -192,7 +194,7 @@ pub enum OperationRequest<P: ConsumerProtocol = NoConsumer> {
 pub enum OperationAnswer<P: ConsumerProtocol = NoConsumer> {
     Replication(ReplicationAnswer),
     Lease(LeaseAnswer),
-    Delivery(DeliveryAnswer),
+    Delivery(DeliveryAnswer<P::Delivery>),
     Consumer(P::Answer),
 }
 

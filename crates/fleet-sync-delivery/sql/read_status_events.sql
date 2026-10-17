@@ -1,0 +1,1 @@
+SELECT item_id, typeof(version) AS version_class, CAST(version AS TEXT) AS version, typeof(cursor) AS cursor_class,CAST(cursor AS TEXT) AS cursor,record FROM _fleet_sync_status_events WHERE cursor > CAST(?1 AS INTEGER) ORDER BY cursor LIMIT CAST(?2 AS INTEGER);

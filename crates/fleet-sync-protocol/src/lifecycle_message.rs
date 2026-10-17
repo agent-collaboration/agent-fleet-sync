@@ -34,6 +34,12 @@ validated_text!(
     FailureCode
 );
 
+impl From<crate::DeliveryFailureKind> for FailureCode {
+    fn from(value: crate::DeliveryFailureKind) -> Self {
+        Self(value.as_str().to_owned())
+    }
+}
+
 macro_rules! digest_value {
     ($($name:ident),+ $(,)?) => {$(
         #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
