@@ -4,6 +4,8 @@
 
 mod checked_queries;
 mod lease_holder;
+#[cfg(test)]
+mod lease_holder_seed_tests;
 mod lease_values;
 mod workflow_values;
 pub use fleet_sync_protocol::ActorRef;

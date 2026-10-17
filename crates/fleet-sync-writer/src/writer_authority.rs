@@ -151,13 +151,65 @@ pub(crate) async fn restore_authority(
     let record = read_file_record(connection)
         .await?
         .ok_or_else(|| OpenError::corrupt("writer.record"))?;
+    record.registration.restore(holder)?;
     if let Some(observation) = record.authority {
         observation.restore(holder, record.epoch)?;
     }
+    record.registration.restore_ready(holder)?;
     restore_releases(connection, holder).await
 }
 
 impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
+    pub async fn begin_seeding(
+        &self,
+    ) -> Result<fleet_sync_protocol::ReplicationPosition, OpenError> {
+        let mut control = self.control.lock().await;
+        let mut connection = self.maintenance.acquire().await?;
+        let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+        restore_authority(&mut transaction, &mut control.holder).await?;
+        let mut holder = control.holder.clone();
+        let position =
+            crate::writer_registration_state::begin_seed(&mut transaction, &mut holder).await?;
+        transaction.commit().await?;
+        control.holder = holder;
+        self.authority_changes.send_replace(());
+        Ok(position)
+    }
+    pub async fn observe_registration(
+        &self,
+        lease: fleet_sync_protocol::LeaseStatus,
+        started: SyncTime,
+    ) -> Result<(), OpenError> {
+        let mut control = self.control.lock().await;
+        let mut connection = self.maintenance.acquire().await?;
+        let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+        restore_authority(&mut transaction, &mut control.holder).await?;
+        let mut holder = control.holder.clone();
+        crate::writer_registration_state::record_grant(
+            &mut transaction,
+            &mut holder,
+            lease,
+            started,
+        )
+        .await?;
+        transaction.commit().await?;
+        control.holder = holder;
+        self.authority_changes.send_replace(());
+        Ok(())
+    }
+    /// Call after the authoritative copy committed the seed's completion.
+    pub async fn complete_seed(&self) -> Result<(), OpenError> {
+        let mut control = self.control.lock().await;
+        let mut connection = self.maintenance.acquire().await?;
+        let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+        restore_authority(&mut transaction, &mut control.holder).await?;
+        let mut holder = control.holder.clone();
+        crate::writer_registration_state::ready_seed(&mut transaction, &mut holder).await?;
+        transaction.commit().await?;
+        control.holder = holder;
+        self.authority_changes.send_replace(());
+        Ok(())
+    }
     /// Save the registry's current answer with the original request start time.
     /// Restoring this observation never grants time spent in transit or offline.
     pub async fn observe_renewal(

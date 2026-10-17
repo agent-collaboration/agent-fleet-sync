@@ -50,6 +50,13 @@ pub enum AdoptionHistory {
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum OpenError {
+    #[error("bootstrap schema differs: expected {expected:?}, found {found:?}")]
+    BootstrapSchemaMismatch {
+        expected: fleet_sync_protocol::SchemaIdentity,
+        found: fleet_sync_protocol::SchemaIdentity,
+    },
+    #[error("consumer has no migration prefix ending at bootstrap version {version}")]
+    BootstrapVersionUnsupported { version: u64 },
     #[error("cannot adopt migration history: {reason}")]
     AdoptionHistory { reason: AdoptionHistory },
     #[error("writer authority refused: {error}")]

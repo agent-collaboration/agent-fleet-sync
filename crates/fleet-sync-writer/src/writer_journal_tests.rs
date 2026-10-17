@@ -15,7 +15,7 @@ use sqlx_core::{executor::Executor, query::query, row::Row};
 use sqlx_turso::Turso;
 use std::sync::Arc;
 
-struct LocalHost;
+pub(super) struct LocalHost;
 impl Clock for LocalHost {
     fn now(&self) -> SyncTime {
         SystemClock.now()

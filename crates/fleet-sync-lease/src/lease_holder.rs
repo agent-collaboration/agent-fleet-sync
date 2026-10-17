@@ -15,6 +15,8 @@ pub enum HolderError {
     RegistrationRejected { reason: GateReason },
     #[error("writer cannot make this transition from its current state")]
     InvalidTransition,
+    #[error("registration was already granted; a late gate refusal cannot revoke it")]
+    AlreadyGranted,
 }
 
 #[derive(Clone, Debug)]
@@ -34,6 +36,9 @@ enum WriteActivity {
 #[derive(Clone, Debug)]
 enum HolderAuthority {
     Provisional,
+    RegistrationSeeding {
+        epoch: Epoch,
+    },
     Draining {
         epoch: Epoch,
         transfer: TransferId,
@@ -66,15 +71,38 @@ pub struct LeaseHolder {
     peer: PeerId,
     policy: LeasePolicy,
     authority: HolderAuthority,
+    // A later renewal refusal cannot erase the fact that registration granted
+    // this database, and cannot make a late admission-gate refusal authoritative.
+    registration_granted: bool,
 }
 
 impl LeaseHolder {
+    /// Freeze a creator's pending registration before pinning its seed. A live
+    /// writer cannot return to seeding; an existing seed remains unchanged.
+    pub fn begin_seeding(&mut self) -> Result<(), HolderError> {
+        match self.authority {
+            HolderAuthority::Provisional => {
+                self.authority = HolderAuthority::RegistrationSeeding {
+                    epoch: Epoch::new(1).map_err(|_| HolderError::InvalidTransition)?,
+                };
+                Ok(())
+            }
+            HolderAuthority::RegistrationSeeding { .. }
+            | HolderAuthority::Seeding { .. }
+            | HolderAuthority::Lease {
+                activity: WriteActivity::Seeding,
+                ..
+            } => Ok(()),
+            _ => Err(HolderError::InvalidTransition),
+        }
+    }
     pub fn provisional(database: DatabaseId, peer: PeerId, policy: LeasePolicy) -> Self {
         Self {
             database,
             peer,
             policy,
             authority: HolderAuthority::Provisional,
+            registration_granted: false,
         }
     }
 
@@ -84,6 +112,7 @@ impl LeaseHolder {
             peer,
             policy,
             authority: HolderAuthority::Seeding { epoch },
+            registration_granted: true,
         }
     }
 
@@ -101,7 +130,9 @@ impl LeaseHolder {
                 epoch: *epoch,
                 transfer: *transfer,
             },
-            HolderAuthority::Seeding { epoch } => WriterState::Seeding { epoch: *epoch },
+            HolderAuthority::Seeding { epoch } | HolderAuthority::RegistrationSeeding { epoch } => {
+                WriterState::Seeding { epoch: *epoch }
+            }
             HolderAuthority::Lease { cached, activity } => match activity {
                 WriteActivity::Seeding => WriterState::Seeding {
                     epoch: cached.epoch,
@@ -154,6 +185,7 @@ impl LeaseHolder {
             )
         {
             self.authority = HolderAuthority::Superseded { current };
+            self.registration_granted = true;
         }
     }
 
@@ -198,7 +230,9 @@ impl LeaseHolder {
     ) -> Result<(), HolderError> {
         if !matches!(
             self.authority,
-            HolderAuthority::Provisional | HolderAuthority::Seeding { .. }
+            HolderAuthority::Provisional
+                | HolderAuthority::Seeding { .. }
+                | HolderAuthority::RegistrationSeeding { .. }
         ) {
             return Err(HolderError::InvalidTransition);
         }
@@ -213,6 +247,7 @@ impl LeaseHolder {
         if current.database != self.database {
             return Err(HolderError::LeaseMismatch);
         }
+        self.registration_granted = true;
         if let Some(known) = self.known_epoch() {
             if current.epoch < known {
                 return Ok(());
@@ -234,7 +269,9 @@ impl LeaseHolder {
             HolderAuthority::Draining { transfer, .. } => WriteActivity::Draining {
                 transfer: *transfer,
             },
-            HolderAuthority::Seeding { .. } => WriteActivity::Seeding,
+            HolderAuthority::Seeding { .. } | HolderAuthority::RegistrationSeeding { .. } => {
+                WriteActivity::Seeding
+            }
             HolderAuthority::Lease { activity, .. } => activity.clone(),
             _ => WriteActivity::Writing,
         };
@@ -258,6 +295,7 @@ impl LeaseHolder {
     fn known_epoch(&self) -> Option<Epoch> {
         match &self.authority {
             HolderAuthority::Seeding { epoch }
+            | HolderAuthority::RegistrationSeeding { epoch }
             | HolderAuthority::Draining { epoch, .. }
             | HolderAuthority::Released { epoch, .. } => Some(*epoch),
             HolderAuthority::Lease { cached, .. } => Some(cached.epoch),
@@ -272,11 +310,17 @@ impl LeaseHolder {
     }
 
     pub fn reject_registration(&mut self, reason: GateReason) -> Result<(), HolderError> {
+        if self.registration_granted {
+            return Err(HolderError::AlreadyGranted);
+        }
         if matches!(&self.authority, HolderAuthority::Rejected { reason: existing } if *existing == reason)
         {
             return Ok(());
         }
-        if !matches!(self.authority, HolderAuthority::Provisional) {
+        if !matches!(
+            self.authority,
+            HolderAuthority::Provisional | HolderAuthority::RegistrationSeeding { .. }
+        ) {
             return Err(HolderError::InvalidTransition);
         }
         self.authority = HolderAuthority::Rejected { reason };

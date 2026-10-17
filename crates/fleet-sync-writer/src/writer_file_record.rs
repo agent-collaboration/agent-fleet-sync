@@ -19,6 +19,7 @@ pub(crate) struct WriterFileRecord {
     pub retained_layout: Vec<crate::TableLayout>,
     pub authority: Option<crate::writer_authority::AuthorityObservation>,
     pub epoch_ended_at: Option<ReplicationPosition>,
+    pub registration: crate::writer_registration_state::RegistrationState,
 }
 
 impl WriterFileRecord {
@@ -37,6 +38,7 @@ impl WriterFileRecord {
             retained_layout: Vec::new(),
             authority: None,
             epoch_ended_at: None,
+            registration: crate::writer_registration_state::RegistrationState::Unregistered,
         }
     }
 }
@@ -62,6 +64,9 @@ pub(crate) async fn read_file_record(
     let record: WriterFileRecord =
         serde_json::from_str(&encoded).map_err(|_| OpenError::corrupt("writer.record"))?;
     if record.start.epoch > record.epoch
+        || !record
+            .registration
+            .validate(record.database, record.peer, record.epoch, record.start)
         || record.retained_after < record.start
         || record.retained_after.epoch > record.epoch
         || record

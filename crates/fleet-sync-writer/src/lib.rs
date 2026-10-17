@@ -1,5 +1,8 @@
 //! Captured writes and transport-independent replication senders for Turso.
 
+mod bootstrap_schema;
+#[cfg(test)]
+mod bootstrap_schema_tests;
 mod capture_normalization;
 mod capture_stream;
 mod checked_queries;
@@ -31,9 +34,12 @@ mod writer_error;
 mod writer_file_record;
 mod writer_journal;
 mod writer_journal_storage;
+mod writer_registration_state;
 mod writer_release;
 mod writer_release_record;
 mod writer_scope;
+#[cfg(test)]
+mod writer_seed_gate_tests;
 mod writer_snapshot;
 
 pub use capture_normalization::{CaptureChange, CaptureError, normalize_capture_change};

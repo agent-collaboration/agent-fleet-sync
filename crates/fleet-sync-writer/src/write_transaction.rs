@@ -28,6 +28,7 @@ impl WriterControl {
             HolderError::RegistrationRejected { reason } => WriteRefusal::Rejected { reason },
             HolderError::Refused(_)
             | HolderError::LeaseMismatch
+            | HolderError::AlreadyGranted
             | HolderError::InvalidTransition => WriteRefusal::NotWriter,
         })?;
         match state {

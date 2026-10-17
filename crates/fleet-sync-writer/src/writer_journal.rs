@@ -22,6 +22,7 @@ pub struct WriterJournalStore<S: ReplicatedSchema, H: Host> {
 pub struct WriterJournalScope<'transaction, H: Host> {
     pub(crate) maintenance: MaintenanceTransaction<'transaction>,
     pub(crate) host: &'transaction H,
+    pub(crate) holder: fleet_sync_lease::LeaseHolder,
 }
 
 impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
@@ -77,6 +78,7 @@ impl<S: ReplicatedSchema, H: Host> AtomicStore for WriterJournalStore<S, H> {
                 control.statements.layouts().to_vec(),
             ),
             host: self.host.as_ref(),
+            holder: control.holder.clone(),
         };
         match run(&mut scope).await {
             Ok(value) => {
@@ -86,6 +88,7 @@ impl<S: ReplicatedSchema, H: Host> AtomicStore for WriterJournalStore<S, H> {
                     .map_err(StoreError::backend)?;
                 transaction.commit().await.map_err(StoreError::backend)?;
                 control.holder = next_holder;
+                self.database.authority_changes.send_replace(());
                 Ok(value)
             }
             Err(error) => {
@@ -108,6 +111,29 @@ impl<'transaction, H: Host> TransactionScope for WriterJournalScope<'transaction
 }
 
 impl<H: Host> WriterJournalScope<'_, H> {
+    pub async fn begin_seeding(
+        &mut self,
+    ) -> Result<fleet_sync_protocol::ReplicationPosition, OpenError> {
+        crate::writer_registration_state::begin_seed(self.maintenance.connection, &mut self.holder)
+            .await
+    }
+    pub async fn observe_registration(
+        &mut self,
+        lease: fleet_sync_protocol::LeaseStatus,
+        started: SyncTime,
+    ) -> Result<(), OpenError> {
+        crate::writer_registration_state::record_grant(
+            self.maintenance.connection,
+            &mut self.holder,
+            lease,
+            started,
+        )
+        .await
+    }
+    pub async fn complete_seed(&mut self) -> Result<(), OpenError> {
+        crate::writer_registration_state::ready_seed(self.maintenance.connection, &mut self.holder)
+            .await
+    }
     pub(crate) fn journal(&mut self) -> TursoScope<'_, H> {
         TursoScope::new(self.maintenance.connection, self.host)
     }
