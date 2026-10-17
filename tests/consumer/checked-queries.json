@@ -8,6 +8,13 @@
   "metadata": "checked-query-metadata.json",
   "queries": [
     {
+      "name": "private_history_present",
+      "sql": "sql/private_history_present.sql",
+      "row": null,
+      "result": "exists",
+      "parameters": []
+    },
+    {
       "name": "read_claim_gate",
       "sql": "sql/read_claim_gate.sql",
       "row": "ClaimGateRow",

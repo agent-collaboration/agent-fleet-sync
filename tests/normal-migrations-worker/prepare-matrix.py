@@ -63,6 +63,14 @@ def checkpoint(record):
             + ") ORDER BY cid)"
         )
         expected.append([columns])
+    for table in record.get("absentTables", []):
+        literal = "'" + table.replace("'", "''") + "'"
+        queries.append(
+            "SELECT json_array(name,sql) AS result FROM sqlite_schema WHERE name="
+            + literal
+            + " OR instr(coalesce(sql,'')," + literal + ")>0"
+        )
+        expected.append([])
     schema = record["schemaIdentity"]
     position = record["position"]
     queries.append(

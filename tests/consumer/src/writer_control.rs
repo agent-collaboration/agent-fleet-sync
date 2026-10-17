@@ -13,6 +13,10 @@ pub enum WriterCommand {
     WaitReady,
     WaitPeriodicRenewal,
     Position,
+    SnapshotManifest,
+    WriteRenamedRecord {
+        value: String,
+    },
     State,
     HoldSeedPage,
     HoldSeedPageAt {
@@ -58,6 +62,7 @@ pub enum WriterReply {
     Operation(durable_steps::OperationId),
     Registration(WriterRegistrationOutcome),
     Position(ReplicationPosition),
+    SnapshotManifest(SnapshotManifest),
     State(fleet_sync_lease::WriterState),
     SeedPage(SeedPageObservation),
     WriteRefused { seeding: bool, message: String },
@@ -156,6 +161,21 @@ impl WriterControl {
                     WriterReply::Ok
                 }
                 WriterCommand::Position => {
+                    WriterReply::Position(self.database.snapshot().await?.position())
+                }
+                WriterCommand::SnapshotManifest => {
+                    let mut snapshot = self.database.snapshot().await?;
+                    let manifest = snapshot.manifest().await?;
+                    snapshot.close().await?;
+                    WriterReply::SnapshotManifest(manifest)
+                }
+                WriterCommand::WriteRenamedRecord { value } => {
+                    let mut write = self.database.begin_write().await?;
+                    let changed = query::<sqlx_turso::Turso>("UPDATE tasks SET value=? WHERE id=?")
+                        .bind(value).bind("019eef00-0000-7000-8000-000000000001")
+                        .execute(&mut write).await?;
+                    if changed.rows_affected() != 1 { return Err("renamed record missing".into()); }
+                    write.commit().await?;
                     WriterReply::Position(self.database.snapshot().await?.position())
                 }
                 WriterCommand::State => WriterReply::State(self.database.writer_state().await?),

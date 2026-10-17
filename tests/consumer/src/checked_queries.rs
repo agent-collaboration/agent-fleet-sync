@@ -6,6 +6,21 @@ use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, query::query, row::Row, types::Type,
 };
+pub(crate) fn private_history_present<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<bool, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/private_history_present.sql"
+        )));
+        Ok(statement.fetch_optional(scope.executor()).await?.is_some())
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct ClaimGateRow {

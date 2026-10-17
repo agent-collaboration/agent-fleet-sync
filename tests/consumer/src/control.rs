@@ -46,6 +46,8 @@ pub enum ControlRequest {
     SetHookFailure {
         enabled: bool,
     },
+    CheckPrivateHistoryOnApply,
+    PrivateHistoryChecks,
     SetRegistrationFailure {
         enabled: bool,
     },
@@ -124,6 +126,7 @@ pub enum ControlAnswer {
     Install(fleet_sync_tokio_runner::InstallRecord),
     Staged(fleet_sync_receiver::InstallPageReceipt),
     RequestCount(u64),
+    PrivateHistoryChecks(u64),
     Opening { connection: ConnectionId },
     Ok,
     Effects(Vec<EffectReceipt>),
@@ -253,6 +256,15 @@ impl ControlState {
                     self.consumer.hook_failure.store(enabled, Ordering::SeqCst);
                     ControlAnswer::Ok
                 }
+                ControlRequest::CheckPrivateHistoryOnApply => {
+                    self.consumer
+                        .private_history_checks_enabled
+                        .store(true, Ordering::SeqCst);
+                    ControlAnswer::Ok
+                }
+                ControlRequest::PrivateHistoryChecks => ControlAnswer::PrivateHistoryChecks(
+                    self.consumer.private_history_checks.load(Ordering::SeqCst),
+                ),
                 ControlRequest::SetRegistrationFailure { enabled } => {
                     self.consumer
                         .registration_failure

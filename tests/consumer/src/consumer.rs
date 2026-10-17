@@ -13,6 +13,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 pub struct Consumer {
     pub store: ConsumerStore,
     pub hook_failure: AtomicBool,
+    pub private_history_checks_enabled: AtomicBool,
+    pub private_history_checks: AtomicU64,
     pub registration_failure: AtomicBool,
     pub hold_claim_reserve: AtomicBool,
     pub claim_reserve_observed: tokio::sync::watch::Sender<Option<CallId>>,
@@ -28,6 +30,8 @@ impl Consumer {
         Ok(Self {
             store,
             hook_failure: AtomicBool::new(false),
+            private_history_checks_enabled: AtomicBool::new(false),
+            private_history_checks: AtomicU64::new(0),
             registration_failure: AtomicBool::new(false),
             hold_claim_reserve: AtomicBool::new(false),
             claim_reserve_observed: tokio::sync::watch::channel(None).0,
@@ -47,6 +51,12 @@ impl Consumer {
         annotation: String,
     ) -> Result<Vec<HookEffect>, HookRefusal> {
         let result: crate::TestResult<Vec<HookEffect>> = async {
+            if self.private_history_checks_enabled.load(Ordering::SeqCst) {
+                if checked_queries::private_history_present(scope).await? {
+                    return Err("private history reached the receiver catalog".into());
+                }
+                self.private_history_checks.fetch_add(1, Ordering::SeqCst);
+            }
             let event_id = format!(
                 "{}:{}:{}:{}",
                 database.as_uuid(),

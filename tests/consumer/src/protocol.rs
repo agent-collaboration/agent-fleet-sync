@@ -72,29 +72,52 @@ static TABLES: LazyLock<Result<Vec<TableName>, TextValueError>> = LazyLock::new(
 });
 pub struct SampleSchema {
     tables: &'static [TableName],
-    extended: bool,
+    migrations: &'static [Migration],
 }
 impl SampleSchema {
     pub fn new() -> Result<Self, TextValueError> {
         Ok(Self {
             tables: TABLES.as_ref().map(Vec::as_slice).map_err(Clone::clone)?,
-            extended: false,
+            migrations: MIGRATIONS.iter().as_slice(),
         })
     }
     pub fn extended() -> Result<Self, TextValueError> {
         Ok(Self {
-            extended: true,
+            migrations: &EXTENDED_MIGRATIONS,
             ..Self::new()?
+        })
+    }
+    pub fn rename_prefix() -> Result<Self, TextValueError> {
+        Self::renaming(false)
+    }
+    pub fn rename_bundle() -> Result<Self, TextValueError> {
+        Self::renaming(true)
+    }
+    fn renaming(complete: bool) -> Result<Self, TextValueError> {
+        static MIGRATIONS: LazyLock<Vec<Migration>> = LazyLock::new(|| {
+            use sqlx_core::{migrate::MigrationType, sql_str::SqlSafeStr};
+            [
+                "CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY,value TEXT); INSERT INTO records VALUES('019eef00-0000-7000-8000-000000000001','before')",
+                "ALTER TABLE records RENAME TO tasks",
+            ].into_iter().zip(1_i64..).map(|(sql, version)| Migration::new(version,"rename".into(),MigrationType::Simple,sql.into_sql_str(),false)).collect()
+        });
+        static TABLES: LazyLock<Result<[Vec<TableName>; 2], TextValueError>> =
+            LazyLock::new(|| {
+                Ok([
+                    vec![TableName::new("records")?],
+                    vec![TableName::new("tasks")?],
+                ])
+            });
+        let index = usize::from(complete);
+        Ok(Self {
+            tables: &TABLES.as_ref().map_err(Clone::clone)?[index],
+            migrations: &MIGRATIONS[..index + 1],
         })
     }
 }
 impl ReplicatedSchema for SampleSchema {
     fn migrations(&self) -> &'static [Migration] {
-        if self.extended {
-            &EXTENDED_MIGRATIONS
-        } else {
-            MIGRATIONS.iter().as_slice()
-        }
+        self.migrations
     }
     fn replicated_tables(&self) -> &'static [TableName] {
         self.tables

@@ -49,7 +49,7 @@
     "../../crates/sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../../crates/sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
     "../../rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
-    "checked-queries.json": "5564405cbf3045bb9a47a5f68e5090b28a739ccbd91801c5561b528cae103637",
+    "checked-queries.json": "be65eba2d5562165e6392abde4a315072ceaaa776e8e7c16ca7d4e24e20831e2",
     "hook-migrations/1002_hook.sql": "2e2cdcbb1916b31adeb1422e264fb36ade0b70647f205224da14021e3c50aa55",
     "migrations/1001_control.sql": "a6f9ac89c31d574006a2747ba4210d932ef0b636b6130e7eca43220fbd73534b",
     "migrations/1003_claim_gate.sql": "716a6ec88589031cf6a6f4a35325e475596db130f387524f077da5b6d5fe08f3",
@@ -61,6 +61,7 @@
     "sql/insert_reading.sql": "068d0dc05af7436a3b922a1142d07a929fe1d49eaf4681f160d6c918caa39ed8",
     "sql/insert_sample.sql": "17d66042b157cb0072281c73caad27bd988520a55d03cf407e88fcf3e071b832",
     "sql/insert_source.sql": "5b271380925413ab6ffd962a5575df73d504053155c7ced52a21f101ab9374fb",
+    "sql/private_history_present.sql": "ca9d4f406f3fd6f310fe9a9560d3749012d32f94e7c9299db6d0b417e66b57bc",
     "sql/read_claim_gate.sql": "58fdb6bd30b8c93bf6bb0fde380689b42dac39baa18f01fd6586db774e5a942d",
     "sql/read_claim_gates.sql": "df82f17831965ca79fe0e5551c3e6735943f4c8d572fb77685205d7f9ed64e7e",
     "sql/read_client_session.sql": "78511632ee2592315e2ed8f2f02ce0769fed5e1e21073da51a51690c3549e54f",
@@ -68,9 +69,14 @@
     "sql/read_effects.sql": "66acd46cd1dda9ad1526b7b3ebcbc11d010b27aaf8aa22a6a4448e2355f3351c",
     "sql/save_client_session.sql": "a6e53c1c7a384f4d732ee06416c3adea684444c1024ed4b2d72aa1f8c7dddb81",
     "sql/write_claim_gate.sql": "050f5f62fc9b021ab3547abbff75f5bbf72efd3b1db162b51571467e4fafa9a1",
-    "src/checked_queries.rs": "87ce029d78daf8378b465ef05bbe77e58fbad89cc93ae4e0099c00dc7b9eac9a"
+    "src/checked_queries.rs": "bcbd12dc65b8c7d118e1de9568a428920258f1c71850dc519df70aeb2e383e34"
   },
   "queries": [
+    {
+      "name": "private_history_present",
+      "bind_slots": 0,
+      "columns": []
+    },
     {
       "name": "read_claim_gate",
       "bind_slots": 1,

@@ -19,3 +19,8 @@ async fn fresh_full_bundle_rename_and_next_write_replicate() -> TestResult {
 async fn fresh_rename_chain_and_next_write_replicate() -> TestResult {
     run_case("fresh_chain", rename_chain_case()).await
 }
+
+#[tokio::test]
+async fn local_history_rows_schema_and_pieces_stay_private_across_drop() -> TestResult {
+    run_case("dropped_local", dropped_local_case()).await
+}

@@ -79,7 +79,7 @@ pub async fn run_writer(
 ) -> TestResult {
     tokio::fs::create_dir_all(directory).await?;
     let path = directory.join("writer.db");
-    let bootstrap = mode == "bootstrap" || mode == "resume-bootstrap";
+    let bootstrap = matches!(mode, "bootstrap" | "resume-bootstrap" | "rename-bootstrap");
     let peer = PeerId::new(durable_steps::Uuid::from_u128(if bootstrap {
         4
     } else {
@@ -139,12 +139,27 @@ pub async fn run_writer(
             )
             .await?
         }
-        "bootstrap" | "resume-bootstrap" => {
+        "rename-source" => {
+            ReplicatedDatabase::create(
+                &path,
+                SampleSchema::rename_prefix()?,
+                peer,
+                policy(),
+                options,
+            )
+            .await?
+        }
+        "bootstrap" | "resume-bootstrap" | "rename-bootstrap" => {
             crate::writer_bootstrap::open(
                 &path,
                 database_id.ok_or("bootstrap needs database identity")?,
                 &requests,
                 policy(),
+                if mode == "rename-bootstrap" {
+                    SampleSchema::rename_bundle()?
+                } else {
+                    SampleSchema::extended()?
+                },
             )
             .await?
         }

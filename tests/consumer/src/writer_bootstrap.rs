@@ -11,6 +11,7 @@ pub(crate) async fn open(
     database: DatabaseId,
     requests: &SessionRequests<SampleProtocol>,
     policy: LeasePolicy,
+    schema: SampleSchema,
 ) -> TestResult<ReplicatedDatabase<SampleSchema>> {
     let source = match requests
         .request(OperationRequest::Replication(
@@ -37,7 +38,7 @@ pub(crate) async fn open(
     };
     Ok(ReplicatedDatabase::seeding(
         path,
-        SampleSchema::extended()?,
+        schema,
         BootstrapGrant {
             lease,
             request_started,

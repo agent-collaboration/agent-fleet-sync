@@ -26,135 +26,10 @@ use std::{
 use tokio::sync::Mutex;
 pub type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 const KEY: &str = "019eef00-0000-7000-8000-000000000001";
-#[derive(Clone)]
-struct RenameSchema {
-    migrations: &'static [Migration],
-    tables: &'static [Vec<TableName>],
-    count: Arc<AtomicUsize>,
-}
-impl ReplicatedSchema for RenameSchema {
-    fn migrations(&self) -> &'static [Migration] {
-        self.migrations
-            .get(..self.count.load(Ordering::SeqCst))
-            .unwrap_or_default()
-    }
-    fn replicated_tables(&self) -> &'static [TableName] {
-        self.tables
-            .get(self.count.load(Ordering::SeqCst).saturating_sub(1))
-            .map(Vec::as_slice)
-            .unwrap_or_default()
-    }
-}
-pub struct Step {
-    sql: &'static str,
-    tables: Vec<&'static str>,
-    write: &'static str,
-}
-pub struct Case {
-    steps: Vec<Step>,
-    cold: bool,
-    fresh: bool,
-}
-const BASE: &str = "CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY, body TEXT, amount INTEGER, payload BLOB, ratio REAL, missing TEXT, discarded TEXT)";
-const BASE_WRITE: &str = "INSERT INTO records(id,body,amount,payload,ratio,missing,discarded) VALUES(?,?,?,X'00FF80',1.25,NULL,'discard me')";
-fn step(sql: &'static str, write: &'static str) -> Step {
-    Step {
-        sql,
-        tables: vec!["records"],
-        write,
-    }
-}
-fn case(sql: &'static str, write: &'static str) -> Case {
-    Case {
-        steps: vec![step(BASE, BASE_WRITE), step(sql, write)],
-        cold: false,
-        fresh: false,
-    }
-}
-pub fn rename_table_case(cold: bool, fresh: bool) -> Case {
-    let mut case = case(
-        "ALTER TABLE records RENAME TO tasks",
-        "UPDATE tasks SET body=?,amount=? WHERE id=?",
-    );
-    case.steps[1].tables = vec!["tasks"];
-    case.cold = cold;
-    case.fresh = fresh;
-    if fresh {
-        case.steps[0].sql = "CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY, body TEXT, amount INTEGER, payload BLOB, ratio REAL, missing TEXT, discarded TEXT); INSERT INTO records VALUES('019eef00-0000-7000-8000-000000000001','before',9007199254740993,X'00FF80',1.25,NULL,'discard me')";
-    }
-    case
-}
-pub fn rename_chain_case() -> Case {
-    Case {
-        steps: vec![
-            Step {
-                sql: "CREATE TABLE a(id TEXT NOT NULL PRIMARY KEY, body TEXT, amount INTEGER, payload BLOB, ratio REAL, missing TEXT, discarded TEXT); INSERT INTO a VALUES('019eef00-0000-7000-8000-000000000001','before',9007199254740993,X'00FF80',1.25,NULL,'discard me')",
-                tables: vec!["a"],
-                write: "UPDATE a SET body=?,amount=? WHERE id=?",
-            },
-            Step {
-                sql: "ALTER TABLE a RENAME TO b",
-                tables: vec!["b"],
-                write: "UPDATE b SET body=?,amount=? WHERE id=?",
-            },
-            Step {
-                sql: "ALTER TABLE b RENAME TO c",
-                tables: vec!["c"],
-                write: "UPDATE c SET body=?,amount=? WHERE id=?",
-            },
-        ],
-        cold: false,
-        fresh: true,
-    }
-}
-fn policy() -> LeasePolicy {
-    LeasePolicy {
-        lease_duration: Duration::from_secs(3600),
-        renew_interval: Duration::from_secs(30),
-    }
-}
-fn peer() -> TestResult<PeerId> {
-    Ok(PeerId::new(durable_steps::Uuid::from_u128(2))?)
-}
-fn receiver(id: u128) -> TestResult<ReceiverId> {
-    Ok(ReceiverId::new(durable_steps::Uuid::from_u128(id))?)
-}
-fn schema(case: &Case) -> TestResult<RenameSchema> {
-    let migrations = case
-        .steps
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            Migration::new(
-                i as i64 + 1,
-                format!("normal {}", i + 1).into(),
-                MigrationType::Simple,
-                AssertSqlSafe(s.sql.to_owned()).into_sql_str(),
-                false,
-            )
-        })
-        .collect::<Vec<_>>();
-    let tables = case
-        .steps
-        .iter()
-        .map(|s| {
-            s.tables
-                .iter()
-                .copied()
-                .map(TableName::new)
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(RenameSchema {
-        migrations: Box::leak(migrations.into_boxed_slice()),
-        tables: Box::leak(tables.into_boxed_slice()),
-        count: Arc::new(AtomicUsize::new(if case.fresh {
-            case.steps.len()
-        } else {
-            1
-        })),
-    })
-}
+mod local_history;
+mod scenarios;
+pub use scenarios::{Case, dropped_local_case, rename_chain_case, rename_table_case};
+use scenarios::{RenameSchema, peer, policy, receiver, schema};
 struct Annotation;
 impl PieceAnnotation for Annotation {
     type Protocol = SampleProtocol;
@@ -437,6 +312,12 @@ pub async fn run_case(name: &str, case: Case) -> TestResult {
     let mut reader = process
         .peer(5, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
+    let mut control = process
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    if case.local_history {
+        control_request(&mut control, ControlRequest::CheckPrivateHistoryOnApply).await?;
+    }
     for (index, step) in case.steps.iter().enumerate() {
         if case.fresh && index + 1 < case.steps.len() {
             continue;
@@ -494,6 +375,21 @@ pub async fn run_case(name: &str, case: Case) -> TestResult {
             }
             println!("WRITER_MIGRATE_PASS {}", index + 1);
         }
+        if case.local_history {
+            if index < 2 {
+                let row = query::<Turso>("SELECT value FROM private_history")
+                    .fetch_one(writer.reader())
+                    .await?;
+                assert_eq!(row.try_get::<String, _>("value")?, "private-local-only");
+            } else {
+                assert!(
+                    query::<Turso>("SELECT name FROM sqlite_schema WHERE name='private_history'")
+                        .fetch_all(writer.reader())
+                        .await?
+                        .is_empty()
+                );
+            }
+        }
         save_writer_checkpoint(
             &fixtures,
             &format!("v{}-migration", index + 1),
@@ -514,6 +410,14 @@ pub async fn run_case(name: &str, case: Case) -> TestResult {
             &mut reader,
         )
         .await?;
+        if case.local_history {
+            local_history::check_copy_and_record(
+                &mut control,
+                &fixtures,
+                &format!("v{}-migration", index + 1),
+            )
+            .await?;
+        }
         normal_write(&writer, step.write, index).await?;
         save_writer_checkpoint(
             &fixtures,
@@ -531,11 +435,19 @@ pub async fn run_case(name: &str, case: Case) -> TestResult {
             &mut reader,
         )
         .await?;
+        if case.local_history {
+            local_history::check_copy_and_record(
+                &mut control,
+                &fixtures,
+                &format!("v{}-write", index + 1),
+            )
+            .await?;
+        }
+    }
+    if case.local_history {
+        local_history::check_received_pieces(&fixtures).await?;
     }
     tokio::fs::write(fixtures.join("case-status.json"), br#"{"status":"passed"}"#).await?;
-    let mut control = process
-        .connect("control", "Bearer consumer-control")
-        .await?;
     process.stop(&mut control).await?;
     writer.close().await;
     Ok(())
