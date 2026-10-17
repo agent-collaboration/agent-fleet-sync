@@ -140,38 +140,17 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             let Some(lease) = lease.filter(|lease| lease.holder == peer) else {
                 continue;
             };
-            if let Ok(copy) = self.copy(database).await
-                && let Some(reason) = copy.health.lock().await.clone()
-            {
-                summaries.push(DatabaseStatus::Unavailable {
-                    database,
-                    lease: Some(lease),
-                    reason,
-                });
-                continue;
-            }
-            match self.copy_status(database).await {
-                Ok(CopyStatusAnswer::Status(status)) => summaries.push(DatabaseStatus::Ready {
-                    database,
-                    acked: status.acked,
-                    lease,
-                }),
-                Ok(CopyStatusAnswer::Retired) => {}
-                Ok(CopyStatusAnswer::NotInitialized) => {
-                    summaries.push(DatabaseStatus::Unavailable {
-                        database,
-                        lease: Some(lease),
-                        reason: CopyUnavailableReason::Uninitialized,
-                    })
-                }
-                Err(error) => summaries.push(DatabaseStatus::Unavailable {
+            summaries.push(match self.database_status(database, lease.clone()).await {
+                Ok(Some(status)) => status,
+                Ok(None) => continue,
+                Err(error) => DatabaseStatus::Unavailable {
                     database,
                     lease: Some(lease),
                     reason: CopyUnavailableReason::Damaged {
                         detail: error.to_string(),
                     },
-                }),
-            }
+                },
+            });
         }
         Ok(summaries)
     }

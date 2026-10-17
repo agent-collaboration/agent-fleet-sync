@@ -2,6 +2,12 @@
 
 mod call_router;
 mod copy_owner;
+mod database_status;
+mod install_host;
+#[cfg(feature = "test-support")]
+mod install_page_probe;
+mod source_host;
+pub use source_host::AttachedSource;
 mod registry_host;
 mod replication_host;
 mod routed_calls;

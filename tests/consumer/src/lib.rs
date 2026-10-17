@@ -14,5 +14,6 @@ pub use protocol::{
     SavedEffect,
 };
 pub use server::run_server;
+pub use server::run_server_with_receiver;
 
 pub type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;

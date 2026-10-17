@@ -57,7 +57,7 @@ impl InstallStatus {
             _ => None,
         }
     }
-    pub(crate) fn snapshot(&self) -> Option<&SnapshotInstall> {
+    pub fn snapshot(&self) -> Option<&SnapshotInstall> {
         match self {
             Self::Ready { snapshot }
             | Self::Running {

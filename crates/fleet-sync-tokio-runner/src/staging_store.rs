@@ -23,6 +23,8 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StagingError {
+    #[error("snapshot source call failed: {failure}")]
+    SourceCall { failure: durable_steps::CallFailure },
     #[error(transparent)]
     Storage(#[from] StoreError),
     #[error(transparent)]

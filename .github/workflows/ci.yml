@@ -48,3 +48,17 @@ jobs:
             cat core-dependencies.txt
             exit 1
           fi
+  consumer:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: target
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --manifest-path tests/consumer/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path tests/consumer/Cargo.toml --all-targets --all-features --locked -- -D warnings
+      - run: cargo test --manifest-path tests/consumer/Cargo.toml --all-features --locked
+      - run: cargo run -p fleet-sync-query-gen --features native --locked -- --manifest tests/consumer/checked-queries.json --check

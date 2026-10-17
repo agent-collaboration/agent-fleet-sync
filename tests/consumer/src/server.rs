@@ -57,10 +57,13 @@ async fn upgrade(
     })
 }
 pub async fn run_server(directory: &Path, port: u16) -> TestResult {
+    run_server_with_receiver(directory, port, 3).await
+}
+pub async fn run_server_with_receiver(directory: &Path, port: u16, receiver: u128) -> TestResult {
     tokio::fs::create_dir_all(directory).await?;
     let store = ConsumerStore::open(&directory.join("consumer.db")).await?;
     let consumer = Arc::new(Consumer::new(store.clone())?);
-    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
+    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(receiver))?;
     let options = ServiceOptions {
         directory: directory.join("service"),
         receiver,
@@ -83,10 +86,13 @@ pub async fn run_server(directory: &Path, port: u16) -> TestResult {
     )
     .await?;
     let (shutdown, stopped) = watch::channel(false);
+    let (source_events, mut source_incoming) =
+        mpsc::channel::<fleet_sync_service::AttachedSource<SampleProtocol>>(8);
     let control = Arc::new(ControlState {
         consumer,
         service: service.handle(),
         shutdown: shutdown.clone(),
+        source_events,
     });
     let (accepted, mut incoming) = mpsc::channel::<AcceptedControl>(16);
     let routes = Router::new()
@@ -104,6 +110,22 @@ pub async fn run_server(directory: &Path, port: u16) -> TestResult {
     let result = loop {
         tokio::select! {
             result=&mut serving=>break result,
+            Some(mut source)=source_incoming.recv()=>{
+                let mut shutdown=stopped.clone();
+                tasks.spawn(async move {
+                    loop {
+                        tokio::select! {
+                            event=source.events.recv()=>match event {
+                                Some(fleet_sync_session::ClientEvent::Notice { position, .. })=>source.requests.acknowledge_notice(position).await?,
+                                Some(_)=>{},
+                                None=>break,
+                            },
+                            _=shutdown.changed()=>break,
+                        }
+                    }
+                    Ok(())
+                });
+            },
             Some(accepted)=incoming.recv()=>{
                 let control=control.clone();let stopped=stopped.clone();
                 tasks.spawn(async move {

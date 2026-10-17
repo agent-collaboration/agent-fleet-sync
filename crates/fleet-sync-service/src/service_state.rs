@@ -2,15 +2,20 @@ use crate::{
     ServiceConsumer, ServiceError, ServiceHost, ServiceObject, ServiceOptions,
     call_router::ServiceCalls, copy_owner::CopyOwner, session_handler::ServiceSessionHandler,
 };
-use durable_steps::Engine;
-use fleet_sync_protocol::{ConsumerProtocol, DatabaseId};
+use durable_steps::{BoxFuture, Engine};
+use fleet_sync_protocol::{ConsumerProtocol, DatabaseId, ReceiverId};
 use fleet_sync_session::PeerAuthenticator;
-use fleet_sync_tokio_runner::{ObjectStore, SessionHost};
+use fleet_sync_tokio_runner::{InstallCoordinator, ObjectStore, SessionHost, SessionRequests};
 use std::{
     collections::BTreeMap,
     sync::{Arc, OnceLock, Weak},
 };
-use tokio::sync::{Mutex, Notify, OnceCell};
+use tokio::sync::{Mutex, Notify, OnceCell, watch};
+
+pub(crate) struct SourceRunner {
+    pub run: BoxFuture<'static, Result<(), fleet_sync_session::ClientError>>,
+    pub stop: watch::Sender<bool>,
+}
 
 pub(crate) type ServiceSessions<P, C, A> =
     SessionHost<P, A, ServiceSessionHandler<P, C, A>, ServiceHost>;
@@ -25,6 +30,15 @@ pub(crate) struct ServiceState<
     pub objects: Arc<ObjectStore<ServiceHost>>,
     pub registry: Arc<ServiceObject>,
     pub registry_engine: Arc<Engine<ServiceObject, ServiceHost>>,
+    pub control: Arc<ServiceObject>,
+    pub control_engine: Arc<Engine<ServiceObject, ServiceHost>>,
+    pub installs: Arc<InstallCoordinator<ServiceHost>>,
+    pub sources: Mutex<BTreeMap<ReceiverId, SessionRequests<P>>>,
+    pub source_runners: Mutex<Vec<SourceRunner>>,
+    pub source_added: Notify,
+    pub shutdown: watch::Sender<bool>,
+    #[cfg(feature = "test-support")]
+    pub install_page_probe: crate::install_page_probe::InstallPageProbe,
     pub copies: Mutex<BTreeMap<DatabaseId, Arc<OnceCell<Arc<CopyOwner>>>>>,
     pub copy_added: Notify,
     pub sessions: OnceLock<Weak<ServiceSessions<P, C, A>>>,

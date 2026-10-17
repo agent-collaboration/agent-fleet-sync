@@ -24,6 +24,11 @@ pub struct InstallHandle<H: Host> {
     pub operation: OperationId,
 }
 impl<H: Host> InstallHandle<H> {
+    pub async fn wait(&self) -> Result<InstallRecord, StoreError> {
+        self.coordinator
+            .wait_for_attempt(self.request.attempt)
+            .await
+    }
     pub async fn status(&self) -> Result<InstallRecord, StoreError> {
         let request = self.request.clone();
         self.coordinator
@@ -43,6 +48,31 @@ impl<H: Host> InstallHandle<H> {
     }
 }
 impl<H: Host> InstallCoordinator<H> {
+    pub async fn wait_for_attempt(&self, install: Uuid) -> Result<InstallRecord, StoreError> {
+        let initial = self.record(install).await?;
+        let mut changes = self.control.subscribe_commits();
+        loop {
+            let request = initial.request.clone();
+            let record = self
+                .control
+                .rule_transaction(move |scope| {
+                    Box::pin(async move {
+                        InstallRecords(scope)
+                            .history(&request.target)
+                            .await?
+                            .into_iter()
+                            .rev()
+                            .find(|record| record.request.attempt == request.attempt)
+                            .ok_or_else(|| corrupt("install attempt has no record"))
+                    })
+                })
+                .await?;
+            if !matches!(record.status, InstallStatus::Running { .. }) {
+                return Ok(record);
+            }
+            changes.changed().await.map_err(StoreError::backend)?;
+        }
+    }
     pub async fn open(
         control: Arc<TokioObject<H>>,
         staging: Arc<StagingStore>,
@@ -135,6 +165,7 @@ impl<H: Host> InstallCoordinator<H> {
         }
         let operation = admitted.id();
         transaction.commit().await.map_err(StoreError::backend)?;
+        self.control.notify_committed();
         drop(owner);
         let host = self.control.host();
         host.wake_at(host.now())
@@ -282,6 +313,7 @@ impl<H: Host> InstallCoordinator<H> {
             .save(&record)
             .await?;
         transaction.commit().await?;
+        self.control.notify_committed();
         Ok(InstallFileAnswer::Ready { snapshot })
     }
 }

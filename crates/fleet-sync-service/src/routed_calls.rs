@@ -29,6 +29,12 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             call,
         } = envelope;
         match kind {
+            fleet_sync_tokio_runner::InstallSource::KIND => {
+                encode(self.install_source(decode(target)?).await?)
+            }
+            fleet_sync_tokio_runner::InstallFile::KIND => {
+                encode(self.install_file(decode(target)?, decode(request)?).await?)
+            }
             "fleet-sync.apply-follow-up" => {
                 let _: fleet_sync_receiver::FollowUpCall<C::HookItem> = decode(target)?;
                 let item: C::HookItem = decode(request)?;

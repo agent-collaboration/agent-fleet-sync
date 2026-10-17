@@ -7,7 +7,10 @@ use crate::{
 };
 use fleet_sync_protocol::{ConsumerProtocol, DatabaseId};
 use fleet_sync_session::PeerAuthenticator;
-use fleet_sync_tokio_runner::{ObjectKey, ObjectOptions, ObjectStore, SessionHost, TokioRunner};
+use fleet_sync_tokio_runner::{
+    InstallCoordinator, InstallSnapshot, ObjectKey, ObjectOptions, ObjectStore, SessionHost,
+    StagingStore, TokioRunner,
+};
 use runtime_primitives::SystemClock;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -71,6 +74,26 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             )
             .await?;
         let registry_engine = Arc::new(registry_engine(registry.clone(), options.registry).await?);
+        let control = objects
+            .object(
+                ObjectKey::new("control").map_err(ServiceError::rule)?,
+                ObjectOptions::default(),
+                Arc::new(ServiceHost::new(call_router.clone(), SystemClock)),
+            )
+            .await?;
+        let installs = Arc::new(
+            InstallCoordinator::open(
+                control.clone(),
+                Arc::new(
+                    StagingStore::open(options.directory.join("staging"))
+                        .await
+                        .map_err(ServiceError::rule)?,
+                ),
+            )
+            .await?,
+        );
+        let mut control_engine = durable_steps::Engine::new(control.clone(), control.host());
+        control_engine.register(InstallSnapshot::new(control.host()))?;
         let state = Arc::new(ServiceState {
             options,
             consumer,
@@ -78,6 +101,15 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             objects: objects.clone(),
             registry,
             registry_engine,
+            control,
+            control_engine: Arc::new(control_engine),
+            installs,
+            sources: Mutex::new(BTreeMap::new()),
+            source_runners: Mutex::new(Vec::new()),
+            source_added: Notify::new(),
+            shutdown: watch::channel(false).0,
+            #[cfg(feature = "test-support")]
+            install_page_probe: Default::default(),
             copies: Mutex::new(BTreeMap::new()),
             copy_added: Notify::new(),
             sessions: OnceLock::new(),
@@ -147,7 +179,8 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
     ) -> Result<(), ServiceError> {
         let (app, mut incoming) = self.session_router();
         let app = app.merge(additional_routes);
-        let (stop, stopped) = watch::channel(false);
+        let stop = self.state.shutdown.clone();
+        let stopped = stop.subscribe();
         let mut server_shutdown = stopped.clone();
         let server = axum::serve(listener, app)
             .with_graceful_shutdown(async move {
@@ -175,6 +208,18 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 .await
                 .map_err(ServiceError::from)
         });
+        let control_runner = TokioRunner::new(
+            self.state.control_engine.clone(),
+            self.state.control.host(),
+            self.state.control.engine_lock(),
+        );
+        let control_stop = stopped.clone();
+        tasks.spawn(async move {
+            control_runner
+                .run(control_stop)
+                .await
+                .map_err(ServiceError::from)
+        });
         let mut started = BTreeSet::new();
         let mut server_finished = false;
         let result = loop {
@@ -183,10 +228,12 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             }
             self.start_copy_runners(&mut started, &mut tasks, &stopped)
                 .await;
+            self.start_source_runners(&mut tasks, &stopped).await;
             tokio::select! {
                 result=&mut server=>{server_finished=true;break result.map_err(ServiceError::io);}
                 changed=shutdown.changed()=>if changed.is_err() || *shutdown.borrow() {break Ok(());},
                 _=self.state.copy_added.notified()=>{},
+                _=self.state.source_added.notified()=>{},
                 accepted=incoming.recv()=>if let Some(accepted)=accepted {
                     let sessions=self.sessions.clone();let socket_timeout=self.state.options.socket_timeout;let shutdown=stopped.clone();
                     tasks.spawn(async move {
@@ -220,6 +267,9 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             }
         };
         stop.send_replace(true);
+        // An attachment admitted just before shutdown still has an owner. Run
+        // its shutdown path and join it before closing the native stores.
+        self.start_source_runners(&mut tasks, &stopped).await;
         incoming.close();
         while let Ok(accepted) = incoming.try_recv() {
             drop(accepted.socket);
@@ -273,6 +323,26 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                             detail: error.to_string(),
                         });
                     tracing::warn!(?database,%error,"copy runner unavailable");
+                }
+                Ok(())
+            });
+        }
+    }
+    async fn start_source_runners(
+        &self,
+        tasks: &mut JoinSet<Result<(), ServiceError>>,
+        shutdown: &watch::Receiver<bool>,
+    ) {
+        let runners = std::mem::take(&mut *self.state.source_runners.lock().await);
+        for mut source in runners {
+            let mut shutdown = shutdown.clone();
+            tasks.spawn(async move {
+                let result = tokio::select! {
+                    result=&mut source.run=>result,
+                    _=shutdown.changed()=>{source.stop.send_replace(true);source.run.await},
+                };
+                if let Err(error) = result {
+                    tracing::warn!(%error,"source session pump stopped");
                 }
                 Ok(())
             });

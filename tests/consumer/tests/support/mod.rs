@@ -18,8 +18,13 @@ pub struct ServiceProcess {
 }
 impl ServiceProcess {
     pub async fn start(path: &Path) -> TestResult<Self> {
+        Self::start_as(path, 3).await
+    }
+    pub async fn start_as(path: &Path, receiver: u128) -> TestResult<Self> {
         let mut child = Command::new(env!("CARGO_BIN_EXE_fleet-sync-test-consumer"))
             .arg(path)
+            .arg("0")
+            .arg(receiver.to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -116,7 +121,12 @@ pub async fn control_request(
     socket: &mut WebSocketConnection,
     request: ControlRequest,
 ) -> TestResult<ControlAnswer> {
-    let answer_timeout = if matches!(request, ControlRequest::WaitAttempts { .. }) {
+    let answer_timeout = if matches!(
+        request,
+        ControlRequest::WaitInstall { .. } | ControlRequest::WaitSourceUnattached { .. }
+    ) {
+        Duration::from_secs(65)
+    } else if matches!(request, ControlRequest::WaitAttempts { .. }) {
         Duration::from_secs(50)
     } else {
         Duration::from_secs(20)

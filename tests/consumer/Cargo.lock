@@ -820,6 +820,7 @@ dependencies = [
  "fleet-sync-receiver",
  "fleet-sync-service",
  "fleet-sync-session",
+ "fleet-sync-tokio-runner",
  "fleet-sync-transport-websocket",
  "fleet-sync-writer",
  "runtime-primitives",

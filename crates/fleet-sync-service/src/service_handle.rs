@@ -24,6 +24,12 @@ pub enum ImportSeedRequest {
 impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
     ServiceHandle<P, C, A>
 {
+    pub async fn database_statuses(
+        &self,
+        peer: PeerId,
+    ) -> Result<Vec<DatabaseStatus>, ServiceError> {
+        self.state.gather(peer).await
+    }
     pub async fn copy_status(
         &self,
         database: DatabaseId,

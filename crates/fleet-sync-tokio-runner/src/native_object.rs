@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ObjectOptions {
@@ -36,6 +36,7 @@ pub struct TokioObject<H: Host> {
     host: Arc<H>,
     /// A publish also acquires this lock before draining the file connection.
     pub(crate) engine_work: Arc<Mutex<()>>,
+    committed: watch::Sender<()>,
 }
 pub(crate) enum ObjectConnection {
     Open(Box<TursoConnection>),
@@ -82,6 +83,7 @@ impl<H: Host> ObjectStore<H> {
             connection: Mutex::new(ObjectConnection::Open(Box::new(connection))),
             host,
             engine_work: Arc::new(Mutex::new(())),
+            committed: watch::channel(()).0,
         });
         objects.insert(key, object.clone());
         Ok(object)
@@ -135,6 +137,14 @@ impl<H: Host> TokioObject<H> {
     }
     pub fn engine_lock(&self) -> Arc<Mutex<()>> {
         self.engine_work.clone()
+    }
+    /// Invalidation after an engine transaction commits. Readers subscribe
+    /// before reading domain state, then re-read after the next invalidation.
+    pub fn subscribe_commits(&self) -> watch::Receiver<()> {
+        self.committed.subscribe()
+    }
+    pub(crate) fn notify_committed(&self) {
+        self.committed.send_replace(());
     }
     pub async fn close(&self) -> Result<(), StoreError> {
         let _engine = self.engine_work.lock().await;
@@ -199,6 +209,8 @@ impl<H: Host> AtomicStore for TokioObject<H> {
             + Send
             + 'static,
     {
-        self.rule_transaction(run).await
+        let result = self.rule_transaction(run).await?;
+        self.notify_committed();
+        Ok(result)
     }
 }

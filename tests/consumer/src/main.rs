@@ -8,5 +8,15 @@ async fn main() -> fleet_sync_test_consumer::TestResult {
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(0);
-    fleet_sync_test_consumer::run_server(std::path::Path::new(&directory), port).await
+    let receiver = std::env::args()
+        .nth(3)
+        .map(|value| value.parse())
+        .transpose()?
+        .unwrap_or(3);
+    fleet_sync_test_consumer::run_server_with_receiver(
+        std::path::Path::new(&directory),
+        port,
+        receiver,
+    )
+    .await
 }

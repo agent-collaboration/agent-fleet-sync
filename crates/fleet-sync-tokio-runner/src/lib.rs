@@ -1,6 +1,8 @@
 //! Tokio owns files, locks, calls and timers; rules own domain decisions.
 
 mod call_host;
+mod client_pump;
+pub use client_pump::{SessionPump, SessionRequests};
 mod checked_native_queries;
 mod install_calls;
 mod install_contract;
