@@ -1,0 +1,20 @@
+[package]
+name = "fleet-sync-protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Transport-independent fleet replication and session frames"
+
+[dependencies]
+runtime-primitives = { path = "../runtime-primitives" }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10.9"
+thiserror.workspace = true
+turso_parser.workspace = true
+uuid = { version = "1.26.0", default-features = false, features = ["serde"] }
+
+[lints]
+workspace = true

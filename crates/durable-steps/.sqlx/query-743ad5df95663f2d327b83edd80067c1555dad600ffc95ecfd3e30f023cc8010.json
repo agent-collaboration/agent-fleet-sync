@@ -1,0 +1,20 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT operation_id AS \"operation_id!\" FROM _fleet_sync_operations WHERE kind = 'three-step-journey' AND request_key = 'journey'\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "operation_id!",
+        "type_info": {
+          "name": "TEXT"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "743ad5df95663f2d327b83edd80067c1555dad600ffc95ecfd3e30f023cc8010"
+}

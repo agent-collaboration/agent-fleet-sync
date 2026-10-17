@@ -1,0 +1,14 @@
+{
+  "name": "agent-fleet-sync",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:workerd": "node tests/workerd/run-workerd.mjs",
+    "test:durable-native": "node tests/durable-steps/run-native.mjs",
+    "test:durable-workerd": "node tests/durable-steps/run-workerd.mjs"
+  },
+  "devDependencies": {
+    "miniflare": "4.20260730.0"
+  },
+  "packageManager": "pnpm@12.11.2"
+}

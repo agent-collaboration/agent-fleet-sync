@@ -1,0 +1,496 @@
+{
+  "migrations": [
+    "migrations"
+  ],
+  "output": "src/checked_queries.rs",
+  "metadata": "checked-query-metadata.json",
+  "queries": [
+    {
+      "name": "read_copy",
+      "sql": "sql/read_copy.sql",
+      "row": "StoredCopyRow",
+      "result": "optional",
+      "parameters": []
+    },
+    {
+      "name": "write_copy",
+      "sql": "sql/write_copy.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_receipt",
+      "sql": "sql/read_receipt.sql",
+      "row": "StoredReceiptRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "identity",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_receipt",
+      "sql": "sql/write_receipt.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "identity",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "digest",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_parts",
+      "sql": "sql/read_parts.sql",
+      "row": "StoredPartRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "transaction_key",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_part",
+      "sql": "sql/write_part.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "transaction_key",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "part_index",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "staged_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "drop_parts",
+      "sql": "sql/drop_parts.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "transaction_key",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_schema_steps",
+      "sql": "sql/read_schema_steps.sql",
+      "row": "StoredSchemaStepRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "write_schema_step",
+      "sql": "sql/write_schema_step.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "version",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_fence_receipt",
+      "sql": "sql/read_fence_receipt.sql",
+      "row": "StoredFenceReceiptRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "transfer",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_fence_receipt",
+      "sql": "sql/write_fence_receipt.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "transfer",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "request",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "old_epoch",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "old_holder",
+          "kind": "text",
+          "nullable": true
+        },
+        {
+          "name": "result",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_epoch_fence",
+      "sql": "sql/read_epoch_fence.sql",
+      "row": "StoredEpochFenceRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "old_epoch",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_table_columns",
+      "sql": "sql/read_table_columns.sql",
+      "row": "StoredTableColumnRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "table",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_schema_entries",
+      "sql": "sql/read_schema_entries.sql",
+      "row": "StoredSchemaEntryRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "read_seed",
+      "sql": "sql/read_seed.sql",
+      "row": "StoredSeedRow",
+      "result": "optional",
+      "parameters": []
+    },
+    {
+      "name": "write_seed",
+      "sql": "sql/write_seed.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_seed_attempt",
+      "sql": "sql/read_seed_attempt.sql",
+      "row": "StoredSeedAttemptRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_seed_attempt",
+      "sql": "sql/write_seed_attempt.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_seed_page",
+      "sql": "sql/read_seed_page.sql",
+      "row": "StoredSeedPageRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "seed",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "page",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_seed_pages",
+      "sql": "sql/read_seed_pages.sql",
+      "row": "StoredSeedPagesRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "seed",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_seed_page",
+      "sql": "sql/write_seed_page.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "seed",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "page",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "digest",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "drop_seed_pages",
+      "sql": "sql/drop_seed_pages.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": []
+    },
+    {
+      "name": "read_creation",
+      "sql": "sql/read_creation.sql",
+      "row": "StoredCreationRow",
+      "result": "optional",
+      "parameters": []
+    },
+    {
+      "name": "write_creation",
+      "sql": "sql/write_creation.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "request",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_copy_tables",
+      "sql": "sql/read_copy_tables.sql",
+      "result": "many",
+      "row": "StoredCopyTableRow",
+      "parameters": []
+    },
+    {
+      "name": "write_copy_table",
+      "sql": "sql/write_copy_table.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": [
+        {
+          "name": "name",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "drop_copy_table",
+      "sql": "sql/drop_copy_table.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": [
+        {
+          "name": "name",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_hook_migrations",
+      "sql": "sql/read_hook_migrations.sql",
+      "result": "many",
+      "row": "StoredHookMigrationRow",
+      "parameters": []
+    },
+    {
+      "name": "write_hook_migration",
+      "sql": "sql/write_hook_migration.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": [
+        {
+          "name": "version",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "checksum",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "schema_object_exists",
+      "sql": "sql/schema_object_exists.sql",
+      "result": "exists",
+      "row": null,
+      "parameters": [
+        {
+          "name": "name",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "erase_receipts",
+      "sql": "sql/erase_receipts.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_staged_parts",
+      "sql": "sql/erase_staged_parts.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_fence_receipts",
+      "sql": "sql/erase_fence_receipts.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_schema_steps",
+      "sql": "sql/erase_schema_steps.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_seed",
+      "sql": "sql/erase_seed.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_seed_pages",
+      "sql": "sql/erase_seed_pages.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_seed_attempts",
+      "sql": "sql/erase_seed_attempts.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_creation",
+      "sql": "sql/erase_creation.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "erase_copy_tables",
+      "sql": "sql/erase_copy_tables.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
+    },
+    {
+      "name": "read_schema_owner",
+      "sql": "sql/read_schema_owner.sql",
+      "result": "optional",
+      "row": "StoredSchemaOwnerRow",
+      "parameters": [
+        {
+          "name": "name",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    }
+  ]
+}

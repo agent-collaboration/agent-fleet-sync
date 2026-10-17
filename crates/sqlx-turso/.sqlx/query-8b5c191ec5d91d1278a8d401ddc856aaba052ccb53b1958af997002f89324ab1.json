@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "INSERT INTO records (sequence, body) VALUES (?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "8b5c191ec5d91d1278a8d401ddc856aaba052ccb53b1958af997002f89324ab1"
+}

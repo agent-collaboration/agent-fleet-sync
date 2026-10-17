@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "DELETE FROM _fleet_sync_operations WHERE operation_id = ? AND drive_token = ? AND state = 'running'\n",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "00fb821306fbee487b91e35de1d120a7b0e217efdca60faa2bcdb33a0667a5d4"
+}

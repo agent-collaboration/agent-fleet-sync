@@ -1,0 +1,76 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT operation_id AS \"operation_id!\", position AS \"position!: i64\", step_name AS \"step_name!\", kind AS \"kind!\", intent, output, first_attempt_at AS \"first_attempt_at?: i64\", may_have_reached AS \"may_have_reached?: i64\"\nFROM _fleet_sync_steps WHERE operation_id = ? AND position = ?\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "operation_id!",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "position!: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "step_name!",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "kind!",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "intent",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "output",
+        "type_info": {
+          "name": "BLOB"
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "first_attempt_at?: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "may_have_reached?: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "e7656b67c306e18a8fb4f43750e630b787f3dc5ea7e84767330ef9cf4191c01e"
+}

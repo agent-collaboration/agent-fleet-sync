@@ -1,0 +1,20 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT operation_id AS \"operation_id!\" FROM _fleet_sync_operations\nWHERE state = 'running' AND next_attempt_at <= ?\n  AND (drive_until IS NULL OR drive_until <= ?)\nORDER BY next_attempt_at, operation_id\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "operation_id!",
+        "type_info": {
+          "name": "TEXT"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "36a04378fda45fda4449578ed403bfbf4e5fa574ca616487e61577155fe75609"
+}

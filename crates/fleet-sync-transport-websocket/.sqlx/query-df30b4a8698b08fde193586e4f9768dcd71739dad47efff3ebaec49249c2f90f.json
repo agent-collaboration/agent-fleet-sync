@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "INSERT INTO session_fixture_state(singleton, record) VALUES (1, ?) ON CONFLICT(singleton) DO UPDATE SET record=excluded.record",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "df30b4a8698b08fde193586e4f9768dcd71739dad47efff3ebaec49249c2f90f"
+}

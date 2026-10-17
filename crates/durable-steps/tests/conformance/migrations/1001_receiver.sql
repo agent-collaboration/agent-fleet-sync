@@ -1,0 +1,1 @@
+CREATE TABLE journey_receipts (call_id TEXT PRIMARY KEY NOT NULL, request INTEGER NOT NULL, answer INTEGER NOT NULL);

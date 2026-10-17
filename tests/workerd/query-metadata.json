@@ -1,0 +1,14 @@
+{
+  "columns": [
+    {
+      "name": "source_name",
+      "nullable": null,
+      "rust_type": "Option<String>",
+      "sql_type": "TEXT"
+    }
+  ],
+  "generated_sha256": "5934dd650545ab3ba898d4cc0a5aa83cabd599c5c3575eb2806b1ad445d8fa75",
+  "producer": "SQLx-Turso 0.1.93 / Turso 0.8.1 describe",
+  "query_sha256": "6efd936235d56c5a9e4b0f7e5a46a2e40ff81216c17e993102c850c6521350a9",
+  "schema_sha256": "7d319737f11bf58d913fa5501e321364736cc8fb7d9cf35b650859555b08292f"
+}

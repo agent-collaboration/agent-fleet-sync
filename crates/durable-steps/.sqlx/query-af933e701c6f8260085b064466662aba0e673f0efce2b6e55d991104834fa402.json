@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "INSERT INTO _fleet_sync_operations (\n    operation_id, kind, kind_version, request_key, input, input_digest, state,\n    result, failure, finished_at, next_attempt_at, attempt, drive_token, drive_until\n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "af933e701c6f8260085b064466662aba0e673f0efce2b6e55d991104834fa402"
+}

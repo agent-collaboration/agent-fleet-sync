@@ -1,0 +1,22 @@
+[package]
+name = "sqlx-durable-object-core"
+description = "Shared internals of the sqlx-cloudflare drivers; use sqlx-cloudflare-d1 or sqlx-durable-object"
+version = "0.2.0" # literal, not inherited -- see [workspace.package]
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"
+repository.workspace = true
+readme = "README.md"
+keywords = ["sqlx", "cloudflare", "workers", "sqlite"]
+categories = ["database", "wasm"]
+
+[lints]
+workspace = true
+
+[dependencies]
+sqlx-core = { workspace = true }
+wasm-bindgen = { workspace = true }
+js-sys = { workspace = true }
+
+[package.metadata.docs.rs]
+targets = ["wasm32-unknown-unknown"]

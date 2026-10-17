@@ -1,0 +1,7 @@
+error: expected exactly 1 column, got 2
+ --> tests/checked_query_diagnostics/fail/scalar_requires_one_column.rs:2:18
+  |
+2 |     let _query = sqlx_turso::query_scalar!(r#"SELECT 1 AS "id!: i64", 'alice' AS "name!""#);
+  |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `sqlx_turso::query_scalar` (in Nightly builds, run with -Z macro-backtrace for more info)

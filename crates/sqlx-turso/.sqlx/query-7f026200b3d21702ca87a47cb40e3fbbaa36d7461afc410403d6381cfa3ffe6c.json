@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "UPDATE tasks SET status = ?, revision = revision + 1 WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "7f026200b3d21702ca87a47cb40e3fbbaa36d7461afc410403d6381cfa3ffe6c"
+}

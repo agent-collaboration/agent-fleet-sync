@@ -1,0 +1,24 @@
+[package]
+name = "durable-steps-worker"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+durable-steps = { path = "../../../crates/durable-steps", features = ["durable-object"] }
+runtime-primitives = { workspace = true, features = ["durable-object"] }
+sqlx-core.workspace = true
+sqlx = { workspace = true, features = ["derive"] }
+sqlx-durable-object = { path = "../../../crates/sqlx-durable-object" }
+worker.workspace = true
+wasm-bindgen.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures-util.workspace = true
+uuid = { version = "1.26.0", default-features = false }
+
+[lints]
+workspace = true

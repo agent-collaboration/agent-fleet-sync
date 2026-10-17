@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "INSERT INTO journey_receipts(call_id, request, answer) VALUES (?, ?, ?)\n",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "edd9f354115241d9bf2c50e378ec1bf5a0dc5d6a377bab509fead00dc502d840"
+}

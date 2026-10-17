@@ -1,0 +1,68 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT position AS \"position!: i64\", epoch AS \"epoch!: i64\", kind AS \"kind!: String\",\n                      subject_id AS \"subject_id!: String\", request_id AS \"request_id!: String\",\n                      router_time AS \"router_time!: chrono::DateTime<chrono::Utc>\",\n                      payload AS \"payload!: String\"\n               FROM events ORDER BY position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "position!: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "epoch!: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "kind!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "subject_id!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "request_id!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "router_time!: chrono::DateTime<chrono::Utc>",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "payload!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2e4d66d340fa8e09266847dcce49979926f2c0272c1e24319110aade43d94ff4"
+}

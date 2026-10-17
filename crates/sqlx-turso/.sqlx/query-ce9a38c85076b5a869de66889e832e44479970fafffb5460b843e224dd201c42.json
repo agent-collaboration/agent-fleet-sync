@@ -1,0 +1,28 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT request_id AS \"request_id!: String\", decision AS \"decision!: String\"\n               FROM request_ledger ORDER BY request_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "request_id!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "decision!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "ce9a38c85076b5a869de66889e832e44479970fafffb5460b843e224dd201c42"
+}

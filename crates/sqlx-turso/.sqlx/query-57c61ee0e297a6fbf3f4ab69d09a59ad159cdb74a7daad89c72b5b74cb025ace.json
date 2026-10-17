@@ -1,0 +1,44 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT id AS \"id!: String\", milestone_id AS \"milestone_id!: String\",\n                      status AS \"status!: String\", revision AS \"revision!: i64\"\n               FROM tasks ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "milestone_id!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status!: String",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "revision!: i64",
+        "type_info": {
+          "name": "INTEGER"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "57c61ee0e297a6fbf3f4ab69d09a59ad159cdb74a7daad89c72b5b74cb025ace"
+}

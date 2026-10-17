@@ -1,0 +1,463 @@
+{
+  "migrations": [
+    "migrations"
+  ],
+  "output": "src/checked_queries.rs",
+  "metadata": "checked-query-metadata.json",
+  "queries": [
+    {
+      "name": "read_database",
+      "sql": "sql/read_database.sql",
+      "row": "StoredDatabaseRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_databases",
+      "sql": "sql/read_databases.sql",
+      "row": "StoredDatabaseIdentityRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "write_database",
+      "sql": "sql/write_database.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_lease",
+      "sql": "sql/read_lease.sql",
+      "row": "StoredLeaseRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_lease",
+      "sql": "sql/write_lease.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_floor",
+      "sql": "sql/read_floor.sql",
+      "row": "StoredFloorRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_floor",
+      "sql": "sql/write_floor.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "epoch",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_renewal",
+      "sql": "sql/read_renewal.sql",
+      "row": "StoredRenewalRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_renewal",
+      "sql": "sql/write_renewal.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_history",
+      "sql": "sql/read_history.sql",
+      "row": "StoredHistoryRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "epoch",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_history",
+      "sql": "sql/write_history.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "epoch",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_transfer",
+      "sql": "sql/read_transfer.sql",
+      "row": "StoredTransferRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_transfer",
+      "sql": "sql/write_transfer.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "intent",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "outcome",
+          "kind": "text",
+          "nullable": true
+        },
+        {
+          "name": "phase",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "phase_history",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_lifecycle",
+      "sql": "sql/read_lifecycle.sql",
+      "row": "StoredLifecycleRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_lifecycle",
+      "sql": "sql/write_lifecycle.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "intent",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "outcome",
+          "kind": "text",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "name": "active_transfer",
+      "sql": "sql/active_transfer.sql",
+      "row": "StoredActiveTransferRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_preview",
+      "sql": "sql/read_preview.sql",
+      "row": "StoredPreviewRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "token",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_preview",
+      "sql": "sql/write_preview.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "token",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "active_lifecycle",
+      "sql": "sql/active_lifecycle.sql",
+      "row": "StoredLifecycleRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "repair_transfer_epoch",
+      "sql": "sql/repair_transfer_epoch.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": [
+        {
+          "name": "intent",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_transfer_admission",
+      "sql": "sql/read_transfer_admission.sql",
+      "row": "StoredTransferAdmissionRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_transfer_admission",
+      "sql": "sql/write_transfer_admission.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "operation",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "request",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "requested_by",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "admitted_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "follow_up",
+          "kind": "text",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "name": "read_transfer_cancel",
+      "sql": "sql/read_transfer_cancel.sql",
+      "row": "StoredTransferCancelRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_transfer_cancel",
+      "sql": "sql/write_transfer_cancel.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_cleanup_failure",
+      "sql": "sql/write_cleanup_failure.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "cleanup_failed",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    }
+  ]
+}

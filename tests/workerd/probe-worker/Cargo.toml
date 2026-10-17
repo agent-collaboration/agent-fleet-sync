@@ -1,0 +1,16 @@
+[package]
+name = "probe-worker"
+version = "0.1.0"
+edition.workspace = true
+[lints]
+workspace = true
+[lib]
+crate-type = ["cdylib", "rlib"]
+[dependencies]
+probe-core = { path = "../probe-core" }
+sqlx-core.workspace = true
+futures-core.workspace = true
+sqlx-durable-object = { path = "../../../crates/sqlx-durable-object" }
+worker = { workspace = true, features = ["http", "axum"] }
+wasm-bindgen.workspace = true
+tower-service = "0.3"

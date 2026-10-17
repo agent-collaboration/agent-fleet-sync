@@ -1,0 +1,20 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT COALESCE(MAX(position), 0) + 1 AS \"next!: i64\" FROM events",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "next!: i64",
+        "type_info": {
+          "name": "NULL"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c42eb5dff6da1fcbf3f5d418375fd90fbe865603629b42ce866ca35d87715509"
+}

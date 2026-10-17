@@ -1,0 +1,20 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT MIN(CASE WHEN drive_until > next_attempt_at THEN drive_until ELSE next_attempt_at END) AS \"at?: i64\"\nFROM _fleet_sync_operations WHERE state = 'running'\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "at?: i64",
+        "type_info": {
+          "name": "NULL"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9677b3f87067dbc497a25b9c9df5aa323b6a9b8a25b53040076671960519bfa6"
+}

@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "INSERT INTO conformance_fk_children(id, parent_id) VALUES (1, 99)\n",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "77fea0e275fa58d8c704eeaed5ac4d5c81cfd2e964417597bd2b852a27018afb"
+}
