@@ -139,9 +139,15 @@ pub(crate) fn inspect(command: &Cmd) -> MigrationInspection {
                     ) {
                         inspection.function(&name);
                     }
-                    if matches!(name.as_str(),"date"|"time"|"datetime"|"julianday"|"unixepoch"|"strftime")
-                        && (args.is_empty() || (name=="strftime" && args.len()==1) || args.iter().any(|argument|matches!(argument.as_ref(),Expr::Literal(Literal::String(value)) if is_now_literal(value))))
-                    {inspection.function(&name);}
+                    if matches!(
+                        name.as_str(),
+                        "date" | "time" | "datetime" | "julianday" | "unixepoch" | "strftime"
+                    ) && (args.is_empty()
+                        || (name == "strftime" && args.len() == 1)
+                        || args.iter().any(|argument| is_now_argument(argument)))
+                    {
+                        inspection.function(&name);
+                    }
                     push_expressions(args, &mut pending);
                     push_sorted(order_by, &mut pending);
                     push_sorted(within_group, &mut pending);
@@ -259,13 +265,31 @@ fn enter_with<'sql>(
     }
 }
 
-fn is_now_literal(value: &str) -> bool {
-    value
-        .strip_prefix('\'')
-        .and_then(|value| value.strip_suffix('\''))
-        .unwrap_or(value)
-        .replace("''", "'")
-        .eq_ignore_ascii_case("now")
+fn is_now_argument(expression: &Expr) -> bool {
+    let mut pending = vec![expression];
+    let mut literal = String::new();
+    while let Some(expression) = pending.pop() {
+        match expression {
+            Expr::Literal(Literal::String(value)) => {
+                let value = value
+                    .strip_prefix('\'')
+                    .and_then(|value| value.strip_suffix('\''))
+                    .unwrap_or(value);
+                literal.push_str(&value.replace("''", "'"));
+            }
+            Expr::Parenthesized(expressions) if expressions.len() == 1 => {
+                if let Some(expression) = expressions.first() {
+                    pending.push(expression);
+                }
+            }
+            Expr::Binary(left, Operator::Concat, right) => {
+                pending.push(right);
+                pending.push(left);
+            }
+            _ => return false,
+        }
+    }
+    literal.eq_ignore_ascii_case("now")
 }
 
 fn push_expressions<'sql>(expressions: &'sql [Box<Expr>], pending: &mut Vec<MigrationNode<'sql>>) {
