@@ -44,6 +44,8 @@ mod native_object;
 mod native_publish;
 mod object_key;
 mod object_runner;
+#[cfg(test)]
+mod object_store_tests;
 mod session_host;
 mod session_peer_call;
 mod session_socket;

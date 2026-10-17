@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use tokio::sync::{Mutex, watch};
+use tokio::sync::{Mutex, OnceCell, watch};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ObjectOptions {
@@ -24,9 +24,13 @@ impl Default for ObjectOptions {
     }
 }
 
+type ObjectSlot<H> = OnceCell<Arc<TokioObject<H>>>;
+
 pub struct ObjectStore<H: Host> {
     directory: PathBuf,
-    objects: Mutex<BTreeMap<ObjectKey, Arc<TokioObject<H>>>>,
+    objects: Mutex<BTreeMap<ObjectKey, Arc<ObjectSlot<H>>>>,
+    #[cfg(test)]
+    pub(crate) initialization_connections: watch::Sender<(Option<ObjectKey>, usize)>,
 }
 pub struct TokioObject<H: Host> {
     key: ObjectKey,
@@ -51,6 +55,8 @@ impl<H: Host> ObjectStore<H> {
         Ok(Self {
             directory: directory.as_ref().into(),
             objects: Mutex::new(BTreeMap::new()),
+            #[cfg(test)]
+            initialization_connections: watch::channel((None, 0)).0,
         })
     }
     pub async fn object(
@@ -59,37 +65,56 @@ impl<H: Host> ObjectStore<H> {
         options: ObjectOptions,
         host: Arc<H>,
     ) -> Result<Arc<TokioObject<H>>, StoreError> {
-        let mut objects = self.objects.lock().await;
-        if let Some(object) = objects.get(&key) {
-            if object.options != options {
-                return Err(StoreError::Aborted {
-                    reason: "object connection options changed".into(),
-                });
-            }
-            return Ok(object.clone());
+        let slot = {
+            let mut objects = self.objects.lock().await;
+            objects
+                .entry(key.clone())
+                .or_insert_with(|| Arc::new(OnceCell::new()))
+                .clone()
+        };
+        // The cell coalesces only this key. Errors and dropped initializer
+        // futures release its permit so another acquisition can retry.
+        let object = slot
+            .get_or_try_init(|| async {
+                let path = self.directory.join(format!("{}.db", key.as_str()));
+                let mut connection = open_connection(&path, options).await?;
+                #[cfg(test)]
+                self.initialization_connections
+                    .send_modify(|(opened, count)| {
+                        *opened = Some(key.clone());
+                        *count += 1;
+                    });
+                let mut transaction = connection
+                    .begin_with("BEGIN IMMEDIATE")
+                    .await
+                    .map_err(StoreError::backend)?;
+                migrate_journal(&mut transaction).await?;
+                transaction.commit().await.map_err(StoreError::backend)?;
+                Ok::<_, StoreError>(Arc::new(TokioObject {
+                    key,
+                    path,
+                    options,
+                    connection: Mutex::new(ObjectConnection::Open(Box::new(connection))),
+                    host,
+                    engine_work: Arc::new(Mutex::new(())),
+                    committed: watch::channel(()).0,
+                }))
+            })
+            .await?;
+        if object.options != options {
+            return Err(StoreError::Aborted {
+                reason: "object connection options changed".into(),
+            });
         }
-        let path = self.directory.join(format!("{}.db", key.as_str()));
-        let mut connection = open_connection(&path, options).await?;
-        let mut transaction = connection
-            .begin_with("BEGIN IMMEDIATE")
-            .await
-            .map_err(StoreError::backend)?;
-        migrate_journal(&mut transaction).await?;
-        transaction.commit().await.map_err(StoreError::backend)?;
-        let object = Arc::new(TokioObject {
-            key: key.clone(),
-            path,
-            options,
-            connection: Mutex::new(ObjectConnection::Open(Box::new(connection))),
-            host,
-            engine_work: Arc::new(Mutex::new(())),
-            committed: watch::channel(()).0,
-        });
-        objects.insert(key, object.clone());
-        Ok(object)
+        Ok(object.clone())
     }
     pub async fn objects(&self) -> Vec<Arc<TokioObject<H>>> {
-        self.objects.lock().await.values().cloned().collect()
+        self.objects
+            .lock()
+            .await
+            .values()
+            .filter_map(|slot| slot.get().cloned())
+            .collect()
     }
     pub async fn close(&self) -> Result<(), StoreError> {
         for object in self.objects().await {
