@@ -10,6 +10,7 @@ mod holder_change_message;
 mod lease_message;
 mod lifecycle_message;
 mod piece_digest;
+mod replicated_key;
 mod replication_ids;
 mod replication_piece;
 mod replication_position;
@@ -29,6 +30,9 @@ pub use holder_change_message::*;
 pub use lease_message::*;
 pub use lifecycle_message::*;
 pub use piece_digest::*;
+pub use replicated_key::{
+    KeyColumnError, assigns_replicated_key, canonical_uuid_v7, replicated_key_columns,
+};
 pub use replication_ids::*;
 pub use replication_piece::*;
 pub use replication_position::*;

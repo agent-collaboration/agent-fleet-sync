@@ -74,6 +74,10 @@ impl ReceiverHook<TursoScope<'_>> for Hook {
         Ok(FollowUpDone)
     }
 }
+pub(super) fn uuid_key(index: i64) -> SqlValue {
+    let payload = u128::from(index.unsigned_abs()) & ((1_u128 << 62) - 1);
+    SqlValue::Text(uuid::Uuid::from_u128(0x019eef00000070008000000000000000 | payload).to_string())
+}
 pub(super) fn database() -> TestResult<DatabaseId> {
     Ok(DatabaseId::new(
         "019f0000-0000-7000-8000-000000000011".parse()?,
@@ -100,9 +104,11 @@ pub(super) fn piece(commit: u64, from: u64) -> TestResult<Piece> {
             commit_id: position(commit)?.sequence,
             rows: vec![RowChange::upsert(
                 "records",
-                vec![SqlValue::Integer(9_007_199_254_740_993)],
+                vec![SqlValue::Text(
+                    "019eef00-0000-7000-8000-000000000001".into(),
+                )],
                 vec![
-                    SqlValue::Integer(9_007_199_254_740_993),
+                    SqlValue::Text("019eef00-0000-7000-8000-000000000001".into()),
                     SqlValue::Text(format!("commit {commit}")),
                 ],
             )?],
@@ -122,7 +128,9 @@ pub(super) async fn connection_with_options(
     sqlx_core::raw_sql::raw_sql(concat!(
         include_str!("../migrations/0001_copy_rules.sql"),
         "\n",
-        include_str!("../migrations/0002_replicated_schema.sql")
+        include_str!("../migrations/0002_replicated_schema.sql"),
+        "\n",
+        include_str!("../migrations/0003_snapshot_install.sql")
     ))
     .execute(&mut *transaction)
     .await?;
@@ -145,7 +153,9 @@ pub(super) async fn connection_with_options(
         transactions: vec![ReplicatedTransaction::SchemaStep {
             commit_id: CommitSequence::new(1),
             migration_version: 1,
-            statements: vec!["CREATE TABLE records(id INTEGER PRIMARY KEY, body TEXT)".into()],
+            statements: vec![
+                "CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY, body TEXT)".into(),
+            ],
         }],
         part: None,
         annotation: None,
@@ -190,6 +200,6 @@ pub(super) async fn counts(
 
 // These are fixed valid fixture literals; an invalid code is a fixture authoring error.
 #[allow(clippy::expect_used)]
-fn fixture_refusal_code(code: &str) -> HookRefusalCode {
+pub(super) fn fixture_refusal_code(code: &str) -> HookRefusalCode {
     HookRefusalCode::new(code).expect("valid fixture refusal code")
 }

@@ -46,7 +46,7 @@ pub(super) async fn push_rows(
             ),
             migration_version: 1,
             statements: vec![
-                "CREATE TABLE records(id INTEGER PRIMARY KEY,body TEXT NOT NULL)".into(),
+                "CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY,body TEXT NOT NULL)".into(),
             ],
         });
     }
@@ -54,8 +54,13 @@ pub(super) async fn push_rows(
         commit_id: CommitSequence::new(commit),
         rows: vec![RowChange::upsert(
             "records",
-            vec![SqlValue::Integer(1)],
-            vec![SqlValue::Integer(1), SqlValue::Text("kept row".into())],
+            vec![SqlValue::Text(
+                "019eef00-0000-7000-8000-000000000001".into(),
+            )],
+            vec![
+                SqlValue::Text("019eef00-0000-7000-8000-000000000001".into()),
+                SqlValue::Text("kept row".into()),
+            ],
         )?],
     });
     let piece = Piece::<()>::new(PieceContents {
@@ -91,7 +96,7 @@ pub(super) async fn seed_import(host: &Arc<TestHost>) -> TestResult<ReplicationP
     )
     .await?;
     let position = ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(7));
-    let sql = "CREATE TABLE records(id INTEGER PRIMARY KEY, body TEXT NOT NULL)";
+    let sql = "CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY, body TEXT NOT NULL)";
     let schema = SchemaIdentity::new(
         3,
         schema_fingerprint(&[SchemaEntry {
@@ -100,7 +105,10 @@ pub(super) async fn seed_import(host: &Arc<TestHost>) -> TestResult<ReplicationP
             sql: sql.into(),
         }])?,
     )?;
-    let row = vec![SqlValue::Integer(1), SqlValue::Text("imported row".into())];
+    let row = vec![
+        SqlValue::Text("019eef00-0000-7000-8000-000000000001".into()),
+        SqlValue::Text("imported row".into()),
+    ];
     let contents = SnapshotPage {
         database: database()?,
         position,

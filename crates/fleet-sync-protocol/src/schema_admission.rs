@@ -37,6 +37,11 @@ pub struct SchemaAdmissionError {
 }
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SchemaAdmissionReason {
+    #[error("replicated key column {column:?} of {table} must be TEXT NOT NULL")]
+    KeyNotUuidV7 {
+        table: String,
+        column: Option<String>,
+    },
     #[error("statement form is not admitted")]
     DisallowedForm,
     #[error("protected schema object {name}")]
@@ -47,6 +52,31 @@ pub enum SchemaAdmissionReason {
     StatementCount,
 }
 pub fn admit_schema_statement(sql: &str) -> Result<(), SchemaAdmissionError> {
+    admit_schema_command(&parse_schema_statement(sql)?)
+}
+
+/// Replicated keys follow the UUIDv7 contract; local schema stays unrestricted.
+pub fn admit_replicated_schema_statement(sql: &str) -> Result<(), SchemaAdmissionError> {
+    admit_replicated_schema_command(&parse_schema_statement(sql)?)
+}
+
+pub fn admit_replicated_schema_command(
+    command: &turso_parser::ast::Cmd,
+) -> Result<(), SchemaAdmissionError> {
+    admit_schema_command(command)?;
+    if let Err(error) = crate::replicated_key_columns(command) {
+        return Err(SchemaAdmissionError {
+            form: statement_form(command),
+            reason: SchemaAdmissionReason::KeyNotUuidV7 {
+                table: error.table,
+                column: error.column,
+            },
+        });
+    }
+    Ok(())
+}
+
+fn parse_schema_statement(sql: &str) -> Result<turso_parser::ast::Cmd, SchemaAdmissionError> {
     let invalid = |error: turso_parser::error::Error| SchemaAdmissionError {
         form: SchemaStatementForm::InvalidSql,
         reason: SchemaAdmissionReason::InvalidSql {
@@ -67,7 +97,7 @@ pub fn admit_schema_statement(sql: &str) -> Result<(), SchemaAdmissionError> {
             reason: SchemaAdmissionReason::StatementCount,
         });
     }
-    admit_schema_command(&command)
+    Ok(command)
 }
 
 /// Apply schema policy to one parsed command. The caller owns SQL framing;

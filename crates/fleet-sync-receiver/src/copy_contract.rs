@@ -24,6 +24,10 @@ pub(crate) fn validate_copy_status(status: &CopyStatus) -> Result<(), StoreError
     deny_unknown_fields
 )]
 pub(crate) enum CopyRecord {
+    Starting {
+        status: CopyStatus,
+        install_id: uuid::Uuid,
+    },
     Seeding {
         status: CopyStatus,
         expected_position: Option<fleet_sync_protocol::ReplicationPosition>,
@@ -38,13 +42,25 @@ pub(crate) enum CopyRecord {
 impl CopyRecord {
     pub(crate) fn database(&self) -> DatabaseId {
         match self {
-            Self::Seeding { status, .. } | Self::Following(status) => status.database,
+            Self::Starting { status, .. }
+            | Self::Seeding { status, .. }
+            | Self::Following(status) => status.database,
             Self::Retired { database, .. } => *database,
         }
     }
     pub(crate) fn validate(&self) -> Result<(), StoreError> {
         match self {
-            Self::Seeding { status, .. } | Self::Following(status) => validate_copy_status(status),
+            Self::Starting { status, install_id }
+                if install_id.is_nil()
+                    || status.role != fleet_sync_protocol::CopyRole::Follower =>
+            {
+                Err(StoreError::Corrupt {
+                    field: "starting copy marker".into(),
+                })
+            }
+            Self::Starting { status, .. }
+            | Self::Seeding { status, .. }
+            | Self::Following(status) => validate_copy_status(status),
             Self::Retired { database, .. } if database.as_uuid().is_nil() => {
                 Err(StoreError::Corrupt {
                     field: "retired database".into(),

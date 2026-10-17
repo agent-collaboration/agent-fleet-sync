@@ -148,12 +148,19 @@ impl From<ReceiverError> for ApplyFailure {
             ReceiverError::SeedRefused { .. } => Self::Storage(StoreError::Corrupt {
                 field: "unexpected seed refusal during apply".into(),
             }),
+            ReceiverError::SchemaUnsupported { form } => {
+                Self::Refused(PieceRefusal::SchemaUnsupported { form })
+            }
         }
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ReceiverError {
+    #[error("unsupported replicated schema: {form:?}")]
+    SchemaUnsupported {
+        form: fleet_sync_protocol::SchemaStatementForm,
+    },
     #[error(transparent)]
     Storage(#[from] StoreError),
     #[error("invalid receiver input: {field}")]

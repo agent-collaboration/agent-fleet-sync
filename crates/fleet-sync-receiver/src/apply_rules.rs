@@ -187,7 +187,7 @@ fn unsupported_schema_form(transactions: &[ReplicatedTransaction]) -> Option<Sch
             return None;
         };
         statements.iter().find_map(|sql| {
-            fleet_sync_protocol::admit_schema_statement(sql)
+            fleet_sync_protocol::admit_replicated_schema_statement(sql)
                 .err()
                 .map(|error| error.form)
         })

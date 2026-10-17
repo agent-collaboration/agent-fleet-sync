@@ -46,7 +46,10 @@ async fn repeated_piece_returns_original_position_without_repeating_hook_writes(
     let row = sqlx_core::query::query::<Turso>("SELECT CAST(id AS TEXT) AS id,body FROM records")
         .fetch_one(&mut connection)
         .await?;
-    assert_eq!(row.try_get::<String, _>("id")?, "9007199254740993");
+    assert_eq!(
+        row.try_get::<String, _>("id")?,
+        "019eef00-0000-7000-8000-000000000001"
+    );
     assert_eq!(row.try_get::<String, _>("body")?, "commit 2");
     Ok(())
 }
@@ -178,13 +181,13 @@ async fn split_transaction_stays_invisible_until_final_and_failed_final_discards
         rows: vec![
             RowChange::upsert(
                 "records",
-                vec![SqlValue::Integer(1)],
-                vec![SqlValue::Integer(1), SqlValue::Text("first".into())],
+                vec![uuid_key(1)],
+                vec![uuid_key(1), SqlValue::Text("first".into())],
             )?,
             RowChange::upsert(
                 "records",
-                vec![SqlValue::Integer(2)],
-                vec![SqlValue::Integer(2), SqlValue::Text("second".into())],
+                vec![uuid_key(2)],
+                vec![uuid_key(2), SqlValue::Text("second".into())],
             )?,
         ],
     };
@@ -253,11 +256,8 @@ async fn split_transaction_stays_invisible_until_final_and_failed_final_discards
         commit_id: position(1)?.sequence,
         rows: vec![RowChange::upsert(
             "records",
-            vec![SqlValue::Integer(1)],
-            vec![
-                SqlValue::Integer(1),
-                SqlValue::Text("changed staged row".into()),
-            ],
+            vec![uuid_key(1)],
+            vec![uuid_key(1), SqlValue::Text("changed staged row".into())],
         )?],
     }];
     changed.digest = changed.recomputed_digest()?;
@@ -450,11 +450,8 @@ async fn snapshot_pages_use_primary_key_cursor_and_stop_when_position_moves() ->
         .map(|index| {
             RowChange::upsert(
                 "records",
-                vec![SqlValue::Integer(index)],
-                vec![
-                    SqlValue::Integer(index),
-                    SqlValue::Text(format!("row {index}")),
-                ],
+                vec![uuid_key(index)],
+                vec![uuid_key(index), SqlValue::Text(format!("row {index}"))],
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -505,10 +502,7 @@ async fn snapshot_pages_use_primary_key_cursor_and_stop_when_position_moves() ->
         return Err("unexpected move".into());
     };
     received.extend(page.rows.iter().filter_map(|row| row.first().cloned()));
-    assert_eq!(
-        received,
-        (0..260).map(SqlValue::Integer).collect::<Vec<_>>()
-    );
+    assert_eq!(received, (0..260).map(uuid_key).collect::<Vec<_>>());
     transaction.commit().await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     apply_piece(

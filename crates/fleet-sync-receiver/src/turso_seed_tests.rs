@@ -54,7 +54,9 @@ pub(super) async fn setup_with_holder(
     sqlx_core::raw_sql::raw_sql(concat!(
         include_str!("../migrations/0001_copy_rules.sql"),
         "\n",
-        include_str!("../migrations/0002_replicated_schema.sql")
+        include_str!("../migrations/0002_replicated_schema.sql"),
+        "\n",
+        include_str!("../migrations/0003_snapshot_install.sql")
     ))
     .execute(&mut *transaction)
     .await?;
@@ -72,7 +74,7 @@ pub(super) async fn setup_with_holder(
     Ok(connection)
 }
 pub(super) fn snapshot(seed: SeedId) -> TestResult<(SeedPage, SeedComplete)> {
-    let sql = "CREATE TABLE records(id INTEGER PRIMARY KEY, body TEXT)";
+    let sql = "CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY, body TEXT)";
     let schema = SchemaIdentity::new(
         3,
         schema_fingerprint(&[SchemaEntry {
@@ -82,8 +84,14 @@ pub(super) fn snapshot(seed: SeedId) -> TestResult<(SeedPage, SeedComplete)> {
         }])?,
     )?;
     let rows = vec![
-        vec![SqlValue::Integer(2), SqlValue::Text("two".into())],
-        vec![SqlValue::Integer(i64::MAX), SqlValue::Text("max".into())],
+        vec![
+            crate::turso_rule_fixture::uuid_key(2),
+            SqlValue::Text("two".into()),
+        ],
+        vec![
+            crate::turso_rule_fixture::uuid_key(i64::MAX),
+            SqlValue::Text("max".into()),
+        ],
     ];
     let mut digest = TableDigestBuilder::new();
     for row in &rows {
@@ -314,8 +322,8 @@ async fn copy_issues_rising_generations_and_repeat_attempt_does_not_replace_newe
     assert_eq!(
         values,
         vec![
-            ("2".into(), "two".into()),
-            ("9223372036854775807".into(), "max".into())
+            ("019eef00-0000-7000-8000-000000000002".into(), "two".into()),
+            ("019eef00-0000-7000-bfff-ffffffffffff".into(), "max".into())
         ]
     );
     Ok(())

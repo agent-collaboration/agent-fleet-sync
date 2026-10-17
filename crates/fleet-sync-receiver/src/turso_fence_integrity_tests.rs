@@ -92,8 +92,8 @@ async fn reopened_copy_keeps_old_fence_receipts_and_cutoffs_after_later_fences()
             commit_id: CommitSequence::new(1),
             rows: vec![RowChange::upsert(
                 "records",
-                vec![SqlValue::Integer(8)],
-                vec![SqlValue::Integer(8), SqlValue::Text("later epoch".into())],
+                vec![uuid_key(8)],
+                vec![uuid_key(8), SqlValue::Text("later epoch".into())],
             )?],
         }],
         part: None,

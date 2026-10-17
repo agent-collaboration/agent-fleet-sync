@@ -1,0 +1,289 @@
+{
+  "migrations": [
+    "migrations",
+    "query-schema"
+  ],
+  "output": "src/checked_queries.rs",
+  "metadata": "checked-query-metadata.json",
+  "queries": [
+    {
+      "name": "read_adoption_history",
+      "sql": "sql/read_adoption_history.sql",
+      "row": "StoredAdoptionHistoryRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "read_table_columns",
+      "sql": "sql/read_table_columns.sql",
+      "row": "StoredColumnRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "table",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_foreign_keys",
+      "sql": "sql/read_foreign_keys.sql",
+      "row": "StoredForeignKeyRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "table",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_schema_entries",
+      "sql": "sql/read_schema_entries.sql",
+      "row": "StoredSchemaEntryRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "read_writer",
+      "sql": "sql/read_writer.sql",
+      "row": "StoredWriterRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "write_writer",
+      "sql": "sql/write_writer.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_schema_steps",
+      "sql": "sql/read_schema_steps.sql",
+      "row": "StoredSchemaStepRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "write_schema_step",
+      "sql": "sql/write_schema_step.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "version",
+          "kind": "integer",
+          "nullable": false
+        },
+        {
+          "name": "statements",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "schema_layout",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_applied_migrations",
+      "sql": "sql/read_applied_migrations.sql",
+      "row": "StoredMigrationVersionRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "read_capture",
+      "sql": "sql/read_capture.sql",
+      "row": "StoredCaptureRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "after",
+          "kind": "integer",
+          "nullable": false
+        },
+        {
+          "name": "limit",
+          "kind": "integer",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "prune_capture",
+      "sql": "sql/prune_capture.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "through",
+          "kind": "integer",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_copies",
+      "sql": "sql/read_copies.sql",
+      "row": "StoredCopyRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "write_copy",
+      "sql": "sql/write_copy.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "copy_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_capture_assignment",
+      "sql": "sql/read_capture_assignment.sql",
+      "row": "StoredAssignmentRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "commit_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_capture_assignment",
+      "sql": "sql/write_capture_assignment.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "commit_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_capture_head",
+      "sql": "sql/read_capture_head.sql",
+      "row": "StoredCaptureHeadRow",
+      "result": "one",
+      "parameters": []
+    },
+    {
+      "name": "read_rejected_tails",
+      "sql": "sql/read_rejected_tails.sql",
+      "row": "StoredRejectedTailRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "write_rejected_tail",
+      "sql": "sql/write_rejected_tail.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "epoch",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "delete_rejected_tail",
+      "sql": "sql/delete_rejected_tail.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "epoch",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_releases",
+      "sql": "sql/read_releases.sql",
+      "row": "StoredReleaseRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "write_release",
+      "sql": "sql/write_release.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "database_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "call_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "clear_bootstrap_marker",
+      "sql": "sql/clear_bootstrap_marker.sql",
+      "result": "execute",
+      "parameters": []
+    },
+    {
+      "name": "clear_bootstrap_pages",
+      "sql": "sql/clear_bootstrap_pages.sql",
+      "result": "execute",
+      "parameters": []
+    },
+    {
+      "name": "clear_bootstrap_receiver_history",
+      "sql": "sql/clear_bootstrap_receiver_history.sql",
+      "result": "execute",
+      "parameters": []
+    },
+    {
+      "name": "clear_bootstrap_membership",
+      "sql": "sql/clear_bootstrap_membership.sql",
+      "result": "execute",
+      "parameters": []
+    }
+  ]
+}

@@ -4,9 +4,7 @@ use crate::{
     schema_reads::SchemaReads,
 };
 use durable_steps::storage::TransactionScope;
-use fleet_sync_protocol::{
-    SeedAnswer, SeedComplete, SeedPage, SqlValue, TableDigestBuilder, TableName,
-};
+use fleet_sync_protocol::{SeedAnswer, SeedComplete, SeedPage, TableDigestBuilder, TableName};
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
@@ -44,11 +42,8 @@ where
         }
     }
     for sql in &first.contents.schema_steps {
-        fleet_sync_protocol::admit_schema_statement(sql).map_err(|error| {
-            ReceiverError::InvalidInput {
-                field: error.to_string(),
-            }
-        })?;
+        fleet_sync_protocol::admit_replicated_schema_statement(sql)
+            .map_err(|error| ReceiverError::SchemaUnsupported { form: error.form })?;
     }
     crate::schema_membership::SchemaMembership(scope)
         .apply(&first.contents.schema_steps)
@@ -80,48 +75,7 @@ where
         .await?;
     }
     for page in pages {
-        if page.contents.table.is_empty() && page.contents.rows.is_empty() && tables.is_empty() {
-            continue;
-        }
-        if !tables.contains(&page.contents.table) {
-            return Err(ReceiverError::InvalidInput {
-                field: "seed table absent from schema".into(),
-            });
-        }
-        let columns = SchemaReads(scope)
-            .table_columns(&page.contents.table)
-            .await?;
-        let keys = primary_columns(&columns);
-        let column_sql = columns
-            .iter()
-            .map(|column| quoted_identifier(&column.name))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let placeholders = columns.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-        for row in &page.contents.rows {
-            if row.len() != columns.len()
-                || keys.iter().any(|key| {
-                    columns
-                        .iter()
-                        .position(|column| column.name == key.name)
-                        .and_then(|index| row.get(index))
-                        .is_none_or(|value| matches!(value, SqlValue::Null))
-                })
-            {
-                return Err(ReceiverError::InvalidInput {
-                    field: "seed row shape".into(),
-                });
-            }
-            BoundStatement::new(
-                format!(
-                    "INSERT INTO {}({column_sql}) VALUES({placeholders})",
-                    quoted_identifier(&page.contents.table)
-                ),
-                row.clone(),
-            )
-            .execute(scope)
-            .await?;
-        }
+        crate::snapshot_rows::insert_snapshot_rows(scope, &page.contents).await?;
     }
     for table in &tables {
         let columns = SchemaReads(scope).table_columns(table).await?;

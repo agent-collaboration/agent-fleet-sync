@@ -30,7 +30,9 @@ where
         };
         let mut status = match record {
             CopyRecord::Following(status) => status,
-            CopyRecord::Seeding { .. } => return Ok(FenceResult::NotInitialized),
+            CopyRecord::Starting { .. } | CopyRecord::Seeding { .. } => {
+                return Ok(FenceResult::NotInitialized);
+            }
             CopyRecord::Retired { .. } => return Ok(FenceResult::Retired),
         };
         if status.database != request.database {

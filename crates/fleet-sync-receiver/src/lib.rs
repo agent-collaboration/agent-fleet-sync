@@ -20,9 +20,21 @@ mod seed_rules;
 mod seed_storage;
 mod snapshot_follow_up;
 mod snapshot_hooks;
+mod snapshot_install;
+mod snapshot_install_contract;
+mod snapshot_install_fence;
+pub use snapshot_install_fence::{SNAPSHOT_REPLACED_TABLES, SnapshotFence};
+mod snapshot_install_storage;
+pub use snapshot_install::SnapshotInstallRules;
+pub use snapshot_install_contract::{
+    InstallPageReceipt, SnapshotInstall, SnapshotInstallError, SnapshotInstallState, SnapshotReady,
+};
 mod snapshot_manifest;
 mod snapshot_reads;
+mod snapshot_rows;
 mod sql_transport;
+#[cfg(test)]
+mod turso_snapshot_install_tests;
 
 pub use apply_follow_up::{ApplyFollowUp, FollowUpCall, FollowUpInput, admit_follow_ups};
 pub use apply_rules::{apply_piece, discard_staged_parts};
@@ -43,7 +55,11 @@ pub use sql_transport::StoreError;
 use sql_transport::{BoundStatement, BoundValue};
 
 #[cfg(test)]
+mod turso_autoincrement_tests;
+#[cfg(test)]
 mod turso_transport_tests;
+#[cfg(test)]
+mod turso_uuid_key_tests;
 
 #[cfg(test)]
 mod turso_rule_tests;

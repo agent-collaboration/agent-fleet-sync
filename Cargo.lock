@@ -830,6 +830,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "fleet-sync-service"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "durable-steps",
+ "fleet-sync-lease",
+ "fleet-sync-protocol",
+ "fleet-sync-receiver",
+ "fleet-sync-session",
+ "fleet-sync-tokio-runner",
+ "fleet-sync-transport-websocket",
+ "runtime-primitives",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "sqlx-core",
+ "sqlx-turso",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "fleet-sync-session"
 version = "0.1.0"
 dependencies = [
@@ -850,6 +874,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "fleet-sync-tokio-runner"
+version = "0.1.0"
+dependencies = [
+ "durable-steps",
+ "fleet-sync-lease",
+ "fleet-sync-protocol",
+ "fleet-sync-query-gen",
+ "fleet-sync-receiver",
+ "fleet-sync-session",
+ "fleet-sync-writer",
+ "futures-util",
+ "runtime-primitives",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "sqlx-core",
+ "sqlx-turso",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "turso",
+]
+
+[[package]]
 name = "fleet-sync-transport-websocket"
 version = "0.1.0"
 dependencies = [
@@ -866,6 +915,31 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "uuid",
+]
+
+[[package]]
+name = "fleet-sync-writer"
+version = "0.1.0"
+dependencies = [
+ "durable-steps",
+ "either",
+ "fleet-sync-lease",
+ "fleet-sync-protocol",
+ "fleet-sync-query-gen",
+ "fleet-sync-receiver",
+ "futures-core",
+ "futures-util",
+ "runtime-primitives",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "sqlx-core",
+ "sqlx-turso",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "turso",
+ "turso_parser",
 ]
 
 [[package]]

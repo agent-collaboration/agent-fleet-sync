@@ -1,0 +1,39 @@
+[package]
+name = "fleet-sync-writer"
+description = "Captured Turso writers, lease-gated admission and independent copy senders"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+test-support = []
+
+[dependencies]
+durable-steps = { path = "../durable-steps", features = ["turso"] }
+either.workspace = true
+fleet-sync-lease = { path = "../fleet-sync-lease" }
+fleet-sync-protocol = { path = "../fleet-sync-protocol" }
+fleet-sync-receiver = { path = "../fleet-sync-receiver" }
+futures-core.workspace = true
+futures-util.workspace = true
+runtime-primitives = { path = "../runtime-primitives", features = ["tokio"] }
+serde.workspace = true
+serde_json.workspace = true
+sqlx = { workspace = true, features = ["macros", "migrate"] }
+sqlx-core = { workspace = true, features = ["migrate", "offline"] }
+sqlx-turso.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs"] }
+turso.workspace = true
+turso_parser.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[build-dependencies]
+fleet-sync-query-gen = { path = "../fleet-sync-query-gen", default-features = false }
+

@@ -1,0 +1,144 @@
+{
+  "migrations": [
+    "query-schema",
+    "control-migrations"
+  ],
+  "output": "src/checked_native_queries.rs",
+  "metadata": "checked-query-metadata.json",
+  "queries": [
+    {
+      "name": "read_file_schema",
+      "sql": "sql/read_file_schema.sql",
+      "row": "NativeSchemaRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "read_file_columns",
+      "sql": "sql/read_file_columns.sql",
+      "row": "NativeColumnRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "table_name",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_local_sequences",
+      "sql": "sql/read_local_sequences.sql",
+      "row": "LocalSequenceRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "erase_local_sequence",
+      "sql": "sql/erase_local_sequence.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "table_name",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_local_sequence",
+      "sql": "sql/write_local_sequence.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "table_name",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "sequence_value",
+          "kind": "integer",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_install",
+      "sql": "sql/read_install.sql",
+      "row": "InstallRecordRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "install_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_current_install",
+      "sql": "sql/read_current_install.sql",
+      "row": "InstallRecordRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "target_key",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_target_installs",
+      "sql": "sql/read_target_installs.sql",
+      "row": "InstallRecordRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "target_key",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_install",
+      "sql": "sql/write_install.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "install_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "target_key",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_current_install",
+      "sql": "sql/write_current_install.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "target_key",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "install_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    }
+  ]
+}

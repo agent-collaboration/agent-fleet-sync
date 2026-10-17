@@ -9,7 +9,7 @@ use sqlx_turso::Turso;
 async fn schema_membership_indexes_and_views_roll_back_with_a_refused_hook() -> TestResult {
     let mut connection = connection().await?;
     let statements = vec![
-        "CREATE TABLE extra(id INTEGER PRIMARY KEY, body TEXT)".to_owned(),
+        "CREATE TABLE extra(id TEXT NOT NULL PRIMARY KEY, body TEXT)".to_owned(),
         "CREATE INDEX extra_body ON extra(body)".to_owned(),
         "CREATE VIEW extra_view AS SELECT id,body FROM extra".to_owned(),
     ];
@@ -58,7 +58,7 @@ async fn schema_membership_indexes_and_views_roll_back_with_a_refused_hook() -> 
         SchemaEntry {
             kind: SchemaObjectKind::Table,
             name: "records".into(),
-            sql: "CREATE TABLE records(id INTEGER PRIMARY KEY, body TEXT)".into(),
+            sql: "CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY, body TEXT)".into(),
         },
         SchemaEntry {
             kind: SchemaObjectKind::Table,
@@ -118,7 +118,7 @@ async fn hook_table_exists_but_never_enters_snapshot_pages_or_fingerprint() -> T
     let expected = schema_fingerprint(&[SchemaEntry {
         kind: SchemaObjectKind::Table,
         name: "records".into(),
-        sql: "CREATE TABLE records(id INTEGER PRIMARY KEY, body TEXT)".into(),
+        sql: "CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY, body TEXT)".into(),
     }])?;
     assert_eq!(status.schema.fingerprint, expected);
     let SnapshotRead::Page(page) = snapshot_page(&mut TursoScope(&mut transaction), None).await?

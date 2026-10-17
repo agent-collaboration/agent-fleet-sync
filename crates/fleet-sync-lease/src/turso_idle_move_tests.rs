@@ -85,9 +85,11 @@ async fn grant_and_replay(
 async fn assert_row(host: &TestHost, expected: &str) -> TestResult {
     let mut copies = host.copies.lock().await;
     let copy = copies.get_mut(&database()?).ok_or("copy missing")?;
-    let row = sqlx_core::query::query::<Turso>("SELECT body FROM records WHERE id=1")
-        .fetch_one(copy)
-        .await?;
+    let row = sqlx_core::query::query::<Turso>(
+        "SELECT body FROM records WHERE id='019eef00-0000-7000-8000-000000000001'",
+    )
+    .fetch_one(copy)
+    .await?;
     assert_eq!(row.try_get::<String, _>("body")?, expected);
     Ok(())
 }

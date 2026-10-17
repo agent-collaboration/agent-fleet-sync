@@ -22,8 +22,8 @@ pub(crate) fn plan_row_change(
     columns: &[TableColumn],
     row: &RowChange,
 ) -> Result<BoundStatement, StoreError> {
-    let invalid = |message: &str| StoreError::Constraint {
-        message: message.into(),
+    let invalid = |message: &str| StoreError::Corrupt {
+        field: message.into(),
     };
     let (table, key) = match row {
         RowChange::Upsert { table, key, .. } | RowChange::Delete { table, key } => (table, key),
@@ -35,8 +35,8 @@ pub(crate) fn plan_row_change(
     if columns.is_empty() || keys.is_empty() {
         return Err(invalid("replicated table must have a declared primary key"));
     }
-    if key.len() != keys.len() || key.iter().any(|value| matches!(value, SqlValue::Null)) {
-        return Err(invalid("row key does not match the declared primary key"));
+    if key.len() != keys.len() || key.iter().any(|value| !matches!(value, SqlValue::Text(key) if fleet_sync_protocol::canonical_uuid_v7(key))) {
+        return Err(StoreError::Corrupt {field: "replicated UUIDv7 row key".into()});
     }
     let table_name = quoted_identifier(table);
     match row {
@@ -128,19 +128,22 @@ mod tests {
         // The contract's key tuple is ordered by the declared PK, not by SELECT column order.
         let row = RowChange::delete(
             "records",
-            vec![SqlValue::Text("first".into()), SqlValue::Integer(i64::MAX)],
+            vec![
+                SqlValue::Text("019eef00-0000-7000-8000-000000000001".into()),
+                SqlValue::Text("019eef00-0000-7000-8000-000000000002".into()),
+            ],
         )
         .expect("delete");
         let planned = plan_row_change(&columns(), &row).expect("statement");
         assert_eq!(
             planned.sql().expect("SQL"),
-            "DELETE FROM \"records\" WHERE \"first_key\" = ?1 AND \"second_key\" = CAST(?2 AS INTEGER)"
+            "DELETE FROM \"records\" WHERE \"first_key\" = ?1 AND \"second_key\" = ?2"
         );
         assert_eq!(
             planned.parameters(),
             &[
-                BoundValue::Text("first".into()),
-                BoundValue::IntegerText(i64::MAX.to_string())
+                BoundValue::Text("019eef00-0000-7000-8000-000000000001".into()),
+                BoundValue::Text("019eef00-0000-7000-8000-000000000002".into())
             ]
         );
     }
@@ -148,13 +151,16 @@ mod tests {
     #[test]
     fn upsert_updates_non_key_columns_and_preserves_the_full_row_image() {
         let values = vec![
-            SqlValue::Integer(7),
+            SqlValue::Text("019eef00-0000-7000-8000-000000000002".into()),
             SqlValue::Blob(vec![0, 255]),
-            SqlValue::Text("first".into()),
+            SqlValue::Text("019eef00-0000-7000-8000-000000000001".into()),
         ];
         let row = RowChange::upsert(
             "records",
-            vec![SqlValue::Text("first".into()), SqlValue::Integer(7)],
+            vec![
+                SqlValue::Text("019eef00-0000-7000-8000-000000000001".into()),
+                SqlValue::Text("019eef00-0000-7000-8000-000000000002".into()),
+            ],
             values,
         )
         .expect("upsert");
@@ -164,9 +170,9 @@ mod tests {
         assert_eq!(
             planned.parameters(),
             &[
-                BoundValue::IntegerText("7".into()),
+                BoundValue::Text("019eef00-0000-7000-8000-000000000002".into()),
                 BoundValue::Blob(vec![0, 255]),
-                BoundValue::Text("first".into())
+                BoundValue::Text("019eef00-0000-7000-8000-000000000001".into())
             ]
         );
     }
@@ -174,19 +180,27 @@ mod tests {
     #[test]
     fn null_short_and_disagreeing_keys_are_refused_before_execution() {
         let images = vec![
-            SqlValue::Integer(7),
+            SqlValue::Text("019eef00-0000-7000-8000-000000000002".into()),
             SqlValue::Text("body".into()),
-            SqlValue::Text("first".into()),
+            SqlValue::Text("019eef00-0000-7000-8000-000000000001".into()),
         ];
         for key in [
-            vec![SqlValue::Null, SqlValue::Integer(7)],
-            vec![SqlValue::Text("first".into())],
-            vec![SqlValue::Text("other".into()), SqlValue::Integer(7)],
+            vec![
+                SqlValue::Null,
+                SqlValue::Text("019eef00-0000-7000-8000-000000000002".into()),
+            ],
+            vec![SqlValue::Text(
+                "019eef00-0000-7000-8000-000000000001".into(),
+            )],
+            vec![
+                SqlValue::Text("019eef00-0000-7000-8000-000000000003".into()),
+                SqlValue::Text("019eef00-0000-7000-8000-000000000002".into()),
+            ],
         ] {
             let row = RowChange::upsert("records", key, images.clone()).expect("row shape");
             assert!(matches!(
                 plan_row_change(&columns(), &row),
-                Err(StoreError::Constraint { .. })
+                Err(StoreError::Corrupt { .. })
             ));
         }
     }
@@ -195,8 +209,12 @@ mod tests {
     fn missing_primary_key_wrong_width_and_reserved_tables_are_refused() {
         let row = RowChange::upsert(
             "records",
-            vec![SqlValue::Integer(7)],
-            vec![SqlValue::Integer(7)],
+            vec![SqlValue::Text(
+                "019eef00-0000-7000-8000-000000000002".into(),
+            )],
+            vec![SqlValue::Text(
+                "019eef00-0000-7000-8000-000000000002".into(),
+            )],
         )
         .expect("row");
         assert!(
@@ -210,8 +228,13 @@ mod tests {
             .is_err()
         );
         assert!(plan_row_change(&columns(), &row).is_err());
-        let reserved =
-            RowChange::delete("_FlEeT_SyNc_copy", vec![SqlValue::Integer(7)]).expect("shape");
+        let reserved = RowChange::delete(
+            "_FlEeT_SyNc_copy",
+            vec![SqlValue::Text(
+                "019eef00-0000-7000-8000-000000000002".into(),
+            )],
+        )
+        .expect("shape");
         assert!(
             plan_row_change(
                 &[TableColumn {
@@ -228,8 +251,12 @@ mod tests {
     fn a_table_of_only_key_columns_uses_do_nothing_and_quotes_identifiers() {
         let row = RowChange::upsert(
             "odd\"table",
-            vec![SqlValue::Integer(7)],
-            vec![SqlValue::Integer(7)],
+            vec![SqlValue::Text(
+                "019eef00-0000-7000-8000-000000000002".into(),
+            )],
+            vec![SqlValue::Text(
+                "019eef00-0000-7000-8000-000000000002".into(),
+            )],
         )
         .expect("row");
         let planned = plan_row_change(
