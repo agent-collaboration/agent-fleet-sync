@@ -5,6 +5,10 @@
 
 mod actor_reference;
 mod crate_call_frame;
+mod delivery_identity;
+mod delivery_item;
+mod delivery_message;
+mod delivery_outcome;
 mod gate_message;
 mod holder_change_message;
 mod lease_message;
@@ -25,6 +29,10 @@ mod transaction_part;
 
 pub use actor_reference::*;
 pub use crate_call_frame::*;
+pub use delivery_identity::*;
+pub use delivery_item::*;
+pub use delivery_message::*;
+pub use delivery_outcome::*;
 pub use gate_message::*;
 pub use holder_change_message::*;
 pub use lease_message::*;

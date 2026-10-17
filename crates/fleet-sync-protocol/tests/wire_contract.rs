@@ -172,6 +172,7 @@ struct ConsumerRequest {
     text: String,
 }
 impl ConsumerProtocol for ExampleProtocol {
+    type Delivery = NoDelivery;
     type Request = ConsumerRequest;
     type Answer = u64;
     type ServerRequest = String;

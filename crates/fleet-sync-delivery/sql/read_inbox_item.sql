@@ -1,0 +1,1 @@
+SELECT item_id, record, payload, typeof(live) AS live_class, CAST(live AS TEXT) AS live, typeof(payload_bytes) AS payload_class, CAST(payload_bytes AS TEXT) AS payload_bytes, typeof(settlement_bytes) AS settlement_class, CAST(settlement_bytes AS TEXT) AS settlement_bytes FROM _fleet_sync_inbox_items WHERE item_id = ?1;

@@ -95,8 +95,14 @@ fn peer_session_lease_frames_exclude_administrative_operations() {
         OperationRequest::Lease(LeaseRequest::Claim { .. })
     ));
     let shell: OperationRequest = OperationRequest::Delivery(DeliveryRequest::Fetch {
+        call: CallId {
+            operation: OperationId(Uuid::from_u128(7)),
+            step: StepName::new("fetch").unwrap(),
+        },
         stream: DeliveryStream::Controls,
-        after: u64::MAX,
+        after: DeliverySeq::new(u64::MAX),
+        max_items: 10,
+        max_bytes: 4096,
     });
     let decoded: OperationRequest =
         serde_json::from_slice(&serde_json::to_vec(&shell).unwrap()).unwrap();
@@ -104,7 +110,7 @@ fn peer_session_lease_frames_exclude_administrative_operations() {
         decoded,
         OperationRequest::Delivery(DeliveryRequest::Fetch {
             stream: DeliveryStream::Controls,
-            after: u64::MAX
-        })
+            after, ..
+        }) if after.value() == u64::MAX
     ));
 }

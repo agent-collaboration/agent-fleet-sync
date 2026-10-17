@@ -1,0 +1,81 @@
+use crate::task_support::*;
+use crate::*;
+use durable_steps::{
+    AtomicStore, OperationContext, OperationFailure, Task, storage::TransactionScope,
+};
+use sqlx_core::{
+    arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
+    encode::Encode, types::Type,
+};
+use std::marker::PhantomData;
+
+pub struct ReportOutcome<S, Db, D> {
+    config: DeliveryTaskConfig,
+    store: TaskTypes<S, Db, D>,
+}
+impl<S, Db, D> ReportOutcome<S, Db, D> {
+    pub const fn new(config: DeliveryTaskConfig) -> Self {
+        Self {
+            config,
+            store: PhantomData,
+        }
+    }
+}
+impl<S, Db, D> Task for ReportOutcome<S, Db, D>
+where
+    S: AtomicStore,
+    Db: Database,
+    D: DeliveryTypes,
+    for<'t> S::Scope<'t>: TransactionScope<Database = Db>,
+    Db::Arguments: IntoArguments<Db>,
+    for<'v> String: Type<Db> + Encode<'v, Db>,
+    for<'v> Option<String>: Type<Db> + Decode<'v, Db> + Encode<'v, Db>,
+    for<'r> &'r str: ColumnIndex<Db::Row>,
+{
+    const KIND: &'static str = "fleet-sync.delivery.report-outcome";
+    const VERSION: u32 = 1;
+    const KEEP_RESULT: bool = false;
+    type Store = S;
+    type Input = ReportRef;
+    type Output = ();
+    async fn run<O: OperationContext<Store = S>>(
+        &self,
+        ctx: &mut O,
+        input: &ReportRef,
+    ) -> Result<(), OperationFailure> {
+        let input = *input;
+        let config = self.config;
+        let report = ctx
+            .local(step("read_report")?, move |scope| {
+                Box::pin(async move {
+                    Inbox::<_, D>::new(scope, config.owner, config.limits)
+                        .resolve_report(input)
+                        .await
+                        .map_err(step_error)
+                })
+            })
+            .await?;
+        let answer = ctx
+            .call(
+                step("report")?,
+                ReportCall::<D>::new(config.relay, config.owner),
+                report,
+            )
+            .await?;
+        if answer.item != input.item || answer.acknowledged < input.report_seq {
+            return Err(OperationFailure::InvalidPayload {
+                message: "report acknowledgment has another identity".into(),
+            });
+        }
+        ctx.local(step("retire_report")?, move |scope| {
+            Box::pin(async move {
+                Inbox::<_, D>::new(scope, config.owner, config.limits)
+                    .retire_report(input)
+                    .await
+                    .map_err(step_error)
+            })
+        })
+        .await?;
+        Ok(())
+    }
+}
