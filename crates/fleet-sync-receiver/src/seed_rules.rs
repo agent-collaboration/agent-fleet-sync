@@ -50,6 +50,7 @@ where
                 field: "seed attempt must be non-nil".into(),
             });
         }
+        let previous = SeedStorage(scope).load(database).await?;
         if let Some(seed) = SeedStorage(scope).attempt(attempt).await? {
             return Ok(seed);
         }
@@ -58,7 +59,6 @@ where
                 field: "copy is not seedable".into(),
             });
         }
-        let previous = SeedStorage(scope).load().await?;
         let generation = previous
             .as_ref()
             .map_or(0, |record| record.seed.generation)
@@ -107,7 +107,7 @@ where
         let CopyRecord::Seeding { status: copy, .. } = record else {
             return Ok(SeedPageAnswer::NotSeedable);
         };
-        let Some(record) = SeedStorage(scope).load().await? else {
+        let Some(record) = SeedStorage(scope).load(copy.database).await? else {
             return Ok(SeedPageAnswer::NotSeedable);
         };
         if page.seed < record.seed {
@@ -167,7 +167,7 @@ where
             return Err(ReceiverError::NotInitialized);
         }
         authorize_seed(scope, &copy, authority).await?;
-        let Some(mut seed) = SeedStorage(scope).load().await? else {
+        let Some(mut seed) = SeedStorage(scope).load(done.database).await? else {
             return Ok(crate::SeedDecision::Answer(SeedAnswer::StaleSeed));
         };
         if seed.seed != done.seed {

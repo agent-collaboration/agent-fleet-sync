@@ -284,3 +284,147 @@ async fn a_snapshot_hook_refusal_rolls_back_rows_ready_state_hook_writes_and_new
     assert_eq!(host.hook.snapshot_calls.load(Ordering::SeqCst), 2);
     Ok(())
 }
+
+async fn seed_identity_state(store: &TursoStore<TestHost>) -> TestResult<Vec<String>> {
+    Ok(store.transaction(|scope| Box::pin(async move {
+        let rows = sqlx_core::query::query::<Turso>("SELECT 'copy:'||record AS value FROM _fleet_sync_copy UNION ALL SELECT 'seed:'||record FROM _fleet_sync_seed UNION ALL SELECT 'attempt:'||attempt||':'||record FROM _fleet_sync_seed_attempts UNION ALL SELECT 'page:'||seed||':'||CAST(page AS TEXT)||':'||digest||':'||payload FROM _fleet_sync_seed_pages UNION ALL SELECT 'creation:'||request FROM _fleet_sync_creation UNION ALL SELECT 'hook:'||value FROM consumer_applied UNION ALL SELECT 'operation:'||operation_id||':'||state||':'||hex(input_digest) FROM _fleet_sync_operations UNION ALL SELECT 'schema:'||type||':'||name||':'||coalesce(sql,'') FROM sqlite_schema ORDER BY value").fetch_all(scope.executor()).await?;
+        rows.iter().map(|row| row.try_get("value").map_err(JournalError::from)).collect()
+    })).await?)
+}
+
+#[derive(Clone, Copy)]
+enum SeedIdentityAction {
+    Begin(durable_steps::Uuid),
+    Page(u32),
+    Complete,
+}
+
+async fn reject_stored_seed_database_mismatch(actions: &[SeedIdentityAction]) -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let host = host(&directory.path().join("consumer.db")).await?;
+    let store =
+        TursoStore::open_and_migrate(&directory.path().join("copy.db"), Arc::clone(&host)).await?;
+    let done = staged_seed(&store, Arc::clone(&host.hook)).await?;
+    let seed = done.seed;
+    let page = store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                let mut pages = crate::seed_storage::SeedStorage(scope)
+                    .pages(seed)
+                    .await
+                    .map_err(storage)?;
+                let page = pages
+                    .pop()
+                    .ok_or_else(|| storage("missing staged fixture page"))?;
+                let row = sqlx_core::query::query::<Turso>("SELECT record FROM _fleet_sync_seed")
+                    .fetch_one(scope.executor())
+                    .await?;
+                let mut record: crate::seed_storage::SeedRecord =
+                    serde_json::from_str(&row.try_get::<String, _>("record")?).map_err(storage)?;
+                record.database =
+                    DatabaseId::new(durable_steps::Uuid::from_u128(2401)).map_err(storage)?;
+                sqlx_core::query::query::<Turso>("UPDATE _fleet_sync_seed SET record = ?")
+                    .bind(serde_json::to_string(&record).map_err(storage)?)
+                    .execute(scope.executor())
+                    .await?;
+                Ok(page)
+            })
+        })
+        .await?;
+    let before = seed_identity_state(&store).await?;
+
+    for action in actions {
+        let action = *action;
+        let mut page = page.clone();
+        let done = done.clone();
+        let hook = Arc::clone(&host.hook);
+        // Return the typed rule error as data so the enclosing transaction commits.
+        let error = store
+            .transaction(move |scope| {
+                Box::pin(async move {
+                    let error = match action {
+                        SeedIdentityAction::Begin(attempt) => {
+                            seed_begin(scope, done.database, attempt, &SeedAuthority::Admin)
+                                .await
+                                .err()
+                        }
+                        SeedIdentityAction::Page(index) => {
+                            page.page = index;
+                            seed_page(scope, &page, &SeedAuthority::Admin).await.err()
+                        }
+                        SeedIdentityAction::Complete => {
+                            match seed_complete(scope, &done, &*hook, &SeedAuthority::Admin).await {
+                                Ok(SeedDecision::Published {
+                                    position,
+                                    follow_ups,
+                                }) => {
+                                    admit_snapshot_follow_ups::<TursoStore<TestHost>, String>(
+                                        scope,
+                                        &InstalledSnapshot {
+                                            database: done.database,
+                                            position,
+                                            schema: done.schema,
+                                        },
+                                        follow_ups,
+                                    )
+                                    .await
+                                    .map_err(storage)?;
+                                    None
+                                }
+                                Ok(SeedDecision::Answer(_)) => None,
+                                Err(error) => Some(error),
+                            }
+                        }
+                    };
+                    Ok(error)
+                })
+            })
+            .await?;
+        assert_eq!(
+            error,
+            Some(ReceiverError::Storage(StoreError::Corrupt {
+                field: "seed record database".into(),
+            }))
+        );
+        assert_eq!(seed_identity_state(&store).await?, before);
+        assert_eq!(host.hook.snapshot_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(host.hook.follow_up_calls.load(Ordering::SeqCst), 0);
+        store
+            .transaction(|scope| {
+                Box::pin(async move {
+                    assert_eq!(
+                        copy_status(scope).await.map_err(storage)?,
+                        CopyStatusAnswer::NotInitialized
+                    );
+                    Ok(())
+                })
+            })
+            .await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn seed_begin_rejects_another_stored_database_before_attempt_replay_or_generation()
+-> TestResult {
+    reject_stored_seed_database_mismatch(&[
+        SeedIdentityAction::Begin(durable_steps::Uuid::from_u128(2001)),
+        SeedIdentityAction::Begin(durable_steps::Uuid::from_u128(2402)),
+    ])
+    .await
+}
+
+#[tokio::test]
+async fn seed_page_rejects_another_stored_database_before_page_replay_or_staging() -> TestResult {
+    reject_stored_seed_database_mismatch(&[
+        SeedIdentityAction::Page(0),
+        SeedIdentityAction::Page(1),
+    ])
+    .await
+}
+
+#[tokio::test]
+async fn seed_complete_rejects_another_stored_database_before_publication_hook_or_admission()
+-> TestResult {
+    reject_stored_seed_database_mismatch(&[SeedIdentityAction::Complete]).await
+}

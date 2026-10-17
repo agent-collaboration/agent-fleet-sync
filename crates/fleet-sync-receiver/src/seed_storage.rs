@@ -29,7 +29,10 @@ where
     for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    pub(crate) async fn load(&mut self) -> Result<Option<SeedRecord>, StoreError> {
+    pub(crate) async fn load(
+        &mut self,
+        database: DatabaseId,
+    ) -> Result<Option<SeedRecord>, StoreError> {
         let Some(row) = checked_queries::read_seed(self.0)
             .await
             .map_err(crate::sql_transport::sql_error)?
@@ -37,6 +40,11 @@ where
             return Ok(None);
         };
         let record: SeedRecord = decode_record(row.record, "seed record")?;
+        if record.database != database {
+            return Err(StoreError::Corrupt {
+                field: "seed record database".into(),
+            });
+        }
         if record.seed.generation == 0
             || record
                 .published

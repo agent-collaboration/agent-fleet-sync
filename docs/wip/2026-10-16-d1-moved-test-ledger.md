@@ -2,7 +2,7 @@
 
 Source inventory: `crates/collaboration-central-core` at M3 commit `9cc19dd2`. All **163 test declarations** are accounted for: **70 adapted** to generic contracts and **93 excluded** with the outside-D1 reason below. A property declaration counts once; generated cases do not inflate the inventory. Adapted means the named generic obligation is exercised, with changed or excluded M3 assertions stated explicitly; it does not mean a byte-for-byte test move.
 
-The D1 test links resolve against this branch. The final-base workspace all-features suite passes 311 tests with zero failures and two inherited opt-in tests ignored; this includes all 58 receiver and 44 lease tests, with zero scoped ignores. Format, workspace clippy with warnings denied, query metadata freshness and wasm checks pass. This ledger does not claim hosted CI, process-kill, WebSocket, or D2 writer verification.
+The D1 test links resolve against this branch. The final-base workspace all-features suite passes 314 tests with zero failures and two inherited opt-in tests ignored; this includes all 61 receiver and 44 lease tests, with zero scoped ignores. Format, workspace clippy with warnings denied, query metadata freshness and wasm checks pass. This ledger does not claim hosted CI, process-kill, WebSocket, or D2 writer verification.
 
 Copy rules run against actual Turso transactions. Durable-operation tests use the actual engine and file-backed Turso journal, copy rules and call-keyed consumer gate receipts. Reopen cases close and reopen files in one process. Holder release/drain is a receipted stand-in for D2's writer; it cannot establish the real writer interaction. The controlled capacity case injects SQLITE_FULL after a real write, not physical disk exhaustion. Pure SQL planning and fragment assembly tests remain pure.
 
@@ -104,7 +104,7 @@ Approved adaptations: copy-first initialization replaces pending-lease publicati
 | `tests/import_claim.rs:195` | `claim_fences_before_grant_and_one_attempt_keeps_one_epoch_and_expiry` | Adapted: [T31](#d1-test-index), [T3](#d1-test-index) |
 | `tests/import_claim.rs:268` | `copy_fence_restore_guard_refuses_claim_without_grant_or_floor_repair` | Adapted: [T6](#d1-test-index). Unseeded copy refuses Unavailable and settles; the newly reserved floor remains 2 under the approved monotonic-reservation model. |
 | `tests/import_claim.rs:293` | `late_directory_ack_cannot_remove_a_newer_summary_outbox_row` | Excluded: board directory-summary outbox acknowledgement ordering; D1 defines neither directory rows nor that outbox. |
-| `tests/import_claim.rs:382` | `stored_import_metadata_for_another_project_is_rejected_explicitly` | Adapted: [T32](#d1-test-index) |
+| `tests/import_claim.rs:382` | `stored_import_metadata_for_another_project_is_rejected_explicitly` | Adapted: [T57](#d1-test-index); receiver seed metadata identity |
 | `tests/import_claim.rs:411` | `rerunning_import_repairs_the_copy_to_registry_publication_gap` | Adapted: [T33](#d1-test-index) |
 | `tests/import_claim.rs:444` | `claimed_copy_preserves_holder_change_floor_repair_semantics` | Adapted: [T34](#d1-test-index) |
 | `tests/lease_order.rs:34` | `fleet_incarnation_fence_advances_above_both_durable_and_offered_floors` | Excluded: board archive/Fleet/admission/directory behavior |
@@ -236,6 +236,7 @@ Approved adaptations: copy-first initialization replaces pending-lease publicati
 | T54 | [`absent_copy_and_floor_cannot_create_a_preview_or_manufacture_epoch_evidence`](../../crates/fleet-sync-lease/src/turso_epoch_proof_tests.rs#L205) |
 | T55 | [`fence_not_advanced_repairs_once_from_the_real_copys_proven_fence`](../../crates/fleet-sync-lease/src/turso_floor_repair_tests.rs#L93) |
 | T56 | [`a_mixed_case_reserved_row_target_cannot_change_copy_bookkeeping`](../../crates/fleet-sync-receiver/src/turso_integrity_tests.rs#L248) |
+| T57 | [`seed_complete_rejects_another_stored_database_before_publication_hook_or_admission`](../../crates/fleet-sync-receiver/src/turso_seed_hook_tests.rs#L427) |
 
 ## Additional final-target coverage
 
@@ -246,3 +247,5 @@ The paired observation also identified gaps in reserved-Claim refusal coverage a
 Decision 43 adds three real-Turso authority cases: writer-created copies accept only their original Writer, imported copies accept only Admin, and fencing to another current holder never rewrites creation authority. Unauthorized begin/new-generation/replay, existing/new page and completion calls commit their error transactions and leave the complete seed/copy/creation/schema readback unchanged, before and after publication. Retirement still precedes erased creation bookkeeping. These cases failed against the compilable authority-argument scaffold, then passed after authorization was wired.
 
 Additional real-store regressions cover successive idle Moves and Move immediately after Claim or Takeover, preserving predecessor positions/rows and exact request replay, with future releases still rejected. Five valid-shaped fence-receipt corruption cases exercise both replay and historical stale-piece consumption with unchanged persisted readbacks. These are new generic-contract regressions; the original 163 declaration dispositions remain unchanged.
+
+T57 retains the M3 copy-side metadata identity obligation at the receiver boundary. Three real-Turso regressions corrupt only the pending seed's database, then reject begin replay/new generation, page replay/new staging and completion with a typed corruption error. Committed error transactions preserve copy, seed, pages, attempts, creation, schema, hook rows and journal identities; no snapshot callback, new follow-up admission or transition to following occurs. T32 remains separate registry identity coverage and does not substitute for the receiver check. The inventory stays 70 adapted / 93 excluded; this corrects the adaptation target for the existing M3 declaration.
