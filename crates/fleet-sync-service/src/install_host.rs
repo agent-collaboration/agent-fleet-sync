@@ -12,6 +12,7 @@ use fleet_sync_tokio_runner::{
     InstallFile, InstallFileRequest, InstallFileResult, InstallHandle, InstallRecord,
     InstallRefusal, InstallRequest, InstallSource, PublishError, StagingError,
 };
+use runtime_primitives::{Clock, WakeScheduler};
 
 impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
     ServiceHandle<P, C, A>
@@ -42,6 +43,27 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
     }
     pub async fn wait_install(&self, install: Uuid) -> Result<InstallRecord, ServiceError> {
         Ok(self.state.installs.wait_for_attempt(install).await?)
+    }
+    #[cfg(feature = "test-support")]
+    pub async fn replay_snapshot_ready(&self, install: Uuid) -> Result<(), ServiceError> {
+        match self
+            .state
+            .install_file(
+                InstallFile {
+                    install_id: install,
+                },
+                InstallFileRequest::Ready,
+            )
+            .await
+            .map_err(ServiceError::rule)?
+        {
+            Ok(InstallFileResult::Outcome(fleet_sync_tokio_runner::InstallFileAnswer::Ready {
+                ..
+            })) => Ok(()),
+            _ => Err(ServiceError::rule(
+                "snapshot Ready replay did not return Ready",
+            )),
+        }
     }
 }
 impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
@@ -168,6 +190,14 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                     .await
                     .map(InstallFileResult::Outcome);
                 copy.changed.send_replace(());
+                // Ready admits work in the copy file, which has its own timer.
+                // Wake even if saving the later control receipt failed after
+                // that target transaction committed. A rollback admits nothing.
+                copy.object
+                    .host()
+                    .wake_at(copy.object.host().now())
+                    .await
+                    .map_err(lost)?;
                 answer
             }
         };

@@ -27,6 +27,9 @@ pub enum ControlRequest {
     WaitInstall {
         install: durable_steps::Uuid,
     },
+    ReplaySnapshotReady {
+        install: durable_steps::Uuid,
+    },
     HoldNextInstallPageAnswer,
     WaitStagedInstallPage,
     WaitSourceUnattached {
@@ -185,6 +188,10 @@ impl ControlState {
                 ),
                 ControlRequest::InstallRecord { install } => {
                     ControlAnswer::Install(self.service.install_record(install).await?)
+                }
+                ControlRequest::ReplaySnapshotReady { install } => {
+                    self.service.replay_snapshot_ready(install).await?;
+                    ControlAnswer::Ok
                 }
                 ControlRequest::WaitInstall { install } => ControlAnswer::Install(
                     tokio::time::timeout(

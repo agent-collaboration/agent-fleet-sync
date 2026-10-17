@@ -1,144 +1,19 @@
+#[path = "support/snapshot.rs"]
+mod snapshot;
 #[allow(dead_code, unused_imports)]
 mod support;
-use fleet_sync_lease::LeasePolicy;
 use fleet_sync_protocol::*;
 use fleet_sync_test_consumer::*;
 use fleet_sync_tokio_runner::{InstallRecord, InstallStatus};
 use fleet_sync_transport_websocket::WebSocketConnection;
-use fleet_sync_writer::*;
-use runtime_primitives::{Clock, SystemClock};
+use snapshot::prepare_source;
 use sqlx_core::{
     connection::{ConnectOptions, Connection},
     query::query,
     row::Row,
 };
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use support::*;
-use tokio::sync::Mutex;
 
-struct Annotation;
-impl PieceAnnotation for Annotation {
-    type Protocol = SampleProtocol;
-    fn annotate(&self, _: &[CapturedTransaction<'_>]) -> Option<String> {
-        None
-    }
-}
-struct SourceTransport(Mutex<WebSocketConnection>);
-impl ReplicationTransport<SampleProtocol> for SourceTransport {
-    async fn send_piece(
-        &self,
-        _: ReceiverId,
-        piece: Piece<String>,
-    ) -> Result<ReplicationAnswer, SendFailure> {
-        match request(
-            &mut *self.0.lock().await,
-            OperationRequest::Replication(ReplicationRequest::Piece(piece)),
-        )
-        .await
-        .map_err(|error| SendFailure::Unavailable {
-            message: error.to_string(),
-        })? {
-            OperationAnswer::Replication(answer) => Ok(answer),
-            _ => Err(SendFailure::AnswerLost),
-        }
-    }
-}
-async fn prepare_source(
-    process: &ServiceProcess,
-    root: &std::path::Path,
-) -> TestResult<(DatabaseId, BTreeMap<String, Vec<Vec<SqlValue>>>)> {
-    let peer = PeerId::new(durable_steps::Uuid::from_u128(2))?;
-    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
-    let writer = Arc::new(
-        ReplicatedDatabase::create(
-            &root.join("source-writer.db"),
-            SampleSchema::new()?,
-            peer,
-            LeasePolicy {
-                lease_duration: Duration::from_secs(600),
-                renew_interval: Duration::from_secs(30),
-            },
-            WriterOptions::default(),
-        )
-        .await?,
-    );
-    let database = writer.database();
-    let mut socket = process
-        .peer(2, SessionId::new(durable_steps::Uuid::now_v7())?)
-        .await?;
-    let lease = match request(
-        &mut socket,
-        OperationRequest::Lease(LeaseRequest::Register(Registration {
-            attempt: RequestId::new(durable_steps::Uuid::now_v7())?,
-            database,
-            writer: peer,
-            origin: Origin::Empty,
-        })),
-    )
-    .await?
-    {
-        OperationAnswer::Lease(LeaseAnswer::Register(RegistrationAnswer::Registered {
-            lease,
-            ..
-        })) => lease,
-        _ => return Err("source registration did not complete".into()),
-    };
-    let started = SystemClock.now();
-    let renewed = match request(
-        &mut socket,
-        OperationRequest::Lease(LeaseRequest::Renew(RenewRequest {
-            attempt: RequestId::new(durable_steps::Uuid::now_v7())?,
-            database,
-            epoch: lease.epoch,
-        })),
-    )
-    .await?
-    {
-        OperationAnswer::Lease(LeaseAnswer::Renew(answer)) => answer,
-        _ => return Err("source renewal did not complete".into()),
-    };
-    writer.observe_renewal(renewed, started).await?;
-    let mut write = writer.begin_write().await?;
-    for index in 0..300 {
-        insert_sample(
-            &mut write,
-            format!("019eef00-0000-7000-8000-{index:012x}"),
-            format!("sample-{index}"),
-            9_007_199_254_740_993,
-            vec![0, 255, 128],
-        )
-        .await?;
-    }
-    insert_reading(
-        &mut write,
-        "019eef00-0000-7000-8001-000000000001".into(),
-        3.25,
-    )
-    .await?;
-    write.commit().await?;
-    let transport = Arc::new(SourceTransport(Mutex::new(socket)));
-    let sender = ReplicationSender::new(
-        writer,
-        Arc::new(Annotation),
-        Arc::new(()),
-        transport.clone(),
-        SenderOptions::default(),
-    );
-    sender
-        .add_copy(
-            receiver,
-            CopyRole::Authoritative,
-            ReplicationPosition::new(lease.epoch, CommitSequence::new(0)),
-        )
-        .await?;
-    sender.replicate_once(receiver).await?;
-    // The initial migration and the data write are two captured commits;
-    // replicate_once owns one commit at a time.
-    sender.replicate_once(receiver).await?;
-    let expected = copy_rows(&mut *transport.0.lock().await, database).await?;
-    assert_eq!(expected.get("samples").map(Vec::len), Some(300));
-    Ok((database, expected))
-}
 async fn install_answer(
     control: &mut WebSocketConnection,
     request: ControlRequest,
@@ -242,6 +117,27 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
         InstallStatus::Ready { snapshot } => snapshot.position,
         status => return Err(format!("install did not reach ready: {status:?}").into()),
     };
+    // No peer read/status request may supply the copy's missing wake.
+    let installed_effect =
+        match control_request(&mut control, ControlRequest::WaitEffects { count: 1 }).await? {
+            ControlAnswer::Effects(receipts) if receipts.len() == 1 => receipts
+                .into_iter()
+                .next()
+                .ok_or("snapshot effect missing")?,
+            _ => return Err("snapshot hook follow-up did not run while target was idle".into()),
+        };
+    assert_eq!(installed_effect.saved.effect.database, database);
+    assert_eq!(installed_effect.saved.effect.position, installed_position);
+    assert_eq!(installed_effect.saved.effect.annotation, "snapshot");
+    assert_eq!(installed_effect.attempts, 1);
+    control_request(
+        &mut control,
+        ControlRequest::ReplaySnapshotReady { install: attempt },
+    )
+    .await?;
+    assert!(
+        matches!(control_request(&mut control, ControlRequest::Effects).await?, ControlAnswer::Effects(receipts) if receipts.len()==1 && receipts.first().is_some_and(|receipt| receipt.saved==installed_effect.saved))
+    );
     let mut target_peer = restarted
         .peer(5, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
@@ -284,11 +180,96 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
     }
     assert_eq!(total_rows, 301);
     file.close().await?;
+    let resumed = ServiceProcess::start_as(&target_path, 4).await?;
+    let mut control = resumed
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    control_request(
+        &mut control,
+        ControlRequest::ReplaySnapshotReady { install: attempt },
+    )
+    .await?;
+    assert!(
+        matches!(control_request(&mut control, ControlRequest::Effects).await?, ControlAnswer::Effects(receipts) if receipts.len()==1 && receipts.first().is_some_and(|receipt| receipt.saved==installed_effect.saved))
+    );
+    resumed.stop(&mut control).await?;
     let mut source_control = source.connect("control", "Bearer consumer-control").await?;
     source.stop(&mut source_control).await?;
     println!(
         "OBS real attached SessionClient/WebSocket source: same install and first page receipt survive process kill; unattached source returns retryable NotSent; reattachment completes four pages once with 301 exact rows"
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn refused_snapshot_ready_rolls_back_hook_rows_and_follow_up_admission() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let source = ServiceProcess::start_as(&root.path().join("source"), 3).await?;
+    let (database, _) = prepare_source(&source, root.path()).await?;
+    let target_path = root.path().join("refusing-target");
+    let target = ServiceProcess::start_as(&target_path, 4).await?;
+    let mut control = target.connect("control", "Bearer consumer-control").await?;
+    control_request(
+        &mut control,
+        ControlRequest::SetHookFailure { enabled: true },
+    )
+    .await?;
+    let source_receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
+    control_request(
+        &mut control,
+        ControlRequest::AttachSource {
+            receiver: source_receiver,
+            peer: 6,
+            endpoint: format!("ws://127.0.0.1:{}/session", source.port),
+        },
+    )
+    .await?;
+    let attempt = durable_steps::Uuid::now_v7();
+    install_answer(
+        &mut control,
+        ControlRequest::InstallSnapshot {
+            attempt,
+            database,
+            source: source_receiver,
+        },
+    )
+    .await?;
+    let failed = install_answer(
+        &mut control,
+        ControlRequest::WaitInstall { install: attempt },
+    )
+    .await?;
+    assert!(matches!(failed.status, InstallStatus::Failed { .. }));
+    assert!(
+        matches!(control_request(&mut control, ControlRequest::Effects).await?, ControlAnswer::Effects(receipts) if receipts.is_empty())
+    );
+    target.stop(&mut control).await?;
+    let live = target_path.join("service").join(format!(
+        "copy-{}-{}.db",
+        durable_steps::Uuid::from_u128(4),
+        database.as_uuid()
+    ));
+    let mut file = sqlx_turso::TursoConnectOptions::new()
+        .filename(live)
+        .create_if_missing(false)
+        .foreign_keys(false)
+        .connect()
+        .await?;
+    for sql in [
+        "SELECT count(*) AS total FROM hook_events",
+        "SELECT count(*) AS total FROM _fleet_sync_operations WHERE kind='fleet-sync.apply-follow-up'",
+    ] {
+        assert_eq!(
+            query::<sqlx_turso::Turso>(sql)
+                .fetch_one(&mut file)
+                .await?
+                .try_get::<i64, _>("total")?,
+            0
+        );
+    }
+    file.close().await?;
+    let mut control = source.connect("control", "Bearer consumer-control").await?;
+    source.stop(&mut control).await?;
     Ok(())
 }
 
