@@ -139,10 +139,10 @@ async fn actual_move_ack_and_fence_calls_retry_damage_across_restart_without_end
                 _ => return Err("copy marker fault missing".into()),
             };
             control_request(&mut control, ControlRequest::CopyFault(CopyFaultRequest::ReleaseCall { database })).await?;
-            wait_copy(&mut control, attempt).await?;
             // Freeze the receiver decision before shutdown can create a newer
             // NotSent attempt with no receiver-reason metadata.
             control_request(&mut control, ControlRequest::Schema(SchemaControlRequest::HoldRegistryDrive)).await?;
+            wait_copy(&mut control, attempt).await?;
             Ok(original)
         }.await;
         holder.close(CloseReason::ClientClosed).await;
@@ -156,12 +156,33 @@ async fn actual_move_ack_and_fence_calls_retry_damage_across_restart_without_end
             .connect("control", "Bearer consumer-control")
             .await?;
         let retained: TestResult = async {
-            wait_copy(&mut control, attempt).await?;
+            // Finish the resumed retry before arming the next real copy call.
             control_request(
                 &mut control,
                 ControlRequest::Schema(SchemaControlRequest::HoldRegistryDrive),
             )
             .await?;
+            control_request(&mut control, ControlRequest::CopyFault(CopyFaultRequest::HoldCall { database, kind })).await?;
+            control_request(&mut control, ControlRequest::Schema(SchemaControlRequest::ReleaseRegistryDrive)).await?;
+            assert!(matches!(control_request(&mut control, ControlRequest::CopyFault(CopyFaultRequest::WaitCall { database })).await?, ControlAnswer::CopyCall(call) if call.step.as_str() == step));
+            let ControlAnswer::HolderChangeView(Some(dispatching)) = control_request(&mut control, ControlRequest::HolderChangeView { attempt }).await? else {
+                return Err("missing held retry view".into());
+            };
+            let dispatching = dispatching.waiting.ok_or("missing held retry")?;
+            assert_eq!(dispatching.reach, durable_steps::storage::CallReach::Dispatching);
+            assert!(matches!(dispatching.copy_unavailable, Some(CopyUnavailableReason::Damaged { .. })));
+            eprintln!("held {kind:?} retry: Dispatching with retained Damaged reason");
+            let mut release = reopened.connect("control", "Bearer consumer-control").await?;
+            let (waiting, released) = tokio::join!(wait_copy(&mut control, attempt), async {
+                // The waiter must read the held Dispatching state before release.
+                assert!(matches!(control_request(&mut release, ControlRequest::CopyFault(CopyFaultRequest::WaitCopyWaiter { database })).await?, ControlAnswer::CopyWaiter(durable_steps::storage::CallReach::Dispatching)));
+                control_request(&mut release, ControlRequest::CopyFault(CopyFaultRequest::ReleaseCall { database })).await?;
+                Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+            });
+            released?;
+            waiting?;
+            release.close(CloseReason::ClientClosed).await;
+            control_request(&mut control, ControlRequest::Schema(SchemaControlRequest::HoldRegistryDrive)).await?;
             Ok(())
         }
         .await;

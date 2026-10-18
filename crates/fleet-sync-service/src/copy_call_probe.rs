@@ -1,6 +1,6 @@
 //! Test-only scheduling at the existing copy-call boundary, before any SQL.
 use crate::ServiceError;
-use durable_steps::CallId;
+use durable_steps::{CallId, storage::CallReach};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{Mutex, watch};
@@ -14,6 +14,7 @@ pub enum CopyCallKind {
 struct Hold {
     kind: CopyCallKind,
     observed: watch::Sender<Option<CallId>>,
+    waiting_observed: watch::Sender<Option<CallReach>>,
     released: watch::Sender<bool>,
 }
 #[derive(Default)]
@@ -29,6 +30,7 @@ impl CopyCallProbe {
         *held = Some(Arc::new(Hold {
             kind,
             observed: watch::channel(None).0,
+            waiting_observed: watch::channel(None).0,
             released: watch::channel(false).0,
         }));
         Ok(())
@@ -68,6 +70,26 @@ impl CopyCallProbe {
     pub async fn release(&self) {
         if let Some(held) = self.held.lock().await.take() {
             held.released.send_replace(true);
+        }
+    }
+    pub async fn observe_waiter(&self, reach: CallReach) {
+        if let Some(held) = self.held.lock().await.as_ref() {
+            held.waiting_observed.send_replace(Some(reach));
+        }
+    }
+    pub async fn wait_for_waiter(&self) -> Result<CallReach, ServiceError> {
+        let held = self
+            .held
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(|| ServiceError::rule("no copy call held"))?;
+        let mut observed = held.waiting_observed.subscribe();
+        loop {
+            if let Some(reach) = *observed.borrow() {
+                return Ok(reach);
+            }
+            observed.changed().await.map_err(ServiceError::rule)?;
         }
     }
 }

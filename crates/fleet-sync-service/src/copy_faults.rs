@@ -30,6 +30,17 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
         self.state.copy(database).await?.call_probe.release().await;
         Ok(())
     }
+    pub async fn wait_copy_waiter_for_test(
+        &self,
+        database: DatabaseId,
+    ) -> Result<durable_steps::storage::CallReach, ServiceError> {
+        self.state
+            .copy(database)
+            .await?
+            .call_probe
+            .wait_for_waiter()
+            .await
+    }
     pub async fn hold_copy_drive_for_test(
         &self,
         database: DatabaseId,
@@ -75,14 +86,34 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
     ) -> Result<fleet_sync_lease::HolderChangeView, ServiceError> {
         let mut changed = self.state.registry.subscribe_commits();
         loop {
-            if let Some(view) = self.holder_change_view(attempt).await?
-                && (view
-                    .waiting
-                    .as_ref()
-                    .is_some_and(|waiting| waiting.copy_unavailable.is_some())
-                    || view.outcome.is_some())
-            {
-                return Ok(view);
+            if let Some(view) = self.holder_change_view(attempt).await? {
+                if let Some(waiting) = &view.waiting {
+                    let database = match &view.request {
+                        fleet_sync_protocol::HolderChangeRequest::Move { database, .. }
+                        | fleet_sync_protocol::HolderChangeRequest::Takeover { database, .. }
+                        | fleet_sync_protocol::HolderChangeRequest::Claim { database, .. } => {
+                            *database
+                        }
+                    };
+                    let copy = self
+                        .state
+                        .copies
+                        .lock()
+                        .await
+                        .get(&database)
+                        .and_then(|slot| slot.get())
+                        .cloned();
+                    if let Some(copy) = copy {
+                        copy.call_probe.observe_waiter(waiting.reach).await;
+                    }
+                }
+                if view.waiting.as_ref().is_some_and(|waiting| {
+                    waiting.copy_unavailable.is_some()
+                        && waiting.reach == durable_steps::storage::CallReach::NoEffect
+                }) || view.outcome.is_some()
+                {
+                    return Ok(view);
+                }
             }
             changed.changed().await.map_err(ServiceError::rule)?;
         }

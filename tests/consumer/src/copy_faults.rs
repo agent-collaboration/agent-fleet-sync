@@ -11,6 +11,9 @@ pub enum CopyFaultRequest {
     WaitCall {
         database: DatabaseId,
     },
+    WaitCopyWaiter {
+        database: DatabaseId,
+    },
     ReleaseCall {
         database: DatabaseId,
     },
@@ -61,6 +64,13 @@ impl ControlState {
                 self.service.release_copy_call_for_test(database).await?;
                 Ok(ControlAnswer::Ok)
             }
+            CopyFaultRequest::WaitCopyWaiter { database } => Ok(ControlAnswer::CopyWaiter(
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(15),
+                    self.service.wait_copy_waiter_for_test(database),
+                )
+                .await??,
+            )),
             CopyFaultRequest::HoldDrive { database } => {
                 let mut held = self.copy_drives.lock().await;
                 if held.contains_key(&database) {

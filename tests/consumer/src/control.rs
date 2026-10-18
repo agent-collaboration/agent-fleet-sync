@@ -158,6 +158,7 @@ pub enum ControlAnswer {
     CopyWakeFailures(u64),
     CopyMarker(String),
     CopyCall(durable_steps::CallId),
+    CopyWaiter(durable_steps::storage::CallReach),
     Install(fleet_sync_tokio_runner::InstallRecord),
     Staged(fleet_sync_receiver::InstallPageReceipt),
     #[cfg(feature = "test-support")]
