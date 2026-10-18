@@ -34,6 +34,8 @@ mod snapshot_reads;
 mod snapshot_rows;
 mod sql_transport;
 #[cfg(test)]
+mod turso_install_identity_tests;
+#[cfg(test)]
 mod turso_snapshot_install_tests;
 
 pub use apply_follow_up::{ApplyFollowUp, FollowUpCall, FollowUpInput, admit_follow_ups};

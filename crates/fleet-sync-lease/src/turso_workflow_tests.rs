@@ -80,7 +80,7 @@ async fn precheck_admission_binds_distinct_ids_and_preserves_first_requester_and
             })
         })
         .await?;
-    assert_ne!(admitted.id().0, id.as_uuid());
+    assert_ne!(admitted.id().as_uuid(), id.as_uuid());
     let before = view(&store, id).await?;
     assert_eq!(before.request, request);
     assert_eq!(before.requested_by, actor("first-admin")?);

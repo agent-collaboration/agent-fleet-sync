@@ -13,7 +13,7 @@ use sqlx_turso::Turso;
 pub enum ImportSeedRequest {
     Begin {
         database: DatabaseId,
-        attempt: durable_steps::Uuid,
+        attempt: SeedAttemptId,
     },
     Page(SeedPage),
     Complete(SeedComplete),

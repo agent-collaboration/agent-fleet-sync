@@ -5,13 +5,7 @@ use turso_parser::ast::{
 
 /// Replicated identities use one spelling and one UUID version. Local keys are
 /// outside this contract; SQL affinity alone never proves a replicated key.
-pub fn canonical_uuid_v7(value: &str) -> bool {
-    uuid::Uuid::parse_str(value).is_ok_and(|id| {
-        id.get_version_num() == 7
-            && id.get_variant() == uuid::Variant::RFC4122
-            && id.hyphenated().to_string() == value
-    })
-}
+pub use runtime_primitives::canonical_uuid_v7;
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("replicated key column {column:?} of {table} must be TEXT NOT NULL")]

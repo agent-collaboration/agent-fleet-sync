@@ -14,8 +14,8 @@ fn sync_time(value: i64) -> SyncTime {
 }
 fn identities() -> TestResult<(DatabaseId, PeerId)> {
     Ok((
-        DatabaseId::new(Uuid::from_u128(1))?,
-        PeerId::new(Uuid::from_u128(2))?,
+        DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000001))?,
+        PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002))?,
     ))
 }
 fn policy() -> LeasePolicy {
@@ -89,7 +89,7 @@ fn replay_after_takeover_supersedes_and_late_old_answers_cannot_restore_writes()
     let (database, peer) = identities()?;
     let mut holder = LeaseHolder::provisional(database, peer, policy());
     holder.observe_registration(lease(database, peer, 1, 100)?, sync_time(0))?;
-    let new_peer = PeerId::new(Uuid::from_u128(3))?;
+    let new_peer = PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000003))?;
     holder.observe_renewal(
         answer(lease(database, new_peer, 2, 100)?, 1)?,
         sync_time(10),
@@ -119,7 +119,7 @@ fn seeding_draining_and_released_keep_the_gate_closed_across_same_epoch_renewals
         WriterState::Seeding { epoch }
     );
     holder.complete_seed(epoch)?;
-    let transfer = TransferId::new(Uuid::from_u128(4))?;
+    let transfer = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000004))?;
     holder.begin_draining(transfer)?;
     holder.observe_renewal(answer(lease(database, peer, 2, 100)?, 2)?, sync_time(10))?;
     assert_eq!(

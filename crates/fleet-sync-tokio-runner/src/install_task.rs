@@ -5,7 +5,7 @@ use crate::{
 };
 use durable_steps::{
     BoxFuture, Host, OperationContext, OperationFailure, RequestKey, Resume, StepName, StoreError,
-    Task, Uuid, turso_store::TursoScope,
+    Task, turso_store::TursoScope,
 };
 use fleet_sync_receiver::SnapshotInstall;
 use std::sync::Arc;
@@ -29,7 +29,8 @@ impl<H: Host> Task for InstallSnapshot<H> {
         ctx: &mut C,
         input: &InstallRequest,
     ) -> Result<InstallRecord, OperationFailure> {
-        let first = input.attempt;
+        let first = fleet_sync_protocol::InstallId::new(input.attempt.as_uuid())
+            .map_err(|error| invalid(&error.to_string()))?;
         let mut record = ctx
             .local(step("start")?, move |scope| {
                 Box::pin(async move { Ok(InstallRecords(scope).get(first).await?) })
@@ -142,7 +143,13 @@ impl<H: Host> Task for InstallSnapshot<H> {
                             if !matches!(previous.status, InstallStatus::Running { .. }) {
                                 return Ok(previous);
                             }
-                            Ok(records.reserve(&request, host.new_id()).await?)
+                            Ok(records
+                                .reserve(
+                                    &request,
+                                    fleet_sync_protocol::InstallId::new(host.new_id())
+                                        .map_err(StoreError::backend)?,
+                                )
+                                .await?)
                         })
                     })
                     .await?;
@@ -244,7 +251,9 @@ pub(crate) fn request_key(request: &InstallRequest) -> Result<RequestKey, StoreE
     ))
     .map_err(StoreError::backend)
 }
-fn parse_key(key: &RequestKey) -> Result<(crate::ObjectKey, Uuid), StoreError> {
+fn parse_key(
+    key: &RequestKey,
+) -> Result<(crate::ObjectKey, fleet_sync_protocol::InstallAttemptId), StoreError> {
     let (target, attempt) = key
         .as_str()
         .strip_prefix("install:")
@@ -252,7 +261,8 @@ fn parse_key(key: &RequestKey) -> Result<(crate::ObjectKey, Uuid), StoreError> {
         .ok_or_else(|| corrupt("invalid install request key"))?;
     Ok((
         crate::ObjectKey::new(target).map_err(StoreError::backend)?,
-        Uuid::parse_str(attempt).map_err(StoreError::backend)?,
+        fleet_sync_protocol::InstallAttemptId::try_from(attempt.to_owned())
+            .map_err(StoreError::backend)?,
     ))
 }
 fn step(name: impl Into<String>) -> Result<StepName, OperationFailure> {

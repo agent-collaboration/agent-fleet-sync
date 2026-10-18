@@ -136,7 +136,9 @@ fn policy() -> LeasePolicy {
     }
 }
 fn peer() -> TestResult<PeerId> {
-    Ok(PeerId::new(Uuid::from_u128(2))?)
+    Ok(PeerId::new(Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?)
 }
 async fn create(
     path: &std::path::Path,

@@ -2,7 +2,7 @@ use crate::{
     ServiceConsumer, ServiceError, ServiceHandle, ServiceHost, ServiceObject, call_router::lost,
     service_state::ServiceState,
 };
-use durable_steps::{CallFailure, Uuid};
+use durable_steps::CallFailure;
 use fleet_sync_protocol::*;
 use fleet_sync_receiver::{
     SnapshotInstallError, SnapshotInstallRules, SnapshotReady, admit_snapshot_follow_ups,
@@ -19,7 +19,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
 {
     pub async fn install_snapshot(
         &self,
-        attempt: Uuid,
+        attempt: InstallAttemptId,
         database: DatabaseId,
         source: ReceiverId,
     ) -> Result<InstallHandle<ServiceHost>, ServiceError> {
@@ -38,14 +38,17 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             .await
             .map_err(ServiceError::rule)
     }
-    pub async fn install_record(&self, install: Uuid) -> Result<InstallRecord, ServiceError> {
+    pub async fn install_record(&self, install: InstallId) -> Result<InstallRecord, ServiceError> {
         Ok(self.state.installs.record(install).await?)
     }
-    pub async fn wait_install(&self, install: Uuid) -> Result<InstallRecord, ServiceError> {
+    pub async fn wait_install(
+        &self,
+        install: InstallAttemptId,
+    ) -> Result<InstallRecord, ServiceError> {
         Ok(self.state.installs.wait_for_attempt(install).await?)
     }
     #[cfg(feature = "test-support")]
-    pub async fn replay_snapshot_ready(&self, install: Uuid) -> Result<(), ServiceError> {
+    pub async fn replay_snapshot_ready(&self, install: InstallId) -> Result<(), ServiceError> {
         match self
             .state
             .install_file(

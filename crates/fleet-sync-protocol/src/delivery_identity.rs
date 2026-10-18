@@ -6,12 +6,12 @@ use uuid::Uuid;
 pub struct ItemIdentityError;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[serde(try_from = "Uuid", into = "Uuid")]
+#[serde(try_from = "String", into = "String")]
 pub struct ItemId(Uuid);
 
 impl ItemId {
     pub fn new(value: Uuid) -> Result<Self, ItemIdentityError> {
-        (value.get_version_num() == 7 && value.get_variant() == uuid::Variant::RFC4122)
+        runtime_primitives::uuid_v7(value)
             .then_some(Self(value))
             .ok_or(ItemIdentityError)
     }
@@ -28,6 +28,20 @@ impl TryFrom<Uuid> for ItemId {
 impl From<ItemId> for Uuid {
     fn from(value: ItemId) -> Self {
         value.0
+    }
+}
+impl TryFrom<String> for ItemId {
+    type Error = ItemIdentityError;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if !crate::canonical_uuid_v7(&value) {
+            return Err(ItemIdentityError);
+        }
+        Self::new(Uuid::parse_str(&value).map_err(|_| ItemIdentityError)?)
+    }
+}
+impl From<ItemId> for String {
+    fn from(value: ItemId) -> Self {
+        value.0.to_string()
     }
 }
 

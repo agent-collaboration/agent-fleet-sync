@@ -129,7 +129,10 @@ impl Clock for TestHost {
 }
 impl IdSource for TestHost {
     fn new_id(&self) -> Uuid {
-        Uuid::from_u128(u128::from(self.ids.fetch_add(1, Ordering::SeqCst)))
+        Uuid::from_u128(
+            (u128::from(self.ids.fetch_add(1, Ordering::SeqCst)))
+                | 0x019eef00000070008000000000000000,
+        )
     }
 }
 impl WakeScheduler for TestHost {

@@ -33,8 +33,11 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
     let target_path = root.path().join("target");
     let mut target = ServiceProcess::start_as(&target_path, 4).await?;
     let mut control = target.connect("control", "Bearer consumer-control").await?;
-    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
-    let attempt = durable_steps::Uuid::now_v7();
+    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000003,
+    ))?;
+    let attempt = InstallAttemptId::new(durable_steps::Uuid::now_v7())?;
+    let install_id = InstallId::new(attempt.as_uuid())?;
     let started = install_answer(
         &mut control,
         ControlRequest::InstallSnapshot {
@@ -44,7 +47,7 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
         },
     )
     .await?;
-    assert_eq!(started.install_id, attempt);
+    assert_eq!(started.install_id, install_id);
     control_request(
         &mut control,
         ControlRequest::WaitSourceUnattached { receiver },
@@ -53,7 +56,9 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
     assert!(matches!(
         install_answer(
             &mut control,
-            ControlRequest::InstallRecord { install: attempt }
+            ControlRequest::InstallRecord {
+                install: install_id
+            }
         )
         .await?
         .status,
@@ -73,7 +78,7 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
         ControlAnswer::Staged(receipt) => receipt,
         _ => return Err("page commit was not observed".into()),
     };
-    assert_eq!(staged.install_id, attempt);
+    assert_eq!(staged.install_id, install_id);
     assert_eq!(staged.page, 0);
     assert_eq!(staged.rows, 1);
     target.kill().await?;
@@ -92,10 +97,12 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
     .await?;
     let waiting = install_answer(
         &mut control,
-        ControlRequest::InstallRecord { install: attempt },
+        ControlRequest::InstallRecord {
+            install: install_id,
+        },
     )
     .await?;
-    assert_eq!(waiting.install_id, attempt);
+    assert_eq!(waiting.install_id, install_id);
     assert!(matches!(waiting.status, InstallStatus::Running { .. }));
     control_request(
         &mut control,
@@ -111,7 +118,7 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
         ControlRequest::WaitInstall { install: attempt },
     )
     .await?;
-    assert_eq!(ready.install_id, attempt);
+    assert_eq!(ready.install_id, install_id);
     assert_eq!(ready.generation, 1);
     let installed_position = match ready.status {
         InstallStatus::Ready { snapshot } => snapshot.position,
@@ -132,7 +139,9 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
     assert_eq!(installed_effect.attempts, 1);
     control_request(
         &mut control,
-        ControlRequest::ReplaySnapshotReady { install: attempt },
+        ControlRequest::ReplaySnapshotReady {
+            install: install_id,
+        },
     )
     .await?;
     assert!(
@@ -149,7 +158,7 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
 
     let live = target_path.join("service").join(format!(
         "copy-{}-{}.db",
-        durable_steps::Uuid::from_u128(4),
+        durable_steps::Uuid::from_u128(0x019eef00000070008000000000000004),
         database.as_uuid()
     ));
     let mut file = sqlx_turso::TursoConnectOptions::new()
@@ -172,7 +181,7 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
         );
         let receipt: fleet_sync_receiver::InstallPageReceipt =
             serde_json::from_str(&row.try_get::<String, _>("record")?)?;
-        assert_eq!(receipt.install_id, attempt);
+        assert_eq!(receipt.install_id, install_id);
         total_rows += receipt.rows;
         if expected_page == 0 {
             assert_eq!(receipt, staged);
@@ -186,7 +195,9 @@ async fn attached_websocket_source_resumes_same_install_after_process_kill_and_w
         .await?;
     control_request(
         &mut control,
-        ControlRequest::ReplaySnapshotReady { install: attempt },
+        ControlRequest::ReplaySnapshotReady {
+            install: install_id,
+        },
     )
     .await?;
     assert!(
@@ -214,7 +225,9 @@ async fn refused_snapshot_ready_rolls_back_hook_rows_and_follow_up_admission() -
         ControlRequest::SetHookFailure { enabled: true },
     )
     .await?;
-    let source_receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
+    let source_receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000003,
+    ))?;
     control_request(
         &mut control,
         ControlRequest::AttachSource {
@@ -224,7 +237,8 @@ async fn refused_snapshot_ready_rolls_back_hook_rows_and_follow_up_admission() -
         },
     )
     .await?;
-    let attempt = durable_steps::Uuid::now_v7();
+    let attempt = InstallAttemptId::new(durable_steps::Uuid::now_v7())?;
+
     install_answer(
         &mut control,
         ControlRequest::InstallSnapshot {
@@ -246,7 +260,7 @@ async fn refused_snapshot_ready_rolls_back_hook_rows_and_follow_up_admission() -
     target.stop(&mut control).await?;
     let live = target_path.join("service").join(format!(
         "copy-{}-{}.db",
-        durable_steps::Uuid::from_u128(4),
+        durable_steps::Uuid::from_u128(0x019eef00000070008000000000000004),
         database.as_uuid()
     ));
     let mut file = sqlx_turso::TursoConnectOptions::new()
@@ -292,8 +306,12 @@ async fn failed_installs_project_file_owned_positions_in_status_and_fresh_welcom
         ControlAnswer::CopyStatus(CopyStatusAnswer::Status(status)) => status.acked,
         _ => return Err("source has no position".into()),
     };
-    let peer = PeerId::new(durable_steps::Uuid::from_u128(2))?;
-    let source_receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
+    let peer = PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?;
+    let source_receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000003,
+    ))?;
     for initialized in [false, true] {
         let target = ServiceProcess::start_as(
             &root.path().join(if initialized {
@@ -342,7 +360,8 @@ async fn failed_installs_project_file_owned_positions_in_status_and_fresh_welcom
             },
         )
         .await?;
-        let attempt = durable_steps::Uuid::now_v7();
+        let attempt = InstallAttemptId::new(durable_steps::Uuid::now_v7())?;
+
         install_answer(
             &mut control,
             ControlRequest::InstallSnapshot {

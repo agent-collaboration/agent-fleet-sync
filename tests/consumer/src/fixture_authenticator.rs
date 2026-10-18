@@ -53,7 +53,12 @@ impl PeerAuthenticator for FixtureAuthenticator {
         let peer = material
             .strip_prefix("Bearer peer-")
             .and_then(|value| value.parse::<u128>().ok())
-            .and_then(|value| PeerId::new(durable_steps::Uuid::from_u128(value)).ok())
+            .and_then(|value| {
+                PeerId::new(durable_steps::Uuid::from_u128(
+                    (value) | 0x019eef00000070008000000000000000,
+                ))
+                .ok()
+            })
             .ok_or(AuthRefusal::Unknown)?;
         if self.denied.read().await.contains(&peer) {
             return Err(AuthRefusal::Revoked);

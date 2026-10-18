@@ -80,11 +80,9 @@ pub async fn run_writer(
     tokio::fs::create_dir_all(directory).await?;
     let path = directory.join("writer.db");
     let bootstrap = matches!(mode, "bootstrap" | "resume-bootstrap" | "rename-bootstrap");
-    let peer = PeerId::new(durable_steps::Uuid::from_u128(if bootstrap {
-        4
-    } else {
-        2
-    }))?;
+    let peer = PeerId::new(durable_steps::Uuid::from_u128(
+        (if bootstrap { 4 } else { 2 }) | 0x019eef00000070008000000000000000,
+    ))?;
     let store = ConsumerStore::open(&directory.join("client.db")).await?;
     let client = SessionClient::<_, _, SampleProtocol>::load(
         WebSocketTransport::default(),
@@ -187,7 +185,9 @@ pub async fn run_writer(
         .await?;
         write.commit().await?;
     }
-    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
+    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000003,
+    ))?;
     let mut runtime =
         NativeWriterRuntime::new(database.clone(), receiver, requests.clone()).await?;
     if bootstrap {

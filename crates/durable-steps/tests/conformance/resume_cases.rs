@@ -84,7 +84,7 @@ where
     }
 }
 fn effect_key(stage: &str, id: OperationId) -> String {
-    format!("resume-{stage}:{}", id.0)
+    format!("resume-{stage}:{}", id.as_uuid())
 }
 fn engine<S: AtomicStore, const KEEP: bool>(
     store: Arc<S>,

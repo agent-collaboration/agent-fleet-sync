@@ -54,7 +54,7 @@ async fn install(
     let record = match control_request(
         control,
         ControlRequest::InstallSnapshot {
-            attempt: durable_steps::Uuid::now_v7(),
+            attempt: InstallAttemptId::new(durable_steps::Uuid::now_v7())?,
             database,
             source,
         },
@@ -67,7 +67,7 @@ async fn install(
     match control_request(
         control,
         ControlRequest::WaitInstall {
-            install: record.install_id,
+            install: record.request.attempt,
         },
     )
     .await?
@@ -104,9 +104,15 @@ async fn stalled_follower_passes_retention_restarts_from_snapshot_and_follows_th
     let authority = ServiceProcess::start(&root.path().join("authority")).await?;
     let follower_path = root.path().join("follower");
     let mut follower = ServiceProcess::start_as(&follower_path, 4).await?;
-    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
-    let follower_id = ReceiverId::new(durable_steps::Uuid::from_u128(4))?;
-    let peer = PeerId::new(durable_steps::Uuid::from_u128(2))?;
+    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000003,
+    ))?;
+    let follower_id = ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000004,
+    ))?;
+    let peer = PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?;
     let writer_path = root.path().join("writer.db");
     let writer = Arc::new(
         ReplicatedDatabase::create(

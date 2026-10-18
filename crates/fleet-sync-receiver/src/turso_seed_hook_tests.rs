@@ -45,7 +45,10 @@ async fn staged_seed(store: &TursoStore<TestHost>, hook: Arc<Hook>) -> TestResul
                 let seed = seed_begin(
                     scope,
                     database,
-                    durable_steps::Uuid::from_u128(2001),
+                    SeedAttemptId::new(durable_steps::Uuid::from_u128(
+                        0x019eef000000700080000000000007d1,
+                    ))
+                    .map_err(storage)?,
                     &crate::SeedAuthority::Admin,
                 )
                 .await
@@ -296,7 +299,7 @@ async fn seed_identity_state(store: &TursoStore<TestHost>) -> TestResult<Vec<Str
 
 #[derive(Clone, Copy)]
 enum SeedIdentityAction {
-    Begin(durable_steps::Uuid),
+    Begin(SeedAttemptId),
     Page(u32),
     Complete,
 }
@@ -323,8 +326,10 @@ async fn reject_stored_seed_database_mismatch(actions: &[SeedIdentityAction]) ->
                     .await?;
                 let mut record: crate::seed_storage::SeedRecord =
                     serde_json::from_str(&row.try_get::<String, _>("record")?).map_err(storage)?;
-                record.database =
-                    DatabaseId::new(durable_steps::Uuid::from_u128(2401)).map_err(storage)?;
+                record.database = DatabaseId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000961,
+                ))
+                .map_err(storage)?;
                 sqlx_core::query::query::<Turso>("UPDATE _fleet_sync_seed SET record = ?")
                     .bind(serde_json::to_string(&record).map_err(storage)?)
                     .execute(scope.executor())
@@ -410,8 +415,18 @@ async fn reject_stored_seed_database_mismatch(actions: &[SeedIdentityAction]) ->
 async fn seed_begin_rejects_another_stored_database_before_attempt_replay_or_generation()
 -> TestResult {
     reject_stored_seed_database_mismatch(&[
-        SeedIdentityAction::Begin(durable_steps::Uuid::from_u128(2001)),
-        SeedIdentityAction::Begin(durable_steps::Uuid::from_u128(2402)),
+        SeedIdentityAction::Begin(
+            SeedAttemptId::new(durable_steps::Uuid::from_u128(
+                0x019eef000000700080000000000007d1,
+            ))
+            .map_err(storage)?,
+        ),
+        SeedIdentityAction::Begin(
+            SeedAttemptId::new(durable_steps::Uuid::from_u128(
+                0x019eef00000070008000000000000962,
+            ))
+            .map_err(storage)?,
+        ),
     ])
     .await
 }

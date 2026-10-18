@@ -7,7 +7,9 @@ use sqlx_turso::Turso;
 use std::sync::{Arc, atomic::Ordering};
 
 fn transfer() -> TestResult<TransferId> {
-    Ok(TransferId::new(Uuid::from_u128(301))?)
+    Ok(TransferId::new(Uuid::from_u128(
+        0x019eef0000007000800000000000012d,
+    ))?)
 }
 async fn prepare(store: &Arc<TestStore>, host: &Arc<TestHost>) -> TestResult {
     let engine = engine(Arc::clone(store), Arc::clone(host))?;

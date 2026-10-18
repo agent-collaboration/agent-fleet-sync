@@ -31,7 +31,7 @@ impl<S: AtomicStore, R: CallRouter, C: Clock + 'static> TokioRunner<S, R, C> {
                 self.engine.drive_due().await?
             };
             for (operation, failure) in &report.failed {
-                tracing::warn!(operation=%operation.0,?failure,"durable operation failed");
+                tracing::warn!(operation=%operation.as_uuid(),?failure,"durable operation failed");
             }
             if let Some(error) = report.wake_failure {
                 return Err(StoreError::backend(error));

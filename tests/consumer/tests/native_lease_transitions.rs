@@ -53,8 +53,12 @@ struct ManualWriter {
 }
 impl ManualWriter {
     async fn open(path: &Path, service: &ServiceProcess) -> TestResult<Self> {
-        let peer = PeerId::new(durable_steps::Uuid::from_u128(2))?;
-        let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
+        let peer = PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000002,
+        ))?;
+        let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000003,
+        ))?;
         let database = Arc::new(
             ReplicatedDatabase::create(
                 path,
@@ -150,7 +154,9 @@ async fn withdrawal_keeps_original_real_clock_deadline_then_fresh_renewal_resume
         attempt,
         database,
         from_epoch: writer.lease.epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(change.clone())).await?;
     {
@@ -291,7 +297,9 @@ async fn stale_holder_move_refuses_then_a_recently_renewed_holder_moves_over_its
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         from_epoch: writer.lease.epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(stale.clone())).await?;
     assert!(
@@ -328,7 +336,9 @@ async fn stale_holder_move_refuses_then_a_recently_renewed_holder_moves_over_its
         attempt,
         database,
         from_epoch: writer.lease.epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(fresh.clone())).await?;
     let (frame, call, release) = match server_frame(socket).await? {
@@ -403,7 +413,9 @@ async fn authoritative_copy_refuses_the_takeover_tail_while_old_writer_keeps_it_
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         preview,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(takeover.clone())).await?;
     assert!(

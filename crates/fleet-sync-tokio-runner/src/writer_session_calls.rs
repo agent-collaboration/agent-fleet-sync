@@ -183,7 +183,8 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterSessionCalls<S, P> {
                 let seed = match self
                     .replicate(ReplicationRequest::SeedBegin {
                         database: self.database.database(),
-                        attempt: generation,
+                        attempt: SeedAttemptId::new(generation)
+                            .map_err(|error| refused("seed_attempt", error))?,
                     })
                     .await?
                 {

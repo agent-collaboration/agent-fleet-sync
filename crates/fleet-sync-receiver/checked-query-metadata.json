@@ -49,9 +49,9 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "2a4bd1f0a0a624db88ec928b76064d30dd59f8562d6d3e479b3825475345a549",
-    "migrations/0001_copy_rules.sql": "3e6e6233512d8fa0e3e4150a0a8861c856d3d35a6e4f181e8bea2ea7d7395db5",
-    "migrations/0002_replicated_schema.sql": "bdb0761347ddd2254ab65c92afeb2c88ff42d73a452cfffe14fe19ed14596b34",
+    "checked-queries.json": "e74c6bbd6e461cb437c4930fba570d41b4b026b7e22586740e68adf92015dc92",
+    "migrations/0001_copy_rules.sql": "2edfb5ed73cfa0d0c0f17ff38ca3aabb9da25ec57b806904cbb006f5ae573e85",
+    "migrations/0002_replicated_schema.sql": "56450d0f0ff8c8ec0e6d9354ca71902447bba3e415ae9398893ce57618af4c9e",
     "migrations/0003_snapshot_install.sql": "cccd97bc8517afc90d74f3b0094805b3f3c0265c777bb1d069170ea8f46c0e04",
     "sql/drop_copy_table.sql": "8112c8faca8e402ef60bc3bf3954c9ba048aa240ffdc7b02f89f9df7e92abac4",
     "sql/drop_parts.sql": "1e9b957ad66ac0c9fe34732322431b167dcd9f0c8d319c7976f2a2bc04b1bbbc",
@@ -75,7 +75,7 @@
     "sql/read_fence_receipt.sql": "bde95c4e455efd2ddd0b1f20468d6987067931a1bca91b6bcb76d1bd1ae13ce8",
     "sql/read_hook_migrations.sql": "48772108665c87eb58ddc8cd533860d4fa607be9fa5389ba5e6e6a95bd4b424a",
     "sql/read_install.sql": "58204d10e3a2a0f9f50985f5415c92e18c4804357cf83c850e57d81dc231bac6",
-    "sql/read_install_pages.sql": "0ddb1b3a121970a77056e7976ccfac991eabad9409077aecf7cdbe2bed7728d5",
+    "sql/read_install_pages.sql": "1c76ee82df66ecf76bcdeb568d80d5ba1c53ff54a53a7df89f901b3bb3940c8b",
     "sql/read_parts.sql": "2fe22ce90680daad8cb3383c1b56df163c14c99dd133035f1dd5c448ed8b46ac",
     "sql/read_receipt.sql": "ce1cc00141af64623c12bd8454c45b4d242c0e22a747a3ae30a5831bd7136ac6",
     "sql/read_schema_entries.sql": "dd4e747eba02bdc39bc4a562d74a6509b71e7eb5deced1ab596ba9712dd28fdf",
@@ -100,7 +100,7 @@
     "sql/write_seed.sql": "1760686d585a282c49d7eee530ebe6bcd883d49623d339587ba861adfb372783",
     "sql/write_seed_attempt.sql": "6b7bb9dd642308388c49521b264703c0291d95870d6c172caece780aecd583eb",
     "sql/write_seed_page.sql": "2f10b3342821b1a27f8683e064f8445dd16f74c761b5d095a0c56e0f991c95d8",
-    "src/checked_queries.rs": "1b762b2e7da2461443c24a19396b1e24513b023127bd79c09c236c48cb665a0c"
+    "src/checked_queries.rs": "587e032c1ba7ef4bfe222466c95ef4a5050afd18dc33761dd7cee64f928b7bce"
   },
   "queries": [
     {
@@ -633,8 +633,15 @@
     },
     {
       "name": "read_install_pages",
-      "bind_slots": 1,
+      "bind_slots": 0,
       "columns": [
+        {
+          "name": "install_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
         {
           "name": "record",
           "sql_type": "TEXT",

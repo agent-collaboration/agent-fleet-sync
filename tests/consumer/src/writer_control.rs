@@ -35,10 +35,10 @@ pub enum WriterCommand {
         operation: durable_steps::OperationId,
     },
     InstallSnapshot {
-        attempt: durable_steps::Uuid,
+        attempt: fleet_sync_protocol::InstallAttemptId,
     },
     WaitInstall {
-        attempt: durable_steps::Uuid,
+        attempt: fleet_sync_protocol::InstallAttemptId,
     },
     HoldBootstrapBeforeRename,
     WaitBootstrapConverted,

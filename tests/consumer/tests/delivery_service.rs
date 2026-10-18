@@ -91,12 +91,14 @@ impl DeliveryPeer {
 }
 fn call(name: &str) -> TestResult<CallId> {
     Ok(CallId {
-        operation: OperationId(durable_steps::Uuid::now_v7()),
+        operation: OperationId::new(durable_steps::Uuid::now_v7())?,
         step: StepName::new(name)?,
     })
 }
 fn peer(value: u128) -> TestResult<PeerId> {
-    Ok(PeerId::new(durable_steps::Uuid::from_u128(value))?)
+    Ok(PeerId::new(durable_steps::Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))?)
 }
 fn item(id: ItemId, recipient: PeerId, body: &str) -> TestResult<DeliveryEnvelope<SampleDelivery>> {
     Ok(DeliveryEnvelope::Item(DeliveryItem::new(

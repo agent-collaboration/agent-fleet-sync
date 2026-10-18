@@ -43,7 +43,7 @@ fn consumer_map_field_order_does_not_change_item_identity() {
         ItemId::new("01900000-0000-7000-8000-000000000001".parse().unwrap()).unwrap(),
         (),
         Recipient {
-            peer: PeerId::new("00000000-0000-0000-0000-000000000002".parse().unwrap()).unwrap(),
+            peer: PeerId::new("019eef00-0000-7000-8000-000000000002".parse().unwrap()).unwrap(),
             address: (),
         },
         None,
@@ -61,7 +61,7 @@ fn decoding_rejects_changed_content_with_the_original_valid_digest() {
         ItemId::new("01900000-0000-7000-8000-000000000001".parse().unwrap()).unwrap(),
         (),
         Recipient {
-            peer: PeerId::new("00000000-0000-0000-0000-000000000002".parse().unwrap()).unwrap(),
+            peer: PeerId::new("019eef00-0000-7000-8000-000000000002".parse().unwrap()).unwrap(),
             address: (),
         },
         None,

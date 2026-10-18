@@ -202,11 +202,7 @@ async fn operation_id<H: Host>(
     sqlx_turso::query_file_as!(IdRow, "tests/conformance/queries/journey_operation.sql")
         .fetch_optional(scope.executor())
         .await?
-        .map(|row| {
-            Uuid::parse_str(&row.operation_id)
-                .map(OperationId)
-                .map_err(StoreError::backend)
-        })
+        .map(|row| OperationId::try_from(row.operation_id).map_err(StoreError::backend))
         .transpose()
 }
 async fn checkpoint<H: Host>(

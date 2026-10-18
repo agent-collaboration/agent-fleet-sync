@@ -33,8 +33,10 @@ pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryC
         0x01900000000070008000000000000001,
     ))
     .map_err(|error| invalid(Box::new(error)))?;
-    let peer =
-        PeerId::new(durable_steps::Uuid::from_u128(1)).map_err(|error| invalid(Box::new(error)))?;
+    let peer = PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000001,
+    ))
+    .map_err(|error| invalid(Box::new(error)))?;
     let digest = ItemDigest::try_from("f".repeat(64)).map_err(|error| invalid(Box::new(error)))?;
     let time = SyncTime::from_unix_millis(i64::MIN);
     let mut refusals = vec![

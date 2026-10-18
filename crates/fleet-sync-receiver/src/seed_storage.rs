@@ -3,13 +3,13 @@ use crate::{
     copy_storage::{decode_record, encode_record},
 };
 use durable_steps::storage::TransactionScope;
+use fleet_sync_protocol::SeedAttemptId;
 use fleet_sync_protocol::{DatabaseId, PageDigest, SeedComplete, SeedId, SeedPage};
 use serde::{Deserialize, Serialize};
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
 };
-use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -62,7 +62,10 @@ where
             .await
             .map_err(crate::sql_transport::sql_error)
     }
-    pub(crate) async fn attempt(&mut self, attempt: Uuid) -> Result<Option<SeedId>, StoreError> {
+    pub(crate) async fn attempt(
+        &mut self,
+        attempt: SeedAttemptId,
+    ) -> Result<Option<SeedId>, StoreError> {
         checked_queries::read_seed_attempt(self.0, attempt.to_string())
             .await
             .map_err(crate::sql_transport::sql_error)?
@@ -71,7 +74,7 @@ where
     }
     pub(crate) async fn save_attempt(
         &mut self,
-        attempt: Uuid,
+        attempt: SeedAttemptId,
         seed: SeedId,
     ) -> Result<(), StoreError> {
         checked_queries::write_seed_attempt(self.0, attempt.to_string(), encode_record(&seed)?)

@@ -20,7 +20,9 @@ async fn saved_answer(
     Ok(serde_json::from_slice(&result)?)
 }
 fn transfer(value: u128) -> TestResult<TransferId> {
-    Ok(TransferId::new(Uuid::from_u128(value))?)
+    Ok(TransferId::new(Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))?)
 }
 
 #[tokio::test]

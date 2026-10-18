@@ -25,10 +25,10 @@ async fn database_inventory_is_read_only_and_excludes_retired_and_unregistered_i
         .await?;
     assert!(ids.is_empty());
     register_first(&engine).await?;
-    let imported = DatabaseId::new(Uuid::from_u128(2000))?;
-    let retiring = DatabaseId::new(Uuid::from_u128(2001))?;
-    let retired = DatabaseId::new(Uuid::from_u128(2002))?;
-    let unregistered = DatabaseId::new(Uuid::from_u128(2003))?;
+    let imported = DatabaseId::new(Uuid::from_u128(0x019eef000000700080000000000007d0))?;
+    let retiring = DatabaseId::new(Uuid::from_u128(0x019eef000000700080000000000007d1))?;
+    let retired = DatabaseId::new(Uuid::from_u128(0x019eef000000700080000000000007d2))?;
+    let unregistered = DatabaseId::new(Uuid::from_u128(0x019eef000000700080000000000007d3))?;
     store
         .transaction(move |scope| {
             Box::pin(async move {
@@ -43,7 +43,10 @@ async fn database_inventory_is_read_only_and_excludes_retired_and_unregistered_i
                     (
                         retiring,
                         DatabaseLifecycle::Retiring {
-                            attempt: RequestId::new(Uuid::from_u128(2004)).map_err(storage)?,
+                            attempt: RequestId::new(Uuid::from_u128(
+                                0x019eef000000700080000000000007d4,
+                            ))
+                            .map_err(storage)?,
                         },
                     ),
                     (

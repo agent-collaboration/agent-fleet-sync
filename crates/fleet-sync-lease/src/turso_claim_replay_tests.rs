@@ -38,7 +38,7 @@ async fn claim_replays_reservation_and_fence_without_a_second_epoch_or_settlemen
             .store(interruption == "fence-before-send", Ordering::SeqCst);
         host.lose_fence
             .store(interruption == "fence-answer", Ordering::SeqCst);
-        let attempt = TransferId::new(Uuid::from_u128(1001))?;
+        let attempt = TransferId::new(Uuid::from_u128(0x019eef000000700080000000000003e9))?;
         let request = HolderChangeRequest::Claim {
             attempt,
             database: database()?,
@@ -137,7 +137,7 @@ async fn an_unseeded_copy_refuses_claim_and_settles_its_reserved_attempt() -> Te
         .await?,
         ImportAnswer::Imported
     );
-    let attempt = TransferId::new(Uuid::from_u128(1002))?;
+    let attempt = TransferId::new(Uuid::from_u128(0x019eef000000700080000000000003ea))?;
     let request = HolderChangeRequest::Claim {
         attempt,
         database: database()?,
@@ -210,7 +210,7 @@ async fn claim_repairs_above_a_restored_imported_copys_fence_before_granting() -
         let mut transaction = copy.begin_with("BEGIN IMMEDIATE").await?;
         let request = FenceRequest {
             database: database()?,
-            transfer_id: TransferId::new(Uuid::from_u128(1003))?,
+            transfer_id: TransferId::new(Uuid::from_u128(0x019eef000000700080000000000003eb))?,
             new_epoch: Epoch::new(5)?,
             expect: FenceExpectation {
                 epoch: Epoch::new(1)?,
@@ -225,7 +225,7 @@ async fn claim_repairs_above_a_restored_imported_copys_fence_before_granting() -
         ));
         transaction.commit().await?;
     }
-    let attempt = TransferId::new(Uuid::from_u128(1004))?;
+    let attempt = TransferId::new(Uuid::from_u128(0x019eef000000700080000000000003ec))?;
     let request = HolderChangeRequest::Claim {
         attempt,
         database: database()?,

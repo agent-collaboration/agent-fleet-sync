@@ -75,8 +75,12 @@ impl WriterFixture {
                 )
                 .await?,
         );
-        let database = DatabaseId::new(durable_steps::Uuid::from_u128(1))?;
-        let peer = PeerId::new(durable_steps::Uuid::from_u128(2))?;
+        let database = DatabaseId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000001,
+        ))?;
+        let peer = PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000002,
+        ))?;
         let mut holder = LeaseHolder::provisional(
             database,
             peer,

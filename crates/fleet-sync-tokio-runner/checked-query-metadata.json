@@ -53,16 +53,16 @@
     "control-migrations/1000_installs.sql": "e557e6bc7d5388f83432905bd1058a779f4849ba5b238765795deb02994bf58e",
     "query-schema/0001_native_sequence.sql": "165243dad92f95583c3aa10704c78005845868934faf23561c85615a9d86b3e0",
     "sql/erase_local_sequence.sql": "b897975d138eb74c6914c7468af1b7cba37b954b3b098af8769def8242836c66",
-    "sql/read_current_install.sql": "4b107ae7d012535691bde97e49b4a1f07afdcec020028aecba8a8bdcb506eee7",
+    "sql/read_current_install.sql": "f2ddc9926c3bc9d165ae536b3830d1428bc9eaf74b0e7c8c0c17f467df455d49",
     "sql/read_file_columns.sql": "0460454fdb7d2b1b2707633c2da6a5200914e8b94a0b03e4c00a8f59613d330c",
     "sql/read_file_schema.sql": "323144fc00e8f8485ce8800adb62d54b843f7f8556b5cf99d8def7fb41f01cb3",
-    "sql/read_install.sql": "7fb351793831c71ba273c0ef893ebc87baf85b2a49ed91717c5332239ac9d15f",
+    "sql/read_install.sql": "b00064f570d44d1dda34e11be9348bff9861fb6c8055f0015e6a1fa3cb609a99",
     "sql/read_local_sequences.sql": "2c2fd7e0a76470076d22592f269bad5f8b2fc806a64278c9bb815cc656c630a0",
-    "sql/read_target_installs.sql": "d2a3f8f8d376c406ef5e4a4aeca30c6107925d5a8f72eeeaac94617c1eda2a93",
+    "sql/read_target_installs.sql": "8d97a5dc95473a78841e3df7f7f3a1b6a0c9e905e8323277705640eb3834a8b4",
     "sql/write_current_install.sql": "e3747ae757b06e6660a524bb03f9e6d2541de24eb2e8324594a00656abf2500f",
     "sql/write_install.sql": "1023d8e9044c87cbdbda63a742b99e40721d503d2a6ed19e29fbbc885f3fd611",
     "sql/write_local_sequence.sql": "8629992a27a6eca59dc76fb2c7633a19e7da054004ec1b5447dc2a93f33a852d",
-    "src/checked_native_queries.rs": "76849cf531b5246477eb908d6b38373d817248f18c5ab438c1ab33f2d4999915"
+    "src/checked_native_queries.rs": "df8d05abafd5b62200237e8d1106c64240a4c0037193e73181cd1b64ddeea9a9"
   },
   "queries": [
     {
@@ -210,6 +210,13 @@
       "bind_slots": 1,
       "columns": [
         {
+          "name": "install_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
           "name": "record",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
@@ -230,6 +237,13 @@
       "bind_slots": 1,
       "columns": [
         {
+          "name": "install_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
           "name": "record",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
@@ -249,6 +263,13 @@
       "name": "read_target_installs",
       "bind_slots": 1,
       "columns": [
+        {
+          "name": "install_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
         {
           "name": "record",
           "sql_type": "TEXT",

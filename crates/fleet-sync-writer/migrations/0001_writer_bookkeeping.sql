@@ -3,24 +3,24 @@ CREATE TABLE _fleet_sync_writer (
     record TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_copies (
-    copy_id TEXT PRIMARY KEY,
+    copy_id TEXT NOT NULL PRIMARY KEY,
     record TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_capture_bookkeeping (
-    commit_id TEXT PRIMARY KEY,
+    commit_id TEXT NOT NULL PRIMARY KEY,
     record TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_release (
     database_id TEXT NOT NULL,
-    call_id TEXT PRIMARY KEY,
+    call_id TEXT NOT NULL PRIMARY KEY,
     record TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_rejected_tails (
-    epoch TEXT PRIMARY KEY,
+    epoch TEXT NOT NULL PRIMARY KEY,
     record TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_schema_steps (
-    version INTEGER PRIMARY KEY,
+    version INTEGER NOT NULL PRIMARY KEY,
     statements TEXT NOT NULL,
     schema_layout TEXT NOT NULL
 );

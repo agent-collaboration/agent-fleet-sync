@@ -2,13 +2,16 @@ use crate::{
     InstallProgress, InstallRecord, InstallRequest, InstallStatus, ObjectKey,
     checked_native_queries as queries, install_contract::corrupt,
 };
-use durable_steps::{OperationFailure, StoreError, Uuid, storage::TransactionScope};
+use durable_steps::{OperationFailure, StoreError, storage::TransactionScope};
 use fleet_sync_receiver::SnapshotInstall;
 use sqlx_turso::Turso;
 
 pub(crate) struct InstallRecords<'a, S>(pub &'a mut S);
 impl<S: TransactionScope<Database = Turso>> InstallRecords<'_, S> {
-    pub async fn get(&mut self, id: Uuid) -> Result<InstallRecord, StoreError> {
+    pub async fn get(
+        &mut self,
+        id: fleet_sync_protocol::InstallId,
+    ) -> Result<InstallRecord, StoreError> {
         let row = queries::read_install(self.0, id.to_string())
             .await?
             .ok_or_else(|| corrupt("install record is missing"))?;
@@ -70,7 +73,7 @@ impl<S: TransactionScope<Database = Turso>> InstallRecords<'_, S> {
     pub async fn reserve(
         &mut self,
         request: &InstallRequest,
-        id: Uuid,
+        id: fleet_sync_protocol::InstallId,
     ) -> Result<InstallRecord, StoreError> {
         // Admission and a source-moved restart both use the target's same owner
         // transaction. Only this record holds the rising generation.
@@ -107,7 +110,7 @@ impl<S: TransactionScope<Database = Turso>> InstallRecords<'_, S> {
     }
     pub async fn pin(
         &mut self,
-        id: Uuid,
+        id: fleet_sync_protocol::InstallId,
         snapshot: SnapshotInstall,
     ) -> Result<InstallRecord, StoreError> {
         let mut record = self.get(id).await?;
@@ -128,7 +131,7 @@ impl<S: TransactionScope<Database = Turso>> InstallRecords<'_, S> {
     pub async fn fail_attempt(
         &mut self,
         target: &ObjectKey,
-        attempt: Uuid,
+        attempt: fleet_sync_protocol::InstallAttemptId,
         failure: &OperationFailure,
     ) -> Result<(), StoreError> {
         let mut record = self
@@ -169,5 +172,8 @@ fn decode(row: queries::InstallRecordRow) -> Result<InstallRecord, StoreError> {
     )
     .map_err(|error| corrupt(error.to_string()))?;
     record.validate()?;
+    if row.install_id.as_deref() != Some(record.install_id.to_string().as_str()) {
+        return Err(corrupt("noncanonical install record key"));
+    }
     Ok(record)
 }

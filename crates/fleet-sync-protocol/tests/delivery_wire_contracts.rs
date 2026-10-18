@@ -3,7 +3,7 @@ use fleet_sync_protocol::{OperationAnswer, OperationRequest, ServerFrame};
 use serde_json::{Value, json};
 
 const ITEM: &str = "01900000-0000-7000-8000-000000000001";
-const PEER: &str = "00000000-0000-0000-0000-000000000002";
+const PEER: &str = "019eef00-0000-7000-8000-000000000002";
 
 #[test]
 fn an_unavailable_mailbox_is_distinct_from_an_item_refusal() {
@@ -22,7 +22,7 @@ fn an_unavailable_mailbox_is_distinct_from_an_item_refusal() {
 }
 
 fn call() -> Value {
-    json!({"operation":"00000000-0000-0000-0000-000000000003","step":"delivery"})
+    json!({"operation":"019eef00-0000-7000-8000-000000000003","step":"delivery"})
 }
 
 // The oracle is decision 47's eight request bodies, not a production encoder.
@@ -32,7 +32,7 @@ fn all_eight_delivery_request_bodies_cross_the_operation_envelope() {
         json!({"kind":"submit","value":{"call":call(),"item":{"kind":"item","value":{
             "id":ITEM,"sender":null,"recipient":{"peer":PEER,"address":null},
             "validUntil":null,"body":null,
-            "digest":"9f53c2e6152e4beca49916373f25f8e55daccea42063cfde30b00688eae644ec"
+            "digest":"bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b"
         }}}}),
         json!({"kind":"fetch","value":{"call":call(),"stream":"items","after":0,"maxItems":4,"maxBytes":4096}}),
         json!({"kind":"received","value":{"call":call(),"stream":"controls","through":9}}),
@@ -40,7 +40,7 @@ fn all_eight_delivery_request_bodies_cross_the_operation_envelope() {
         json!({"kind":"statusFetch","value":{"call":call(),"after":7,"limit":4}}),
         json!({"kind":"query","value":{"call":call(),"mailbox":PEER,"items":[ITEM]}}),
         json!({"kind":"retire","value":{"call":call(),"mailbox":PEER,"items":[ITEM]}}),
-        json!({"kind":"settle","value":{"call":call(),"mailbox":PEER,"item":ITEM,"digest":"9f53c2e6152e4beca49916373f25f8e55daccea42063cfde30b00688eae644ec"}}),
+        json!({"kind":"settle","value":{"call":call(),"mailbox":PEER,"item":ITEM,"digest":"bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b"}}),
     ];
     let mut failures = Vec::new();
     for request in requests {
@@ -61,11 +61,11 @@ fn all_eight_delivery_answers_preserve_their_typed_bodies() {
         json!({"kind":"received","value":{"stream":"controls","releasedThrough":2}}),
         json!({"kind":"report","value":{"kind":"applied","value":{"item":ITEM,"acknowledged":2,"status":{"kind":"delivered","value":{"acceptance":null}},"version":4}}}),
         json!({"kind":"statusFetch","value":{"events":[{"cursor":5,"item":ITEM,"status":{"kind":"held"},"version":3,"cancel":null}],"through":5}}),
-        json!({"kind":"query","value":{"statuses":[{"item":ITEM,"state":{"kind":"known","value":{"digest":"9f53c2e6152e4beca49916373f25f8e55daccea42063cfde30b00688eae644ec","status":{"kind":"held"},"version":3,"cancel":null}}}]}}),
+        json!({"kind":"query","value":{"statuses":[{"item":ITEM,"state":{"kind":"known","value":{"digest":"bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b","status":{"kind":"held"},"version":3,"cancel":null}}}]}}),
         json!({"kind":"retire","value":{"retired":[ITEM],"unknown":[]}}),
         json!({"kind":"settle","value":{"kind":"settled","value":{"reason":"custodyUnresolvable","version":1}}}),
         json!({"kind":"settle","value":{"kind":"replayed","value":{"status":{"kind":"held"},"version":3,"cancel":null}}}),
-        json!({"kind":"settle","value":{"kind":"itemConflict","value":{"existing":"9f53c2e6152e4beca49916373f25f8e55daccea42063cfde30b00688eae644ec"}}}),
+        json!({"kind":"settle","value":{"kind":"itemConflict","value":{"existing":"bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b"}}}),
     ];
     let mut failures = Vec::new();
     for answer in answers {
@@ -81,7 +81,7 @@ fn all_eight_delivery_answers_preserve_their_typed_bodies() {
 #[test]
 fn status_publication_crosses_the_server_call_with_its_version() {
     let wire = json!({"kind":"request","value":{
-        "frame":"00000000-0000-0000-0000-000000000004",
+        "frame":"019eef00-0000-7000-8000-000000000004",
         "body":{"kind":"crate","value":{"kind":"publishStatus","value":{
             "call":call(),"publication":{"item":ITEM,"status":{"kind":"delivered","value":{"acceptance":null}},"version":4,"cancel":null}
         }}}
@@ -94,7 +94,7 @@ fn status_publication_crosses_the_server_call_with_its_version() {
 fn submit_cannot_choose_another_peers_status_stream() {
     let wire = json!({"kind":"delivery","value":{"kind":"submit","value":{"call":call(),"item":{"kind":"item","value":{
         "id":ITEM,"sender":null,"recipient":{"peer":PEER,"address":null},"validUntil":null,"body":null,
-        "digest":"9f53c2e6152e4beca49916373f25f8e55daccea42063cfde30b00688eae644ec"
+        "digest":"bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b"
     }},"statusTarget":PEER}}});
     assert!(serde_json::from_value::<OperationRequest>(wire).is_err());
 }
@@ -142,7 +142,7 @@ fn processing_failure_kinds_are_closed_on_the_wire() {
 
 #[test]
 fn delivery_header_preserves_identity_and_rejects_a_body() {
-    let header = json!({"id":ITEM,"sender":null,"recipient":{"peer":PEER,"address":null},"validUntil":null,"digest":"9f53c2e6152e4beca49916373f25f8e55daccea42063cfde30b00688eae644ec"});
+    let header = json!({"id":ITEM,"sender":null,"recipient":{"peer":PEER,"address":null},"validUntil":null,"digest":"bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b"});
     let decoded: fleet_sync_protocol::DeliveryHeader<fleet_sync_protocol::NoDelivery> =
         serde_json::from_value(header.clone()).unwrap();
     assert_eq!(serde_json::to_value(decoded).unwrap(), header);

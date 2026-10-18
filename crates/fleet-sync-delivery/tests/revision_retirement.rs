@@ -8,6 +8,25 @@ use support::network::*;
 use support::*;
 
 #[tokio::test]
+async fn owed_publication_refuses_a_stored_non_v7_peer_before_admitting_a_task() {
+    let fixture = Fixture::new().await;
+    fixture.store.transaction(|scope| Box::pin(async move {
+        Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
+            .submit(peer(1), item(1, "body"), SyncTime::from_unix_millis(0))
+            .await.map_err(storage_error)?;
+        let target = serde_json::json!({"kind":"peer","value":{"peer":"019eef00-0000-4000-8000-000000000001"}}).to_string();
+        sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_status_owed SET target=?")
+            .bind(target).execute(scope.executor()).await?;
+        let result = admit_publications::<_, TestTypes, PublishTask>(scope).await;
+        assert!(matches!(result, Err(DeliveryError::Corrupt { .. })));
+        let row = sqlx_core::query::query::<sqlx_turso::Turso>("SELECT count(*) AS count FROM _fleet_sync_operations")
+            .fetch_one(scope.executor()).await?;
+        assert_eq!(row.try_get::<i64, _>("count")?, 0);
+        Ok(())
+    })).await.unwrap();
+}
+
+#[tokio::test]
 async fn an_old_publication_completion_cannot_retire_a_newer_owed_revision() {
     let fixture = Fixture::new().await;
     fixture

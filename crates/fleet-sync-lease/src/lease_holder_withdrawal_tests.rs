@@ -5,7 +5,9 @@ use std::time::Duration;
 
 type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 fn transfer(number: u128) -> Result<TransferId, IdentityError> {
-    TransferId::new(durable_steps::Uuid::from_u128(number))
+    TransferId::new(durable_steps::Uuid::from_u128(
+        (number) | 0x019eef00000070008000000000000000,
+    ))
 }
 fn renew(holder: &mut LeaseHolder, started: i64, remaining_ms: u64) -> TestResult {
     let now = SyncTime::from_unix_millis(started);
@@ -32,8 +34,12 @@ fn renew(holder: &mut LeaseHolder, started: i64, remaining_ms: u64) -> TestResul
 }
 fn holder() -> Result<LeaseHolder, Box<dyn std::error::Error + Send + Sync>> {
     let mut holder = LeaseHolder::provisional(
-        DatabaseId::new(durable_steps::Uuid::from_u128(1))?,
-        PeerId::new(durable_steps::Uuid::from_u128(2))?,
+        DatabaseId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000001,
+        ))?,
+        PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000002,
+        ))?,
         LeasePolicy {
             lease_duration: Duration::from_secs(10),
             renew_interval: Duration::from_secs(1),

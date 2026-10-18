@@ -63,7 +63,7 @@ async fn incoherent_and_out_of_range_capture_cursors_refuse_before_idle_prune_or
                 &path,
                 database,
                 schema,
-                LeaseHolder::provisional(database, PeerId::new(Uuid::from_u128(2))?, policy())
+                LeaseHolder::provisional(database, PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002))?, policy())
             )
             .await,
             Err(OpenError::Corrupt { field }) if field == "writer.capture_cursor"
@@ -109,7 +109,7 @@ async fn bootstrap_predecessor_position_keeps_a_zero_capture_cursor_on_reopen() 
     let root = tempfile::tempdir()?;
     let path = root.path().join("seeding-writer.db");
     let database = DatabaseId::new(Uuid::now_v7())?;
-    let peer = PeerId::new(Uuid::from_u128(8))?;
+    let peer = PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000008))?;
     let start = ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(4242));
     let now = source.database.clock.now();
     let writer = ReplicatedDatabase::seeding(

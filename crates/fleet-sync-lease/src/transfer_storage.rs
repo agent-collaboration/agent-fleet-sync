@@ -42,10 +42,10 @@ where
                 .transpose()?,
         };
         if crate::change_checks::attempt(&record.request) != id
-            || record.operation.0.is_nil()
-            || record
-                .follow_up
-                .is_some_and(|operation| operation.0.is_nil() || operation == record.operation)
+            || record.operation.as_uuid().is_nil()
+            || record.follow_up.is_some_and(|operation| {
+                operation.as_uuid().is_nil() || operation == record.operation
+            })
         {
             return Err(LeaseError::Corrupt {
                 field: "holder-change admission".into(),

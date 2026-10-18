@@ -150,7 +150,9 @@ pub(super) async fn source(path: &Path) -> TestResult<ReplicatedDatabase<Schema>
             count: 2,
             different: false,
         },
-        PeerId::new(durable_steps::Uuid::from_u128(2))?,
+        PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000002,
+        ))?,
         policy(),
         WriterOptions::default(),
     )
@@ -162,7 +164,7 @@ pub(super) async fn stage(
 ) -> TestResult<(SnapshotInstall, CopyStatus)> {
     let mut read = source.snapshot().await?;
     let install = SnapshotInstall {
-        install_id: durable_steps::Uuid::now_v7(),
+        install_id: fleet_sync_protocol::InstallId::new(durable_steps::Uuid::now_v7())?,
         database: source.database(),
         position: read.position(),
         schema: read.schema().clone(),
@@ -171,7 +173,9 @@ pub(super) async fn stage(
         database: source.database(),
         role: CopyRole::Authoritative,
         fence: install.position.epoch,
-        holder: Some(PeerId::new(durable_steps::Uuid::from_u128(2))?),
+        holder: Some(PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000002,
+        ))?),
         start: ReplicationPosition::new(install.position.epoch, CommitSequence::new(0)),
         acked: install.position,
         schema: install.schema.clone(),
@@ -199,7 +203,9 @@ pub(super) fn grant(install: &SnapshotInstall) -> TestResult<BootstrapGrant> {
     Ok(BootstrapGrant {
         lease: LeaseStatus {
             database: install.database,
-            holder: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+            holder: PeerId::new(durable_steps::Uuid::from_u128(
+                0x019eef00000070008000000000000004,
+            ))?,
             epoch: Epoch::new(2)?,
             state: LeaseState::Held,
             expires_at: now.after(Duration::from_secs(600)),

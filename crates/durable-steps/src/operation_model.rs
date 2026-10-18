@@ -140,7 +140,7 @@ impl From<StartRefusal> for StepError {
             StartRefusal::Storage(error) => Self::Storage(error),
             StartRefusal::RequestConflict { existing } => Self::Failed(OperationFailure::Refused {
                 code: "request_conflict".into(),
-                detail: format!("existing operation {}", existing.0),
+                detail: format!("existing operation {}", existing.as_uuid()),
             }),
             StartRefusal::UnknownKind => Self::Failed(OperationFailure::Refused {
                 code: "unknown_kind".into(),

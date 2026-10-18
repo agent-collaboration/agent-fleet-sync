@@ -5,16 +5,42 @@ use runtime_primitives::{Backoff, SyncTime};
 use std::time::Duration;
 
 #[test]
+fn operation_identity_refuses_non_v7_and_noncanonical_text() {
+    let canonical = "0197abc0-def0-7123-8123-abcdef012345";
+    for spelling in [
+        canonical.replace("7123", "4123"),
+        canonical.replace("8123", "0123"),
+        uuid::Uuid::nil().to_string(),
+        canonical.to_uppercase(),
+        canonical.replace('-', ""),
+        format!("{{{canonical}}}"),
+        format!("urn:uuid:{canonical}"),
+    ] {
+        assert!(
+            serde_json::from_value::<runtime_primitives::OperationId>(serde_json::json!(spelling))
+                .is_err(),
+            "accepted {spelling}"
+        );
+    }
+    assert!(
+        serde_json::from_value::<runtime_primitives::OperationId>(serde_json::json!(canonical))
+            .is_ok()
+    );
+}
+
+#[test]
 fn call_identity_roundtrips_and_rejects_an_empty_step() -> Result<(), Box<dyn std::error::Error>> {
     use runtime_primitives::{CallId, OperationId, StepName};
     let call = CallId {
-        operation: OperationId(uuid::Uuid::from_u128(7)),
+        operation: OperationId::new(uuid::Uuid::parse_str(
+            "0197abc0-def0-7123-8123-abcdef012345",
+        )?)?,
         step: StepName::new("page:3")?,
     };
     let wire = serde_json::to_string(&call)?;
     assert_eq!(
         wire,
-        r#"{"operation":"00000000-0000-0000-0000-000000000007","step":"page:3"}"#
+        r#"{"operation":"0197abc0-def0-7123-8123-abcdef012345","step":"page:3"}"#
     );
     assert_eq!(serde_json::from_str::<CallId>(&wire)?, call);
     assert!(StepName::new("").is_err());

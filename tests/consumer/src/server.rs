@@ -81,7 +81,9 @@ pub async fn run_server_with_policy(
     tokio::fs::create_dir_all(directory).await?;
     let store = ConsumerStore::open(&directory.join("consumer.db")).await?;
     let consumer = Arc::new(Consumer::new(store.clone())?);
-    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(receiver))?;
+    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+        (receiver) | 0x019eef00000070008000000000000000,
+    ))?;
     let options = ServiceOptions {
         delivery: Some(crate::delivery_limits()?),
         directory: directory.join("service"),

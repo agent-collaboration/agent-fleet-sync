@@ -79,7 +79,7 @@ pub enum ReplicationRequest<A = ()> {
     Piece(Piece<A>),
     SeedBegin {
         database: DatabaseId,
-        attempt: uuid::Uuid,
+        attempt: SeedAttemptId,
     },
     SeedPage(Box<SeedPage>),
     SeedComplete(SeedComplete),

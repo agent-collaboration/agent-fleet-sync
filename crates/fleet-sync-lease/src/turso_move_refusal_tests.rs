@@ -56,7 +56,7 @@ async fn typed_release_refusals_replay_without_fencing_or_changing_the_lease() -
         register_first(&engine).await?;
         let lease = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
         *host.release_answer.lock().await = Some(ReleaseAnswer::ReleaseRefused(release));
-        let attempt = TransferId::new(Uuid::from_u128(1601))?;
+        let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000641))?;
         let request = HolderChangeRequest::Move {
             attempt,
             database: database()?,
@@ -120,7 +120,7 @@ async fn released_final_position_waits_for_the_real_copy_then_grants_once() -> T
     register_first(&engine).await?;
     let final_position = ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(9));
     *host.release_answer.lock().await = Some(ReleaseAnswer::Released { final_position });
-    let attempt = TransferId::new(Uuid::from_u128(1602))?;
+    let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000642))?;
     let request = HolderChangeRequest::Move {
         attempt,
         database: database()?,

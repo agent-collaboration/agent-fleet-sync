@@ -110,7 +110,9 @@ async fn sqlx_v1_adoption_still_refuses_an_invalid_key_before_capture_setup() ->
     let result = ReplicatedDatabase::adopt(
         &path,
         SampleSchema::rename_bundle()?,
-        PeerId::new(durable_steps::Uuid::from_u128(2))?,
+        PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000002,
+        ))?,
         LeasePolicy {
             lease_duration: Duration::from_secs(600),
             renew_interval: Duration::from_secs(30),

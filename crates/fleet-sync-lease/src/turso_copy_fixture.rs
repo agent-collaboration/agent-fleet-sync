@@ -91,7 +91,9 @@ pub(super) async fn seed_import(host: &Arc<TestHost>) -> TestResult<ReplicationP
     let seed = fleet_sync_receiver::seed_begin(
         &mut scope,
         database()?,
-        durable_steps::Uuid::from_u128(900),
+        SeedAttemptId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000384,
+        ))?,
         &fleet_sync_receiver::SeedAuthority::Admin,
     )
     .await?;

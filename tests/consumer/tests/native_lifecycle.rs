@@ -81,7 +81,7 @@ async fn cancelled_claim_dispatches_terminal_settlement_before_the_reservation_a
     assert!(receipt.reserved_by.is_none());
     assert_eq!(receipt.reserve_attempts, 0);
     assert!(
-        matches!(receipt.request, HolderChangeRequest::Claim { attempt: current, database: current_database, claimant } if current==transfer && current_database==database && claimant==PeerId::new(durable_steps::Uuid::from_u128(4))?)
+        matches!(receipt.request, HolderChangeRequest::Claim { attempt: current, database: current_database, claimant } if current==transfer && current_database==database && claimant==PeerId::new(durable_steps::Uuid::from_u128(0x019eef00000070008000000000000004))?)
     );
     let ended = match control_request(
         &mut control,
@@ -138,7 +138,9 @@ async fn cancelled_claim_dispatches_terminal_settlement_before_the_reservation_a
     let change = HolderChangeRequest::Claim {
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
-        claimant: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        claimant: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(change.clone())).await?;
     let answer =
@@ -164,7 +166,9 @@ async fn import_backup(
     let writer = ReplicatedDatabase::create(
         path,
         SampleSchema::new()?,
-        PeerId::new(durable_steps::Uuid::from_u128(2))?,
+        PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000002,
+        ))?,
         LeasePolicy {
             lease_duration: Duration::from_secs(600),
             renew_interval: Duration::from_secs(30),
@@ -199,7 +203,7 @@ async fn import_backup(
         control,
         ControlRequest::SeedBegin {
             database: writer.database(),
-            attempt: durable_steps::Uuid::now_v7(),
+            attempt: SeedAttemptId::new(durable_steps::Uuid::now_v7())?,
         },
     )
     .await?
@@ -400,7 +404,9 @@ async fn import_claim_settlement_and_renewal_replay_survive_registry_restart_and
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         preview,
-        to: PeerId::new(durable_steps::Uuid::from_u128(6))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000006,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(takeover.clone())).await?;
     let (next_epoch, grant_deadline) =
@@ -424,7 +430,9 @@ async fn import_claim_settlement_and_renewal_replay_survive_registry_restart_and
     control_request(
         &mut control,
         ControlRequest::Revoke {
-            peer: PeerId::new(durable_steps::Uuid::from_u128(6))?,
+            peer: PeerId::new(durable_steps::Uuid::from_u128(
+                0x019eef00000070008000000000000006,
+            ))?,
         },
     )
     .await?;
@@ -439,7 +447,7 @@ async fn import_claim_settlement_and_renewal_replay_survive_registry_restart_and
     }
     assert!(service.connect("session", "Bearer peer-6").await.is_err());
     assert!(
-        matches!(control_request(&mut control, ControlRequest::Renew { request: RenewRequest { attempt: RequestId::new(durable_steps::Uuid::now_v7())?, database, epoch: next_epoch }, holder: PeerId::new(durable_steps::Uuid::from_u128(6))? }).await?, ControlAnswer::Renewal(RenewAnswer::Renewed { current, .. }) if current.epoch==next_epoch)
+        matches!(control_request(&mut control, ControlRequest::Renew { request: RenewRequest { attempt: RequestId::new(durable_steps::Uuid::now_v7())?, database, epoch: next_epoch }, holder: PeerId::new(durable_steps::Uuid::from_u128(0x019eef00000070008000000000000006))? }).await?, ControlAnswer::Renewal(RenewAnswer::Renewed { current, .. }) if current.epoch==next_epoch)
     );
     service.kill().await?;
     drop(control);
@@ -463,7 +471,9 @@ async fn import_claim_settlement_and_renewal_replay_survive_registry_restart_and
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         preview,
-        to: PeerId::new(durable_steps::Uuid::from_u128(8))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000008,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(takeover.clone())).await?;
     assert!(
@@ -548,7 +558,9 @@ async fn retirement_of_an_imported_unheld_database_refuses_new_requests_and_repl
             OperationRequest::Lease(LeaseRequest::Register(Registration {
                 attempt: RequestId::new(durable_steps::Uuid::now_v7())?,
                 database,
-                writer: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+                writer: PeerId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000004
+                ))?,
                 origin: Origin::Empty
             }))
         )
@@ -570,7 +582,7 @@ async fn retirement_of_an_imported_unheld_database_refuses_new_requests_and_repl
             &mut peer,
             OperationRequest::Replication(ReplicationRequest::SeedBegin {
                 database,
-                attempt: durable_steps::Uuid::now_v7()
+                attempt: SeedAttemptId::new(durable_steps::Uuid::now_v7())?
             })
         )
         .await?,

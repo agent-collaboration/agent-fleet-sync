@@ -13,7 +13,9 @@ use sqlx_turso::Turso;
 use std::{sync::Arc, time::Duration};
 
 fn attempt() -> TestResult<TransferId> {
-    Ok(TransferId::new(Uuid::from_u128(2100))?)
+    Ok(TransferId::new(Uuid::from_u128(
+        0x019eef00000070008000000000000834,
+    ))?)
 }
 fn request() -> TestResult<HolderChangeRequest> {
     Ok(HolderChangeRequest::Claim {
@@ -75,7 +77,9 @@ async fn advance_copy(host: &TestHost, to: u64) -> TestResult {
             &mut CopyScope(&mut tx),
             &FenceRequest {
                 database: database()?,
-                transfer_id: TransferId::new(Uuid::from_u128(2200 + u128::from(to)))?,
+                transfer_id: TransferId::new(Uuid::from_u128(
+                    (2200 + u128::from(to)) | 0x019eef00000070008000000000000000
+                ))?,
                 new_epoch: Epoch::new(to)?,
                 expect: FenceExpectation {
                     epoch: status.fence,

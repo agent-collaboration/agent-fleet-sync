@@ -122,7 +122,7 @@ impl<H: Host> JournalScope for VolatileScope<'_, H> {
                 })
             };
         }
-        let id = OperationId(self.host.new_id());
+        let id = OperationId::new(self.host.new_id()).map_err(StoreError::backend)?;
         if self.state.operations.contains_key(&id) {
             return Err(StoreError::Aborted {
                 reason: "host generated an existing operation id".into(),

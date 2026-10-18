@@ -5,6 +5,36 @@ use fleet_sync_delivery::*;
 use support::*;
 
 #[tokio::test]
+async fn controls_keep_the_engine_sequence_after_receipt_prunes_the_previous_row() {
+    use durable_steps::storage::TransactionScope;
+    use sqlx_core::row::Row;
+    let fixture = Fixture::new().await;
+    for (identity, label) in [(1, "first retirement"), (2, "second retirement")] {
+        fixture.store.transaction(move |scope| Box::pin(async move {
+            let mut mailbox = Mailbox::<_, TestTypes>::new(scope, peer(2), limits());
+            mailbox.submit(peer(1), item(identity, "body"), SyncTime::from_unix_millis(0))
+                .await.map_err(storage_error)?;
+            mailbox.report(peer(2), RecipientReport {
+                item: item_id(identity), report_seq: ReportSeq::new(1),
+                outcome: RecipientOutcome::Delivered { acceptance: Acceptance { receipt: "done".into() } },
+            }).await.map_err(storage_error)?;
+            mailbox.retire(peer(1), &call(label), &[item_id(identity)]).await.map_err(storage_error)?;
+            let controls = mailbox.fetch(peer(2), DeliveryStream::Controls,
+                DeliverySeq::new(identity - 1), 10, 100_000, SyncTime::from_unix_millis(0))
+                .await.map_err(storage_error)?;
+            assert!(matches!(controls.entries.first(), Some(FetchEntry::Retired { seq, .. }) if seq.value() == identity));
+            let stored = sqlx_core::query::query::<sqlx_turso::Turso>("SELECT seq FROM _fleet_sync_mail_controls")
+                .fetch_one(scope.executor()).await?.try_get::<i64, _>("seq")?;
+            assert_eq!(stored, i64::try_from(identity).map_err(durable_steps::StoreError::backend)?);
+            let mut mailbox = Mailbox::<_, TestTypes>::new(scope, peer(2), limits());
+            mailbox.received(peer(2), DeliveryStream::Controls, DeliverySeq::new(identity), SyncTime::from_unix_millis(0))
+                .await.map_err(storage_error)?;
+            Ok(())
+        })).await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn repeat_preserves_sequence_and_conflicting_content_changes_nothing() {
     let fixture = Fixture::new().await;
     fixture.store.transaction(|scope|Box::pin(async move {

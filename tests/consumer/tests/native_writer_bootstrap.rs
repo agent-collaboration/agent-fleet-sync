@@ -40,7 +40,9 @@ async fn bootstrap_kill(after_rename: bool) -> TestResult {
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         from_epoch: through.epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(change.clone())).await?;
     assert!(
@@ -65,7 +67,7 @@ async fn bootstrap_kill(after_rename: bool) -> TestResult {
             WriterCommand::HoldBootstrapBeforeRename
         })
         .await?;
-    let attempt = durable_steps::Uuid::now_v7();
+    let attempt = InstallAttemptId::new(durable_steps::Uuid::now_v7())?;
     writer
         .command(WriterCommand::InstallSnapshot { attempt })
         .await?;

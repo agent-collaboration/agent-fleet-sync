@@ -2,14 +2,14 @@ use crate::{
     InstallCoordinator, InstallFileAnswer, InstallFileResult, InstallRecord, InstallStatus,
     StagedVerification, StagingError, install_contract::corrupt,
 };
-use durable_steps::{Host, Uuid};
+use durable_steps::Host;
 use fleet_sync_protocol::{CopyStatus, SnapshotCursor, SnapshotManifestAnswer, SnapshotRead};
 use std::future::Future;
 
 impl<H: Host> InstallCoordinator<H> {
     pub async fn prepare(
         &self,
-        id: Uuid,
+        id: fleet_sync_protocol::InstallId,
         source: &CopyStatus,
     ) -> Result<InstallFileResult, StagingError> {
         let record = self.record(id).await?;
@@ -25,7 +25,7 @@ impl<H: Host> InstallCoordinator<H> {
     }
     pub async fn fetch_page<F, Fetch>(
         &self,
-        id: Uuid,
+        id: fleet_sync_protocol::InstallId,
         page: u32,
         cursor: Option<&SnapshotCursor>,
         fetch: F,
@@ -50,7 +50,7 @@ impl<H: Host> InstallCoordinator<H> {
     }
     pub async fn verify_from<F, Fetch>(
         &self,
-        id: Uuid,
+        id: fleet_sync_protocol::InstallId,
         fetch: F,
     ) -> Result<InstallFileResult, StagingError>
     where

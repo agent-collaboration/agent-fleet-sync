@@ -9,6 +9,43 @@ use runtime_primitives::SystemClock;
 use std::sync::Arc;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+#[tokio::test]
+async fn install_record_reads_refuse_noncanonical_identity_text() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let fixture = Fixture::open(directory.path()).await?;
+    let (install, _) = fixture.stage(20).await?;
+    let original = fixture.coordinator.record(install.install_id).await?;
+    let canonical = install.install_id.to_string();
+    for spelling in [canonical.to_uppercase(), canonical.replace('-', "")] {
+        let mut encoded = serde_json::to_value(&original)?;
+        *encoded
+            .get_mut("install_id")
+            .ok_or("missing install identity")? = serde_json::json!(spelling);
+        let encoded = serde_json::to_string(&encoded)?;
+        fixture
+            .coordinator
+            .control
+            .rule_transaction(move |scope| {
+                Box::pin(async move {
+                    sqlx_core::query::query::<sqlx_turso::Turso>(
+                        "UPDATE _fleet_sync_installs SET record=?",
+                    )
+                    .bind(encoded)
+                    .execute(scope.executor())
+                    .await?;
+                    Ok::<_, StoreError>(())
+                })
+            })
+            .await?;
+        assert!(matches!(
+            fixture.coordinator.record(install.install_id).await,
+            Err(StoreError::Corrupt { .. })
+        ));
+    }
+    fixture.objects.close().await?;
+    Ok(())
+}
 struct NoCalls;
 impl CallRouter for NoCalls {
     async fn dispatch(&self, _: CallEnvelope) -> Result<serde_json::Value, CallFailure> {
@@ -69,10 +106,10 @@ impl Fixture {
         page.position = position;
         manifest.position = position;
         let request = InstallRequest {
-            attempt: install.install_id,
+            attempt: fleet_sync_protocol::InstallAttemptId::new(install.install_id.as_uuid())?,
             target: self.target.key().clone(),
             database: install.database,
-            source: ReceiverId::new(Uuid::from_u128(10))?,
+            source: ReceiverId::new(Uuid::from_u128(0x019eef0000007000800000000000000a))?,
         };
         let handle = self.coordinator.start(request, &self.target).await?;
         self.coordinator.pin(install.clone()).await?;

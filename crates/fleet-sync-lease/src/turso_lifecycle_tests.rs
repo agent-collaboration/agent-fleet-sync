@@ -223,7 +223,7 @@ async fn import_repeats_and_conflicts_then_retirement_precedes_cached_engine_ans
     host.gate.reject_retirement.store(true, Ordering::SeqCst);
     let expected = ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(0));
     let request = Retirement {
-        attempt: RequestId::new(Uuid::from_u128(204))?,
+        attempt: RequestId::new(Uuid::from_u128(0x019eef000000700080000000000000cc))?,
         database: database()?,
         expect_fence: Epoch::new(1)?,
         expect_acked: expected,
@@ -239,7 +239,7 @@ async fn import_repeats_and_conflicts_then_retirement_precedes_cached_engine_ans
     ));
     host.gate.reject_retirement.store(false, Ordering::SeqCst);
     let request = Retirement {
-        attempt: RequestId::new(Uuid::from_u128(205))?,
+        attempt: RequestId::new(Uuid::from_u128(0x019eef000000700080000000000000cd))?,
         database: database()?,
         expect_fence: Epoch::new(1)?,
         expect_acked: expected,

@@ -47,10 +47,12 @@ async fn real_snapshot_bootstraps_without_replaying_dml_and_later_migration_foll
     coordinator
         .start(
             InstallRequest {
-                attempt: install.install_id,
+                attempt: fleet_sync_protocol::InstallAttemptId::new(install.install_id.as_uuid())?,
                 target: key.clone(),
                 database: install.database,
-                source: ReceiverId::new(durable_steps::Uuid::from_u128(9))?,
+                source: ReceiverId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000009,
+                ))?,
             },
             &owned,
         )
@@ -131,10 +133,12 @@ async fn real_snapshot_bootstraps_without_replaying_dml_and_later_migration_foll
     coordinator
         .start(
             InstallRequest {
-                attempt: install.install_id,
+                attempt: fleet_sync_protocol::InstallAttemptId::new(install.install_id.as_uuid())?,
                 target: key,
                 database: install.database,
-                source: ReceiverId::new(durable_steps::Uuid::from_u128(9))?,
+                source: ReceiverId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000009,
+                ))?,
             },
             &owned,
         )
@@ -223,7 +227,9 @@ async fn real_snapshot_bootstraps_without_replaying_dml_and_later_migration_foll
         &install.schema,
         "ready exposed the received prefix before later migrations"
     );
-    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(7))?;
+    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000007,
+    ))?;
     let sender = ReplicationSender::new(
         target.clone(),
         Arc::new(()),
@@ -267,10 +273,15 @@ async fn real_snapshot_bootstraps_without_replaying_dml_and_later_migration_foll
             .acked,
         through
     );
-    assert!(copies.iter().any(|copy| copy.copy
-        == ReceiverId::new(durable_steps::Uuid::from_u128(9)).expect("valid receiver")
-        && copy.role == CopyRole::Authoritative
-        && copy.start == install.position));
+    assert!(copies.iter().any(|copy| {
+        copy.copy
+            == ReceiverId::new(durable_steps::Uuid::from_u128(
+                0x019eef00000070008000000000000009,
+            ))
+            .expect("valid receiver")
+            && copy.role == CopyRole::Authoritative
+            && copy.start == install.position
+    }));
     target.close().await;
     source.close().await;
     objects.close().await?;
@@ -362,10 +373,12 @@ async fn interrupted_before_rename(same_arc: bool) -> TestResult {
     coordinator
         .start(
             InstallRequest {
-                attempt: install.install_id,
+                attempt: fleet_sync_protocol::InstallAttemptId::new(install.install_id.as_uuid())?,
                 target: key.clone(),
                 database: install.database,
-                source: ReceiverId::new(durable_steps::Uuid::from_u128(9))?,
+                source: ReceiverId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000009,
+                ))?,
             },
             &owned,
         )
@@ -483,10 +496,12 @@ async fn transient_reopen_failure_after_rename_recovers_the_published_file_on_sa
     coordinator
         .start(
             InstallRequest {
-                attempt: install.install_id,
+                attempt: fleet_sync_protocol::InstallAttemptId::new(install.install_id.as_uuid())?,
                 target: key,
                 database: install.database,
-                source: ReceiverId::new(durable_steps::Uuid::from_u128(9))?,
+                source: ReceiverId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000009,
+                ))?,
             },
             &owned,
         )

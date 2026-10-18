@@ -46,7 +46,9 @@ async fn cancel_unanswered_release_restores_same_epoch_after_pruning_and_writer_
         attempt,
         database,
         from_epoch: before.epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     let mut starting = service
         .connect("control", "Bearer consumer-control")
@@ -79,7 +81,7 @@ async fn cancel_unanswered_release_restores_same_epoch_after_pruning_and_writer_
     assert_eq!(view.phase, HolderChangePhase::Releasing);
     assert_eq!(view.requested_by, ActorRef::new("consumer-control")?);
     assert!(
-        matches!(view.waiting, Some(waiting) if waiting.on==WaitingOn::Holder(PeerId::new(durable_steps::Uuid::from_u128(2))?))
+        matches!(view.waiting, Some(waiting) if waiting.on==WaitingOn::Holder(PeerId::new(durable_steps::Uuid::from_u128(0x019eef00000070008000000000000002))?))
     );
     let by = ActorRef::new("test-admin")?;
     let cancel = CancelHolderChange {
@@ -114,7 +116,9 @@ async fn cancel_unanswered_release_restores_same_epoch_after_pruning_and_writer_
         control_request(
             &mut control,
             ControlRequest::ReplayHolderRelease {
-                holder: PeerId::new(durable_steps::Uuid::from_u128(2))?,
+                holder: PeerId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000002
+                ))?,
                 request: release_request,
                 call: release_call
             }
@@ -201,7 +205,9 @@ async fn cancel_answered_release_while_copy_is_behind_prevents_fencing_and_resum
         attempt,
         database,
         from_epoch: position.epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     let mut control = service
         .connect("control", "Bearer consumer-control")
@@ -301,7 +307,9 @@ async fn takeover_supersedes_a_cancelling_move_with_an_unanswered_withdrawal() -
         attempt,
         database,
         from_epoch: epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(change.clone())).await?;
     assert!(matches!(
@@ -349,7 +357,9 @@ async fn takeover_supersedes_a_cancelling_move_with_an_unanswered_withdrawal() -
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         preview,
-        to: PeerId::new(durable_steps::Uuid::from_u128(6))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000006,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(takeover.clone())).await?;
     let granted =

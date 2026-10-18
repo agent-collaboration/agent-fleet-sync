@@ -77,7 +77,10 @@ impl Clock for TestHost {
 }
 impl IdSource for TestHost {
     fn new_id(&self) -> Uuid {
-        Uuid::from_u128(u128::from(TEST_IDS.fetch_add(1, Ordering::SeqCst)))
+        Uuid::from_u128(
+            (u128::from(TEST_IDS.fetch_add(1, Ordering::SeqCst)))
+                | 0x019eef00000070008000000000000000,
+        )
     }
 }
 impl WakeScheduler for TestHost {
@@ -256,10 +259,14 @@ pub(super) fn storage(error: impl std::fmt::Display) -> durable_steps::StoreErro
     durable_steps::StoreError::backend(error)
 }
 pub(super) fn database() -> TestResult<DatabaseId> {
-    Ok(DatabaseId::new(Uuid::from_u128(100))?)
+    Ok(DatabaseId::new(Uuid::from_u128(
+        0x019eef00000070008000000000000064,
+    ))?)
 }
 pub(super) fn peer(value: u128) -> TestResult<PeerId> {
-    Ok(PeerId::new(Uuid::from_u128(value))?)
+    Ok(PeerId::new(Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))?)
 }
 pub(super) fn config() -> TestResult<RegistryConfig> {
     Ok(RegistryConfig {
@@ -267,7 +274,9 @@ pub(super) fn config() -> TestResult<RegistryConfig> {
             lease_duration: Duration::from_millis(2000),
             renew_interval: Duration::from_millis(500),
         },
-        authoritative_receiver: ReceiverId::new(Uuid::from_u128(101))?,
+        authoritative_receiver: ReceiverId::new(Uuid::from_u128(
+            0x019eef00000070008000000000000065,
+        ))?,
         target_schema_max: 10,
         release_unsent_for: Duration::from_millis(100),
         move_needs_renewal_within: None,
@@ -275,7 +284,9 @@ pub(super) fn config() -> TestResult<RegistryConfig> {
 }
 pub(super) fn registration(attempt: u128, writer: u128) -> TestResult<Registration> {
     Ok(Registration {
-        attempt: RequestId::new(Uuid::from_u128(attempt))?,
+        attempt: RequestId::new(Uuid::from_u128(
+            (attempt) | 0x019eef00000070008000000000000000,
+        ))?,
         database: database()?,
         writer: peer(writer)?,
         origin: Origin::Empty,
@@ -283,7 +294,9 @@ pub(super) fn registration(attempt: u128, writer: u128) -> TestResult<Registrati
 }
 pub(super) fn import_request(attempt: u128, digest: &str) -> TestResult<Import> {
     Ok(Import {
-        attempt: RequestId::new(Uuid::from_u128(attempt))?,
+        attempt: RequestId::new(Uuid::from_u128(
+            (attempt) | 0x019eef00000070008000000000000000,
+        ))?,
         database: database()?,
         digest: ImportDigest::new(digest.repeat(64))?,
     })

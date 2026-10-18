@@ -20,8 +20,12 @@ impl CallRouter for NoCalls {
 }
 pub(super) fn snapshot() -> TestResult<(SnapshotInstall, CopyStatus, SnapshotPage, SnapshotManifest)>
 {
-    let database = DatabaseId::new(durable_steps::Uuid::from_u128(1))?;
-    let holder = PeerId::new(durable_steps::Uuid::from_u128(2))?;
+    let database = DatabaseId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000001,
+    ))?;
+    let holder = PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?;
     let epoch = Epoch::new(1)?;
     let position = ReplicationPosition::new(epoch, CommitSequence::new(20));
     let sql = "CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY,value TEXT)";
@@ -41,7 +45,7 @@ pub(super) fn snapshot() -> TestResult<(SnapshotInstall, CopyStatus, SnapshotPag
     digest.push_row(rows.first().ok_or("no fixture row")?)?;
     Ok((
         SnapshotInstall {
-            install_id: durable_steps::Uuid::now_v7(),
+            install_id: fleet_sync_protocol::InstallId::new(durable_steps::Uuid::now_v7())?,
             database,
             position,
             schema: schema.clone(),

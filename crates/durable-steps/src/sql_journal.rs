@@ -84,7 +84,7 @@ impl<S: JournalQueries> JournalScope for S {
                 })
             };
         }
-        let id = OperationId(self.new_id());
+        let id = OperationId::new(self.new_id()).map_err(StoreError::backend)?;
         let now = self.now();
         self.insert_operation(StoredOperationRow::encode(OperationRecord {
             id,
@@ -112,7 +112,7 @@ impl<S: JournalQueries> JournalScope for S {
 
 impl<S: JournalQueries> JournalStorage for S {
     async fn operation(&mut self, id: OperationId) -> Result<Option<OperationRecord>, StoreError> {
-        self.fetch_operation(id.0.to_string())
+        self.fetch_operation(id.as_uuid().to_string())
             .await?
             .map(OperationRecord::try_from)
             .transpose()
@@ -121,11 +121,7 @@ impl<S: JournalQueries> JournalStorage for S {
         self.fetch_due(now.unix_millis())
             .await?
             .into_iter()
-            .map(|id| {
-                Uuid::parse_str(&id)
-                    .map(OperationId)
-                    .map_err(|error| corrupt("operation_id", error))
-            })
+            .map(|id| OperationId::try_from(id).map_err(|error| corrupt("operation_id", error)))
             .collect()
     }
     async fn claim(
@@ -209,7 +205,7 @@ impl<S: JournalQueries> JournalStorage for S {
         keep_result: bool,
     ) -> Result<(), StoreError> {
         self.check_token(id, token).await?;
-        self.delete_steps(id.0.to_string()).await?;
+        self.delete_steps(id.as_uuid().to_string()).await?;
         if keep_result {
             let mut record = self
                 .operation(id)
@@ -232,7 +228,7 @@ impl<S: JournalQueries> JournalStorage for S {
                 return Err(StoreError::StaleDriveToken { id });
             }
         } else if !self
-            .delete_operation(id.0.to_string(), token.to_string())
+            .delete_operation(id.as_uuid().to_string(), token.to_string())
             .await?
         {
             return Err(StoreError::StaleDriveToken { id });
@@ -246,7 +242,7 @@ impl<S: JournalQueries> JournalStorage for S {
         position: u64,
     ) -> Result<Option<StepRecord>, StoreError> {
         self.fetch_step(
-            id.0.to_string(),
+            id.as_uuid().to_string(),
             i64::try_from(position).map_err(StoreError::backend)?,
         )
         .await?
@@ -258,7 +254,7 @@ impl<S: JournalQueries> JournalStorage for S {
         self.upsert_step(StoredStepRow::encode(step)?).await
     }
     async fn step_count(&mut self, id: OperationId) -> Result<u64, StoreError> {
-        u64::try_from(self.count_steps(id.0.to_string()).await?)
+        u64::try_from(self.count_steps(id.as_uuid().to_string()).await?)
             .map_err(|error| corrupt("step_count", error))
     }
     async fn earliest(&mut self) -> Result<Option<SyncTime>, StoreError> {

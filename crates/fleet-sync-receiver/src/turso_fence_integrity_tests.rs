@@ -9,7 +9,9 @@ use sqlx_turso::{Turso, TursoConnectOptions, TursoConnection};
 fn request(id: u128, epoch: u64, expected: u64, holder: PeerId) -> TestResult<FenceRequest> {
     Ok(FenceRequest {
         database: database()?,
-        transfer_id: TransferId::new(uuid::Uuid::from_u128(id))?,
+        transfer_id: TransferId::new(uuid::Uuid::from_u128(
+            (id) | 0x019eef00000070008000000000000000,
+        ))?,
         new_epoch: Epoch::new(epoch)?,
         expect: FenceExpectation {
             epoch: Epoch::new(expected)?,
@@ -22,7 +24,7 @@ fn request(id: u128, epoch: u64, expected: u64, holder: PeerId) -> TestResult<Fe
 #[tokio::test]
 async fn fence_checks_forward_motion_exact_preview_and_schema_before_mutation() -> TestResult {
     let mut connection = connection().await?;
-    let target = PeerId::new(uuid::Uuid::from_u128(501))?;
+    let target = PeerId::new(uuid::Uuid::from_u128(0x019eef000000700080000000000001f5))?;
     let mut cases = Vec::new();
     cases.push((
         request(501, 1, 1, target)?,
@@ -73,8 +75,8 @@ async fn reopened_copy_keeps_old_fence_receipts_and_cutoffs_after_later_fences()
             .create_if_missing(true),
     )
     .await?;
-    let second = PeerId::new(uuid::Uuid::from_u128(502))?;
-    let third = PeerId::new(uuid::Uuid::from_u128(503))?;
+    let second = PeerId::new(uuid::Uuid::from_u128(0x019eef000000700080000000000001f6))?;
+    let third = PeerId::new(uuid::Uuid::from_u128(0x019eef000000700080000000000001f7))?;
     let first = request(511, 2, 1, second)?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     let original = fence(&mut TursoScope(&mut transaction), &first).await?;
@@ -192,9 +194,19 @@ async fn receipt_state(connection: &mut TursoConnection) -> TestResult<Vec<Strin
 async fn reject_inconsistent_receipt(damage: ReceiptDamage) -> TestResult {
     let mut connection = connection().await?;
     let incoming = piece(1, 0)?;
-    let mut first = request(2501, 2, 1, PeerId::new(uuid::Uuid::from_u128(2502))?)?;
+    let mut first = request(
+        2501,
+        2,
+        1,
+        PeerId::new(uuid::Uuid::from_u128(0x019eef000000700080000000000009c6))?,
+    )?;
     first.expect.acked = position(1)?;
-    let mut later = request(2503, 3, 2, PeerId::new(uuid::Uuid::from_u128(2504))?)?;
+    let mut later = request(
+        2503,
+        3,
+        2,
+        PeerId::new(uuid::Uuid::from_u128(0x019eef000000700080000000000009c8))?,
+    )?;
     later.expect.acked = position(1)?;
     let mut tx = connection.begin_with("BEGIN IMMEDIATE").await?;
     apply_piece(

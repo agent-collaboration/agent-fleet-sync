@@ -274,7 +274,7 @@ impl FixtureHost {
             return Err("injected registry gather failure".into());
         }
         let state = read_state(&mut host.connection).await?;
-        let database = DatabaseId::new(uuid::Uuid::from_u128(10))?;
+        let database = DatabaseId::new(uuid::Uuid::from_u128(0x019eef0000007000800000000000000a))?;
         let epoch = Epoch::new(1)?;
         let remaining_ms = u64::try_from(
             state
@@ -301,7 +301,9 @@ impl FixtureHost {
         }];
         if host.unreadable_copy {
             databases.push(DatabaseStatus::Unavailable {
-                database: DatabaseId::new(uuid::Uuid::from_u128(11))?,
+                database: DatabaseId::new(uuid::Uuid::from_u128(
+                    0x019eef0000007000800000000000000b,
+                ))?,
                 lease: None,
                 reason: CopyUnavailableReason::Damaged {
                     detail: "injected unreadable copy".into(),
@@ -353,7 +355,9 @@ impl FixtureHost {
                 let binding = ConnectionBinding::new(
                     ConnectionId::new(uuid::Uuid::now_v7())?,
                     VerifiedPeer {
-                        peer: PeerId::new(uuid::Uuid::from_u128(1))?,
+                        peer: PeerId::new(uuid::Uuid::from_u128(
+                            0x019eef00000070008000000000000001,
+                        ))?,
                         expires_at: SyncTime::from_unix_millis(10_000),
                     },
                 );
@@ -432,7 +436,8 @@ impl PeerAuthenticator for FixtureHost {
             return Err(AuthRefusal::Expired);
         }
         Ok(VerifiedPeer {
-            peer: PeerId::new(uuid::Uuid::from_u128(1)).map_err(|_| AuthRefusal::WrongKind)?,
+            peer: PeerId::new(uuid::Uuid::from_u128(0x019eef00000070008000000000000001))
+                .map_err(|_| AuthRefusal::WrongKind)?,
             expires_at,
         })
     }

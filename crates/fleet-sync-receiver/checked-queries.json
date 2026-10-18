@@ -514,15 +514,9 @@
     {
       "name": "read_install_pages",
       "sql": "sql/read_install_pages.sql",
-      "row": "InstallRow",
+      "row": "InstallPageRow",
       "result": "many",
-      "parameters": [
-        {
-          "name": "install_id",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
+      "parameters": []
     },
     {
       "name": "write_install_page",

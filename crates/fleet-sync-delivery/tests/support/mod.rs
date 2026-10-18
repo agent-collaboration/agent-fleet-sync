@@ -180,7 +180,10 @@ pub fn configured_limits(
     .unwrap()
 }
 pub fn peer(value: u128) -> PeerId {
-    PeerId::new(durable_steps::Uuid::from_u128(value)).unwrap()
+    PeerId::new(durable_steps::Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))
+    .unwrap()
 }
 pub fn item_id(value: u64) -> ItemId {
     ItemId::new(durable_steps::Uuid::from_u128(
@@ -222,7 +225,10 @@ pub fn cancel(value: u64, target: u64) -> DeliveryEnvelope<TestTypes> {
 }
 pub fn call(step: &str) -> CallId {
     CallId {
-        operation: OperationId(durable_steps::Uuid::from_u128(99)),
+        operation: OperationId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000063,
+        ))
+        .unwrap(),
         step: StepName::new(step).unwrap(),
     }
 }

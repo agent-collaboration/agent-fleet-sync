@@ -1,5 +1,5 @@
 use crate::{LocalStateCarryError, PublishError, native_carry_schema::FileScope};
-use durable_steps::{BoxFuture, StoreError, Uuid};
+use durable_steps::{BoxFuture, StoreError};
 use fleet_sync_protocol::{
     CopyStatus, ReplicationPosition, SnapshotCursor, SnapshotManifest, SnapshotManifestAnswer,
     SnapshotPage, SnapshotRead,
@@ -71,7 +71,7 @@ pub enum StagedVerification {
 /// commit together, and only the receipt is returned to the control journal.
 pub struct StagingStore {
     directory: PathBuf,
-    files: Mutex<BTreeMap<Uuid, Arc<Mutex<()>>>>,
+    files: Mutex<BTreeMap<fleet_sync_protocol::InstallId, Arc<Mutex<()>>>>,
 }
 static COPY_MIGRATIONS: Migrator = sqlx::migrate!("../fleet-sync-receiver/migrations");
 impl StagingStore {
@@ -92,9 +92,6 @@ impl StagingStore {
         &self,
         install: &SnapshotInstall,
     ) -> Result<OwnedMutexGuard<()>, StagingError> {
-        if install.install_id.is_nil() {
-            return Err(SnapshotInstallError::IdentityConflict.into());
-        }
         let owner = self
             .files
             .lock()

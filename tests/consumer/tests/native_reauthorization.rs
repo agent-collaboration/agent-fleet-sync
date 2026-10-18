@@ -23,7 +23,9 @@ async fn restored_permission_starts_a_new_session_without_reviving_old_bindings_
 -> TestResult {
     let root = tempfile::tempdir()?;
     let service = ServiceProcess::start(root.path()).await?;
-    let peer = PeerId::new(durable_steps::Uuid::from_u128(2))?;
+    let peer = PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?;
     let old_session = SessionId::new(durable_steps::Uuid::now_v7())?;
     let mut attached = service.peer(2, old_session).await?;
     let mut control = service
@@ -91,7 +93,9 @@ async fn restored_permission_starts_a_new_session_without_reviving_old_bindings_
 async fn another_peers_revocation_keeps_an_in_flight_verification_valid() -> TestResult {
     let root = tempfile::tempdir()?;
     let service = ServiceProcess::start(root.path()).await?;
-    let peer = PeerId::new(durable_steps::Uuid::from_u128(4))?;
+    let peer = PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000004,
+    ))?;
     let mut control = service
         .connect("control", "Bearer consumer-control")
         .await?;
@@ -107,7 +111,9 @@ async fn another_peers_revocation_keeps_an_in_flight_verification_valid() -> Tes
     control_request(
         &mut control,
         ControlRequest::Revoke {
-            peer: PeerId::new(durable_steps::Uuid::from_u128(2))?,
+            peer: PeerId::new(durable_steps::Uuid::from_u128(
+                0x019eef00000070008000000000000002,
+            ))?,
         },
     )
     .await?;

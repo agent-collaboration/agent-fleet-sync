@@ -6,7 +6,7 @@ use crate::{
     WriterSessionCalls,
     writer_session_calls::{decode, encode, unavailable},
 };
-use durable_steps::{CallFailure, CallTarget, Engine, NotSentReason, StoreError, Uuid};
+use durable_steps::{CallFailure, CallTarget, Engine, NotSentReason, StoreError};
 use fleet_sync_protocol::*;
 use fleet_sync_receiver::SnapshotInstallError;
 use fleet_sync_writer::{BootstrapError, OpenError, ReplicatedDatabase, ReplicatedSchema};
@@ -67,7 +67,7 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterInstaller<S, P> {
     }
     pub async fn start(
         &self,
-        attempt: Uuid,
+        attempt: InstallAttemptId,
     ) -> Result<InstallHandle<WriterHost<S, P>>, durable_steps::StartRefusal> {
         self.coordinator
             .start(
@@ -81,10 +81,10 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterInstaller<S, P> {
             )
             .await
     }
-    pub async fn wait(&self, attempt: Uuid) -> Result<InstallRecord, StoreError> {
+    pub async fn wait(&self, attempt: InstallAttemptId) -> Result<InstallRecord, StoreError> {
         self.coordinator.wait_for_attempt(attempt).await
     }
-    pub async fn record(&self, id: Uuid) -> Result<InstallRecord, StoreError> {
+    pub async fn record(&self, id: InstallId) -> Result<InstallRecord, StoreError> {
         self.coordinator.record(id).await
     }
     async fn replicate(

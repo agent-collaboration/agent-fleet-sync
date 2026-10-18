@@ -6,6 +6,7 @@ use crate::{
     seed_storage::{SeedRecord, SeedStorage},
 };
 use durable_steps::storage::TransactionScope;
+use fleet_sync_protocol::SeedAttemptId;
 use fleet_sync_protocol::{
     DatabaseId, PageDigest, SeedAnswer, SeedComplete, SeedId, SeedPage, SeedPageAnswer,
 };
@@ -13,7 +14,6 @@ use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
 };
-use uuid::Uuid;
 
 /// Allocate a copy-owned generation. A repeated attempt returns its original generation.
 // Explicit Send is required by borrowed-scope host dispatch.
@@ -21,7 +21,7 @@ use uuid::Uuid;
 pub fn seed_begin<'scope, S>(
     scope: &'scope mut S,
     database: DatabaseId,
-    attempt: Uuid,
+    attempt: SeedAttemptId,
     authority: &'scope crate::SeedAuthority,
 ) -> impl std::future::Future<Output = Result<SeedId, ReceiverError>> + Send + 'scope
 where
@@ -45,11 +45,6 @@ where
             return Err(ReceiverError::NotInitialized);
         }
         authorize_seed(scope, &copy, authority).await?;
-        if attempt.is_nil() {
-            return Err(ReceiverError::InvalidInput {
-                field: "seed attempt must be non-nil".into(),
-            });
-        }
         let previous = SeedStorage(scope).load(database).await?;
         if let Some(seed) = SeedStorage(scope).attempt(attempt).await? {
             return Ok(seed);

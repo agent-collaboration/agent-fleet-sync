@@ -17,7 +17,9 @@ fn policy() -> LeasePolicy {
     }
 }
 fn peer(value: u128) -> TestResult<PeerId> {
-    Ok(PeerId::new(durable_steps::Uuid::from_u128(value))?)
+    Ok(PeerId::new(durable_steps::Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))?)
 }
 
 enum InvalidWrite {
@@ -100,7 +102,9 @@ async fn prefix_admission(reopen: bool, attempted: InvalidWrite) -> TestResult {
         target
             .mark_bootstrap_ready(
                 &install,
-                ReceiverId::new(durable_steps::Uuid::from_u128(3))?,
+                ReceiverId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000003,
+                ))?,
             )
             .await?;
         let before = stored_state(&target).await?;
@@ -150,7 +154,7 @@ async fn stage(
 ) -> TestResult<SnapshotInstall> {
     let mut snapshot = source.snapshot().await?;
     let install = SnapshotInstall {
-        install_id: durable_steps::Uuid::now_v7(),
+        install_id: InstallId::new(durable_steps::Uuid::now_v7())?,
         database: source.database(),
         position: snapshot.position(),
         schema: snapshot.schema().clone(),

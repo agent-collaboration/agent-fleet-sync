@@ -14,7 +14,9 @@ use sqlx_turso::Turso;
 use std::sync::Arc;
 
 fn transfer(value: u128) -> TestResult<TransferId> {
-    Ok(TransferId::new(Uuid::from_u128(value))?)
+    Ok(TransferId::new(Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))?)
 }
 fn movement(id: u128, from: u64, to: u128) -> TestResult<HolderChangeRequest> {
     Ok(HolderChangeRequest::Move {

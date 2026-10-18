@@ -123,7 +123,9 @@ async fn mailbox_native_initialization_retries_while_healthy_service_owners_prog
         transport.clone(),
         SenderOptions::default(),
     );
-    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
+    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000003,
+    ))?;
     replication
         .add_copy(
             receiver,

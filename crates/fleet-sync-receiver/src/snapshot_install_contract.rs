@@ -1,20 +1,20 @@
 use crate::{ReceiverError, StoreError};
+use fleet_sync_protocol::InstallId;
 use fleet_sync_protocol::{
     DatabaseId, HookRefusal, PageDigest, ReplicationPosition, SchemaIdentity, SnapshotCursor,
 };
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SnapshotInstall {
-    pub install_id: Uuid,
+    pub install_id: InstallId,
     pub database: DatabaseId,
     pub position: ReplicationPosition,
     pub schema: SchemaIdentity,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct InstallPageReceipt {
-    pub install_id: Uuid,
+    pub install_id: InstallId,
     pub page: u32,
     pub digest: PageDigest,
     pub rows: u64,

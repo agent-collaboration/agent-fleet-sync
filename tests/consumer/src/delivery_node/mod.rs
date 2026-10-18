@@ -448,12 +448,14 @@ impl NodeState {
 }
 
 pub fn peer(number: u128) -> Result<PeerId, DeliveryError> {
-    PeerId::new(durable_steps::Uuid::from_u128(number))
-        .map_err(|error| DeliveryError::Encoding(error.to_string()))
+    PeerId::new(durable_steps::Uuid::from_u128(
+        (number) | 0x019eef00000070008000000000000000,
+    ))
+    .map_err(|error| DeliveryError::Encoding(error.to_string()))
 }
 fn new_call() -> TestResult<CallId> {
     Ok(CallId {
-        operation: OperationId(durable_steps::Uuid::now_v7()),
+        operation: OperationId::new(durable_steps::Uuid::now_v7())?,
         step: StepName::new("delivery-node-control")?,
     })
 }

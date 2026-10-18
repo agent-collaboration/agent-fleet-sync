@@ -60,7 +60,7 @@ async fn migration_case(case: ClockMigration, allowed: bool) -> TestResult {
     let result = ReplicatedDatabase::create(
         &path,
         schema,
-        PeerId::new(Uuid::from_u128(2))?,
+        PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002))?,
         LeasePolicy {
             lease_duration: Duration::from_secs(600),
             renew_interval: Duration::from_secs(30),

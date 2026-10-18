@@ -264,10 +264,10 @@ impl Fixture {
     }
     fn request(&self) -> TestResult<InstallRequest> {
         Ok(InstallRequest {
-            attempt: Uuid::now_v7(),
+            attempt: InstallAttemptId::new(Uuid::now_v7())?,
             target: self.target.key().clone(),
             database: self.router.source.database,
-            source: ReceiverId::new(Uuid::from_u128(10))?,
+            source: ReceiverId::new(Uuid::from_u128(0x019eef0000007000800000000000000a))?,
         })
     }
 }
@@ -289,11 +289,11 @@ async fn permanent_page_failure_cannot_replace_superseded_outcome_even_when_engi
             ));
         }
         let request = fixture.request()?;
-        let install = request.attempt;
+        let install = InstallId::new(request.attempt.as_uuid())?;
         let handle = fixture.coordinator.start(request, &fixture.target).await?;
         let operation = handle.operation;
         let replacement = fixture.request()?;
-        let superseding = replacement.attempt;
+        let superseding = InstallId::new(replacement.attempt.as_uuid())?;
         let (drive, admission) = tokio::join!(fixture.engine.drive_due(), async {
             fixture.router.page_started.notified().await;
             let admitted = fixture
@@ -346,7 +346,7 @@ async fn manifest_failure_leaves_live_bytes_unchanged_and_needs_snapshot_until_a
     ));
     let live_before = file_images(fixture.target.path()).await?;
     let failed_request = fixture.request()?;
-    let failed_id = failed_request.attempt;
+    let failed_id = InstallId::new(failed_request.attempt.as_uuid())?;
     fixture.router.mode.store(2, Ordering::SeqCst);
     let failed = fixture
         .coordinator
@@ -447,7 +447,7 @@ async fn moved_source_restarts_with_a_new_generation_and_installs_its_new_pinned
     let fixture = Fixture::open(root.path()).await?;
     fixture.router.mode.store(3, Ordering::SeqCst);
     let request = fixture.request()?;
-    let old_id = request.attempt;
+    let old_id = InstallId::new(request.attempt.as_uuid())?;
     let handle = fixture.coordinator.start(request, &fixture.target).await?;
     let report = fixture.engine.drive_due().await?;
     assert_eq!(report.completed, vec![handle.operation]);

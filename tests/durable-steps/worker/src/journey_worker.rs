@@ -250,7 +250,7 @@ impl DurableObject for JourneyObject {
             "/journey/inspect" => {
                 let observed = journey.store.transaction(|scope| Box::pin(async move {
                     let row = query_as::<Do, IdRow>(include_str!("../../../../crates/durable-steps/tests/conformance/queries/journey_operation.sql")).fetch_one(scope.executor()).await?;
-                    let id = OperationId(Uuid::parse_str(&row.operation_id).map_err(StoreError::backend)?);
+                    let id = OperationId::try_from(row.operation_id).map_err(StoreError::backend)?;
                     let record = scope.operation(id).await?.ok_or(StoreError::MissingOperation { id })?;
                     Ok(JourneyObservation { completed: matches!(record.execution, OperationExecution::Completed { .. }), first: read(scope.executor(), "first").await?, last: read(scope.executor(), "last").await?, steps: scope.step_count(id).await?, alarm_runs: read(scope.executor(), "alarm-runs").await?, last_alarm_at: read(scope.executor(), "last-alarm-at").await? })
                 })).await.map_err(worker_error)?;

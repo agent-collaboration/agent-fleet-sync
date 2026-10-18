@@ -50,7 +50,7 @@
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
     "checked-queries.json": "c440e4987791df9b9afb084e554874eb8467587c74532ac79b7f1a5459c11b86",
-    "migrations/0001_writer_bookkeeping.sql": "b21f22f18dbb1544d0964ac419ba309db198b365f72d1acd74f3e665ae133bda",
+    "migrations/0001_writer_bookkeeping.sql": "7df49be1cc2166b99e5fa559187a4dd2f733a00db8d80d707d6951ca63dc84af",
     "query-schema/99990001_capture_query_schema.sql": "1e1ee98953e04f6edcd18b85abc33326819a0e0210f3fc42717e4cd30e4b1c98",
     "query-schema/99990002_bootstrap_receipts_query_schema.sql": "9f09325a6ae42fa29838e137ac93dcbf00ef59456da699d7c75a24a090ede4b3",
     "sql/clear_bootstrap_marker.sql": "67ab649a322fbb5787a26d9cde08efdd78b80fb8b119c3bd65531791b8f2cb3e",

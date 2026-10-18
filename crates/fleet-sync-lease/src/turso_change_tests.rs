@@ -8,7 +8,9 @@ use sqlx_turso::Turso;
 use std::sync::{Arc, atomic::Ordering};
 
 fn transfer(value: u128) -> TestResult<TransferId> {
-    Ok(TransferId::new(Uuid::from_u128(value))?)
+    Ok(TransferId::new(Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))?)
 }
 pub(super) async fn register_first(engine: &TestEngine) -> TestResult {
     let request = registration(201, 1)?;

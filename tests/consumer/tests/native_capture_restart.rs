@@ -84,10 +84,14 @@ fn policy() -> LeasePolicy {
     }
 }
 fn peer() -> TestResult<PeerId> {
-    Ok(PeerId::new(durable_steps::Uuid::from_u128(2))?)
+    Ok(PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?)
 }
 fn receiver() -> TestResult<ReceiverId> {
-    Ok(ReceiverId::new(durable_steps::Uuid::from_u128(3))?)
+    Ok(ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000003,
+    ))?)
 }
 type Sender = ReplicationSender<SampleSchema, Annotation, (), SocketTransport>;
 fn sender(

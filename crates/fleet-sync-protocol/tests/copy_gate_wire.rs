@@ -33,10 +33,10 @@ fn copy_call_refusals_are_typed_answers() {
 
 #[test]
 fn gate_requests_and_settlement_keep_the_consumers_typed_payloads() {
-    let database = DatabaseId::new(Uuid::from_u128(1)).unwrap();
-    let writer = PeerId::new(Uuid::from_u128(2)).unwrap();
+    let database = DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000001)).unwrap();
+    let writer = PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002)).unwrap();
     let change = HolderChangeRequest::Claim {
-        attempt: TransferId::new(Uuid::from_u128(3)).unwrap(),
+        attempt: TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000003)).unwrap(),
         database,
         claimant: writer,
     };
@@ -80,8 +80,8 @@ fn gate_requests_and_settlement_keep_the_consumers_typed_payloads() {
 #[test]
 fn copy_creation_conflict_returns_the_complete_existing_request() {
     let wire = serde_json::json!({"kind":"creationConflict","value":{"existing":{
-        "database":"00000000-0000-0000-0000-000000000001", "epoch":2,
-        "holder":"00000000-0000-0000-0000-000000000002",
+        "database":"019eef00-0000-7000-8000-000000000001", "epoch":2,
+        "holder":"019eef00-0000-7000-8000-000000000002",
         "origin":{"kind":"awaitingSeed","value":{"expectedPosition":{"epoch":2,"sequence":8}}}
     }}});
     let answer: CreateCopyAnswer = serde_json::from_value(wire.clone()).unwrap();
@@ -90,7 +90,7 @@ fn copy_creation_conflict_returns_the_complete_existing_request() {
 
 #[test]
 fn snapshot_manifest_request_and_answers_keep_the_pinned_position_and_table_details() {
-    let database = DatabaseId::new(Uuid::from_u128(1)).unwrap();
+    let database = DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000001)).unwrap();
     let position = ReplicationPosition::new(Epoch::new(2).unwrap(), CommitSequence::new(8));
     let request: ReplicationRequest = ReplicationRequest::SnapshotManifest { database, position };
     let wire = serde_json::to_value(request).unwrap();

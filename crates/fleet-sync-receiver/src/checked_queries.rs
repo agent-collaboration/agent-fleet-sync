@@ -1053,27 +1053,31 @@ where
         Ok(())
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct InstallPageRow {
+    pub install_id: Option<String>,
+    pub record: Option<String>,
+}
 pub(crate) fn read_install_pages<S>(
     scope: &mut S,
-    install_id: String,
-) -> impl std::future::Future<Output = Result<Vec<InstallRow>, sqlx_core::Error>> + Send
+) -> impl std::future::Future<Output = Result<Vec<InstallPageRow>, sqlx_core::Error>> + Send
 where
     S: TransactionScope,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
     for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
-    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
 {
     async move {
         let statement = query::<S::Database>(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/sql/read_install_pages.sql"
-        )))
-        .bind(install_id);
+        )));
         let rows = statement.fetch_all(scope.executor()).await?;
         rows.iter()
             .map(|row| {
-                Ok(InstallRow {
+                Ok(InstallPageRow {
+                    install_id: row.try_get("install_id")?,
                     record: row.try_get("record")?,
                 })
             })

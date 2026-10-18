@@ -72,13 +72,19 @@ pub fn now(value: i64) -> SyncTime {
     SyncTime::from_unix_millis(value)
 }
 pub fn session(value: u128) -> SessionId {
-    SessionId::new(Uuid::from_u128(value)).unwrap()
+    SessionId::new(Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))
+    .unwrap()
 }
 pub fn binding(value: u128) -> ConnectionBinding {
     ConnectionBinding::new(
-        ConnectionId::new(Uuid::from_u128(value)).unwrap(),
+        ConnectionId::new(Uuid::from_u128(
+            (value) | 0x019eef00000070008000000000000000,
+        ))
+        .unwrap(),
         VerifiedPeer {
-            peer: PeerId::new(Uuid::from_u128(1)).unwrap(),
+            peer: PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000001)).unwrap(),
             expires_at: now(100),
         },
     )

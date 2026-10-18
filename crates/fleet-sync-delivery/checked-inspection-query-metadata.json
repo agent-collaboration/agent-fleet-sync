@@ -50,7 +50,7 @@
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
     "checked-inspection-queries.json": "e027f8d1880560212cfd11dcd3cc341593717809c3e319aa1c831803376a72d9",
-    "migrations/0001_delivery_custody.sql": "bcd8befd58901384e2d2e9b8d70f17063e33118442fad1eb77e78dbbe441dfe7",
+    "migrations/0001_delivery_custody.sql": "1c480b530973dadd80a9fb388bb2d55428470e7d57d24cdce8973be7e93ef8d2",
     "migrations/0002_mailbox_deadlines.sql": "7e60b848a3c73c0b05b139d1822225a631b1b79a0ea4d497646fdeb4f708d031",
     "sql/read_delivery_snapshot.sql": "b748d67f29b876c66212da91a0b139344c5b7da03ec544ca74e9ecf869a84de1",
     "src/checked_inspection_queries.rs": "234763ffc60fb2cf96f98724a04240ca677129331bb6bc4fceb06b50a2af478f"

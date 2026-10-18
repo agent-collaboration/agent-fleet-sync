@@ -130,7 +130,7 @@ async fn retirement_erases_unpublished_seed_rows_and_keeps_the_permanent_marker(
     let seed = seed_begin(
         &mut TursoScope(&mut transaction),
         database()?,
-        Uuid::from_u128(401),
+        SeedAttemptId::new(Uuid::from_u128(0x019eef00000070008000000000000191))?,
         &crate::SeedAuthority::Admin,
     )
     .await?;
@@ -208,8 +208,8 @@ async fn copy_issues_rising_generations_and_repeat_attempt_does_not_replace_newe
 -> TestResult {
     let mut connection = setup(None).await?;
     // Reverse UUID order: only copy-issued generations define freshness.
-    let older_attempt: Uuid = "ffffffff-ffff-7fff-8fff-ffffffffffff".parse()?;
-    let newer_attempt: Uuid = "00000000-0000-7000-8000-000000000001".parse()?;
+    let older_attempt: SeedAttemptId = "ffffffff-ffff-7fff-8fff-ffffffffffff".parse()?;
+    let newer_attempt: SeedAttemptId = "00000000-0000-7000-8000-000000000001".parse()?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     let first = seed_begin(
         &mut TursoScope(&mut transaction),
@@ -496,7 +496,7 @@ async fn retired_marker_answers_without_any_other_replication_bookkeeping() -> T
         seed_begin(
             &mut scope,
             database()?,
-            Uuid::from_u128(2201),
+            SeedAttemptId::new(Uuid::from_u128(0x019eef00000070008000000000000899))?,
             &crate::SeedAuthority::Admin
         )
         .await

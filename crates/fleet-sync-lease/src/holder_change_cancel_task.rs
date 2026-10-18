@@ -148,8 +148,7 @@ where
                 .as_str()
                 .strip_prefix("holder-change-cancel:")
                 .ok_or_else(|| StoreError::backend("invalid withdrawal task key"))?;
-            let id = TransferId::new(uuid::Uuid::parse_str(raw).map_err(StoreError::backend)?)
-                .map_err(StoreError::backend)?;
+            let id = TransferId::try_from(raw.to_owned()).map_err(StoreError::backend)?;
             let record = RegistryStorage(scope)
                 .transfer(id)
                 .await
@@ -173,8 +172,7 @@ where
                 .as_str()
                 .strip_prefix("holder-change-cancel:")
                 .ok_or_else(|| StoreError::backend("invalid withdrawal task key"))?;
-            let id = TransferId::new(uuid::Uuid::parse_str(raw).map_err(StoreError::backend)?)
-                .map_err(StoreError::backend)?;
+            let id = TransferId::try_from(raw.to_owned()).map_err(StoreError::backend)?;
             let mut record = RegistryStorage(scope)
                 .transfer(id)
                 .await

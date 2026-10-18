@@ -61,10 +61,7 @@ where
     ) -> BoxFuture<'s, Result<Resume<Self::Output>, StoreError>> {
         Box::pin(async move {
             let now = self.clock.now();
-            let Some(id) = uuid::Uuid::parse_str(key.as_str())
-                .ok()
-                .and_then(|id| TransferId::new(id).ok())
-            else {
+            let Some(id) = TransferId::try_from(key.as_str().to_owned()).ok() else {
                 return Ok(Resume::Continue);
             };
             if let Some(answer) =
@@ -101,10 +98,7 @@ where
     ) -> BoxFuture<'s, Result<(), StoreError>> {
         Box::pin(async move {
             let now = self.clock.now();
-            let Some(id) = uuid::Uuid::parse_str(key.as_str())
-                .ok()
-                .and_then(|id| TransferId::new(id).ok())
-            else {
+            let Some(id) = TransferId::try_from(key.as_str().to_owned()).ok() else {
                 return Ok(());
             };
             let Some(admission) = RegistryStorage(scope)

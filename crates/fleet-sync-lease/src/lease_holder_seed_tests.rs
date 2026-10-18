@@ -5,8 +5,12 @@ use std::time::Duration;
 type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 fn holder() -> Result<LeaseHolder, Box<dyn std::error::Error + Send + Sync>> {
     Ok(LeaseHolder::provisional(
-        DatabaseId::new(durable_steps::Uuid::from_u128(1))?,
-        PeerId::new(durable_steps::Uuid::from_u128(2))?,
+        DatabaseId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000001,
+        ))?,
+        PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000002,
+        ))?,
         LeasePolicy {
             lease_duration: Duration::from_secs(10),
             renew_interval: Duration::from_secs(1),

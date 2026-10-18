@@ -15,6 +15,7 @@ struct ReceiverReceipt {
 
 pub struct TestHost {
     pub clock: AtomicI64,
+    pub invalid_ids: AtomicBool,
     next_id: AtomicU64,
     pub deliveries: AtomicU64,
     pub effects: AtomicU64,
@@ -30,6 +31,7 @@ impl TestHost {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             clock: AtomicI64::new(1_000),
+            invalid_ids: AtomicBool::new(false),
             next_id: AtomicU64::new(1),
             deliveries: AtomicU64::new(0),
             effects: AtomicU64::new(0),
@@ -54,7 +56,13 @@ impl Clock for TestHost {
 }
 impl IdSource for TestHost {
     fn new_id(&self) -> Uuid {
-        Uuid::from_u128(u128::from(self.next_id.fetch_add(1, Ordering::SeqCst)))
+        if self.invalid_ids.load(Ordering::SeqCst) {
+            return Uuid::from_u128(0x019eef00000040008000000000000001);
+        }
+        Uuid::from_u128(
+            (u128::from(self.next_id.fetch_add(1, Ordering::SeqCst)))
+                | 0x019eef00000070008000000000000000,
+        )
     }
 }
 impl Host for TestHost {

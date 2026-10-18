@@ -5,7 +5,7 @@ use fleet_sync_test_consumer::{Consumer, ConsumerStore, TestResult};
 
 fn call(step: &str) -> TestResult<CallId> {
     Ok(CallId {
-        operation: OperationId(Uuid::now_v7()),
+        operation: OperationId::new(Uuid::now_v7())?,
         step: StepName::new(step)?,
     })
 }

@@ -67,7 +67,7 @@ async fn mailbox_pass<D: DeliveryTypes>(
         .await
         .map_err(|error| PassFailure::operational("engine", error))?;
     for (operation, failure) in report.failed {
-        tracing::warn!(operation=%operation.0,?failure,"durable delivery operation failed");
+        tracing::warn!(operation=%operation.as_uuid(),?failure,"durable delivery operation failed");
     }
     if let Some(error) = report.wake_failure {
         return Err(PassFailure::operational("engineWake", error));

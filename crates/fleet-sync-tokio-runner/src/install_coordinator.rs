@@ -5,7 +5,7 @@ use crate::{
     native_object::ObjectConnection,
 };
 use durable_steps::{
-    Admitted, BoxFuture, Host, JournalScope, OperationId, StartRefusal, StoreError, Uuid,
+    Admitted, BoxFuture, Host, JournalScope, OperationId, StartRefusal, StoreError,
     turso_store::TursoScope,
 };
 use fleet_sync_receiver::{SnapshotInstall, SnapshotInstallRules};
@@ -48,8 +48,16 @@ impl<H: Host> InstallHandle<H> {
     }
 }
 impl<H: Host> InstallCoordinator<H> {
-    pub async fn wait_for_attempt(&self, install: Uuid) -> Result<InstallRecord, StoreError> {
-        let initial = self.record(install).await?;
+    pub async fn wait_for_attempt(
+        &self,
+        install: fleet_sync_protocol::InstallAttemptId,
+    ) -> Result<InstallRecord, StoreError> {
+        let initial = self
+            .record(
+                fleet_sync_protocol::InstallId::new(install.as_uuid())
+                    .map_err(StoreError::backend)?,
+            )
+            .await?;
         let mut changes = self.control.subscribe_commits();
         loop {
             let request = initial.request.clone();
@@ -151,7 +159,11 @@ impl<H: Host> InstallCoordinator<H> {
             .await?;
         if matches!(admitted, Admitted::New(_)) {
             InstallRecords(&mut scope)
-                .reserve(&input, input.attempt)
+                .reserve(
+                    &input,
+                    fleet_sync_protocol::InstallId::new(input.attempt.as_uuid())
+                        .map_err(StoreError::backend)?,
+                )
                 .await?;
         }
         let operation = admitted.id();
@@ -168,7 +180,10 @@ impl<H: Host> InstallCoordinator<H> {
             operation,
         })
     }
-    pub async fn record(&self, id: Uuid) -> Result<InstallRecord, StoreError> {
+    pub async fn record(
+        &self,
+        id: fleet_sync_protocol::InstallId,
+    ) -> Result<InstallRecord, StoreError> {
         self.control
             .rule_transaction(move |scope| {
                 Box::pin(async move { InstallRecords(scope).get(id).await })
@@ -197,7 +212,7 @@ impl<H: Host> InstallCoordinator<H> {
     }
     pub async fn publish<T: SnapshotTarget + ?Sized>(
         &self,
-        id: Uuid,
+        id: fleet_sync_protocol::InstallId,
         target: &T,
     ) -> Result<InstallFileAnswer, StagingError> {
         let mut owner = self.control.connection.lock().await;
@@ -240,7 +255,7 @@ impl<H: Host> InstallCoordinator<H> {
     }
     pub async fn mark_ready_with<F>(
         &self,
-        id: Uuid,
+        id: fleet_sync_protocol::InstallId,
         target: &TokioObject<H>,
         ready: F,
     ) -> Result<InstallFileAnswer, StagingError>
@@ -275,7 +290,7 @@ impl<H: Host> InstallCoordinator<H> {
     }
     pub async fn mark_writer_ready<S: fleet_sync_writer::ReplicatedSchema>(
         &self,
-        id: Uuid,
+        id: fleet_sync_protocol::InstallId,
         target: &WriterInstallTarget<S>,
     ) -> Result<InstallFileAnswer, StagingError> {
         let source = self.record(id).await?.request.source;
@@ -291,7 +306,7 @@ impl<H: Host> InstallCoordinator<H> {
     }
     async fn finish_ready<T, F, Fut>(
         &self,
-        id: Uuid,
+        id: fleet_sync_protocol::InstallId,
         target: &T,
         ready: F,
     ) -> Result<InstallFileAnswer, StagingError>

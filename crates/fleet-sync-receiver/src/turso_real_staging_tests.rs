@@ -195,7 +195,7 @@ async fn split_piece_and_seed_json_keep_sensitive_finite_bits_and_infinities_aft
     let seed = seed_begin(
         &mut TursoScope(&mut transaction),
         database()?,
-        uuid::Uuid::from_u128(1500),
+        SeedAttemptId::new(uuid::Uuid::from_u128(0x019eef000000700080000000000005dc))?,
         &crate::SeedAuthority::Admin,
     )
     .await?;

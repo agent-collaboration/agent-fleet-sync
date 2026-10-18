@@ -56,7 +56,9 @@ async fn seed_freeze_and_work_admission_share_the_same_commit_and_rollback() -> 
     use durable_steps::{AtomicStore, JournalScope, RequestKey, StoreError};
     use sqlx_core::{query::query, row::Row};
     let root = tempfile::tempdir()?;
-    let peer = PeerId::new(durable_steps::Uuid::from_u128(2))?;
+    let peer = PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?;
     let writer = std::sync::Arc::new(
         ReplicatedDatabase::create(
             &root.path().join("writer.db"),
@@ -136,7 +138,9 @@ async fn beginning_registration_seed_freezes_provisional_capture_and_reopens_at_
 -> TestResult {
     let root = tempfile::tempdir()?;
     let path = root.path().join("writer.db");
-    let peer = PeerId::new(durable_steps::Uuid::from_u128(2))?;
+    let peer = PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?;
     let writer = ReplicatedDatabase::create(
         &path,
         schema()?,
@@ -201,7 +205,9 @@ async fn seed_grant_survives_reopen_and_late_gate_refusal_cannot_replace_it() ->
     use runtime_primitives::Clock;
     let root = tempfile::tempdir()?;
     let path = root.path().join("writer.db");
-    let peer = PeerId::new(durable_steps::Uuid::from_u128(2))?;
+    let peer = PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?;
     let writer = ReplicatedDatabase::create(
         &path,
         schema()?,

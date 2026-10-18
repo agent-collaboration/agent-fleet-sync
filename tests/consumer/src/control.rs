@@ -17,18 +17,18 @@ pub enum ControlRequest {
         peer: u128,
     },
     InstallSnapshot {
-        attempt: durable_steps::Uuid,
+        attempt: InstallAttemptId,
         database: DatabaseId,
         source: ReceiverId,
     },
     InstallRecord {
-        install: durable_steps::Uuid,
+        install: InstallId,
     },
     WaitInstall {
-        install: durable_steps::Uuid,
+        install: InstallAttemptId,
     },
     ReplaySnapshotReady {
-        install: durable_steps::Uuid,
+        install: InstallId,
     },
     HoldNextInstallPageAnswer,
     WaitStagedInstallPage,
@@ -106,7 +106,7 @@ pub enum ControlRequest {
     Import(Import),
     SeedBegin {
         database: DatabaseId,
-        attempt: durable_steps::Uuid,
+        attempt: SeedAttemptId,
     },
     SeedPage(Box<SeedPage>),
     SeedComplete(SeedComplete),

@@ -37,7 +37,10 @@ impl Clock for TestHost {
 }
 impl IdSource for TestHost {
     fn new_id(&self) -> Uuid {
-        Uuid::from_u128(u128::from(self.ids.fetch_add(1, Ordering::SeqCst) + 1))
+        Uuid::from_u128(
+            (u128::from(self.ids.fetch_add(1, Ordering::SeqCst) + 1))
+                | 0x019eef00000070008000000000000000,
+        )
     }
 }
 impl WakeScheduler for TestHost {
@@ -105,7 +108,10 @@ fn credential() -> PeerCredential {
     PeerCredential::new("Bearer fixture").unwrap()
 }
 fn frame_id(value: u128) -> FrameId {
-    FrameId::new(Uuid::from_u128(value)).unwrap()
+    FrameId::new(Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))
+    .unwrap()
 }
 async fn send_server(sender: &mpsc::Sender<Bytes>, frame: ServerFrame) {
     sender

@@ -9,7 +9,9 @@ use thiserror::Error;
 use uuid::Uuid;
 
 mod call_identity;
-pub use call_identity::{CallId, InvalidName, OperationId, StepName};
+pub use call_identity::{
+    CallId, InvalidName, InvalidOperationId, OperationId, StepName, canonical_uuid_v7, uuid_v7,
+};
 
 #[cfg(feature = "tokio")]
 mod tokio_adapters;

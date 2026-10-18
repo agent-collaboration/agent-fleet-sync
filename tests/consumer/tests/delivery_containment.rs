@@ -119,7 +119,9 @@ async fn corrupted_mailbox_isolated_across_restart_while_peer_registry_copy_and_
         transport.clone(),
         SenderOptions::default(),
     );
-    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
+    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000003,
+    ))?;
     replication
         .add_copy(
             receiver,

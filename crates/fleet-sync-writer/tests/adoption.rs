@@ -45,8 +45,10 @@ async fn adopt(path: &std::path::Path) -> Result<ReplicatedDatabase<Schema>, Ope
                 message: error.to_string(),
             })?,
         },
-        PeerId::new(Uuid::from_u128(2)).map_err(|error| OpenError::Storage {
-            message: error.to_string(),
+        PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002)).map_err(|error| {
+            OpenError::Storage {
+                message: error.to_string(),
+            }
         })?,
         LeasePolicy {
             lease_duration: Duration::from_secs(60),
@@ -169,7 +171,7 @@ async fn seed_into_real_copy(
     migrator.dangerous_set_table_name("_fleet_sync_copy_migrations");
     migrator.run_direct(None, &mut *transaction, false).await?;
     let manifest = snapshot.manifest().await?;
-    let peer = PeerId::new(Uuid::from_u128(2))?;
+    let peer = PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002))?;
     let authority = fleet_sync_receiver::SeedAuthority::Writer(peer);
     let mut scope = CopyScope(&mut transaction);
     fleet_sync_receiver::initialize_hook(&mut scope, &CopyHook).await?;
@@ -188,7 +190,9 @@ async fn seed_into_real_copy(
     let seed = fleet_sync_receiver::seed_begin(
         &mut scope,
         manifest.database,
-        Uuid::from_u128(10),
+        fleet_sync_protocol::SeedAttemptId::new(Uuid::from_u128(
+            0x019eef0000007000800000000000000a,
+        ))?,
         &authority,
     )
     .await?;

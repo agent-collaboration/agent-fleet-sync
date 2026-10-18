@@ -8,6 +8,80 @@ use sqlx_turso::Turso;
 use std::sync::{Arc, atomic::Ordering};
 
 #[tokio::test]
+async fn stored_preview_token_is_validated_before_a_registry_read_returns_it() -> TestResult {
+    use crate::{registry_records::PreviewRecord, registry_storage::RegistryStorage};
+    let directory = tempfile::tempdir()?;
+    let host = TestHost::open(directory.path(), false).await?;
+    let store = open_store(&directory.path().join("registry.db"), host, true).await?;
+    let token = PreviewToken::new("019eef00-0000-7000-8000-000000000011")?;
+    let record = PreviewRecord {
+        database: database()?,
+        preview: TakeoverPreview {
+            token: token.clone(),
+            fence: Epoch::new(1)?,
+            acked: ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(0)),
+            holder: peer(1)?,
+            last_seen: None,
+        },
+    };
+    let saving = record.clone();
+    store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                RegistryStorage(scope)
+                    .save_preview(&saving)
+                    .await
+                    .map_err(storage)
+            })
+        })
+        .await?;
+    let reading = token.clone();
+    let decoded = store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                RegistryStorage(scope)
+                    .preview(&reading)
+                    .await
+                    .map_err(storage)
+            })
+        })
+        .await?;
+    assert_eq!(decoded, Some(record.clone()));
+    let mut corrupt = serde_json::to_value(record)?;
+    *corrupt
+        .get_mut("preview")
+        .and_then(|preview| preview.get_mut("token"))
+        .ok_or("missing preview token")? =
+        serde_json::json!("019eef00-0000-4000-8000-000000000011");
+    let corrupt = serde_json::to_string(&corrupt)?;
+    store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                sqlx_core::query::query::<Turso>(
+                    "UPDATE _fleet_sync_takeover_previews SET record=?",
+                )
+                .bind(corrupt)
+                .execute(scope.executor())
+                .await?;
+                Ok(())
+            })
+        })
+        .await?;
+    let result = store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                RegistryStorage(scope)
+                    .preview(&token)
+                    .await
+                    .map_err(storage)
+            })
+        })
+        .await;
+    assert!(result.is_err());
+    Ok(())
+}
+
+#[tokio::test]
 async fn import_replays_the_copy_before_publishing_registry_state_after_lost_answer() -> TestResult
 {
     let directory = tempfile::tempdir()?;
@@ -104,7 +178,9 @@ async fn stored_database_identity_mismatch_is_not_treated_as_an_import_replay() 
     let object = record.as_object_mut().ok_or("database object")?;
     object.insert(
         "database".into(),
-        serde_json::to_value(DatabaseId::new(Uuid::from_u128(1900))?)?,
+        serde_json::to_value(DatabaseId::new(Uuid::from_u128(
+            0x019eef0000007000800000000000076c,
+        ))?)?,
     );
     let changed = serde_json::to_string(&record)?;
     let database = database()?;
@@ -157,7 +233,7 @@ async fn a_pending_move_blocks_another_move_and_renewal_returns_fresh_authority_
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
     register_first(&engine).await?;
     host.lose_release.store(true, Ordering::SeqCst);
-    let attempt = TransferId::new(Uuid::from_u128(1901))?;
+    let attempt = TransferId::new(Uuid::from_u128(0x019eef0000007000800000000000076d))?;
     let request = HolderChangeRequest::Move {
         attempt,
         database: database()?,
@@ -167,7 +243,7 @@ async fn a_pending_move_blocks_another_move_and_renewal_returns_fresh_authority_
     let id = engine
         .start::<HolderChangeTask<TestStore, Turso>>(&holder_change_request_key(attempt)?, request)
         .await?;
-    let other = TransferId::new(Uuid::from_u128(1902))?;
+    let other = TransferId::new(Uuid::from_u128(0x019eef0000007000800000000000076e))?;
     assert_eq!(
         task_answer::<HolderChangeTask<TestStore, Turso>>(
             &engine,
@@ -187,7 +263,7 @@ async fn a_pending_move_blocks_another_move_and_renewal_returns_fresh_authority_
         "2"
     );
     let request = RenewRequest {
-        attempt: RequestId::new(Uuid::from_u128(1903))?,
+        attempt: RequestId::new(Uuid::from_u128(0x019eef0000007000800000000000076f))?,
         database: database()?,
         epoch: Epoch::new(1)?,
     };
@@ -214,7 +290,7 @@ async fn a_pending_move_blocks_another_move_and_renewal_returns_fresh_authority_
     host.advance();
     assert_eq!(engine.drive_due().await?.completed, vec![id]);
     let request = RenewRequest {
-        attempt: RequestId::new(Uuid::from_u128(1903))?,
+        attempt: RequestId::new(Uuid::from_u128(0x019eef0000007000800000000000076f))?,
         database: database()?,
         epoch: Epoch::new(1)?,
     };

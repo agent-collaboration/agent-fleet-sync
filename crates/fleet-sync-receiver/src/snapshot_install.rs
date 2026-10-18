@@ -34,8 +34,7 @@ where
         source: &CopyStatus,
     ) -> Result<(), SnapshotInstallError> {
         validate_copy_status(source)?;
-        if install.install_id.is_nil()
-            || install.database != source.database
+        if install.database != source.database
             || install.position != source.acked
             || install.schema != source.schema
         {

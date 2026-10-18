@@ -46,9 +46,8 @@ pub(crate) struct StoredOperationRow {
 impl TryFrom<StoredOperationRow> for OperationRecord {
     type Error = StoreError;
     fn try_from(row: StoredOperationRow) -> Result<Self, StoreError> {
-        let id = OperationId(
-            Uuid::parse_str(&row.operation_id).map_err(|e| corrupt("operation_id", e))?,
-        );
+        let id = OperationId::try_from(row.operation_id)
+            .map_err(|error| corrupt("operation_id", error))?;
         if row.kind.is_empty() || row.input_digest.len() != 32 {
             return Err(corrupt("operation", "invalid kind or digest"));
         }
@@ -139,7 +138,7 @@ impl TryFrom<StoredOperationRow> for OperationRecord {
 impl StoredOperationRow {
     pub fn encode(record: OperationRecord) -> Result<Self, StoreError> {
         let mut row = Self {
-            operation_id: record.id.0.to_string(),
+            operation_id: record.id.as_uuid().to_string(),
             kind: record.kind,
             kind_version: i64::from(record.version),
             request_key: record.request_key.into(),
@@ -243,7 +242,7 @@ impl StoredStepRow {
             ),
         };
         Ok(Self {
-            operation_id: step.operation.0.to_string(),
+            operation_id: step.operation.as_uuid().to_string(),
             position: i64::try_from(step.position).map_err(StoreError::backend)?,
             step_name: step.name.into(),
             kind: kind.into(),
@@ -298,9 +297,8 @@ impl TryFrom<StoredStepRow> for StepRecord {
             _ => return Err(corrupt("step_state", "unknown or inconsistent step state")),
         };
         Ok(Self {
-            operation: OperationId(
-                Uuid::parse_str(&row.operation_id).map_err(|e| corrupt("operation_id", e))?,
-            ),
+            operation: OperationId::try_from(row.operation_id)
+                .map_err(|error| corrupt("operation_id", error))?,
             position: u64::try_from(row.position).map_err(|e| corrupt("position", e))?,
             name: StepName::new(row.step_name).map_err(|e| corrupt("step_name", e))?,
             state,

@@ -283,7 +283,7 @@ pub(super) struct SenderFixture {
 impl SenderFixture {
     pub async fn open() -> TestResult<Self> {
         let directory = tempfile::tempdir()?;
-        let peer = PeerId::new(Uuid::from_u128(2))?;
+        let peer = PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002))?;
         let database = Arc::new(
             ReplicatedDatabase::create(
                 &directory.path().join("writer.db"),
@@ -316,8 +316,8 @@ impl SenderFixture {
             database.writer_state().await?,
             WriterState::Writing { .. }
         ));
-        let first = ReceiverId::new(Uuid::from_u128(3))?;
-        let second = ReceiverId::new(Uuid::from_u128(4))?;
+        let first = ReceiverId::new(Uuid::from_u128(0x019eef00000070008000000000000003))?;
+        let second = ReceiverId::new(Uuid::from_u128(0x019eef00000070008000000000000004))?;
         let mut files = BTreeMap::new();
         for copy in [first, second] {
             let mut connection = TursoConnectOptions::new()

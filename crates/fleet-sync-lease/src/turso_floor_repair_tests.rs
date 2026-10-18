@@ -11,7 +11,9 @@ use sqlx_turso::Turso;
 use std::{sync::Arc, time::Duration};
 
 fn transfer(value: u128) -> TestResult<TransferId> {
-    Ok(TransferId::new(Uuid::from_u128(value))?)
+    Ok(TransferId::new(Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))?)
 }
 pub(super) async fn advance_copy(host: &TestHost, from: u64, to: u64) -> TestResult {
     let mut copies = host.copies.lock().await;
