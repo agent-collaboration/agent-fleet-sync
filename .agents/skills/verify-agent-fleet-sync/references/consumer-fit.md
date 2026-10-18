@@ -2,6 +2,8 @@
 
 The oracle is the caller's adopted consumer-fit Verification Design, rows SO52,
 SO53, SO56 and SO57, including native-session scope and staged C3/C6 controls.
+Guarded reader and upgrade refusal proof additionally use the adopted Program
+Design W-C12 and W-C13.
 Take expected behavior from that source, never from today's product answer.
 
 ## Holder refusals — SO52
@@ -226,3 +228,100 @@ no-commit controls; a copied mapping is fixture policy, not proof. Otherwise
 producer classification, like session containment, stays at central's G3
 against the exact library revision. Implemented C slices do not establish PR C
 readiness before those G3 receipts exist.
+
+## Guarded read transactions — W-C12, focused API proof
+
+The reference is Program Design W-C12, including its fail-fast maintenance
+correction. This is a public Rust API contract on a real managed writer, not
+a session journey. Do not launch the consumer or add a second SQL test harness.
+At the caller's declared immutable C10 head, check and run the existing tests:
+
+`cargo test -p fleet-sync-writer --locked --lib read_transaction -- --nocapture`
+
+Run from the archived repository root with its pinned toolchain and retained
+logs; inspect actual selection/counts. This command is a selector, not a claim
+that an earlier run applies to the current head.
+
+- `read_transaction_tests` pins related reads through
+  `ReplicatedDatabase::reader().begin_read()`. A real writer commits between
+  them: the transaction keeps its earlier view, while an independent reader
+  sees the new row. Admission occurs while a write guard already owns the
+  writer control lock, so a re-entrant lock would fail the bounded call.
+- `read_transaction_guard_tests` sends write, transaction-control, schema,
+  pragma, attach and stacked SQL through all four Executor entry points:
+  fetch_many, fetch_optional, prepare_with and describe. Each must return the
+  typed WriteOnReader refusal. Successful read controls exercise all four, so
+  blanket rejection cannot pass.
+- With a read transaction open, with_drained_file and move_aside must answer
+  ActiveReaders promptly; they do not queue. Closing the read permits a fresh
+  retry, and move-aside checks both source/destination state and the closed
+  old pool.
+- Explicit close, ordinary drop and cancellation of an unpolled close future
+  each permit later real reads, publication and a new read transaction. The
+  offered cancellation case is before its first poll; do not report a tested
+  cancellation window inside an already-running rollback without additional
+  evidence. Drop only schedules the existing pooled rollback cleanup; it is
+  not proof of synchronous cleanup by itself.
+
+The separate `a_once_polled_close_releases_the_snapshot_for_reads_and_publication`
+control polls the actual driver close future once, then drops it and checks
+fresh reads and closed-file publication. Run that existing test at its declared
+supplemental head; it is absent from the original C10 head:
+
+`cargo test -p fleet-sync-writer --locked --lib read_transaction_guard_tests::a_once_polled_close_releases_the_snapshot_for_reads_and_publication -- --exact --nocapture`
+
+Report its literal Ready or Pending observation. Ready establishes synchronous first-poll rollback
+completion; only a Pending observation exercises cancellation with rollback
+still in progress. Neither the original unpolled case nor a Ready result can
+claim that latter window.
+
+Check that ReadTransaction exposes no raw connection, writable pool, Deref or
+commit escape. Private representation/source checks complement the runtime
+tests; they do not establish later consumer high-water/feed composition.
+No hosted or board/central acceptance follows from this focused API proof.
+
+## Typed upgrade refusals — W-C13, focused transport proof
+
+The reference is the adopted Program Design W-C13 header amendment. At the
+caller's declared immutable C11 head, check and run the existing real-path
+tests from the archived repository root:
+
+```bash
+cargo test --manifest-path tests/consumer/Cargo.toml --locked --test native_upgrade_refusal -- --nocapture
+cargo test -p fleet-sync-transport-websocket --locked --test upgrade_refusal -- --nocapture
+```
+
+Retain the target, commands, raw selection/counts and exits separately. These
+selectors are not passing evidence before they run. Keep the producer's
+tests-first baseline separate from the delivered-target observation.
+
+The carrier is one `fleet-sync-auth-refusal` response header containing only
+the existing AuthRefusal JSON Serde unit value. The header name and encoding
+are implementation choices under the adopted typed-header contract.
+
+- The real FleetService tests supply each typed authenticator refusal:
+  Unknown, Expired, Revoked and WrongKind. The native transport must return
+  that exact reason. A separate wire read checks the actual HTTP status and
+  exactly one correctly encoded header. The controlled authenticator is an
+  input; it does not establish a credential verifier's expiry or revocation
+  policy.
+- The real TCP transport tests write the refusal headers first and withhold
+  a competing JSON body until `connect` returns. All four typed reasons must
+  survive this split response without waiting for or decoding that body.
+  Operation-owned release and joined server tasks replace timing assumptions.
+- Missing, malformed, unrecognized, structurally wrong (including the alternate
+  enum-object form `{"expired":null}`), trailing, combined or
+  repeated header values must return Unknown. A bare 403 also returns Unknown;
+  status alone cannot infer WrongKind. A non-authentication HTTP failure keeps
+  its existing Unavailable classification even if it carries a valid header.
+
+Check the server writes from its authenticator's typed answer and the client
+accepts exactly one header on 401/403, with no body fallback. Mid-session
+Closed/CredentialRejected frames keep their existing typed path. These source
+checks complement the wire tests and do not establish board reqwest, central
+ConnectionObject, hosted or release acceptance.
+
+If moving an existing dependency from dev to normal dependencies changes a
+standalone local-package lock edge, refresh only that edge offline, inspect
+the exact diff, then rerun locked. Do not discard a lock refusal or silently
+omit the native verification driver's Cargo.lock from scoped upkeep.
