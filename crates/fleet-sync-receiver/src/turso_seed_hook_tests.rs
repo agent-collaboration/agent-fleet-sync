@@ -10,7 +10,10 @@ use sqlx_core::row::Row;
 use sqlx_turso::Turso;
 use std::sync::{Arc, atomic::Ordering};
 
-async fn staged_seed(store: &TursoStore<TestHost>, hook: Arc<Hook>) -> TestResult<SeedComplete> {
+pub(super) async fn staged_seed(
+    store: &TursoStore<TestHost>,
+    hook: Arc<Hook>,
+) -> TestResult<SeedComplete> {
     Ok(store
         .transaction(move |scope| {
             Box::pin(async move {
@@ -290,7 +293,7 @@ async fn a_snapshot_hook_refusal_rolls_back_rows_ready_state_hook_writes_and_new
     Ok(())
 }
 
-async fn seed_identity_state(store: &TursoStore<TestHost>) -> TestResult<Vec<String>> {
+pub(super) async fn seed_identity_state(store: &TursoStore<TestHost>) -> TestResult<Vec<String>> {
     Ok(store.transaction(|scope| Box::pin(async move {
         let rows = sqlx_core::query::query::<Turso>("SELECT 'copy:'||record AS value FROM _fleet_sync_copy UNION ALL SELECT 'seed:'||record FROM _fleet_sync_seed UNION ALL SELECT 'attempt:'||attempt||':'||record FROM _fleet_sync_seed_attempts UNION ALL SELECT 'page:'||seed||':'||CAST(page AS TEXT)||':'||digest||':'||payload FROM _fleet_sync_seed_pages UNION ALL SELECT 'creation:'||request FROM _fleet_sync_creation UNION ALL SELECT 'hook:'||value FROM consumer_applied UNION ALL SELECT 'operation:'||operation_id||':'||state||':'||hex(input_digest) FROM _fleet_sync_operations UNION ALL SELECT 'schema:'||type||':'||name||':'||coalesce(sql,'') FROM sqlite_schema ORDER BY value").fetch_all(scope.executor()).await?;
         rows.iter().map(|row| row.try_get("value").map_err(JournalError::from)).collect()

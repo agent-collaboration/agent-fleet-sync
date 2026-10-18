@@ -80,6 +80,9 @@ mod turso_copy_rollback_fixture;
 mod turso_copy_rollback_tests;
 
 #[cfg(test)]
+mod turso_receiver_rollback_tests;
+
+#[cfg(test)]
 mod turso_seed_authority_tests;
 #[cfg(test)]
 mod turso_seed_tests;

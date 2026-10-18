@@ -3,12 +3,13 @@ use crate::{ApplyFailure, ReceiverError, StoreError as ReceiverStoreError};
 use durable_steps::{CallFailure, CallRetryReason, OperationFailure, StoreError};
 use fleet_sync_protocol::{
     CopyUnavailableReason, DiagnosticText, OutcomeUnknownReason, PieceRefusal, ReplicationAnswer,
-    TransactionKey,
+    SeedAnswer, TransactionKey,
 };
 use serde::{Deserialize, Serialize};
 
 const PIECE_REFUSED: &str = "copy_piece_refused";
 const DISCARDING_PARTS: &str = "copy_piece_refused_discarding_parts";
+const SEED_REFUSED: &str = "copy_seed_refused";
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -21,6 +22,7 @@ struct DiscardingPartsRefusal {
 pub enum CopyTransactionFailure {
     Unavailable(CopyUnavailableReason),
     Refused(PieceRefusal),
+    SeedRefused(SeedAnswer),
     /// Commit `discard_staged_parts` in a new transaction before answering Refused.
     RefusedDiscardingParts {
         refusal: PieceRefusal,
@@ -35,6 +37,7 @@ impl CopyTransactionFailure {
         match self {
             Self::Unavailable(reason) => ReplicationAnswer::CopyUnavailable { reason },
             Self::Refused(refusal) => ReplicationAnswer::Refused(refusal),
+            Self::SeedRefused(answer) => ReplicationAnswer::SeedComplete(answer),
             Self::RefusedDiscardingParts { .. } => unknown(StoreError::Corrupt {
                 field: "copy refusal cleanup".into(),
                 message: "staged parts must be discarded before answering".into(),
@@ -46,9 +49,10 @@ impl CopyTransactionFailure {
     pub fn call_failure(self) -> CallFailure {
         match self {
             Self::Unavailable(reason) => retryable_copy(reason),
-            Self::Refused(_) | Self::RefusedDiscardingParts { .. } | Self::OutcomeUnknown(_) => {
-                CallFailure::AnswerLost
-            }
+            Self::Refused(_)
+            | Self::SeedRefused(_)
+            | Self::RefusedDiscardingParts { .. }
+            | Self::OutcomeUnknown(_) => CallFailure::AnswerLost,
         }
     }
 }
@@ -68,9 +72,22 @@ pub fn copy_rollback(reason: CopyUnavailableReason) -> StoreError {
 /// returned error only when it preserves markers after successful rollback and
 /// replaces them with Backend on a failed storage boundary.
 pub fn receiver_rollback(error: ReceiverError) -> StoreError {
-    match unavailable_receiver(&error) {
-        Some(reason) => copy_rollback(reason),
-        None => StoreError::backend(error),
+    match error {
+        ReceiverError::SeedRefused { answer } => refusal_rollback(SEED_REFUSED, &answer),
+        ReceiverError::Retired => refusal_rollback(PIECE_REFUSED, &PieceRefusal::Retired),
+        ReceiverError::NotWriter { current } => {
+            refusal_rollback(PIECE_REFUSED, &PieceRefusal::NotWriter { current })
+        }
+        ReceiverError::SchemaUnsupported { form } => {
+            refusal_rollback(PIECE_REFUSED, &PieceRefusal::SchemaUnsupported { form })
+        }
+        error @ (ReceiverError::NotInitialized
+        | ReceiverError::Storage(_)
+        | ReceiverError::InvalidInput { .. }
+        | ReceiverError::FenceConflict) => match unavailable_receiver(&error) {
+            Some(reason) => copy_rollback(reason),
+            None => StoreError::backend(error),
+        },
     }
 }
 /// Preserve an apply refusal through a successful AtomicStore rollback.
@@ -131,6 +148,9 @@ pub fn classify_copy_store_error(error: StoreError) -> CopyTransactionFailure {
         && let OperationFailure::Refused { code, detail } = failure.as_ref()
     {
         let refusal = match code.as_str() {
+            SEED_REFUSED => serde_json::from_str(detail)
+                .map(CopyTransactionFailure::SeedRefused)
+                .ok(),
             PIECE_REFUSED => serde_json::from_str(detail)
                 .map(CopyTransactionFailure::Refused)
                 .ok(),
