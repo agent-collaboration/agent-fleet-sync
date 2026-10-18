@@ -90,11 +90,26 @@ After stopping service, restoring A's exact saved marker and reading it back,
 a new session resends A's identical Piece. It applies once; an explicit
 duplicate answers AlreadyApplied without adding another row or receipt.
 
+The separate answer-loss control drops a real committed Applied response at
+the observing transport. The sender must see AnswerLost and keep its durable
+acknowledgement. A readback must show the committed row and receipt. Resending
+the identical Piece after restart must receive AlreadyApplied, advance the
+sender acknowledgement and leave the entire copy snapshot unchanged.
+
+The registry control publishes an unheld import, stops the service, removes
+only its copy marker, and submits a real claim. The claim must keep its
+reservation and chosen epoch while waiting for the copy. After service stop,
+exact marker restoration and restart, repeating that same attempt must grant
+the reserved epoch with the same gate reservation identity. An independent
+fresh import is the readiness control, and an already-held final refusal is
+replayed across another restart. Marker restoration stands in for repaired
+storage, not for a reseed API. The view observation reads the operation's own
+pending-copy or final-outcome state with a bound; it does not use a fixed sleep.
+
 Required cases still reported as gaps:
 
-- Committed apply with lost answer, followed by same-identity reconciliation.
-- Claim, move acknowledgement wait and fence blocked by a copy; repair and
-  restart preserve attempt, chosen epoch, reservation and pending call.
+- The claim's typed availability reason and journal CallPending/CallDone
+  readback, plus the move acknowledgement-wait and fence repair cases.
 - C6's store wrapper hides a commit or rollback: A receives typed OutcomeUnknown,
   never no-effect; B continues; A reconciles its original Piece. An unknown
   reason kind takes the answer-loss reconciliation path.

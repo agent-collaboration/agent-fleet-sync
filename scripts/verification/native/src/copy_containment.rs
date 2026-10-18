@@ -1,4 +1,6 @@
 //! Promotes X7's real native damage/repair route; assertions use VD SO57.
+mod answer_loss;
+mod registry_resume;
 use crate::{
     Observations, fixture_service::new_peer, session_observation::*, support::ServiceProcess,
 };
@@ -60,6 +62,7 @@ struct CopySnapshot {
     record: Option<String>,
     rows: Vec<(String, String)>,
     receipts: Vec<(String, String)>,
+    hook_events: Vec<(String, String)>,
 }
 async fn read_snapshot(path: &Path) -> TestResult<CopySnapshot> {
     let mut connection = TursoConnectOptions::new()
@@ -85,11 +88,19 @@ async fn read_snapshot(path: &Path) -> TestResult<CopySnapshot> {
             .into_iter()
             .map(|row| Ok((row.try_get("identity")?, row.try_get("digest")?)))
             .collect::<Result<Vec<_>, sqlx_core::Error>>()?;
+    let hook_events =
+        query::<Turso>("SELECT event_id,annotation FROM hook_events ORDER BY event_id")
+            .fetch_all(&mut connection)
+            .await?
+            .into_iter()
+            .map(|row| Ok((row.try_get("event_id")?, row.try_get("annotation")?)))
+            .collect::<Result<Vec<_>, sqlx_core::Error>>()?;
     connection.close().await?;
     Ok(CopySnapshot {
         record,
         rows,
         receipts,
+        hook_events,
     })
 }
 async fn write_record(path: &Path, record: &str) -> TestResult {
@@ -336,17 +347,24 @@ pub async fn run(root: &Path, observations: &mut Observations) -> TestResult {
         json!({"rows":before_damaged.rows.len()+1,"receipts":before_damaged.receipts.len()+1}),
         json!(final_copy),
     );
+    answer_loss::observe(
+        root,
+        &service_root,
+        peer,
+        receiver,
+        damaged,
+        &damaged_path,
+        observations,
+    )
+    .await?;
     for writer in writers {
         writer.close().await;
     }
+    registry_resume::observe(root, observations).await?;
     for (case, detail) in [
         (
-            "committed-answer-loss",
-            "Separate committed-answer-loss/replay control remains to be driven; repair replay is not that control.",
-        ),
-        (
-            "registry-waiting-on-copy",
-            "Claim, acknowledgement wait, and fence repair/restart cases await the C6 pending-call observation seam.",
+            "registry-copy-call-detail",
+            "Claim repair is observed; C6's typed availability reason, journal CallPending/CallDone readback, and move acknowledgement/fence repair controls remain unobserved.",
         ),
         (
             "unknown-store-outcome",
