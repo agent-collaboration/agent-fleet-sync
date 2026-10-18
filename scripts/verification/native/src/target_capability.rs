@@ -12,7 +12,7 @@ pub async fn run(root: &Path, observations: &mut Observations) -> TestResult {
         .await?;
     let result:TestResult = async {
         let (database,_) = publish_unheld(&service,&mut control,&root.join("backup.db")).await?;
-        let claimant = new_peer()?;
+        let claimant = new_peer().await?;
         let mut low = attach_peer(&service,claimant,4).await?;
         let attempt = RequestId::new(durable_steps::Uuid::now_v7())?;
         let first = serde_json::to_value(claim(&mut low,&mut control,claimant,database,attempt).await?)?;
@@ -26,13 +26,13 @@ pub async fn run(root: &Path, observations: &mut Observations) -> TestResult {
         let fresh = serde_json::to_value(claim(&mut raised,&mut control,claimant,independent,RequestId::new(durable_steps::Uuid::now_v7())?).await?)?;
         observations.check("supported-unheld-positive-control",fresh["kind"]=="granted",json!({"kind":"granted","schema":5}),fresh);
         raised.close(CloseReason::ClientClosed).await;
-        let holder=new_peer()?;
+        let holder=new_peer().await?;
         let mut holder_socket=attach_peer(&service,holder,5).await?;
-        let low_target=new_peer()?;
+        let low_target=new_peer().await?;
         let low_socket=attach_peer(&service,low_target,4).await?;
-        let high_target=new_peer()?;
+        let high_target=new_peer().await?;
         let high_socket=attach_peer(&service,high_target,5).await?;
-        for (case,target,supported) in [("move-below-target-schema",low_target,Some(4_u64)),("move-supported-target",high_target,Some(5)),("move-no-accepted-report",new_peer()?,None)] {
+        for (case,target,supported) in [("move-below-target-schema",low_target,Some(4_u64)),("move-supported-target",high_target,Some(5)),("move-no-accepted-report",new_peer().await?,None)] {
             let (move_database,position)=publish_unheld(&service,&mut control,&root.join(format!("{case}.db"))).await?;
             let epoch=match claim(&mut holder_socket,&mut control,holder,move_database,RequestId::new(durable_steps::Uuid::now_v7())?).await? {
                 HolderChangeAnswer::Granted {epoch,..}=>epoch,

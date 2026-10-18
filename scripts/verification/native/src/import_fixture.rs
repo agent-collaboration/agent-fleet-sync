@@ -37,7 +37,7 @@ pub async fn publish_unheld(
     let writer = ReplicatedDatabase::create(
         path,
         CapabilitySchema::new()?,
-        new_peer()?,
+        new_peer().await?,
         LeasePolicy {
             lease_duration: Duration::from_secs(600),
             renew_interval: Duration::from_secs(30),
@@ -66,7 +66,7 @@ pub async fn publish_unheld(
         control,
         ControlRequest::SeedBegin {
             database,
-            attempt: durable_steps::Uuid::now_v7(),
+            attempt: SeedAttemptId::new(durable_steps::Uuid::now_v7())?,
         },
     )
     .await?
@@ -125,7 +125,7 @@ pub async fn publish_unheld(
             if status.schema.version == 5 && status.holder.is_none() => {}
         _ => return Err("schema-5 copy is not ready and unheld".into()),
     }
-    let mut reader = attach_peer(service, new_peer()?, 5).await?;
+    let mut reader = attach_peer(service, new_peer().await?, 5).await?;
     let rows = copy_rows(&mut reader, database).await?;
     if !rows.contains_key("capability_rows") {
         return Err("published schema-5 table missing".into());

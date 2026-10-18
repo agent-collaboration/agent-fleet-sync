@@ -11,7 +11,7 @@ pub async fn run(root: &Path, observations: &mut Observations) -> TestResult {
         .connect("control", "Bearer consumer-control")
         .await?;
     let result: TestResult = async {
-        let mut socket = attach_peer(&service, new_peer()?, 100).await?;
+        let mut socket = attach_peer(&service, new_peer().await?, 100).await?;
         let frame = FrameId::new(durable_steps::Uuid::now_v7())?;
         let malformed = json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{}}}}});
         socket.send(serde_json::to_vec(&malformed)?.into()).await?;
@@ -34,7 +34,7 @@ pub async fn run(root: &Path, observations: &mut Observations) -> TestResult {
         observations.check("same-session-after-bad-body",observed["kind"] == "answer" && observed["value"]["frame"] == json!(follow_up_frame)
             && observed["value"]["body"]["value"]["Echo"]["text"] == "after-bad-body",json!({"frame":follow_up_frame,"text":"after-bad-body"}),observed);
         socket.close(CloseReason::ClientClosed).await;
-        let mut unreadable = attach_peer(&service,new_peer()?,100).await?;
+        let mut unreadable = attach_peer(&service,new_peer().await?,100).await?;
         unreadable.send(b"{unreadable".to_vec().into()).await?;
         let closed = receive_json(&mut unreadable).await?;
         observations.check("unreadable-envelope",closed["kind"]=="closed" && closed["value"]["reason"]["kind"]=="malformedFrame",json!({"close":"malformedFrame"}),closed);

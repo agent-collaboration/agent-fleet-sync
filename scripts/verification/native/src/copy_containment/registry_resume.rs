@@ -97,9 +97,9 @@ async fn wait_for_copy_or_outcome(
 }
 
 pub(super) async fn observe(root: &Path, observations: &mut Observations) -> TestResult {
-    let receiver = ReceiverId::new(durable_steps::Uuid::now_v7())?;
+    let receiver = new_receiver().await?;
     let service_root = root.join("registry-service");
-    let claimant = new_peer()?;
+    let claimant = new_peer().await?;
     let service = ServiceProcess::start_as(&service_root, receiver.as_uuid().as_u128()).await?;
     let mut control = service
         .connect("control", "Bearer consumer-control")

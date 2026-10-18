@@ -1,13 +1,13 @@
 use crate::support::{ServiceProcess, server_frame};
 use fleet_sync_protocol::*;
-use fleet_sync_session::TransportConnection;
-use fleet_sync_test_consumer::{SampleProtocol, TestResult};
+use fleet_sync_session::{PeerAuthenticator, TransportConnection};
+use fleet_sync_test_consumer::{FixtureAuthenticator, SampleProtocol, TestResult};
 use fleet_sync_transport_websocket::WebSocketConnection;
 use serde_json::Value;
 use std::path::Path;
 
 pub async fn start_service(root: &Path) -> TestResult<ServiceProcess> {
-    ServiceProcess::start_as(root, durable_steps::Uuid::now_v7().as_u128()).await
+    ServiceProcess::start_as(root, new_receiver().await?.as_uuid().as_u128()).await
 }
 
 pub async fn attach_peer(
@@ -50,6 +50,20 @@ pub async fn receive_json(socket: &mut WebSocketConnection) -> TestResult<Value>
     }
 }
 
-pub fn new_peer() -> TestResult<PeerId> {
-    Ok(PeerId::new(durable_steps::Uuid::now_v7())?)
+async fn new_fixture_uuid() -> TestResult<durable_steps::Uuid> {
+    // Reuse the consumer's public credential mapping instead of duplicating its namespace.
+    let raw = durable_steps::Uuid::now_v7();
+    let authenticated = FixtureAuthenticator::default()
+        .verify(format!("Bearer peer-{}", raw.as_u128()))
+        .await
+        .map_err(|reason| format!("fixture identity refused: {reason:?}"))?;
+    Ok(authenticated.peer.as_uuid())
+}
+
+pub async fn new_peer() -> TestResult<PeerId> {
+    Ok(PeerId::new(new_fixture_uuid().await?)?)
+}
+
+pub async fn new_receiver() -> TestResult<ReceiverId> {
+    Ok(ReceiverId::new(new_fixture_uuid().await?)?)
 }

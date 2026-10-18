@@ -16,11 +16,16 @@ snapshot. P claims it. A different peer's claim must receive
 takeover gives it to Q; repeating the original claim must still name P and
 return its identical recorded outcome.
 
-The delivered C2 journey must also drive a real move against a real
-ReplicatedDatabase holder with a genuinely pending migration. Its refusal must
-name that exact migration and `pending`. The existing fixture-holder cases
-observe registry propagation only; they do not establish the real Pending
-producer. Replace that fixture path when the C2 head and setup are declared.
+The journey also creates a real ReplicatedDatabase holder. After two applied
+migrations, it offers migration 7, whose duplicate-key insert fails. Readbacks
+must show the first two migrations, the original row and the unchanged capture
+position. A real move then delivers a Release request on the holder's session;
+the driver passes that correlated call to the writer's public
+`request_release` and returns its actual answer on that connection. Both the
+writer answer and the registry refusal must name migration 7 and `pending`.
+Removing the pending offer and repeating the same move must replay the first
+refusal. This observes the real writer producer and registry/session path;
+the driver dispatches the call rather than running NativeWriterRuntime.
 The writer's entry is `ReplicatedDatabase::request_release` in
 `crates/fleet-sync-writer/src/writer_release.rs`; the registry consumes it in
 `crates/fleet-sync-lease/src/holder_change_rules.rs`.
@@ -34,11 +39,12 @@ this journey. Do not build a failed-holder fixture for delivered observation.
 
 The registry's product test owns Failed pass-through at the HolderRelease seam
 (`crates/fleet-sync-lease/src/turso_move_refusal_tests.rs`). It must check exact
-migration/state detail, replay the first result after the scripted answer
-changes, and show no extra release, fence, lease or epoch effect. That is the
+migration/state detail in both the response and canonical durable outcome,
+replay the first result after the scripted answer changes and across registry
+reopen, and show no extra release, fence, lease or epoch effect. That is the
 Implementer's product proof. The historical Failed fixture remains baseline
-registry evidence only; remove its case from the journey at the declared C2
-update. It is no evidence of a real Failed producer.
+registry evidence only; the delivered journey contains no synthetic Failed
+holder. It is no evidence of a real Failed producer.
 
 Wrong builds: unit AlreadyHeld or MigrationPending, or a replay naming Q.
 

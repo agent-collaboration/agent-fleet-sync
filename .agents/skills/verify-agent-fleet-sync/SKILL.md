@@ -46,8 +46,10 @@ means a contract mismatch; exit 2 means setup or harness failure; exit 3 means
 required coverage is missing. An exit 1 may also contain unknown cases; read
 the summary. Missing coverage is never a pass.
 
-SO52/SO53/SO57 remain incomplete while the reference's missing cases are
-reported. Connect C3/C6 controls to their real declared seams before closing
-those cases. Native proof does not establish hosted, Cloudflare edge or release
+SO52 combines the native AlreadyHeld/Pending journey with the product test's
+Failed pass-through proof; no real writer produces Failed. SO53/SO57 remain
+incomplete while the reference's missing cases are reported. Connect C3/C6
+controls to their real declared seams before closing those cases. Native proof
+does not establish hosted, Cloudflare edge or release
 acceptance. Workerd apply certainty belongs to `tests/normal-migrations-worker`;
 Cloudflare session behavior belongs to central's real runtime.

@@ -2,7 +2,10 @@
 mod answer_loss;
 mod registry_resume;
 use crate::{
-    Observations, fixture_service::new_peer, session_observation::*, support::ServiceProcess,
+    Observations,
+    fixture_service::{new_peer, new_receiver},
+    session_observation::*,
+    support::ServiceProcess,
 };
 use fleet_sync_lease::LeasePolicy;
 use fleet_sync_protocol::*;
@@ -181,8 +184,8 @@ fn copy_path(root: &Path, receiver: ReceiverId, database: DatabaseId) -> std::pa
 }
 
 pub async fn run(root: &Path, observations: &mut Observations) -> TestResult {
-    let peer = new_peer()?;
-    let receiver = ReceiverId::new(durable_steps::Uuid::now_v7())?;
+    let peer = new_peer().await?;
+    let receiver = new_receiver().await?;
     let service_root = root.join("service");
     let first = ServiceProcess::start_as(&service_root, receiver.as_uuid().as_u128()).await?;
     let mut control = first.connect("control", "Bearer consumer-control").await?;
