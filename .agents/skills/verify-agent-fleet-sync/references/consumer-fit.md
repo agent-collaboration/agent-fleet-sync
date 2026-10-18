@@ -104,12 +104,21 @@ projection at check, replaying a new decision and Welcome before publication.
 Run `bash scripts/verification/frame-shapes.sh` after session rules, frame types
 or native socket routing change.
 
-The script authenticates a real WebSocket session and sends a valid frame ID
-with an Echo body missing text. It must receive `invalidShape{field}` for that
-exact ID, then a valid Echo must answer on that same connection. An unreadable
-JSON envelope on another authenticated connection must close as malformedFrame.
-The script continues after a wrong close so it records both the body failure
-and the envelope control. Reconnecting cannot satisfy the body case.
+The script authenticates a real WebSocket session and sends identified frames
+with missing Echo text, missing body, an unexpected field and a malformed
+client answer. Each uses a distinct non-nil UUIDv4 correlation ID; entity-key
+UUIDv7 rules do not apply to FrameId. Each answer must be correlated
+`invalidShape{field}` (the named field, or `body` for the unnamed variant
+failure), followed by a valid Echo on that same connection. Only the four
+valid follow-ups may reach the consumer.
+
+Separate authenticated connections receive malformed JSON, an invalid ID, a
+missing ID and an unknown kind. Each must close as malformedFrame, with no
+additional consumer request. The script continues after a wrong close so it
+records body failures and envelope controls. Reconnecting cannot satisfy a
+same-session follow-up. The strengthened native_engine_identities product test
+separately checks the invalid UUIDv4 seed attempt: correlated InvalidShape,
+same-session Echo, and zero seed receipts after the owning process stops.
 
 Wrong build: treating every decode failure as an unreadable envelope.
 Cloudflare sessions belong to central's real runtime gate, outside this journey.

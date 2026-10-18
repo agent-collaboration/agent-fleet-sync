@@ -1,9 +1,154 @@
-use crate::{Observations, fixture_service::*};
+//! Crafted frames cross the real native session boundary without reconnecting.
+use crate::{Observations, fixture_service::*, support::*};
 use fleet_sync_protocol::*;
 use fleet_sync_session::TransportConnection;
-use fleet_sync_test_consumer::{SampleProtocol, TestResult};
-use serde_json::json;
+use fleet_sync_test_consumer::{
+    ControlAnswer, ControlRequest, SampleProtocol, SampleRequest, TestResult,
+};
+use fleet_sync_transport_websocket::WebSocketConnection;
+use serde_json::{Value, json};
 use std::path::Path;
+
+fn identified_cases(frame: FrameId) -> [(Value, &'static str); 4] {
+    [
+        (
+            json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{}}}}}),
+            "text",
+        ),
+        (json!({"kind":"request","value":{"frame":frame}}), "body"),
+        (
+            json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{"text":"must not route"}}},"unexpected":true}}),
+            "unexpected",
+        ),
+        (
+            json!({"kind":"answer","value":{"frame":frame,"body":{"kind":"consumer","value":{"notUnit":true}}}}),
+            "body",
+        ),
+    ]
+}
+
+async fn request_count(control: &mut WebSocketConnection) -> TestResult<u64> {
+    match control_request(control, ControlRequest::RequestCount).await? {
+        ControlAnswer::RequestCount(count) => Ok(count),
+        _ => Err("consumer request count missing".into()),
+    }
+}
+
+async fn identified_bodies(
+    service: &ServiceProcess,
+    control: &mut WebSocketConnection,
+    observations: &mut Observations,
+) -> TestResult {
+    let mut socket = attach_peer(service, new_peer().await?, 100).await?;
+    let result: TestResult = async {
+        for index in 0..4 {
+            // Correlation IDs are non-nil, not entity keys. Each case gets a
+            // distinct public fixture UUIDv4, followed by a fresh valid frame.
+            let frame = FrameId::new(durable_steps::Uuid::from_u128(
+                0x019eef00000040008000000000000100 + index as u128,
+            ))?;
+            let (malformed, field) = identified_cases(frame)
+                .into_iter()
+                .nth(index)
+                .ok_or("identified frame fixture missing")?;
+            let response: TestResult<Value> = async {
+                socket.send(serde_json::to_vec(&malformed)?.into()).await?;
+                receive_json(&mut socket).await
+            }
+            .await;
+            let observed = match response {
+                Ok(value) => value,
+                Err(error) => json!({"error":error.to_string()}),
+            };
+            let expected = json!({"kind":"answer","value":{"frame":frame,"body":{"kind":"invalidShape","value":{"field":field}}}});
+            observations.check(
+                &format!("identified-bad-body-{index}"),
+                observed == expected,
+                expected,
+                observed,
+            );
+
+            let follow_up_frame = FrameId::new(durable_steps::Uuid::now_v7())?;
+            let text = format!("after-bad-body-{index}");
+            let follow_up: ClientFrame<SampleProtocol> = ClientFrame::Request {
+                frame: follow_up_frame,
+                body: OperationRequest::Consumer(SampleRequest::Echo { text: text.clone() }),
+            };
+            let response: TestResult<Value> = async {
+                socket.send(serde_json::to_vec(&follow_up)?.into()).await?;
+                receive_json(&mut socket).await
+            }
+            .await;
+            let observed = match response {
+                Ok(value) => value,
+                Err(error) => json!({"error":error.to_string()}),
+            };
+            observations.check(
+                &format!("same-session-after-bad-body-{index}"),
+                observed["kind"] == "answer"
+                    && observed["value"]["frame"] == json!(follow_up_frame)
+                    && observed["value"]["body"]["kind"] == "consumer"
+                    && observed["value"]["body"]["value"]["Echo"]["text"] == text,
+                json!({"frame":follow_up_frame,"text":text,"sameConnection":true}),
+                observed,
+            );
+        }
+        let count = request_count(control).await?;
+        observations.check(
+            "malformed-bodies-never-route",
+            count == 4,
+            json!({"validFollowUps":4,"consumerRequests":4}),
+            json!({"consumerRequests":count}),
+        );
+        Ok(())
+    }
+    .await;
+    socket.close(CloseReason::ClientClosed).await;
+    result
+}
+
+async fn unreadable_envelopes(
+    service: &ServiceProcess,
+    control: &mut WebSocketConnection,
+    observations: &mut Observations,
+) -> TestResult {
+    let before = request_count(control).await?;
+    let frame = FrameId::new(durable_steps::Uuid::now_v7())?;
+    let malformed = [
+        "{unreadable".to_owned(),
+        json!({"kind":"request","value":{"frame":"not-an-id","body":{"kind":"consumer","value":{"Echo":{"text":"must not route"}}}}}).to_string(),
+        json!({"kind":"request","value":{"body":null}}).to_string(),
+        json!({"kind":"unknown","value":{"frame":frame,"body":null}}).to_string(),
+    ];
+    for (index, offered) in malformed.into_iter().enumerate() {
+        let mut socket = attach_peer(service, new_peer().await?, 100).await?;
+        let response: TestResult<Value> = async {
+            socket.send(offered.into_bytes().into()).await?;
+            receive_json(&mut socket).await
+        }
+        .await;
+        let observed = match response {
+            Ok(value) => value,
+            Err(error) => json!({"error":error.to_string()}),
+        };
+        let expected = json!({"kind":"closed","value":{"reason":{"kind":"malformedFrame"}}});
+        observations.check(
+            &format!("unreadable-envelope-{index}"),
+            observed == expected,
+            expected,
+            observed,
+        );
+        socket.close(CloseReason::ClientClosed).await;
+    }
+    let after = request_count(control).await?;
+    observations.check(
+        "unreadable-envelopes-never-route",
+        after == before,
+        json!({"consumerRequests":before,"additionalRequests":0}),
+        json!({"consumerRequests":after}),
+    );
+    Ok(())
+}
 
 pub async fn run(root: &Path, observations: &mut Observations) -> TestResult {
     let service = start_service(root).await?;
@@ -11,36 +156,10 @@ pub async fn run(root: &Path, observations: &mut Observations) -> TestResult {
         .connect("control", "Bearer consumer-control")
         .await?;
     let result: TestResult = async {
-        let mut socket = attach_peer(&service, new_peer().await?, 100).await?;
-        let frame = FrameId::new(durable_steps::Uuid::now_v7())?;
-        let malformed = json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{}}}}});
-        socket.send(serde_json::to_vec(&malformed)?.into()).await?;
-        let response = receive_json(&mut socket).await;
-        let observed = match &response {Ok(value)=>value.clone(),Err(error)=>json!({"error":error.to_string()})};
-        let correlated = observed["kind"] == "answer" && observed["value"]["frame"] == json!(frame)
-            && observed["value"]["body"]["kind"] == "invalidShape"
-            && observed["value"]["body"]["value"]["field"].as_str().is_some_and(|field| field == "text" || field.ends_with(".text"));
-        observations.check("identified-bad-body",correlated,json!({"frame":frame,"answer":"invalidShape","field":"text or a path ending in .text"}),observed);
-        let follow_up: ClientFrame<SampleProtocol> = ClientFrame::Request {
-            frame: FrameId::new(durable_steps::Uuid::now_v7())?,
-            body: OperationRequest::Consumer(fleet_sync_test_consumer::SampleRequest::Echo {text:"after-bad-body".into()}),
-        };
-        let follow_up_frame = match &follow_up {ClientFrame::Request {frame,..}=>*frame,_=>return Err("bad follow-up fixture".into())};
-        let echo: TestResult<_> = async {
-            socket.send(serde_json::to_vec(&follow_up)?.into()).await?;
-            receive_json(&mut socket).await
-        }.await;
-        let observed = match echo {Ok(value)=>value,Err(error)=>json!({"error":error.to_string()})};
-        observations.check("same-session-after-bad-body",observed["kind"] == "answer" && observed["value"]["frame"] == json!(follow_up_frame)
-            && observed["value"]["body"]["value"]["Echo"]["text"] == "after-bad-body",json!({"frame":follow_up_frame,"text":"after-bad-body"}),observed);
-        socket.close(CloseReason::ClientClosed).await;
-        let mut unreadable = attach_peer(&service,new_peer().await?,100).await?;
-        unreadable.send(b"{unreadable".to_vec().into()).await?;
-        let closed = receive_json(&mut unreadable).await?;
-        observations.check("unreadable-envelope",closed["kind"]=="closed" && closed["value"]["reason"]["kind"]=="malformedFrame",json!({"close":"malformedFrame"}),closed);
-        unreadable.close(CloseReason::ClientClosed).await;
-        Ok(())
-    }.await;
+        identified_bodies(&service, &mut control, observations).await?;
+        unreadable_envelopes(&service, &mut control, observations).await
+    }
+    .await;
     service.stop(&mut control).await?;
     result
 }
