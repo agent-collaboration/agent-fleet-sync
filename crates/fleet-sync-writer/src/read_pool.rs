@@ -25,6 +25,11 @@ pub struct ReadPool {
 }
 
 impl ReadPool {
+    /// Keep related reads on one transaction until it is closed or dropped.
+    pub async fn begin_read(&self) -> Result<crate::ReadTransaction, sqlx_core::Error> {
+        crate::ReadTransaction::begin(self).await
+    }
+
     #[cfg(test)]
     pub(crate) fn new(pool: Pool<Turso>) -> Self {
         Self::from_native_pool(crate::native_pool::NativePool::new(pool))

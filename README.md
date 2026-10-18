@@ -22,6 +22,8 @@ cargo check --target wasm32-unknown-unknown -p sqlx-durable-object -p sqlx-durab
 
 The checked-query fixtures and offline metadata are imported with the Turso driver. `SQLX_OFFLINE=true` is configured in `.cargo/config.toml`. Tests cover checked-query diagnostics, migrations, constraints, engine pinning, contention and pool return.
 
+For related queries that must share a snapshot, use `database.reader().begin_read().await?` and pass `&mut read` to SQLx. `ReadTransaction` guards every statement as read-only and exposes no raw connection. `read.close().await?` rolls back; drop and cancelled close use the existing pooled rollback cleanup. An open read transaction keeps maintenance's `ActiveReaders` refusal until released; retry maintenance after closing it.
+
 ## Holder-change workflows
 
 The registry's authenticated host starts moves, takeovers and claims with `admit_holder_change::<Store, Database>(scope, request, requested_by, now)` inside its transaction, then drives the engine after commit. Admission binds the attempt to the engine's operation ID and keeps the first requester on repeats. Register `HolderChangeTask`, `HolderChangeCancelTask` and `SettleReservationTask`; the first two take the registry configuration and the same shared `Clock` as the engine host. Apply every registry migration before admitting work.

@@ -24,6 +24,11 @@ mod native_pool;
 mod native_rows;
 mod piece_builder;
 mod read_pool;
+mod read_transaction;
+#[cfg(test)]
+mod read_transaction_guard_tests;
+#[cfg(test)]
+mod read_transaction_tests;
 mod register_database_task;
 mod registration_bookkeeping;
 mod registration_contract;
@@ -74,6 +79,7 @@ mod writer_move_tests;
 pub use capture_normalization::{CaptureChange, CaptureError, normalize_capture_change};
 pub use maintenance_transaction::MaintenanceTransaction;
 pub use read_pool::ReadPool;
+pub use read_transaction::ReadTransaction;
 pub use replicated_database::ReplicatedDatabase;
 pub use replicated_schema::{Migration, ReplicatedSchema, WriterOptions};
 pub use replication_sender::ReplicationSender;
