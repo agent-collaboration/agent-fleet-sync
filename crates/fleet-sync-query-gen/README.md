@@ -22,6 +22,8 @@ Unknown nullability stays optional, and domain decoding checks required fields. 
 
 Consumers add this crate as a build dependency without the `native` feature and call `fleet_sync_query_gen::verify_manifest("checked-queries.json")` from `build.rs`. That verifies the SQL, migration set, manifest, generator, owned drivers, toolchain, lockfile, and generated source hashes. A new migration or a modified generated file fails the check. There is no environment switch that bypasses it; regenerate with the standalone CLI when inputs change.
 
+Consumer inputs keep corpus-relative keys. Generator inputs use portable keys such as `generator:fleet-sync-query-gen/src/lib.rs`, `generator:workspace/Cargo.lock` and `generator:workspace/rust-toolchain.toml`. Reading and Cargo watches use their actual filesystem paths. Repeated references to the same canonical input coalesce; distinct inputs or origins sharing a logical key, including the generated output, are refused even when their bytes match. Regenerate existing corpora once for this key scheme; legacy keys have no fallback.
+
 Generated functions return an explicit `Future + Send`: this preserves borrowed-scope calls inside spawned Tokio hosts, where inferred async-function futures hit a Rust GAT lifetime-generality error. The executable corpus includes that host path.
 
 The native tests cover real description, generated execution with exact values and rollback, bind arity, unknown types, and freshness failures. Their starting references were the receiver's query-generator prototype and the one-core probe's generator.

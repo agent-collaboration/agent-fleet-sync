@@ -193,3 +193,46 @@ async fn existence_mode_prepares_exact_sql_without_interpreting_columns() -> Tes
     ));
     Ok(())
 }
+
+#[tokio::test]
+async fn distinct_consumer_input_cannot_overwrite_a_generator_logical_key() -> TestResult {
+    let temporary = tempfile::tempdir()?;
+    let manifest_path = corpus(temporary.path(), "SELECT record_id FROM example", vec![])?;
+    let directory = temporary.path().join("generator:workspace");
+    fs::create_dir_all(&directory)?;
+    fs::write(
+        directory.join("Cargo.lock"),
+        "SELECT record_id FROM example",
+    )?;
+    let mut manifest: QueryManifest = serde_json::from_slice(&fs::read(&manifest_path)?)?;
+    manifest.queries.first_mut().ok_or("query missing")?.sql =
+        "generator:workspace/Cargo.lock".into();
+    fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)?;
+    let result = generate_manifest(&manifest_path, false).await;
+    assert!(
+        matches!(result, Err(GenerateError::Manifest(ref message)) if message.contains("generator:workspace/Cargo.lock")),
+        "{result:?}"
+    );
+    assert!(!temporary.path().join("src/checked_queries.rs").exists());
+    Ok(())
+}
+
+#[tokio::test]
+async fn generated_output_cannot_overwrite_a_generator_logical_key() -> TestResult {
+    let temporary = tempfile::tempdir()?;
+    let manifest_path = corpus(temporary.path(), "SELECT record_id FROM example", vec![])?;
+    let directory = temporary.path().join("generator:workspace");
+    fs::create_dir_all(&directory)?;
+    let output = directory.join("Cargo.lock");
+    fs::write(&output, b"must remain untouched")?;
+    let mut manifest: QueryManifest = serde_json::from_slice(&fs::read(&manifest_path)?)?;
+    manifest.output = "generator:workspace/Cargo.lock".into();
+    fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)?;
+    let result = generate_manifest(&manifest_path, false).await;
+    assert!(
+        matches!(result, Err(GenerateError::Manifest(ref message)) if message.contains("generator:workspace/Cargo.lock")),
+        "{result:?}"
+    );
+    assert_eq!(fs::read(output)?, b"must remain untouched");
+    Ok(())
+}

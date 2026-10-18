@@ -4,6 +4,7 @@
 //! decode no columns.
 
 mod source_freshness;
+mod source_inputs;
 mod source_manifest;
 pub use source_freshness::{
     ColumnMetadata, ColumnTypeSource, CorpusMetadata, QueryMetadata, verify_manifest,
