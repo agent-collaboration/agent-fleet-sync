@@ -47,21 +47,21 @@ async fn real_session_stores_v7_keys_and_refuses_a_v4_seed_before_receipt() -> T
     loop {
         match server_frame(&mut socket).await? {
             ServerFrame::Notice { .. } => continue,
-            ServerFrame::Closed { .. } => break,
             ServerFrame::Answer {
                 frame: correlated,
-                body,
+                body: OperationAnswer::InvalidShape { field },
             } => {
                 assert_eq!(correlated, frame);
-                assert!(!matches!(
-                    body,
-                    OperationAnswer::Replication(ReplicationAnswer::SeedStarted { .. })
-                ));
+                assert_eq!(field, "body");
                 break;
             }
             _ => return Err("unexpected response to invalid seed identity".into()),
         }
     }
+    assert!(matches!(
+        request(&mut socket, OperationRequest::Consumer(SampleRequest::Echo { text: "after invalid seed identity".into() })).await?,
+        OperationAnswer::Consumer(SampleAnswer::Echo { text, .. }) if text == "after invalid seed identity"
+    ));
     process.stop(&mut control).await?;
     // The owning process is stopped before these independent file readbacks.
     let mut sessions = TursoConnectOptions::new()

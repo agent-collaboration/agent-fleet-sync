@@ -1,0 +1,95 @@
+#[allow(dead_code, unused_imports)]
+mod support;
+use fleet_sync_protocol::*;
+use fleet_sync_session::TransportConnection;
+use fleet_sync_test_consumer::*;
+use fleet_sync_transport_websocket::WebSocketConnection;
+use serde_json::{Value, json};
+use std::time::Duration;
+use support::*;
+
+async fn next_json(socket: &mut WebSocketConnection) -> TestResult<Value> {
+    loop {
+        let bytes = tokio::time::timeout(Duration::from_secs(15), socket.receive())
+            .await?
+            .ok_or("session closed before response")??;
+        let value: Value = serde_json::from_slice(&bytes)?;
+        if value["kind"] != "notice" {
+            return Ok(value);
+        }
+    }
+}
+
+#[tokio::test]
+async fn identified_bad_bodies_are_correlated_and_the_same_session_stays_usable() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let service = ServiceProcess::start(&directory.path().join("service")).await?;
+    let mut control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let mut socket = service
+        .peer(2, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
+    let result: TestResult = async {
+        // Frame IDs remain non-nil correlation IDs; they need not be UUIDv7.
+        let frame = FrameId::new(durable_steps::Uuid::from_u128(0x019eef00000040008000000000000011))?;
+        let malformed = [
+            (json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{}}}}}), "text"),
+            (json!({"kind":"request","value":{"frame":frame}}), "body"),
+            (json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{"text":"must not route"}}},"unexpected":true}}), "unexpected"),
+            (json!({"kind":"answer","value":{"frame":frame,"body":{"kind":"consumer","value":{"notUnit":true}}}}), "body"),
+        ];
+        for (index, (offered, field)) in malformed.into_iter().enumerate() {
+            socket.send(serde_json::to_vec(&offered)?.into()).await?;
+            let answer = next_json(&mut socket).await?;
+            if answer["kind"] != "answer" || answer["value"]["frame"] != json!(frame)
+                || answer["value"]["body"] != json!({"kind":"invalidShape","value":{"field":field}})
+            {
+                return Err(format!("identified body {index} must get InvalidShape({field}): {answer}").into());
+            }
+            let text = format!("valid after malformed body {index}");
+            if !matches!(request(&mut socket, OperationRequest::Consumer(SampleRequest::Echo { text: text.clone() })).await?,
+                OperationAnswer::Consumer(SampleAnswer::Echo { text: echoed, .. }) if echoed == text)
+            {
+                return Err("valid follow-up was not answered on the same session".into());
+            }
+        }
+        if !matches!(control_request(&mut control, ControlRequest::RequestCount).await?, ControlAnswer::RequestCount(4)) {
+            return Err("malformed operations must never reach the consumer".into());
+        }
+        Ok(())
+    }.await;
+    service.stop(&mut control).await?;
+    result
+}
+
+#[tokio::test]
+async fn unreadable_kind_or_frame_id_closes_as_malformed_without_routing() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let service = ServiceProcess::start(&directory.path().join("service")).await?;
+    let mut control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let result: TestResult = async {
+        let frame = FrameId::new(durable_steps::Uuid::now_v7())?;
+        let malformed = [
+            "{unreadable".to_owned(),
+            json!({"kind":"request","value":{"frame":"not-an-id","body":{"kind":"consumer","value":{"Echo":{"text":"must not route"}}}}}).to_string(),
+            json!({"kind":"request","value":{"body":null}}).to_string(),
+            json!({"kind":"unknown","value":{"frame":frame,"body":null}}).to_string(),
+        ];
+        for offered in malformed {
+            let mut socket = service.peer(2, SessionId::new(durable_steps::Uuid::now_v7())?).await?;
+            socket.send(offered.into_bytes().into()).await?;
+            if !matches!(server_frame(&mut socket).await?, ServerFrame::Closed { reason: CloseReason::MalformedFrame }) {
+                return Err("unreadable envelope must close as MalformedFrame".into());
+            }
+        }
+        if !matches!(control_request(&mut control, ControlRequest::RequestCount).await?, ControlAnswer::RequestCount(0)) {
+            return Err("unreadable frames must never route".into());
+        }
+        Ok(())
+    }.await;
+    service.stop(&mut control).await?;
+    result
+}

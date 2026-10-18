@@ -1,11 +1,40 @@
 use crate::session_storage::{load_session, save_session, sessions_for_peer};
 use crate::*;
+use serde::Deserialize;
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
 };
 
 use fleet_sync_protocol::*;
+
+// Identify correlation independently from the consumer's body types. Unknown
+// fields are checked by ClientFrame's full decoder after this envelope is read.
+#[derive(Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
+enum ClientEnvelope {
+    Hello {},
+    Request { frame: FrameId },
+    Answer { frame: FrameId },
+}
+impl ClientEnvelope {
+    fn frame(&self) -> Option<FrameId> {
+        match self {
+            Self::Hello {} => None,
+            Self::Request { frame } | Self::Answer { frame } => Some(*frame),
+        }
+    }
+}
+
+fn invalid_shape_field(error: &serde_json::Error) -> String {
+    let diagnostic = error.to_string();
+    ["missing field `", "unknown field `", "duplicate field `"]
+        .iter()
+        .find_map(|prefix| diagnostic.strip_prefix(prefix)?.split('`').next())
+        // Serde reports no field location for some type/variant failures.
+        .unwrap_or("body")
+        .to_owned()
+}
 
 pub async fn connection_opened<S, P: ConsumerProtocol>(
     scope: &mut S,
@@ -63,9 +92,26 @@ where
         )
         .await;
     }
+    let envelope = match serde_json::from_slice::<ClientEnvelope>(frame) {
+        Ok(envelope) => envelope,
+        Err(_) => return close_connection(scope, binding, CloseReason::MalformedFrame, now).await,
+    };
     let frame = match serde_json::from_slice::<ClientFrame<P>>(frame) {
         Ok(frame) => frame,
-        Err(_) => return close_connection(scope, binding, CloseReason::MalformedFrame, now).await,
+        Err(error) => {
+            if let Some(frame) = envelope.frame() {
+                return Ok(vec![SessionEffect::Send {
+                    connection: binding.connection,
+                    frame: ServerFrame::Answer {
+                        frame,
+                        body: OperationAnswer::InvalidShape {
+                            field: invalid_shape_field(&error),
+                        },
+                    },
+                }]);
+            }
+            return close_connection(scope, binding, CloseReason::MalformedFrame, now).await;
+        }
     };
     if let ClientFrame::Hello {
         session_id,

@@ -192,6 +192,7 @@ pub enum OperationRequest<P: ConsumerProtocol = NoConsumer> {
     bound = ""
 )]
 pub enum OperationAnswer<P: ConsumerProtocol = NoConsumer> {
+    InvalidShape { field: String },
     Replication(ReplicationAnswer),
     Lease(LeaseAnswer),
     Delivery(DeliveryAnswer<P::Delivery>),
