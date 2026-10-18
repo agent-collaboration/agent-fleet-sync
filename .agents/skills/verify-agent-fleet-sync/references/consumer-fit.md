@@ -123,45 +123,9 @@ projection at check, replaying a new decision and Welcome before publication.
 
 ## Frame shapes — SO56
 
-Run `bash scripts/verification/frame-shapes.sh` after session rules, frame types
-or native socket routing change.
-
-The script authenticates a real WebSocket session and sends identified frames
-with missing Echo text, missing body, an unexpected field, a malformed
-client answer and an oversized Unicode field name. Each uses a distinct
-non-nil UUIDv4 correlation ID; UUIDv7 entity-key rules do not apply to FrameId.
-Each answer must be correlated
-`invalidShape{field}` (the named field, or `body` for the unnamed variant
-failure), followed by a valid Echo on that same connection. The oversized name
-mixes UTF-8 byte widths; its answer must name exactly the first 64 Unicode
-characters, the cap documented by the consumer README. That cap is an
-implementation choice under the bounded-field instruction, not a spec
-constant. Only the five valid follow-ups may reach the consumer.
-
-Separate authenticated connections receive malformed JSON, an invalid ID, a
-missing ID and an unknown kind. Each must close as malformedFrame, with no
-additional consumer request. The script continues after a wrong close so it
-records body failures and envelope controls. Reconnecting cannot satisfy a
-same-session follow-up. The strengthened native_engine_identities product test
-separately checks the invalid UUIDv4 seed attempt: correlated InvalidShape,
-same-session Echo, and zero seed receipts after the owning process stops.
-
-The permanent native_frame_shapes test
-`unknown_fields_with_backticks_keep_their_complete_correlated_names` additionally
-sends embedded, leading and diagnostic-suffix-like backtick names over the real
-WebSocket. Require the whole offending field and exact frame ID, a valid
-follow-up on that same socket for each case, and only those follow-ups in the
-routed count. Run the full native_frame_shapes selection to retain the existing
-malformed-envelope and Unicode-cap controls; the new fields do not alter the cap.
-The companion `unknown_fields_choose_the_actual_empty_or_nonempty_diagnostic_suffix`
-uses a legal deny_unknown_fields empty request and the nonempty outer envelope.
-Require both actual diagnostic suffixes, with embedded opposite markers and
-line/column-like field text: six exact field/frame answers, six valid empty
-follow-ups on that same socket, and routed count six. Check the actual suffix
-after removing only serde_json's own location, before the unchanged Unicode cap.
-
-Wrong build: treating every decode failure as an unreadable envelope.
-Cloudflare sessions belong to central's real runtime gate, outside this journey.
+The frame-specific teaching now lives in [frame shapes](frame-shapes.md).
+It owns the exact decoder-reported fields, socket controls, authorized
+wrong-build/restoration procedure and native-versus-G3 limits.
 
 ## Copy containment — SO57
 
