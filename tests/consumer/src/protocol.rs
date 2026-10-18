@@ -17,10 +17,15 @@ impl ConsumerProtocol for SampleProtocol {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SampleRequest {
     Echo { text: String },
+    Empty(SampleEmptyRequest),
 }
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SampleEmptyRequest {}
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SampleAnswer {
     Echo { peer: PeerId, text: String },
+    Empty { peer: PeerId },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

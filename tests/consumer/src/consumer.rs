@@ -96,6 +96,7 @@ impl ConsumerHandler<SampleProtocol> for Consumer {
         self.handled_requests.fetch_add(1, Ordering::SeqCst);
         match request {
             SampleRequest::Echo { text } => Ok(SampleAnswer::Echo { peer, text }),
+            SampleRequest::Empty(_) => Ok(SampleAnswer::Empty { peer }),
         }
     }
 }

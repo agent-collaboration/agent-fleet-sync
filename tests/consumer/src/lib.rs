@@ -28,7 +28,7 @@ pub use control::{ControlAnswer, ControlRequest};
 pub use fixture_authenticator::FixtureAuthenticator;
 pub use protocol::{
     ClaimGateReceipt, ClaimSettlementReceipt, EffectReceipt, HookEffect, SampleAnswer,
-    SampleProtocol, SampleRequest, SampleSchema, SavedEffect,
+    SampleEmptyRequest, SampleProtocol, SampleRequest, SampleSchema, SavedEffect,
 };
 pub use server::run_server;
 pub use server::run_server_with_policy;

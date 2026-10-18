@@ -31,6 +31,8 @@ fn invalid_shape_field(error: &serde_json::Error) -> String {
     // cap reflected client field names without splitting a Unicode character.
     const MAX_FIELD_CHARACTERS: usize = 64;
     let diagnostic = error.to_string();
+    let location = format!(" at line {} column {}", error.line(), error.column());
+    let diagnostic = diagnostic.strip_suffix(&location).unwrap_or(&diagnostic);
     ["missing field `", "unknown field `", "duplicate field `"]
         .iter()
         .find_map(|prefix| {
@@ -39,9 +41,8 @@ fn invalid_shape_field(error: &serde_json::Error) -> String {
                 // The field itself can contain backticks or suffix-like text.
                 // Split at Serde's final diagnostic suffix, not its first tick.
                 detail
-                    .rsplit_once("`, expected ")
-                    .or_else(|| detail.rsplit_once("`, there are no fields"))
-                    .map(|(field, _)| field)
+                    .strip_suffix("`, there are no fields")
+                    .or_else(|| detail.rsplit_once("`, expected ").map(|(field, _)| field))
             } else {
                 detail.rsplit_once('`').map(|(field, _)| field)
             }

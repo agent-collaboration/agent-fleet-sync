@@ -136,3 +136,42 @@ async fn unknown_fields_with_backticks_keep_their_complete_correlated_names() ->
     service.stop(&mut control).await?;
     result
 }
+
+#[tokio::test]
+async fn unknown_fields_choose_the_actual_empty_or_nonempty_diagnostic_suffix() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let service = ServiceProcess::start(&directory.path().join("service")).await?;
+    let mut control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let mut socket = service
+        .peer(2, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
+    let result: TestResult = async {
+        let mut failures = Vec::new();
+        for empty in [true, false] {
+            for field in ["client`, expected `tag", "client`, there are no fields", "client at line 3 column 7"] {
+                let frame = FrameId::new(durable_steps::Uuid::now_v7())?;
+                let mut offered = json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Empty":{}}}}});
+                if empty { offered["value"]["body"]["value"]["Empty"][field] = json!(true); }
+                else { offered["value"][field] = json!(true); }
+                socket.send(serde_json::to_vec(&offered)?.into()).await?;
+                let answer = next_json(&mut socket).await?;
+                println!("OBS unknown field empty={empty}, field={field:?}: {answer}");
+                if answer["kind"] != "answer" || answer["value"]["frame"] != json!(frame)
+                    || answer["value"]["body"] != json!({"kind":"invalidShape","value":{"field":field}}) {
+                    failures.push(format!("empty={empty}: expected exact field {field:?} and frame {frame}: {answer}"));
+                }
+                if !matches!(request(&mut socket, OperationRequest::Consumer(SampleRequest::Empty(SampleEmptyRequest {}))).await?, OperationAnswer::Consumer(SampleAnswer::Empty { .. })) {
+                    return Err("valid empty-request follow-up failed on the same session".into());
+                }
+            }
+        }
+        if !matches!(control_request(&mut control, ControlRequest::RequestCount).await?, ControlAnswer::RequestCount(6)) {
+            failures.push("malformed empty/nonempty operations reached the consumer".into());
+        }
+        if failures.is_empty() { Ok(()) } else { Err(failures.join("\n").into()) }
+    }.await;
+    service.stop(&mut control).await?;
+    result
+}
