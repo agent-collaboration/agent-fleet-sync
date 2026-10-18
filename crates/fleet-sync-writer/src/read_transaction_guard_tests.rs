@@ -1,7 +1,7 @@
 #![allow(clippy::panic_in_result_fn)]
 use crate::{native_file::PublishError, read_transaction_tests::writer, *};
 use fleet_sync_protocol::{GateReason, GateReasonCode};
-use futures_util::TryStreamExt;
+use futures_util::{TryStreamExt, task::noop_waker_ref};
 use sqlx_core::{
     connection::{ConnectOptions, Connection},
     executor::Executor,
@@ -9,7 +9,11 @@ use sqlx_core::{
     sql_str::SqlSafeStr,
 };
 use sqlx_turso::TursoConnectOptions;
-use std::time::Duration;
+use std::{
+    future::Future,
+    task::{Context, Poll},
+    time::Duration,
+};
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -231,5 +235,78 @@ async fn move_aside_refuses_an_open_read_then_succeeds_after_close() -> TestResu
         database.reader().begin_read().await,
         Err(sqlx_core::Error::PoolClosed)
     ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_once_polled_close_releases_the_snapshot_for_reads_and_publication() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let database = writer(&directory.path().join("writer.db")).await?;
+    let mut read = database.reader().begin_read().await?;
+    assert_eq!(
+        (&mut read)
+            .fetch_one("SELECT COUNT(*) AS count FROM local_marks")
+            .await?
+            .try_get::<i64, _>("count")?,
+        0
+    );
+    let mut write = database.begin_write().await?;
+    (&mut write)
+        .execute("INSERT INTO local_marks VALUES('committed before close poll')")
+        .await?;
+    write.commit().await?;
+    database.begin_seeding().await?;
+
+    // This polls the actual SQLx/driver rollback, with no gate before it.
+    // A Ready result means this driver completed synchronously, so that run
+    // cannot claim cancellation while the rollback was still in progress.
+    let mut closing = Box::pin(read.close());
+    match closing
+        .as_mut()
+        .poll(&mut Context::from_waker(noop_waker_ref()))
+    {
+        Poll::Ready(result) => {
+            result?;
+            println!("OBS read_close_first_poll=ready; rollback completed synchronously");
+        }
+        Poll::Pending => {
+            println!("OBS read_close_first_poll=pending; cancelling actual rollback future");
+        }
+    }
+    drop(closing);
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        assert_eq!(
+            database
+                .reader()
+                .fetch_one("SELECT COUNT(*) AS count FROM local_marks")
+                .await?
+                .try_get::<i64, _>("count")?,
+            1
+        );
+        let count = database
+            .with_drained_file(|path| {
+                Box::pin(async move {
+                    let mut connection = TursoConnectOptions::new()
+                        .filename(path)
+                        .create_if_missing(false)
+                        .connect()
+                        .await
+                        .map_err(PublishError::io)?;
+                    let row = (&mut connection)
+                        .fetch_one("SELECT COUNT(*) AS count FROM local_marks")
+                        .await
+                        .map_err(PublishError::io)?;
+                    let count = row.try_get::<i64, _>("count").map_err(PublishError::io)?;
+                    connection.close().await.map_err(PublishError::io)?;
+                    Ok(count)
+                })
+            })
+            .await?;
+        assert_eq!(count, 1);
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    })
+    .await??;
+    database.close().await;
     Ok(())
 }
