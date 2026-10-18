@@ -62,17 +62,40 @@ declaring support 4 and 5, and a target without an accepted report. The holder
 fixture answers the real Release at the copy's independently verified final
 position. This observes registry fencing, not native writer draining.
 
-Required cases still reported as gaps:
+The timing cases use the existing consumer's SchemaControlRequest and the real
+FleetService/SessionHost/registry owners:
 
-- Admit with accepted support 5, hold drive before check, publish support 4,
-  then resume: the attempt freezes 5. Repeat across restart; fresh admissions
-  freeze 4.
-- Deliver an old report after a newer attach: persisted attach sequence and
-  support retain the newer declaration.
-- Hold the new report: no Welcome or served requests before publication;
-  admissions before and after publication freeze 5 and 4 respectively.
+- Admit an admin move with accepted support 5 while registry drive is held
+  before check, publish support 4, then resume. The admission row keeps 5 and
+  the move grants. Repeat with a process kill/restart before check; a fresh
+  admission on an independent unheld copy freezes 4 and is refused.
+- Hold an old report while a newer attach declares 4. After releasing the old
+  report, read back the newer attach sequence and support. Restart with the
+  same receiver and files, read the persisted row, and observe a schema-5
+  claim refused with support 4.
+- Hold a new report of 4 after accepted support 5. No Welcome arrives while
+  the report is held; an admin admission in that window freezes 5 and grants.
+  Releasing the report yields matching Welcome and an Attached registration.
+  Admin and own-session claims after publication freeze 4 and are refused.
+- On another held report, a raw pre-Welcome request closes without serving
+  it. Another connection's credential revocation and the target's close
+  progress. Releasing the report does not resurrect the closed registration.
+- Fail real finalization after staging. Read back Attaching and no committed
+  attach step or Welcome; release the retry and observe Attached plus one
+  Welcome. Delayed finalization after replacement or process restart never
+  resurrects the old attach or adds a Welcome to the newer connection.
+- Drive the production SessionPump with a real client store: a readiness
+  refusal before Welcome is NotSent and the consumer count stays zero; after
+  matching Welcome an Echo is served once. Separately leave a production pump
+  unstarted with its command receiver alive: the actual local reply deadline
+  returns AnswerLost. That control proves local timeout classification, with
+  no network dispatch. Other encoding or uncertain-send failures are not
+  injected by this journey and must not be called no-effect.
 
-Connect the timing controls to C3's real seams and run at its declared head.
+Wire absence is sampled within a bounded window after an operation-owned hold
+or completion, never used to signal readiness. Restart checks retain the real
+store; marker restoration is not part of this journey. The scripted holder
+release remains registry/fence evidence, not writer-draining evidence.
 Wrong builds include a global maximum, latest-arrival-wins, reading the
 projection at check, replaying a new decision and Welcome before publication.
 
