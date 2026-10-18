@@ -2,6 +2,7 @@
 #![allow(clippy::panic, clippy::panic_in_result_fn, clippy::expect_used)]
 
 mod call_cases;
+pub mod reborrow_cases;
 mod resume_cases;
 mod resume_rollback_case;
 mod resume_token_case;

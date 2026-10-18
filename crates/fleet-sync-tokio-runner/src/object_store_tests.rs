@@ -1,7 +1,7 @@
 #![allow(clippy::panic_in_result_fn)]
 use crate::*;
 use durable_steps::{
-    AtomicStore, CallFailure, NotSentReason, StoreError, storage::TransactionScope,
+    AtomicStore, CallFailure, NotSentReason, ReborrowScope, StoreError, storage::TransactionScope,
 };
 use runtime_primitives::SystemClock;
 use sqlx_core::{
@@ -80,6 +80,61 @@ async fn write_and_read(object: &TokioObject<NativeHost>) -> TestResult<i64> {
             })
         })
         .await?)
+}
+
+#[tokio::test]
+async fn reborrowed_object_scope_keeps_the_parent_transaction() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let store = ObjectStore::open(directory.path()).await?;
+    let object = store
+        .object(
+            ObjectKey::new("reborrow")?,
+            ObjectOptions::default(),
+            host(),
+        )
+        .await?;
+    object.transaction(|parent| Box::pin(async move {
+        parent.executor().execute("CREATE TABLE reborrow_values(value INTEGER NOT NULL); INSERT INTO reborrow_values VALUES (3)").await?;
+        {
+            let mut view = TokioObject::<NativeHost>::reborrow(parent);
+            let before: i64 = query::<Turso>("SELECT value FROM reborrow_values").fetch_one(view.executor()).await?.try_get("value")?;
+            assert_eq!(before, 3);
+            view.executor().execute("UPDATE reborrow_values SET value = 4").await?;
+        }
+        let after: i64 = query::<Turso>("SELECT value FROM reborrow_values").fetch_one(parent.executor()).await?.try_get("value")?;
+        assert_eq!(after, 4);
+        Ok(())
+    })).await?;
+    let aborted = object
+        .transaction(|parent| {
+            Box::pin(async move {
+                let mut view = TokioObject::<NativeHost>::reborrow(parent);
+                view.executor()
+                    .execute("UPDATE reborrow_values SET value = 5")
+                    .await?;
+                Err::<(), _>(StoreError::Aborted {
+                    reason: "object reborrow rollback".into(),
+                })
+            })
+        })
+        .await;
+    assert!(
+        matches!(aborted, Err(StoreError::Aborted { reason }) if reason == "object reborrow rollback")
+    );
+    let committed: i64 = object
+        .transaction(|parent| {
+            Box::pin(async move {
+                query::<Turso>("SELECT value FROM reborrow_values")
+                    .fetch_one(parent.executor())
+                    .await?
+                    .try_get("value")
+                    .map_err(StoreError::backend)
+            })
+        })
+        .await?;
+    store.close().await?;
+    assert_eq!(committed, 4);
+    Ok(())
 }
 
 #[tokio::test]

@@ -23,6 +23,12 @@ impl AlarmOwner {
             storage: Arc::new(Mutex::new(SendWrapper::new(storage))),
         }
     }
+
+    /// Identify the shared exclusion state, including through legitimate clones.
+    #[cfg(feature = "test-support")]
+    pub fn arbitration_identity_for_test(&self) -> usize {
+        Arc::as_ptr(&self.storage).cast::<()>() as usize
+    }
 }
 
 impl WakeScheduler for AlarmOwner {

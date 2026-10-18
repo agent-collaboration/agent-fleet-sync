@@ -9,6 +9,7 @@ description = "Runtime-independent durable local steps and receipted boundary ca
 
 [features]
 default = []
+test-support = ["runtime-primitives/test-support"]
 turso = ["dep:sqlx", "dep:sqlx-turso", "dep:tokio", "runtime-primitives/tokio"]
 durable-object = ["dep:sqlx", "dep:sqlx-durable-object", "dep:worker", "runtime-primitives/durable-object"]
 

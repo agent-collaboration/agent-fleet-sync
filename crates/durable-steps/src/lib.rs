@@ -21,7 +21,7 @@ pub mod turso_store;
 pub mod volatile_store;
 
 pub use operation_contract::{
-    AtomicStore, BoxFuture, CallTarget, Host, JournalScope, OperationContext, Task,
+    AtomicStore, BoxFuture, CallTarget, Host, JournalScope, OperationContext, ReborrowScope, Task,
 };
 pub use operation_engine::Engine;
 pub use operation_model::*;

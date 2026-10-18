@@ -62,6 +62,29 @@ async fn turso_shared_conformance() -> Result<(), StoreError> {
 
 struct BorrowedTask;
 #[tokio::test]
+async fn reborrowed_scope_shares_parent_sql_journal_commit_and_rollback() -> Result<(), StoreError>
+{
+    use runtime_primitives::Clock;
+    let host = crate::support::TestHost::new();
+    let directory = tempfile::tempdir().map_err(StoreError::backend)?;
+    let store = Arc::new(
+        TursoStore::open_and_migrate(directory.path().join("reborrow.db"), host.clone()).await?,
+    );
+    store
+        .transaction(|scope| {
+            Box::pin(async move {
+                scope
+                    .executor()
+                    .execute(include_str!("migrations/1000_business.sql"))
+                    .await?;
+                Ok(())
+            })
+        })
+        .await?;
+    conformance::reborrow_cases::commit_and_rollback(store, host.now()).await
+}
+
+#[tokio::test]
 async fn no_effect_and_reason_survive_closing_and_reopening_the_actual_journal()
 -> Result<(), StoreError> {
     let directory = tempfile::tempdir().map_err(StoreError::backend)?;

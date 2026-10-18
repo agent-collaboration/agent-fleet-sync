@@ -19,7 +19,7 @@ function options(name) {
   };
 }
 try {
-  for (const path of ["/suite", "/alarm-atomic", "/alarm-concurrent"]) {
+  for (const path of ["/suite", "/reborrow", "/alarm-atomic", "/alarm-concurrent"]) {
     const runtime = new Miniflare(options(randomUUID()));
     try {
       await runtime.ready;
@@ -28,6 +28,13 @@ try {
       console.log(JSON.stringify({ path, status: response.status, body }));
       assert.equal(response.status, 200);
       if (path === "/suite") assert.equal(JSON.parse(body).length, 19);
+      else if (path === "/reborrow") assert.deepEqual(JSON.parse(body), [
+        "SQL and journal share parent commit and rollback",
+        "parent and view share the observed arbitration owner",
+        "callback rollback restores absent alarm", "SQL rollback restores absent alarm",
+        "callback rollback restores existing alarm", "SQL rollback restores existing alarm",
+        "view then external overlapping wake", "external then view overlapping wake",
+      ]);
       else if (path === "/alarm-concurrent") {
         const observations = JSON.parse(body);
         assert.deepEqual(observations.map(({ order }) => order), [

@@ -1,7 +1,7 @@
 use crate::ObjectKey;
 use durable_steps::{
-    AtomicStore, BoxFuture, Host, StoreError,
-    turso_store::{TursoScope, migrate_journal},
+    AtomicStore, BoxFuture, Host, ReborrowScope, StoreError,
+    turso_store::{TursoScope, TursoStore, migrate_journal},
 };
 use sqlx_turso::{
     TursoConnectOptions, TursoConnection,
@@ -303,5 +303,11 @@ impl<H: Host> AtomicStore for TokioObject<H> {
         let result = self.rule_transaction_inner(run, false).await?;
         self.notify_committed();
         Ok(result)
+    }
+}
+
+impl<H: Host> ReborrowScope for TokioObject<H> {
+    fn reborrow<'s, 't: 's>(scope: &'s mut Self::Scope<'t>) -> Self::Scope<'s> {
+        <TursoStore<H> as ReborrowScope>::reborrow(scope)
     }
 }

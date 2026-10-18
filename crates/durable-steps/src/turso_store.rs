@@ -1,7 +1,7 @@
 //! A journal and its application's writes share one real Turso transaction.
 
 use crate::{
-    AtomicStore, BoxFuture, Host, StoreError, SyncTime,
+    AtomicStore, BoxFuture, Host, ReborrowScope, StoreError, SyncTime,
     sql_journal::JournalQueries,
     sql_rows::{StoredCountRow, StoredIdRow, StoredOperationRow, StoredStepRow, StoredTimeRow},
     storage::TransactionScope,
@@ -79,6 +79,12 @@ pub async fn migrate_journal(connection: &mut TursoConnection) -> Result<(), Sto
 pub struct TursoScope<'t, H: Host> {
     connection: &'t mut TursoConnection,
     host: &'t H,
+}
+
+impl<H: Host> ReborrowScope for TursoStore<H> {
+    fn reborrow<'s, 't: 's>(scope: &'s mut Self::Scope<'t>) -> Self::Scope<'s> {
+        TursoScope::new(&mut *scope.connection, scope.host)
+    }
 }
 
 impl<'t, H: Host> TursoScope<'t, H> {

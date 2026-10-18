@@ -4,6 +4,7 @@ mod conformance;
 #[path = "../../journey_task.rs"]
 mod journey_task;
 mod journey_worker;
+mod reborrow_cases;
 mod retry_journal;
 #[path = "../../../../crates/durable-steps/tests/support/mod.rs"]
 mod support;
@@ -88,6 +89,16 @@ impl DurableObject for StepsObject {
             Ok(())
         })).await.map_err(worker_error)?;
         match request.path().as_str() {
+            "/reborrow" => {
+                let observations = reborrow_cases::run(
+                    &self.state,
+                    &self.alarm,
+                    self.store.clone(),
+                    self.host.now(),
+                )
+                .await?;
+                Response::from_json(&observations)
+            }
             "/retry-stage" => {
                 let operation = conformance::retryable_cases::stage_no_effect(
                     self.store.clone(),

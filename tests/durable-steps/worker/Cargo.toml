@@ -8,7 +8,7 @@ publish.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-durable-steps = { path = "../../../crates/durable-steps", features = ["durable-object"] }
+durable-steps = { path = "../../../crates/durable-steps", features = ["durable-object", "test-support"] }
 runtime-primitives = { workspace = true, features = ["durable-object"] }
 sqlx-core.workspace = true
 sqlx = { workspace = true, features = ["derive"] }

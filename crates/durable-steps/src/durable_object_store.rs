@@ -1,7 +1,7 @@
 //! A Durable Object's SQL journal, business writes and alarm share its transaction.
 
 use crate::{
-    AtomicStore, BoxFuture, Host, StoreError, SyncTime,
+    AtomicStore, BoxFuture, Host, ReborrowScope, StoreError, SyncTime,
     sql_journal::JournalQueries,
     sql_rows::{StoredCountRow, StoredIdRow, StoredOperationRow, StoredStepRow, StoredTimeRow},
     storage::TransactionScope,
@@ -64,6 +64,24 @@ pub struct DurableObjectScope<'t, H: Host> {
     transaction: &'t DoTransaction,
     host: &'t H,
     alarm: &'t AlarmOwner,
+}
+
+impl<H: Host> ReborrowScope for DurableObjectStore<H> {
+    fn reborrow<'s, 't: 's>(scope: &'s mut Self::Scope<'t>) -> Self::Scope<'s> {
+        DurableObjectScope {
+            transaction: scope.transaction,
+            host: scope.host,
+            alarm: scope.alarm,
+        }
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl<H: Host> DurableObjectScope<'_, H> {
+    /// Identify shared alarm arbitration without extending the parent's loan.
+    pub fn alarm_arbitration_identity_for_test(&self) -> usize {
+        self.alarm.arbitration_identity_for_test()
+    }
 }
 
 impl<H: Host> TransactionScope for DurableObjectScope<'_, H> {
