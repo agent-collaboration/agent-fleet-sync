@@ -6,9 +6,9 @@
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
     "generator:fleet-sync-query-gen/src/main.rs": "528bf0583d11bde8fc4b7c0d5a2ea21bde8380e452c0c123a22929dfa5635cfd",
-    "generator:fleet-sync-query-gen/src/native_generation.rs": "7d44db61c133f87c1ab32c7ba4c520597d0a1efb963777d13930e175da4cf493",
+    "generator:fleet-sync-query-gen/src/native_generation.rs": "c50abad4f34d2e0f9fef19d5623c6ce1be2e4064ec17ef2f4fa73cdf83f5733f",
     "generator:fleet-sync-query-gen/src/query_render.rs": "2584f37650c8355b5537362ff5f66c8cf6a3955eb7a903faa5c5887ec26c880a",
-    "generator:fleet-sync-query-gen/src/source_freshness.rs": "32fad34724519e357f36518672234ad9e5050744761575d01a73474eb38ee136",
+    "generator:fleet-sync-query-gen/src/source_freshness.rs": "8fc73a2d5dcfb3d81f7a10b92507ff0ad2a969c0a5b48c9528b3b5016f58ddb3",
     "generator:fleet-sync-query-gen/src/source_inputs.rs": "8cabacd9d34273e5cf16201c1680b89d755c98b5060ea0004ee1e5dcea4ec622",
     "generator:fleet-sync-query-gen/src/source_manifest.rs": "770e53cb230b27d44731507738e08f7217dba8fc230617d97bda765c78be8ad8",
     "generator:sqlx-durable-object-core/Cargo.toml": "5af0f7433ff001c4f2347d0575306bb35da43f53b3b75ae4c0fb2c3a0b5e308f",
@@ -56,6 +56,7 @@
     "sql/read_delivery_snapshot.sql": "b748d67f29b876c66212da91a0b139344c5b7da03ec544ca74e9ecf869a84de1",
     "src/checked_inspection_queries.rs": "234763ffc60fb2cf96f98724a04240ca677129331bb6bc4fceb06b50a2af478f"
   },
+  "queries_digest": "c392e5d173c94753f3c98f280b86f48b862a06242132a71391a0f25f7e4a00be",
   "queries": [
     {
       "name": "read_delivery_snapshot",

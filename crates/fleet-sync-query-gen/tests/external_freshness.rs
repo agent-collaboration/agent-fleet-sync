@@ -6,6 +6,8 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Output},
 };
+#[path = "support/metadata_integrity_cases.rs"]
+mod metadata_integrity_cases;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -128,6 +130,15 @@ fn external_consumer(consumer: &Path, library: &Path) -> TestResult<PathBuf> {
 }
 
 fn check_consumer(consumer: &Path, target: &Path, locked: bool) -> TestResult<Output> {
+    check_consumer_target(consumer, target, locked, None)
+}
+
+fn check_consumer_target(
+    consumer: &Path,
+    target: &Path,
+    locked: bool,
+    target_triple: Option<&str>,
+) -> TestResult<Output> {
     let mut command = Command::new(env!("CARGO"));
     command
         .args(["check", "--offline", "-vv", "--manifest-path"])
@@ -137,6 +148,9 @@ fn check_consumer(consumer: &Path, target: &Path, locked: bool) -> TestResult<Ou
         .current_dir(library_root()?);
     if locked {
         command.arg("--locked");
+    }
+    if let Some(target_triple) = target_triple {
+        command.args(["--target", target_triple]);
     }
     Ok(command.output()?)
 }

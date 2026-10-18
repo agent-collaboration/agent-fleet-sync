@@ -1,6 +1,6 @@
 use crate::{
     GenerateError,
-    source_inputs::{SourceInputs, digest_file},
+    source_inputs::{SourceInputs, digest_bytes, digest_file},
     source_manifest::read_manifest,
 };
 use serde::{Deserialize, Serialize};
@@ -35,7 +35,14 @@ pub struct QueryMetadata {
 pub struct CorpusMetadata {
     pub producer: String,
     pub sources: BTreeMap<String, String>,
+    pub queries_digest: String,
     pub queries: Vec<QueryMetadata>,
+}
+
+pub(crate) fn digest_query_descriptions(
+    queries: &[QueryMetadata],
+) -> Result<String, GenerateError> {
+    Ok(digest_bytes(&serde_json::to_vec(queries)?))
 }
 
 /// Called by a consumer's build.rs. It checks SQL, schema, generator, drivers,
@@ -63,6 +70,9 @@ pub fn verify_manifest(path: impl AsRef<Path>) -> Result<(), GenerateError> {
         if current.get(key) != metadata.sources.get(key) {
             return Err(GenerateError::Stale(key.clone()));
         }
+    }
+    if digest_query_descriptions(&metadata.queries)? != metadata.queries_digest {
+        return Err(GenerateError::Stale(manifest.metadata));
     }
     Ok(())
 }

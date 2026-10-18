@@ -2,6 +2,7 @@ use crate::{
     ColumnMetadata, ColumnTypeSource, CorpusMetadata, GenerateError, QueryMetadata, QueryResult,
     expression_classes::expression_classes,
     query_render::render_queries,
+    source_freshness::digest_query_descriptions,
     source_inputs::{SourceInputs, digest_bytes},
     source_manifest::{read_manifest, validate_identifier},
 };
@@ -197,6 +198,7 @@ pub async fn generate_manifest(path: impl AsRef<Path>, check: bool) -> Result<()
     let metadata = serde_json::to_string_pretty(&CorpusMetadata {
         producer: "owned sqlx-turso / Turso 0.8.1 describe".into(),
         sources: sources.into_hashes(),
+        queries_digest: digest_query_descriptions(&queries)?,
         queries,
     })? + "\n";
     for (relative, content) in [
