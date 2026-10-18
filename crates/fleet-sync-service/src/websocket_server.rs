@@ -2,11 +2,11 @@ use crate::{FleetService, ServiceConsumer};
 use axum::{
     Router,
     extract::{State, ws::WebSocketUpgrade},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
 };
-use fleet_sync_protocol::ConsumerProtocol;
+use fleet_sync_protocol::{AuthRefusal, ConsumerProtocol};
 use fleet_sync_session::PeerAuthenticator;
 use fleet_sync_tokio_runner::SessionAdmission;
 use std::sync::Arc;
@@ -69,7 +69,7 @@ async fn upgrade<
         .to_owned();
     let admission = match state.sessions.authenticate(material).await {
         Ok(admission) => admission,
-        Err(_) => return StatusCode::UNAUTHORIZED.into_response(),
+        Err(reason) => return auth_refusal_response(reason),
     };
     upgrade.on_upgrade(move |socket| async move {
         let (done, finished) = oneshot::channel();
@@ -86,4 +86,23 @@ async fn upgrade<
             let _ = finished.await;
         }
     })
+}
+
+fn auth_refusal_response(reason: AuthRefusal) -> Response {
+    let status = if reason == AuthRefusal::WrongKind {
+        StatusCode::FORBIDDEN
+    } else {
+        StatusCode::UNAUTHORIZED
+    };
+    let value = serde_json::to_vec(&reason)
+        .ok()
+        .and_then(|encoded| HeaderValue::from_bytes(&encoded).ok());
+    let Some(value) = value else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let mut response = status.into_response();
+    response
+        .headers_mut()
+        .insert(fleet_sync_transport_websocket::AUTH_REFUSAL_HEADER, value);
+    response
 }

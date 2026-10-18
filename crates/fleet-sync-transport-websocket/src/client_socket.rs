@@ -11,7 +11,7 @@ use tokio_tungstenite::{
     tungstenite::{
         Message,
         client::IntoClientRequest,
-        http::{HeaderValue, StatusCode, header::AUTHORIZATION},
+        http::{HeaderMap, HeaderValue, StatusCode, header::AUTHORIZATION},
     },
 };
 
@@ -63,7 +63,7 @@ impl SessionTransport for WebSocketTransport {
                     StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
                 ) =>
             {
-                ConnectFailure::CredentialRejected(AuthRefusal::Unknown)
+                ConnectFailure::CredentialRejected(decode_auth_refusal(response.headers()))
             }
             _ => ConnectFailure::Unavailable,
         })?;
@@ -73,6 +73,19 @@ impl SessionTransport for WebSocketTransport {
             closed: false,
         })
     }
+}
+
+fn decode_auth_refusal(headers: &HeaderMap) -> AuthRefusal {
+    let mut reasons = headers.get_all(crate::AUTH_REFUSAL_HEADER).iter();
+    let (Some(value), None) = (reasons.next(), reasons.next()) else {
+        return AuthRefusal::Unknown;
+    };
+    // Enum deserialization also accepts {"expired": null}. The header's
+    // agreed representation is only the existing serialized unit string.
+    let Ok(reason) = serde_json::from_slice::<String>(value.as_bytes()) else {
+        return AuthRefusal::Unknown;
+    };
+    serde_json::from_value(serde_json::Value::String(reason)).unwrap_or(AuthRefusal::Unknown)
 }
 
 impl TransportConnection for WebSocketConnection {

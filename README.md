@@ -36,6 +36,8 @@ These registry tests use actual Turso journals and receipted holder-call fixture
 
 ## Session schema support
 
+An unsuccessful peer WebSocket upgrade carries one `fleet-sync-auth-refusal` response header with the existing `AuthRefusal` JSON value, such as `"expired"`. The service uses 401, or 403 for `WrongKind`. Native clients decode that single header strictly; missing, malformed, unknown or repeated values mean `Unknown`. A bare 403 also means `Unknown`. There is no body fallback or session frame on rejection.
+
 Before welcoming an attachment, the session owner durably reports its schema support to the registry. A per-peer `AttachSequence` orders reports across connection replacement and restart; an older report cannot overwrite a newer declaration. This projection is capability data, persists after disconnect, and has no expiry. `admit_holder_change` freezes the target's `Option<SchemaSupport>` in its admission transaction. Repeats, restart and both fence calls use that value. A target without an accepted report is refused with `SchemaTooNew { supported: None, .. }`; there is no global schema maximum in `RegistryConfig`.
 
 Every host implements `SessionScope::publish_schema_support(input, now)` by admitting `PublishSchemaSupport` and ensuring its durable deadline through the Hello transaction's borrowed journal. `welcome_after_commit(connection, peer, session_id)` buffers a host effect, while the finalizing local step records only `()`. A successful commit publishes staged registration edits and exposes effects; rollback discards both. External effects run after transaction exclusion is released, and the runtime then supplies activation. Route `SchemaSupportRegistry` to the registry's `report_schema_support` rule inside its own transaction.

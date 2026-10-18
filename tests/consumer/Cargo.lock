@@ -882,6 +882,7 @@ dependencies = [
  "fleet-sync-protocol",
  "fleet-sync-session",
  "futures-util",
+ "serde_json",
  "tokio",
  "tokio-tungstenite",
 ]
