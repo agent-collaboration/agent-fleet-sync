@@ -26,34 +26,6 @@ impl ClientEnvelope {
     }
 }
 
-fn invalid_shape_field(error: &serde_json::Error) -> String {
-    // Serde's Display wording is version-dependent. Keep the body fallback and
-    // cap reflected client field names without splitting a Unicode character.
-    const MAX_FIELD_CHARACTERS: usize = 64;
-    let diagnostic = error.to_string();
-    let location = format!(" at line {} column {}", error.line(), error.column());
-    let diagnostic = diagnostic.strip_suffix(&location).unwrap_or(&diagnostic);
-    ["missing field `", "unknown field `", "duplicate field `"]
-        .iter()
-        .find_map(|prefix| {
-            let detail = diagnostic.strip_prefix(prefix)?;
-            if *prefix == "unknown field `" {
-                // The field itself can contain backticks or suffix-like text.
-                // Split at Serde's final diagnostic suffix, not its first tick.
-                detail
-                    .strip_suffix("`, there are no fields")
-                    .or_else(|| detail.rsplit_once("`, expected ").map(|(field, _)| field))
-            } else {
-                detail.rsplit_once('`').map(|(field, _)| field)
-            }
-        })
-        // Serde reports no field location for some type/variant failures.
-        .unwrap_or("body")
-        .chars()
-        .take(MAX_FIELD_CHARACTERS)
-        .collect()
-}
-
 pub async fn connection_opened<S, P: ConsumerProtocol>(
     scope: &mut S,
     binding: &ConnectionBinding,
@@ -116,14 +88,14 @@ where
     };
     let frame = match serde_json::from_slice::<ClientFrame<P>>(frame) {
         Ok(frame) => frame,
-        Err(error) => {
-            if let Some(frame) = envelope.frame() {
+        Err(_) => {
+            if let Some(frame_id) = envelope.frame() {
                 return Ok(vec![SessionEffect::Send {
                     connection: binding.connection,
                     frame: ServerFrame::Answer {
-                        frame,
+                        frame: frame_id,
                         body: OperationAnswer::InvalidShape {
-                            field: invalid_shape_field(&error),
+                            field: crate::frame_shape::invalid_shape_field::<P>(frame),
                         },
                     },
                 }]);

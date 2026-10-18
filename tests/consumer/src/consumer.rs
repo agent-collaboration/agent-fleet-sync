@@ -97,6 +97,17 @@ impl ConsumerHandler<SampleProtocol> for Consumer {
         match request {
             SampleRequest::Echo { text } => Ok(SampleAnswer::Echo { peer, text }),
             SampleRequest::Empty(_) => Ok(SampleAnswer::Empty { peer }),
+            SampleRequest::Renamed(request) => Ok(SampleAnswer::Renamed {
+                peer,
+                known: request.known,
+            }),
+            SampleRequest::Backtracking(request) => Ok(SampleAnswer::Backtracking {
+                peer,
+                accepted: match request {
+                    crate::SampleBacktrackingRequest::First { first } => first,
+                    crate::SampleBacktrackingRequest::Second { second } => second,
+                },
+            }),
         }
     }
 }

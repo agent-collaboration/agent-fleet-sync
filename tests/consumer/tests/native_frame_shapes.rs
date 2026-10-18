@@ -175,3 +175,120 @@ async fn unknown_fields_choose_the_actual_empty_or_nonempty_diagnostic_suffix() 
     service.stop(&mut control).await?;
     result
 }
+
+#[tokio::test]
+async fn unknown_fields_are_not_confused_with_declared_names_or_nested_input_keys() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let service = ServiceProcess::start(&directory.path().join("service")).await?;
+    let mut control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let mut socket = service
+        .peer(2, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
+    let result: TestResult = async {
+        let mut failures = Vec::new();
+        for (case, value, content_first) in [
+            ("ordinary", json!(true), false),
+            ("nested collision", json!({"unexpected`, expected `declared":true}), false),
+            ("content first", json!(true), true),
+            ("content first nested collision", json!({"unexpected`, expected `declared":true}), true),
+        ] {
+            let frame = FrameId::new(durable_steps::Uuid::now_v7())?;
+            let offered = json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Renamed":{"unexpected":value}}}}});
+            let bytes = if content_first {
+                format!("{{\"value\":{},\"kind\":\"request\"}}", offered["value"]).into_bytes()
+            } else { serde_json::to_vec(&offered)? };
+            let diagnostic = serde_json::from_slice::<ClientFrame<SampleProtocol>>(&bytes).err().ok_or("malformed fixture decoded successfully")?;
+            let raw = std::str::from_utf8(&bytes)?;
+            let key_end = raw.find("\"unexpected\"").ok_or("unknown key missing")? + "\"unexpected\"".len();
+            println!("OBS renamed {case} decoder position line={} column={} unknown_key_end={key_end}", diagnostic.line(), diagnostic.column());
+            socket.send(bytes.into()).await?;
+            let answer = next_json(&mut socket).await?;
+            println!("OBS renamed {case}: {answer}");
+            if answer["kind"] != "answer" || answer["value"]["frame"] != json!(frame)
+                || answer["value"]["body"] != json!({"kind":"invalidShape","value":{"field":"unexpected"}}) {
+                failures.push(format!("{case}: exact unknown field unexpected and frame {frame} required: {answer}"));
+            }
+            if !matches!(request(&mut socket, OperationRequest::Consumer(SampleRequest::Renamed(SampleRenamedRequest { known:true }))).await?, OperationAnswer::Consumer(SampleAnswer::Renamed { known:true, .. })) {
+                return Err("valid renamed-field follow-up failed on the same socket".into());
+            }
+        }
+        if !matches!(control_request(&mut control, ControlRequest::RequestCount).await?, ControlAnswer::RequestCount(4)) {
+            failures.push("malformed renamed requests reached the consumer".into());
+        }
+        if failures.is_empty() { Ok(()) } else { Err(failures.join("\n").into()) }
+    }.await;
+    service.stop(&mut control).await?;
+    result
+}
+
+#[tokio::test]
+async fn discarded_backtracking_errors_do_not_replace_the_final_reported_field() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let service = ServiceProcess::start(&directory.path().join("service")).await?;
+    let mut control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let mut socket = service
+        .peer(2, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
+    let result: TestResult = async {
+        for (payload, outer_unknown, field) in [(json!({"second":true}), true, "outerAfter"), (json!({"neither":true}), false, "body")] {
+            let frame = FrameId::new(durable_steps::Uuid::now_v7())?;
+            let mut offered = json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Backtracking":payload}}}});
+            if outer_unknown { offered["value"]["outerAfter"] = json!(true); }
+            socket.send(serde_json::to_vec(&offered)?.into()).await?;
+            let answer = next_json(&mut socket).await?;
+            println!("OBS backtracking outer_unknown={outer_unknown}: {answer}");
+            if answer["kind"] != "answer" || answer["value"]["frame"] != json!(frame)
+                || answer["value"]["body"] != json!({"kind":"invalidShape","value":{"field":field}}) {
+                return Err(format!("discarded candidate error replaced final field {field}: {answer}").into());
+            }
+            if !matches!(request(&mut socket, OperationRequest::Consumer(SampleRequest::Backtracking(SampleBacktrackingRequest::Second { second:true }))).await?, OperationAnswer::Consumer(SampleAnswer::Backtracking { accepted:true, .. })) {
+                return Err("valid backtracking follow-up failed on the same socket".into());
+            }
+        }
+        if !matches!(control_request(&mut control, ControlRequest::RequestCount).await?, ControlAnswer::RequestCount(2)) {
+            return Err("malformed backtracking requests reached the consumer".into());
+        }
+        Ok(())
+    }.await;
+    service.stop(&mut control).await?;
+    result
+}
+
+#[tokio::test]
+async fn missing_and_duplicate_declared_fields_keep_their_exact_names() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let service = ServiceProcess::start(&directory.path().join("service")).await?;
+    let mut control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let mut socket = service
+        .peer(2, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
+    let result: TestResult = async {
+        for duplicate in [false, true] {
+            let frame = FrameId::new(durable_steps::Uuid::now_v7())?;
+            let payload = if duplicate { r#"{"declared`, expected `tail":true,"declared`, expected `tail":false}"# } else { "{}" };
+            let offered = format!(r#"{{"kind":"request","value":{{"frame":"{frame}","body":{{"kind":"consumer","value":{{"Renamed":{payload}}}}}}}}}"#);
+            socket.send(offered.into_bytes().into()).await?;
+            let answer = next_json(&mut socket).await?;
+            println!("OBS declared duplicate={duplicate}: {answer}");
+            if answer["kind"] != "answer" || answer["value"]["frame"] != json!(frame)
+                || answer["value"]["body"] != json!({"kind":"invalidShape","value":{"field":"declared`, expected `tail"}}) {
+                return Err(format!("missing/duplicate declared field was not exact: {answer}").into());
+            }
+            if !matches!(request(&mut socket, OperationRequest::Consumer(SampleRequest::Renamed(SampleRenamedRequest { known:true }))).await?, OperationAnswer::Consumer(SampleAnswer::Renamed { known:true, .. })) {
+                return Err("valid follow-up after missing/duplicate field failed".into());
+            }
+        }
+        if !matches!(control_request(&mut control, ControlRequest::RequestCount).await?, ControlAnswer::RequestCount(2)) {
+            return Err("missing/duplicate field reached the consumer".into());
+        }
+        Ok(())
+    }.await;
+    service.stop(&mut control).await?;
+    result
+}

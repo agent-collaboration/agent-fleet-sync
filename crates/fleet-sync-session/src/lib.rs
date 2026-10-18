@@ -1,6 +1,7 @@
 //! Logical sessions survive transport loss. Hosts own transactions and I/O;
 //! server rules return effects to execute only after their transaction commits.
 
+mod frame_shape;
 mod transport_port;
 pub use bytes::Bytes;
 pub use transport_port::*;
