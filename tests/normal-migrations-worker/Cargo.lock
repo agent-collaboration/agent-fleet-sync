@@ -350,6 +350,7 @@ dependencies = [
  "fleet-sync-query-gen",
  "serde",
  "serde_json",
+ "sqlx",
  "sqlx-core",
  "thiserror",
  "turso_parser",

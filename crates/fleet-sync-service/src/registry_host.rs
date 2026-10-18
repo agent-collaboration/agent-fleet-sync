@@ -12,7 +12,6 @@ use sqlx_core::migrate::Migrator;
 use sqlx_turso::Turso;
 use std::sync::Arc;
 
-static MIGRATIONS: Migrator = sqlx::migrate!("../fleet-sync-lease/migrations");
 pub(crate) async fn registry_engine(
     object: Arc<ServiceObject>,
     config: RegistryConfig,
@@ -21,7 +20,7 @@ pub(crate) async fn registry_engine(
         .transaction(|scope| {
             Box::pin(async move {
                 let mut migrator =
-                    Migrator::with_migrations(MIGRATIONS.iter().cloned().collect::<Vec<_>>());
+                    Migrator::with_migrations(LEASE_MIGRATOR.iter().cloned().collect::<Vec<_>>());
                 migrator.dangerous_set_table_name("_fleet_sync_registry_migrations");
                 migrator
                     .run_direct(None, scope.executor(), false)

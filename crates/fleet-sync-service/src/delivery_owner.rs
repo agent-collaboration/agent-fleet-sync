@@ -2,7 +2,7 @@ use crate::{
     ServiceConsumer, ServiceError, ServiceHost, ServiceObject, service_state::ServiceState,
 };
 use durable_steps::{AtomicStore, Engine, StoreError, storage::TransactionScope};
-use fleet_sync_delivery::{DeliveryLimits, PublishStatus};
+use fleet_sync_delivery::{DELIVERY_MIGRATOR, DeliveryLimits, PublishStatus};
 use fleet_sync_protocol::{ConsumerProtocol, DeliveryFailureKind, PeerId};
 use fleet_sync_session::PeerAuthenticator;
 use fleet_sync_tokio_runner::{ObjectKey, ObjectOptions};
@@ -85,7 +85,7 @@ impl DeliveryOwner {
                     .transaction(|scope| {
                         Box::pin(async move {
                             let mut migrations = Migrator::with_migrations(
-                                MIGRATIONS.iter().cloned().collect::<Vec<_>>(),
+                                DELIVERY_MIGRATOR.iter().cloned().collect::<Vec<_>>(),
                             );
                             migrations.dangerous_set_table_name("_fleet_sync_delivery_migrations");
                             migrations
@@ -100,7 +100,6 @@ impl DeliveryOwner {
             .map(|_| ())
     }
 }
-static MIGRATIONS: Migrator = sqlx::migrate!("../fleet-sync-delivery/migrations");
 impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
     ServiceState<P, C, A>
 {

@@ -1,5 +1,8 @@
 //! Replication copy rules; the host owns transactions and carries out effects after commit.
 
+/// Copy tables applied in the host's migration transaction.
+pub static RECEIVER_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
 mod apply_follow_up;
 mod apply_rules;
 mod bound_sql;

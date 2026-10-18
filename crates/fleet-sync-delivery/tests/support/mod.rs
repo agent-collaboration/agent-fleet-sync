@@ -131,10 +131,7 @@ impl Fixture {
                 Box::pin(async move {
                     use durable_steps::storage::TransactionScope;
                     let mut migrations = sqlx_core::migrate::Migrator::with_migrations(
-                        sqlx::migrate!("./migrations")
-                            .iter()
-                            .cloned()
-                            .collect::<Vec<_>>(),
+                        DELIVERY_MIGRATOR.iter().cloned().collect::<Vec<_>>(),
                     );
                     migrations.dangerous_set_table_name("_fleet_sync_delivery_migrations");
                     migrations

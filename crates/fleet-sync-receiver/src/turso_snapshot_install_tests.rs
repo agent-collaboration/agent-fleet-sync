@@ -389,7 +389,7 @@ async fn staging() -> TestResult<TursoConnection> {
         .foreign_keys(false)
         .connect()
         .await?;
-    sqlx::migrate!("./migrations")
+    crate::RECEIVER_MIGRATOR
         .run_direct(None, &mut connection, false)
         .await?;
     Ok(connection)

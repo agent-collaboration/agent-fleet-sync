@@ -315,17 +315,14 @@ pub(super) async fn open_store(
         store
             .transaction(|scope| {
                 Box::pin(async move {
-                    sqlx_core::raw_sql::raw_sql(concat!(
-                        include_str!("../migrations/0001_registry_rules.sql"),
-                        "\n",
-                        include_str!("../migrations/0002_holder_workflow.sql"),
-                        "\n",
-                        include_str!("../migrations/0003_cleanup_failure.sql"),
-                        "\n",
-                        include_str!("../migrations/0004_schema_support.sql")
-                    ))
-                    .execute(scope.executor())
-                    .await?;
+                    let mut migrator = sqlx_core::migrate::Migrator::with_migrations(
+                        LEASE_MIGRATOR.iter().cloned().collect::<Vec<_>>(),
+                    );
+                    migrator.dangerous_set_table_name("_fleet_sync_registry_migrations");
+                    migrator
+                        .run_direct(None, scope.executor(), false)
+                        .await
+                        .map_err(storage)?;
                     Ok(())
                 })
             })

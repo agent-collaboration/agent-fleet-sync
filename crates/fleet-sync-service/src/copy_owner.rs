@@ -3,7 +3,7 @@ use crate::{
 };
 use durable_steps::{AtomicStore, Engine, StoreError, storage::TransactionScope};
 use fleet_sync_protocol::{ConsumerProtocol, CopyStatusAnswer, CopyUnavailableReason, DatabaseId};
-use fleet_sync_receiver::{ApplyFollowUp, initialize_hook};
+use fleet_sync_receiver::{ApplyFollowUp, RECEIVER_MIGRATOR, initialize_hook};
 use fleet_sync_session::PeerAuthenticator;
 use fleet_sync_tokio_runner::{ObjectKey, ObjectOptions};
 use runtime_primitives::SystemClock;
@@ -21,7 +21,6 @@ pub(crate) struct CopyOwner {
     pub changed: watch::Sender<()>,
     pub health: Mutex<Option<CopyUnavailableReason>>,
 }
-static MIGRATIONS: Migrator = sqlx::migrate!("../fleet-sync-receiver/migrations");
 
 impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
     ServiceState<P, C, A>
@@ -61,7 +60,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                     .transaction(move |scope| {
                         Box::pin(async move {
                             let mut migrator = Migrator::with_migrations(
-                                MIGRATIONS.iter().cloned().collect::<Vec<_>>(),
+                                RECEIVER_MIGRATOR.iter().cloned().collect::<Vec<_>>(),
                             );
                             migrator.dangerous_set_table_name("_fleet_sync_copy_migrations");
                             migrator

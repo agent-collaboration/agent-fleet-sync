@@ -17,6 +17,7 @@ runtime-primitives.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx-core = { workspace = true, features = ["migrate"] }
+sqlx = { workspace = true, features = ["migrate", "macros"] }
 thiserror.workspace = true
 sha2 = "0.10.9"
 
@@ -26,7 +27,6 @@ fleet-sync-query-gen = { path = "../fleet-sync-query-gen" }
 [dev-dependencies]
 durable-steps = { path = "../durable-steps", features = ["turso"] }
 sqlx-turso.workspace = true
-sqlx.workspace = true
 tokio.workspace = true
 tempfile = "3.27.0"
 

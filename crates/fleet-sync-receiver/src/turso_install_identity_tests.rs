@@ -13,7 +13,7 @@ async fn staging_file() -> TestResult<(tempfile::TempDir, TursoConnection)> {
         .foreign_keys(false)
         .connect()
         .await?;
-    sqlx::migrate!("./migrations")
+    RECEIVER_MIGRATOR
         .run_direct(None, &mut connection, false)
         .await?;
     Ok((directory, connection))

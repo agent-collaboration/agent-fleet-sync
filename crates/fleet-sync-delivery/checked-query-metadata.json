@@ -49,7 +49,7 @@
     "generator:sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "generator:sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "generator:sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "generator:workspace/Cargo.lock": "2bca890edd7be5006c968e25c9cdd77a84051c8aedfe9ce7d1420c427c1545c9",
+    "generator:workspace/Cargo.lock": "bd4df1999d80af592138beb3e63e77bcdcd1eadfb671b4b75a962208a170d71b",
     "generator:workspace/rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "migrations/0001_delivery_custody.sql": "1c480b530973dadd80a9fb388bb2d55428470e7d57d24cdce8973be7e93ef8d2",
     "migrations/0002_mailbox_deadlines.sql": "7e60b848a3c73c0b05b139d1822225a631b1b79a0ea4d497646fdeb4f708d031",

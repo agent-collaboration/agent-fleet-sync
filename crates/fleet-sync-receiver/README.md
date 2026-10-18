@@ -1,7 +1,8 @@
 # Replication copy rules
 
-The host owns the copy's SQL transaction. Run the migrations in `migrations/`
-before calling these rules. Configure the copy connection with foreign-key
+The host owns the copy's SQL transaction. Apply `RECEIVER_MIGRATOR` alongside
+application migrations in the same host-owned migration transaction before
+calling these rules. Configure the copy connection with foreign-key
 enforcement disabled: the writer owns integrity, and the copy applies whole writer
 transactions. The receiver does not use `PRAGMA foreign_key_check`, which Turso
 0.8.1 silently ignores.

@@ -2,6 +2,9 @@
 //!
 //! Consumer hosts supply admission, copy calls, time and the transaction scope.
 
+/// Registry tables applied in the host's migration transaction.
+pub static LEASE_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
 #[expect(
     clippy::too_many_arguments,
     reason = "generated admission write binds its immutable fields together in SQL order"
