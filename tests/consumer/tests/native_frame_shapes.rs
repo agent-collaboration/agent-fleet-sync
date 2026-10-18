@@ -98,3 +98,41 @@ async fn unreadable_kind_or_frame_id_closes_as_malformed_without_routing() -> Te
     service.stop(&mut control).await?;
     result
 }
+
+#[tokio::test]
+async fn unknown_fields_with_backticks_keep_their_complete_correlated_names() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let service = ServiceProcess::start(&directory.path().join("service")).await?;
+    let mut control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let mut socket = service
+        .peer(2, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
+    let result: TestResult = async {
+        let mut failures = Vec::new();
+        for field in ["client`tag", "`leading", "client`, expected `tag"] {
+            let frame = FrameId::new(durable_steps::Uuid::now_v7())?;
+            let mut offered = json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{"text":"must not route"}}}}});
+            offered["value"][field] = json!(true);
+            socket.send(serde_json::to_vec(&offered)?.into()).await?;
+            let answer = next_json(&mut socket).await?;
+            println!("OBS backtick field {field:?}: {answer}");
+            if answer["kind"] != "answer" || answer["value"]["frame"] != json!(frame)
+                || answer["value"]["body"] != json!({"kind":"invalidShape","value":{"field":field}}) {
+                failures.push(format!("InvalidShape must name exact field {field:?} and frame {frame}: {answer}"));
+            }
+            let text = format!("valid after {field}");
+            if !matches!(request(&mut socket, OperationRequest::Consumer(SampleRequest::Echo { text: text.clone() })).await?,
+                OperationAnswer::Consumer(SampleAnswer::Echo { text: echoed, .. }) if echoed == text) {
+                return Err("valid follow-up was not answered on the same session".into());
+            }
+        }
+        if !matches!(control_request(&mut control, ControlRequest::RequestCount).await?, ControlAnswer::RequestCount(3)) {
+            failures.push("malformed operations reached the consumer".into());
+        }
+        if failures.is_empty() { Ok(()) } else { Err(failures.join("\n").into()) }
+    }.await;
+    service.stop(&mut control).await?;
+    result
+}

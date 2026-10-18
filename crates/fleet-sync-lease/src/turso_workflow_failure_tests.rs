@@ -29,6 +29,8 @@ async fn refused_claim_with_unanswered_settle_reports_owed_from_the_wrapped_rese
     let store = open_store(&directory.path().join("registry.db"), host.clone(), true).await?;
     let engine = engine(store.clone(), host.clone())?;
     import_copy(&engine).await?;
+    crate::turso_copy_fixture::seed_import(&host).await?;
+    crate::turso_claim_refusal_tests::retire_copy(&host).await?;
     host.settlement_unreachable.store(true, Ordering::SeqCst);
     let id = attempt(3001)?;
     let request = HolderChangeRequest::Claim {
@@ -42,9 +44,7 @@ async fn refused_claim_with_unanswered_settle_reports_owed_from_the_wrapped_rese
     let record = view(&store, id).await?;
     assert_eq!(
         record.outcome,
-        Some(HolderChangeAnswer::Refused(
-            HolderChangeRefusal::Unavailable
-        ))
+        Some(HolderChangeAnswer::Refused(HolderChangeRefusal::Retired))
     );
     assert!(record.settlement_owed);
     assert_eq!(

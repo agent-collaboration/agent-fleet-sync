@@ -33,7 +33,19 @@ fn invalid_shape_field(error: &serde_json::Error) -> String {
     let diagnostic = error.to_string();
     ["missing field `", "unknown field `", "duplicate field `"]
         .iter()
-        .find_map(|prefix| diagnostic.strip_prefix(prefix)?.split('`').next())
+        .find_map(|prefix| {
+            let detail = diagnostic.strip_prefix(prefix)?;
+            if *prefix == "unknown field `" {
+                // The field itself can contain backticks or suffix-like text.
+                // Split at Serde's final diagnostic suffix, not its first tick.
+                detail
+                    .rsplit_once("`, expected ")
+                    .or_else(|| detail.rsplit_once("`, there are no fields"))
+                    .map(|(field, _)| field)
+            } else {
+                detail.rsplit_once('`').map(|(field, _)| field)
+            }
+        })
         // Serde reports no field location for some type/variant failures.
         .unwrap_or("body")
         .chars()

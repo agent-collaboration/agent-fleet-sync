@@ -233,9 +233,10 @@ async fn absent_copy_and_floor_cannot_create_a_preview_or_manufacture_epoch_evid
             },
         )
         .await?;
-    assert!(
-        matches!(engine.status(&id).await?.state, OperationState::Failed { reason: durable_steps::OperationFailure::Refused { code, .. } } if code=="registry_refused")
-    );
+    assert!(matches!(
+        engine.status(&id).await?.state,
+        OperationState::Running { .. }
+    ));
     assert_eq!(
         scalar(
             &store,

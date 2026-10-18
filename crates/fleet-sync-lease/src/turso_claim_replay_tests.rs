@@ -117,7 +117,7 @@ async fn claim_replays_reservation_and_fence_without_a_second_epoch_or_settlemen
 }
 
 #[tokio::test]
-async fn an_unseeded_copy_refuses_claim_and_settles_its_reserved_attempt() -> TestResult {
+async fn an_unseeded_copy_keeps_its_claim_pending_then_completes_the_same_attempt() -> TestResult {
     let directory = tempfile::tempdir()?;
     let host = TestHost::open(directory.path(), false).await?;
     let store = open_store(
@@ -144,25 +144,21 @@ async fn an_unseeded_copy_refuses_claim_and_settles_its_reserved_attempt() -> Te
         claimant: peer(2)?,
     };
     let key = holder_change_request_key(attempt)?;
-    assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request.clone()).await?,
-        HolderChangeAnswer::Refused(HolderChangeRefusal::Unavailable)
+    let operation = engine
+        .start::<HolderChangeTask<TestStore, Turso>>(&key, request.clone())
+        .await?;
+    let before = crate::turso_workflow_tests::view(&store, attempt).await?;
+    assert!(
+        before.outcome.is_none(),
+        "unseeded status must not become a terminal refusal"
     );
+    let waiting = before.waiting.as_ref().ok_or("copy wait missing")?;
+    assert_eq!(waiting.reach, durable_steps::storage::CallReach::NoEffect);
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request).await?,
-        HolderChangeAnswer::Refused(HolderChangeRefusal::Unavailable)
+        waiting.copy_unavailable,
+        Some(CopyUnavailableReason::Uninitialized)
     );
-    assert_eq!(
-        host.gate.settlement_outcome(attempt).await?,
-        Some(SettleOutcome::Refused {
-            reason: HolderChangeRefusal::Unavailable
-        })
-    );
-    assert_eq!(host.gate.settlement_count().await?, "1");
-    assert_eq!(
-        scalar(&store, "SELECT epoch AS value FROM _fleet_sync_epoch_floor").await?,
-        "2"
-    );
+    assert_eq!(host.gate.settlement_count().await?, "0");
     assert_eq!(
         scalar(
             &store,
@@ -171,6 +167,9 @@ async fn an_unseeded_copy_refuses_claim_and_settles_its_reserved_attempt() -> Te
         .await?,
         "0"
     );
+    let floor = scalar(&store, "SELECT epoch AS value FROM _fleet_sync_epoch_floor").await?;
+    let reservation = scalar(&store, "SELECT intent AS value FROM _fleet_sync_transfers").await?;
+    assert_eq!(floor, "2");
     assert!(
         host.calls
             .lock()
@@ -178,6 +177,74 @@ async fn an_unseeded_copy_refuses_claim_and_settles_its_reserved_attempt() -> Te
             .iter()
             .all(|(kind, _)| kind != "fleet-sync.copy-fence")
     );
+    drop(engine);
+    drop(store);
+    let reopened = open_store(&directory.path().join("registry.db"), host.clone(), false).await?;
+    assert_eq!(
+        crate::turso_workflow_tests::view(&reopened, attempt).await?,
+        before
+    );
+    let position = seed_import(&host).await?;
+    host.advance();
+    let resumed = crate::turso_registry_fixture::engine(reopened.clone(), host.clone())?;
+    assert_eq!(resumed.drive_due().await?.completed, vec![operation]);
+    assert_eq!(
+        resumed
+            .start::<HolderChangeTask<TestStore, Turso>>(&key, request.clone())
+            .await?,
+        operation
+    );
+    let answer =
+        task_answer::<HolderChangeTask<TestStore, Turso>>(&resumed, &key, request.clone()).await?;
+    assert!(
+        matches!(answer, HolderChangeAnswer::Granted { epoch, start, .. } if epoch == Epoch::new(2)? && start == position)
+    );
+    assert_eq!(
+        task_answer::<HolderChangeTask<TestStore, Turso>>(&resumed, &key, request).await?,
+        answer
+    );
+    assert_eq!(host.gate.settlement_count().await?, "1");
+    assert_eq!(
+        host.gate.settlement_outcome(attempt).await?,
+        Some(SettleOutcome::Granted {
+            epoch: Epoch::new(2)?
+        })
+    );
+    assert_eq!(
+        scalar(
+            &reopened,
+            "SELECT epoch AS value FROM _fleet_sync_epoch_floor"
+        )
+        .await?,
+        floor
+    );
+    assert_eq!(
+        scalar(
+            &reopened,
+            "SELECT intent AS value FROM _fleet_sync_transfers"
+        )
+        .await?,
+        reservation
+    );
+    assert_eq!(
+        host.calls
+            .lock()
+            .await
+            .iter()
+            .filter(|(kind, _)| kind == "fleet-sync.claim-reservation")
+            .count(),
+        1
+    );
+    let status_calls = host
+        .calls
+        .lock()
+        .await
+        .iter()
+        .filter(|(kind, _)| kind == "fleet-sync.copy-status")
+        .map(|(_, call)| call.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(status_calls.len(), 2);
+    assert_eq!(status_calls.first(), status_calls.last());
     Ok(())
 }
 

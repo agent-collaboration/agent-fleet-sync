@@ -36,10 +36,7 @@ where
         let id = link.cancel_item.ok_or(DeliveryError::Corrupt {
             field: "inbox cancel link identity",
         })?;
-        let id = ItemId::new(id.parse().map_err(|_| DeliveryError::Corrupt {
-            field: "inbox cancel identity",
-        })?)
-        .map_err(|_| DeliveryError::Corrupt {
+        let id = ItemId::try_from(id).map_err(|_| DeliveryError::Corrupt {
             field: "inbox cancel identity",
         })?;
         let cancel = self.load(id).await?.ok_or(DeliveryError::Corrupt {

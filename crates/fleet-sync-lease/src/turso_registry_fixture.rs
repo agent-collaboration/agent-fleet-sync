@@ -134,11 +134,14 @@ impl TestHost {
         self.now.fetch_add(1_000_000, Ordering::SeqCst);
     }
     pub async fn copy_connection(&self, database: DatabaseId) -> TestResult<TursoConnection> {
+        let copy_path = self
+            .copy_directory
+            .join(format!("copy-{}.db", database.as_uuid()));
+        self.copy_connection_at(&copy_path).await
+    }
+    pub async fn copy_connection_at(&self, path: &Path) -> TestResult<TursoConnection> {
         let mut connection = TursoConnectOptions::new()
-            .filename(
-                self.copy_directory
-                    .join(format!("copy-{}.db", database.as_uuid())),
-            )
+            .filename(path)
             .create_if_missing(true)
             .foreign_keys(false)
             .connect()
