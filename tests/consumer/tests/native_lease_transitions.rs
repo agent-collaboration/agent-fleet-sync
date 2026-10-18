@@ -394,6 +394,18 @@ async fn authoritative_copy_refuses_the_takeover_tail_while_old_writer_keeps_it_
     let writer = ManualWriter::open(&root.path().join("writer.db"), &service).await?;
     let database = writer.database.database();
     let before = writer.database.snapshot().await?.position();
+    let mut admitted = writer.database.begin_write().await?;
+    assert_eq!(admitted.admitted_epoch(), writer.lease.epoch);
+    insert_sample(
+        &mut admitted,
+        durable_steps::Uuid::now_v7().to_string(),
+        "kept rejected tail".into(),
+        9_007_199_254_740_993,
+        vec![0, 255, 128],
+    )
+    .await?;
+    // Hold the actual session transport so the writer cannot learn the takeover.
+    let held_session = writer.transport.0.lock().await;
     let mut control = service
         .connect("control", "Bearer consumer-control")
         .await?;
@@ -423,7 +435,10 @@ async fn authoritative_copy_refuses_the_takeover_tail_while_old_writer_keeps_it_
     );
     // The isolated holder has not learned the new authority yet. Its cached
     // lease still permits this write; only the copy can reject its epoch.
-    let tail = writer.insert("kept rejected tail").await?;
+    assert_eq!(admitted.admitted_epoch(), writer.lease.epoch);
+    admitted.commit().await?;
+    drop(held_session);
+    let tail = writer.database.snapshot().await?.position();
     let events = writer.sender.replicate_once(writer.receiver).await?;
     assert!(events.iter().any(|event| matches!(event, ReplicationEvents::RejectedTail(rejected) if rejected.ended_at==before && rejected.last_commit==tail)));
     let rejected = writer.sender.rejected_tails().await?;

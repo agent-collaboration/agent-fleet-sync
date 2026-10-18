@@ -1,6 +1,7 @@
 use crate::{StatementGuard, WriteRefusal};
 use either::Either;
 use fleet_sync_lease::{HolderError, LeaseHolder, WriterState};
+use fleet_sync_protocol::Epoch;
 use futures_core::{future::BoxFuture, stream::BoxStream};
 use futures_util::{FutureExt, StreamExt, stream};
 use runtime_primitives::Clock;
@@ -23,7 +24,7 @@ pub(crate) struct WriterControl {
 }
 
 impl WriterControl {
-    pub(crate) fn admit(&self, now: runtime_primitives::SyncTime) -> Result<(), WriteRefusal> {
+    pub(crate) fn admit(&self, now: runtime_primitives::SyncTime) -> Result<Epoch, WriteRefusal> {
         let state = self.holder.writer_state(now).map_err(|error| match error {
             HolderError::RegistrationRejected { reason } => WriteRefusal::Rejected { reason },
             HolderError::Refused(_)
@@ -32,8 +33,12 @@ impl WriterControl {
             | HolderError::InvalidTransition => WriteRefusal::NotWriter,
         })?;
         match state {
-            WriterState::Writing { .. } => Ok(()),
-            WriterState::Provisional if self.provisional_writes => Ok(()),
+            WriterState::Writing { epoch } => Ok(epoch),
+            WriterState::Provisional if self.provisional_writes => {
+                Epoch::new(1).map_err(|error| WriteRefusal::Storage {
+                    message: error.to_string(),
+                })
+            }
             WriterState::Provisional => Err(WriteRefusal::Provisional),
             WriterState::Seeding { .. } => Err(WriteRefusal::Seeding),
             WriterState::Paused { epoch, expired_at } => {
@@ -51,6 +56,7 @@ pub struct WriteTransaction {
     control: OwnedMutexGuard<WriterControl>,
     clock: Arc<dyn Clock>,
     capture_start: u64,
+    admitted_epoch: Epoch,
 }
 
 impl fmt::Debug for WriteTransaction {
@@ -67,7 +73,7 @@ impl WriteTransaction {
         control: OwnedMutexGuard<WriterControl>,
         clock: Arc<dyn Clock>,
     ) -> Result<Self, WriteRefusal> {
-        control.admit(clock.now())?;
+        let admitted_epoch = control.admit(clock.now())?;
         let mut transaction = pool
             .begin_with("BEGIN IMMEDIATE")
             .await
@@ -82,7 +88,13 @@ impl WriteTransaction {
             control,
             clock,
             capture_start,
+            admitted_epoch,
         })
+    }
+
+    /// The epoch frozen at admission. Reading it takes no lock, clock or I/O.
+    pub const fn admitted_epoch(&self) -> Epoch {
+        self.admitted_epoch
     }
 
     fn check(&mut self, sql: &str) -> Result<(), sqlx_core::Error> {
