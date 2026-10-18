@@ -3,7 +3,7 @@
 The oracle is the caller's adopted consumer-fit Verification Design, rows SO52,
 SO53, SO56 and SO57, including native-session scope and staged C3/C6 controls.
 Query freshness, guarded reader, upgrade refusal and scope-view proof additionally
-use the adopted Program Design W-C11, W-C12, W-C13 and W-C14.
+use the adopted Program Design W-C11, W-C12, W-C13, W-C14 and W-C15.
 Take expected behavior from that source, never from today's product answer.
 
 ## Holder refusals — SO52
@@ -214,8 +214,37 @@ joins/reopen and closed-view controls, and the real workerd adapter/classifier
 receipts. It does not run those suites or turn their receipts into native
 journey passes. Check the focused durable-steps shared_conformance and lease
 turso_copy_retry_tests cases, plus the existing workerd engine/copy drivers,
-at the same immutable revision and report their counts separately. Passing
-native cases does not close those entries or central's G3 session gate.
+at the same immutable revision and report their counts separately. Passing the
+native journey alone does not close those entries or central's G3 session gate.
+Retain its raw gap counts alongside the separate observations; do not rewrite
+the journey's result after running another suite.
+
+For the separate SO57 receipts, use the declared PR head rather than inherited
+producer logs. Run `durable-steps`' real `shared_conformance` test with `turso`,
+and the native `fleet-sync-lease` lib test
+`turso_copy_retry_tests::claim_ack_wait_and_fence_keep_pending_history_then_resume_the_same_attempt`.
+The latter checks pending NoEffect history, reopen, closed-code refusal and the
+same repaired attempt. Its workerd lease-view runtime is unobserved here and
+owed at B2a/G3; do not claim that native execution is a Worker observation.
+
+Use the owning Worker build/controller commands under W-C14 below for the
+fresh engine/reopen receipts. For the production copy adapter/classifier,
+generate raw Piece strings through the existing native fixture test, then use
+the existing normal-migrations Worker and controller:
+
+```bash
+COPY_CERTAINTY_FIXTURE="$copy_fixture" cargo test --offline --locked --manifest-path tests/consumer/Cargo.toml --all-features --test native_copy_containment an_unknown_commit_reconciles_the_identical_piece_without_a_second_effect -- --exact --nocapture
+cargo build --offline --locked --manifest-path tests/normal-migrations-worker/Cargo.toml --target wasm32-unknown-unknown --target-dir "$verification_worker_target"
+"$verification_bindgen" --target bundler --no-typescript --out-dir tests/normal-migrations-worker/build --out-name index "$verification_worker_target/wasm32-unknown-unknown/debug/normal_migrations_worker.wasm"
+cp tests/normal-migrations-worker/shim.mjs tests/normal-migrations-worker/build/shim.mjs
+node tests/normal-migrations-worker/run-copy-certainty.mjs "$copy_fixture" "$copy_evidence"
+```
+
+Use owned artifact paths and the matching pinned tools. Keep Piece JSON raw;
+a JS parse can round its wide integers. All four controls must distinguish
+real rollback from commit using SQLite row/receipt counts, call production
+DurableObjectStore and classify_copy_store_error, then apply or reconcile the
+same piece once. Keep controller results and native test counts separate.
 
 A registry call must not
 cache transient no-effect results as CallDone or end as Refused(Unavailable).
@@ -393,6 +422,52 @@ or cleanup. This proof does not establish consumer service runtime, wasm,
 workerd, board/central integration or hosted acceptance. Keep those receipts
 and C6's separate-proof gaps distinct.
 
+## Query-description receipts — W-C15
+
+Use the adopted W-C15 contract and the permanent public build-gate matrix:
+
+```bash
+cargo test --offline --locked -p fleet-sync-query-gen --features native --test external_freshness metadata_integrity_cases::public_build_gate_binds_complete_ordered_descriptions_on_native_and_wasm -- --exact --nocapture
+```
+
+The selected test actually generates a consumer through the CLI and compiles
+its emitted module on native and wasm32. Its build.rs calls public
+verify_manifest on the host for each target; this does not execute queries in
+wasm. Require the selected Rust test to run. Its Cargo subcases are not extra
+Rust test passes.
+
+- Metadata-only controls include Rust type (the acceptance control), SQL type,
+  names, nullable, type source, and bind_slots, which is absent from the Rust
+  output. SQL and generated Rust must remain unchanged during these edits.
+- Query/column deletion and reordering, an empty query vector, and a missing
+  or wrong digest must be refused. Check the required-field diagnostic for a
+  missing digest and Stale on the metadata filename for the other mutants;
+  an unrelated compiler failure cannot pass.
+- Whitespace-only and object-key-order changes must pass independently. The
+  key-order control must preserve parsed values while changing bytes.
+- Existing SQL/output changes still fail on their owning Stale keys, and
+  exact restored builds pass on both targets.
+
+At C9b these are fourteen metadata mutants per target, four formatting positives
+overall, source/output controls and recovery, within one Rust test. Inspect
+actual observations rather than adding subcases to the suite count.
+
+For all nine corpora, run the W-C11 artifact-only generation/check procedure
+after the generator source is frozen. Independently recompute SHA-256 from the
+typed serialization of the complete ordered query vector, preserving field
+values and both query/column orders; do not hash original JSON formatting or
+import the producer helper for this comparison. Each queries_digest must
+match. Query vectors, producer text, source keys and generated Rust stay
+unchanged for this cutover; only the changed generator source hashes and the
+new receipt field differ. Committed artifact bytes must survive regeneration
+unchanged.
+
+Source-check one shared helper, a required field without default/legacy
+fallback, and the same vector used by native rendering and metadata emission.
+The digest is a generation receipt. It does not re-describe SQL at consumer
+build time or independently prove the producer correct. Keep native/wasm
+build-gate evidence separate from runtime, G3 and hosted observations.
+
 ## Shortened transaction scope views — W-C14
 
 The reference is adopted Program Design W-C14. ReborrowScope is an optional
@@ -465,4 +540,5 @@ test-support-only identity observers. No new connection, transaction, lock,
 AlarmOwner, copied transaction state, unsafe or Clone escape belongs in reborrow.
 Consumer-composed frame/Engine publication, registration/Welcome rollback,
 recovered journal identity and native post-commit timer activation belong to
-B2b. Hosted Cloudflare and C6's separate-proof gaps remain outside this proof.
+B2b. Hosted Cloudflare and C6's adapter/classifier and lease-view controls need
+their own observations; the shared engine controller does not run those paths.

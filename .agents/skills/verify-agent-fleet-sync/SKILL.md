@@ -49,7 +49,7 @@ owners on the caller's declared targets.
 | copy-containment | `bash scripts/verification/copy-containment.sh` | Copy classification, sender retries or session containment change (SO57). |
 | guarded reads (focused API) | See the selected writer tests in the reference. | Reader snapshot, guard or publication exclusion changes (W-C12). |
 | upgrade refusals (focused transport) | See the selected service and transport tests in the reference. | HTTP authentication refusal encoding or decoding changes (W-C13). |
-| query freshness (focused CLI/build) | See the generator tests and corpus commands in the reference. | Freshness keys, source identity, Cargo watches or generation change (W-C11). |
+| query freshness (focused CLI/build) | See the generator tests, description-integrity matrix and corpus commands in the reference. | Freshness keys, query-description receipts, source identity, Cargo watches or generation change (W-C11, W-C15). |
 | scope views (focused runtimes) | See the native, workerd and external type controls in the reference. | ReborrowScope or an owning store's shortened view changes (W-C14). |
 
 For a session journey, the read-only health check is authenticated Hello/Welcome
@@ -65,8 +65,9 @@ read the summary. Missing coverage is never a pass.
 SO52 combines the native AlreadyHeld/Pending journey with the product test's
 Failed pass-through proof; no real writer produces Failed. SO53 uses the real
 native publication and admission controls described in the reference. SO57
-keeps separate-proof gaps for engine/closed-view and workerd receipts; native
-C6 controls do not close those entries. Native proof
+keeps engine/closed-view and workerd receipts separate from the native journey's
+counts. Close those coverage entries only with their named fresh observations.
+Native proof
 does not establish hosted, Cloudflare edge or release
 acceptance. Workerd apply certainty belongs to `tests/normal-migrations-worker`;
 Cloudflare session behavior belongs to central's real runtime.
