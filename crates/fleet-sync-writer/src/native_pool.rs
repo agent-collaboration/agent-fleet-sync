@@ -42,8 +42,7 @@ impl std::fmt::Debug for NativePool {
     }
 }
 impl NativePool {
-    #[cfg(test)]
-    pub fn new(pool: Pool<Turso>) -> Self {
+    pub fn passive(pool: Pool<Turso>) -> Self {
         Self {
             slot: Arc::new(PoolSlot::new(pool)),
             owner: None,

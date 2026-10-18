@@ -1,5 +1,6 @@
 use crate::{
     OpenError, ReplicatedDatabase, ReplicatedSchema,
+    file_admission::{FileAdmission, validate_native_path},
     native_file::{PublishError, checkpoint_for_publish, ensure_empty_wal},
     writer_authority::AuthorityObservation,
     writer_file_record::{WriterFileRecord, read_file_record},
@@ -129,6 +130,8 @@ async fn check_paths(
     source: &Path,
     destination: &Path,
 ) -> Result<(Option<Metadata>, Option<Metadata>), MoveAsideError> {
+    validate_native_path(source)?;
+    validate_native_path(destination)?;
     if source == destination {
         return Err(MoveAsideError::InvalidPaths);
     }
@@ -146,7 +149,11 @@ async fn check_paths(
     }
     Ok((source_metadata, destination_metadata))
 }
-async fn verify_closed(path: &Path, database: DatabaseId) -> Result<(), MoveAsideError> {
+async fn verify_closed(
+    path: &Path,
+    database: DatabaseId,
+    _admission: &FileAdmission,
+) -> Result<(), MoveAsideError> {
     let mut connection = sqlx_turso::TursoConnectOptions::new()
         .filename(path)
         .create_if_missing(false)
@@ -190,10 +197,18 @@ async fn move_file(
     probe: &MoveAsideProbe,
 ) -> Result<(), MoveAsideError> {
     let (source_metadata, destination_metadata) = check_paths(source, destination).await?;
+    let admission_path = if source_metadata.is_some() {
+        source
+    } else if destination_metadata.is_some() {
+        destination
+    } else {
+        return Err(MoveAsideError::SourceMissing);
+    };
+    let admission = FileAdmission::writer(admission_path, false).await?;
     match (source_metadata, destination_metadata) {
         (None, None) => return Err(MoveAsideError::SourceMissing),
         (None, Some(_)) => {
-            verify_closed(destination, database).await?;
+            verify_closed(destination, database, &admission).await?;
             sync_directory(destination).await?;
             sync_directory(source).await?;
             return Ok(());
@@ -201,11 +216,11 @@ async fn move_file(
         (Some(_), Some(_)) => {
             // The existing names are the same inode, left by an interrupted
             // link/unlink. Both sidecars must already be free of committed WAL.
-            verify_closed(destination, database).await?;
+            verify_closed(destination, database, &admission).await?;
             ensure_empty_wal(source).await?;
         }
         (Some(_), None) => {
-            verify_closed(source, database).await?;
+            verify_closed(source, database, &admission).await?;
             probe.at(MoveAsidePhase::BeforeLink).await;
             match tokio::fs::hard_link(source, destination).await {
                 Ok(()) => {}

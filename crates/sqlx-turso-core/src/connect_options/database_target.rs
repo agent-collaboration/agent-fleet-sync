@@ -11,11 +11,11 @@ pub enum TursoDatabaseTarget {
     File(PathBuf),
 }
 
-/// Whether opening a file target may create the file
-///
-/// Read-only opens need the lower Turso SDK, so there is no read-only mode.
+/// The access mode requested when opening a file target
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OpenMode {
+    /// The file must exist and the engine must not write it
+    ReadOnly,
     /// The file must already exist
     ReadWrite,
     /// A missing file is created
@@ -27,6 +27,7 @@ impl OpenMode {
     pub(crate) fn url_value(self, target: &TursoDatabaseTarget) -> &'static str {
         match (target, self) {
             (TursoDatabaseTarget::Memory, _) => "memory",
+            (TursoDatabaseTarget::File(_), Self::ReadOnly) => "ro",
             (TursoDatabaseTarget::File(_), Self::ReadWrite) => "rw",
             (TursoDatabaseTarget::File(_), Self::CreateIfMissing) => "rwc",
         }

@@ -50,6 +50,14 @@ pub enum AdoptionHistory {
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum OpenError {
+    #[error("the physical file is live in an incompatible access mode")]
+    FileInUse,
+    #[error("native library file paths must be lossless UTF-8")]
+    NativePathNotUtf8,
+    #[error("retained file identity admission is unsupported on this platform")]
+    FileIdentityUnsupported,
+    #[error("retained file bookkeeping or application schema is unsupported")]
+    RetainedFormatUnsupported,
     #[error("bootstrap schema differs: expected {expected:?}, found {found:?}")]
     BootstrapSchemaMismatch {
         expected: fleet_sync_protocol::SchemaIdentity,
@@ -81,6 +89,8 @@ pub enum OpenError {
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum WriteRefusal {
+    #[error("a retained reader owns the file; retry after it closes")]
+    FileInUse,
     #[error("replicated row key in {table} is not a canonical UUIDv7")]
     InvalidKey { table: String },
     #[error("statement assigns the immutable key of {table}")]
@@ -122,6 +132,14 @@ impl From<crate::StatementRefusal> for sqlx_core::Error {
 impl WriteRefusal {
     pub fn from_sqlx(error: sqlx_core::Error) -> Self {
         if let sqlx_core::Error::Configuration(source) = &error
+            && matches!(
+                source.downcast_ref::<crate::native_file::PublishError>(),
+                Some(crate::native_file::PublishError::FileInUse)
+            )
+        {
+            return Self::FileInUse;
+        }
+        if let sqlx_core::Error::Configuration(source) = &error
             && let Some(refusal) = source.downcast_ref::<Self>()
         {
             return refusal.clone();
@@ -134,6 +152,14 @@ impl WriteRefusal {
 
 impl From<sqlx_core::Error> for OpenError {
     fn from(error: sqlx_core::Error) -> Self {
+        if let sqlx_core::Error::Configuration(source) = &error
+            && matches!(
+                source.downcast_ref::<crate::native_file::PublishError>(),
+                Some(crate::native_file::PublishError::FileInUse)
+            )
+        {
+            return Self::FileInUse;
+        }
         Self::Storage {
             message: error.to_string(),
         }

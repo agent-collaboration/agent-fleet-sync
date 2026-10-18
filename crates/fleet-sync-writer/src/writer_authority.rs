@@ -4,7 +4,7 @@ use crate::{
     writer_release_record::restore_releases,
 };
 use fleet_sync_lease::LeaseHolder;
-use fleet_sync_protocol::{Epoch, GateReason, LeaseRefusal, RenewAnswer, SyncTime};
+use fleet_sync_protocol::{DatabaseId, Epoch, GateReason, LeaseRefusal, RenewAnswer, SyncTime};
 use serde::{Deserialize, Serialize};
 use sqlx_core::connection::Connection;
 use sqlx_turso::TursoConnection;
@@ -58,16 +58,7 @@ impl AuthorityObservation {
         holder: &mut LeaseHolder,
         file_epoch: Epoch,
     ) -> Result<(), OpenError> {
-        if let Self::Renewal {
-            answer: RenewAnswer::Renewed { current, .. },
-            ..
-        } = self
-            && current.database != holder.database()
-        {
-            return Err(OpenError::Holder {
-                error: fleet_sync_lease::HolderError::LeaseMismatch,
-            });
-        }
+        self.validate_database(holder.database())?;
         if let Some(current) = self.epoch()
             && current > file_epoch
         {
@@ -82,6 +73,20 @@ impl AuthorityObservation {
             Self::RegistrationRejected { reason } => holder.reject_registration(reason.clone()),
         }
         .map_err(|error| OpenError::Holder { error })
+    }
+
+    pub(crate) fn validate_database(&self, database: DatabaseId) -> Result<(), OpenError> {
+        if let Self::Renewal {
+            answer: RenewAnswer::Renewed { current, .. },
+            ..
+        } = self
+            && current.database != database
+        {
+            return Err(OpenError::Holder {
+                error: fleet_sync_lease::HolderError::LeaseMismatch,
+            });
+        }
+        Ok(())
     }
 }
 

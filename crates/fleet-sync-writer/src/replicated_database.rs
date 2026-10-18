@@ -1,9 +1,13 @@
 use crate::{
     OpenError, ReadPool, ReplicatedSchema, StatementGuard, WriteRefusal, WriteTransaction,
     WriterOptions,
+    file_admission::FileAdmission,
     schema_inspection::schema_entries,
     write_transaction::WriterControl,
-    writer_file_record::{WriterFileRecord, read_file_record, write_file_record},
+    writer_file_record::{
+        BOOKKEEPING_HISTORY_TABLE, BOOKKEEPING_MIGRATOR, WriterFileRecord, read_file_record,
+        write_file_record,
+    },
 };
 use fleet_sync_lease::{LeaseHolder, LeasePolicy, WriterState};
 use fleet_sync_protocol::{DatabaseId, Epoch, PeerId};
@@ -21,6 +25,12 @@ use std::{
 };
 use tokio::sync::Mutex;
 
+/// A native writer owned by one consumer runtime per physical database file.
+///
+/// The consumer must prevent a second live `ReplicatedDatabase` owner, including
+/// another owner in this process, and writable handles outside the library.
+/// Physical-identity admission protects retained readers; it does not enforce
+/// the consumer's single-owner precondition or provide a cross-process lock.
 pub struct ReplicatedDatabase<S: ReplicatedSchema> {
     pub(crate) path: PathBuf,
     pub(crate) database: DatabaseId,
@@ -49,7 +59,11 @@ pub(crate) enum OpenMode {
     Adopt,
     Bootstrap(crate::BootstrapGrant),
 }
-pub(crate) async fn open_pool(path: &Path, mode: CaptureMode) -> Result<Pool<Turso>, OpenError> {
+pub(crate) async fn open_pool(
+    path: &Path,
+    mode: CaptureMode,
+    admission: Arc<FileAdmission>,
+) -> Result<Pool<Turso>, OpenError> {
     let limit = if matches!(mode, CaptureMode::Reader) {
         4
     } else {
@@ -59,7 +73,11 @@ pub(crate) async fn open_pool(path: &Path, mode: CaptureMode) -> Result<Pool<Tur
         .min_connections(1)
         .max_connections(limit)
         .after_connect(move |connection, _| {
+            let admission = admission.clone();
             Box::pin(async move {
+                // PoolOptions keeps the outer Arc until all SDK connections and
+                // pending pool returns are gone; this clone spans initialization.
+                let _admission = admission;
                 let statement = match mode {
                     CaptureMode::Adoption => return Ok(()),
                     CaptureMode::Writer => "PRAGMA capture_data_changes_conn('full')",
@@ -123,6 +141,9 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         .await
     }
 
+    /// Open a managed file under the consumer's single-owner precondition.
+    /// No second live `ReplicatedDatabase` may own this physical file, including
+    /// inside this process; admission does not enforce that precondition.
     pub async fn open(
         path: &Path,
         database: DatabaseId,
@@ -177,6 +198,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         if holder.database() != database {
             return Err(OpenError::corrupt("writer.database"));
         }
+        let admission = FileAdmission::writer(path, !adopting).await?;
         let maintenance = open_pool(
             path,
             if adopting {
@@ -184,6 +206,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             } else {
                 CaptureMode::Maintenance
             },
+            admission.clone(),
         )
         .await?;
         let setup = async {
@@ -220,8 +243,9 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             } else {
                 Vec::new()
             };
-            let mut bookkeeping = sqlx::migrate!("./migrations");
-            bookkeeping.dangerous_set_table_name("_fleet_sync_writer_engine_history");
+            let mut bookkeeping =
+                Migrator::with_migrations(BOOKKEEPING_MIGRATOR.iter().cloned().collect::<Vec<_>>());
+            bookkeeping.dangerous_set_table_name(BOOKKEEPING_HISTORY_TABLE);
             bookkeeping
                 .run_direct(None, &mut *transaction, false)
                 .await
@@ -314,8 +338,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                 return Err(error);
             }
         };
-        let writer = open_pool(path, CaptureMode::Writer).await?;
-        let reader_pool = open_pool(path, CaptureMode::Reader).await?;
+        let writer = open_pool(path, CaptureMode::Writer, admission.clone()).await?;
+        let reader_pool = open_pool(path, CaptureMode::Reader, admission.clone()).await?;
         let bootstrap_publish_probe =
             crate::bootstrap_publish_probe::BootstrapPublishProbe::default();
         let native_owner = crate::native_file_owner::NativeFileOwner::new(
@@ -324,6 +348,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             maintenance,
             reader_pool,
             bootstrap_publish_probe.clone(),
+            admission,
         );
         let readers = ReadPool::from_native_pool(native_owner.readers());
         let (authority_changes, _) = tokio::sync::watch::channel(());
@@ -396,6 +421,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             .await
             .map_err(|error| match error {
                 crate::native_file::PublishError::Closed => WriteRefusal::Closed,
+                crate::native_file::PublishError::FileInUse => WriteRefusal::FileInUse,
                 error => WriteRefusal::Storage {
                     message: error.to_string(),
                 },

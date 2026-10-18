@@ -61,6 +61,10 @@ let task = sqlx_turso::query!(r#"SELECT status AS "status!: String" FROM tasks W
   turns them off before the owned transaction (`PRAGMA foreign_keys = OFF`), reinserts rows,
   checks `PRAGMA foreign_key_check` before commit, then turns them back on and reads the flag
   back.
+- `read_only(true)` or `?mode=ro` requests the engine's read-only file mode and refuses
+  missing files. The caller must exclude live writable SDK instances by physical file
+  identity before opening: Turso's process cache can otherwise reuse a writable instance.
+  `fleet-sync-writer::RetainedFile` owns this admission for retained library files.
 
 ## Offline metadata
 
@@ -88,7 +92,7 @@ cargo test -p sqlx-turso -p sqlx-turso-core -p sqlx-turso-macros --all-features
 | Bind arity is not checked: an extra bind fails only at execution; a missing bind reads NULL | Tested |
 | `PRAGMA defer_foreign_keys = ON` does not defer; write parents first | Tested |
 | Rebuilding a referenced table with foreign keys on fails; use the policy above | Tested |
-| No read-only opens; `?mode=ro` is rejected | Tested |
+| Read-only mode alone does not exclude an in-process writable SDK instance | Source |
 | No `VACUUM`: the engine keeps it behind an experimental flag this driver does not set | Source |
 | Each statement step does its file IO (`pread`, `pwrite`, `fsync`) synchronously inside `poll`, on the runtime worker that polls it; opening a store does too | Source |
 

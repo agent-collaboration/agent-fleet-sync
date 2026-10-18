@@ -31,9 +31,6 @@ pub enum TursoAdapterError {
         /// The rejected value
         value: String,
     },
-    /// Read-only opens need the lower Turso SDK, which this driver does not use
-    #[error("read-only Turso connections are not supported")]
-    ReadOnlyUnsupported,
     /// Arguments were bound to SQL that contains more than one statement
     #[error("arguments cannot be bound to multi-statement Turso SQL")]
     BatchArgumentsUnsupported,

@@ -7,6 +7,9 @@ use fleet_sync_protocol::{CommitSequence, DatabaseId, Epoch, PeerId, Replication
 use serde::{Deserialize, Serialize};
 use sqlx_turso::TursoConnection;
 
+pub(crate) static BOOKKEEPING_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+pub(crate) const BOOKKEEPING_HISTORY_TABLE: &str = "_fleet_sync_writer_engine_history";
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct WriterFileRecord {
@@ -82,6 +85,9 @@ pub(crate) async fn read_file_record(
     let encoded = text(row.record, row.record_class, "writer.record")?;
     let record: WriterFileRecord =
         serde_json::from_str(&encoded).map_err(|_| OpenError::corrupt("writer.record"))?;
+    if let Some(authority) = &record.authority {
+        authority.validate_database(record.database)?;
+    }
     if let Some(marker) = &record.bootstrap
         && (!marker.verified
             || marker.install.database != record.database

@@ -9,6 +9,7 @@ mod bootstrap_schema_tests;
 mod capture_normalization;
 mod capture_stream;
 mod checked_queries;
+mod file_admission;
 mod foreign_key_integrity;
 mod guarded_query;
 mod maintenance_transaction;
@@ -25,6 +26,9 @@ mod native_rows;
 mod piece_builder;
 mod read_pool;
 mod read_transaction;
+mod retained_file;
+mod retained_file_format;
+pub use retained_file::RetainedFile;
 #[cfg(test)]
 mod read_transaction_guard_tests;
 #[cfg(test)]
@@ -35,6 +39,16 @@ mod registration_contract;
 mod renewal_task;
 mod replicated_database;
 mod replicated_schema;
+#[cfg(all(test, unix))]
+mod retained_file_fixture;
+#[cfg(all(test, unix))]
+mod retained_file_lifetime_tests;
+#[cfg(all(test, unix))]
+mod retained_file_publication_tests;
+#[cfg(all(test, unix))]
+mod retained_file_tests;
+#[cfg(all(test, unix))]
+mod retained_file_wal_tests;
 mod seed_copy_task;
 pub use register_database_task::RegisterDatabase;
 pub use registration_contract::{

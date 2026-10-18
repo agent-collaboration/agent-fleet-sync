@@ -32,7 +32,7 @@ impl ReadPool {
 
     #[cfg(test)]
     pub(crate) fn new(pool: Pool<Turso>) -> Self {
-        Self::from_native_pool(crate::native_pool::NativePool::new(pool))
+        Self::from_native_pool(crate::native_pool::NativePool::passive(pool))
     }
     pub(crate) fn from_native_pool(pool: crate::native_pool::NativePool) -> Self {
         Self {

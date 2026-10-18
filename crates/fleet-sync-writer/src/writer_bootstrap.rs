@@ -187,7 +187,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             ) -> BoxFuture<'path, Result<(), PublishError>>
             + Send,
     {
-        let mut source = open_closed(live).await?;
+        let live_admission = crate::file_admission::FileAdmission::writer(live, false).await?;
+        let mut source = open_closed(live, &live_admission).await?;
         let record = read_file_record(&mut source).await;
         source.close().await?;
         let record = record?.ok_or_else(|| OpenError::corrupt("bootstrap.source_record"))?;
@@ -205,7 +206,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         {
             return Err(OpenError::corrupt("bootstrap.snapshot_identity").into());
         }
-        let mut staged = open_closed(staging).await?;
+        let staged_admission = crate::file_admission::FileAdmission::writer(staging, false).await?;
+        let mut staged = open_closed(staging, &staged_admission).await?;
         let state = SnapshotInstallRules(&mut WriterScope(&mut staged))
             .state()
             .await;
@@ -214,7 +216,9 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             return Err(fleet_sync_receiver::SnapshotInstallError::NotVerified.into());
         }
         carry(live, staging).await?;
-        let mut staged = open_closed(staging).await?;
+        let converted_admission =
+            crate::file_admission::FileAdmission::writer(staging, false).await?;
+        let mut staged = open_closed(staging, &converted_admission).await?;
         let converted = Self::convert_staged_bootstrap(&mut staged, install, prefix, &tables).await;
         let closed = staged.close().await;
         converted?;
@@ -354,7 +358,10 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         Ok(())
     }
 }
-async fn open_closed(path: &Path) -> Result<TursoConnection, OpenError> {
+async fn open_closed(
+    path: &Path,
+    _admission: &crate::file_admission::FileAdmission,
+) -> Result<TursoConnection, OpenError> {
     let mut connection = TursoConnectOptions::new()
         .filename(path)
         .create_if_missing(false)

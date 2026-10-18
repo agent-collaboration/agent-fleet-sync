@@ -953,6 +953,7 @@ dependencies = [
  "runtime-primitives",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sqlx",
  "sqlx-core",
  "sqlx-turso",
