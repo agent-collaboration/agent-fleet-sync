@@ -6,6 +6,26 @@ Query freshness, guarded reader, upgrade refusal and scope-view proof additional
 use the adopted Program Design W-C11, W-C12, W-C13, W-C14 and W-C15.
 Take expected behavior from that source, never from today's product answer.
 
+Build and cleanup use [the normal worktree target recipe](build-and-evidence.md).
+
+## Stored cancel identities — SO51, focused receive proof
+
+Use the adopted canonical stored-identity rule and the real inbox boundary:
+
+```bash
+cargo test --offline --locked -p fleet-sync-delivery --all-features --test inbox_integrity -- --nocapture
+```
+
+The pending-cancel test receives a cancellation before its target, corrupts
+only the stored cancel-item spelling, then receives the target through public
+Inbox::store_batch in a real Turso transaction. Uppercase, compact, braced, URN
+and canonical non-v7 text must return Corrupt with the owning identity field.
+Require exact unchanged inbox headers, reports and receive-state records.
+The separate canonical control must prevent the target and produce both reports.
+These are subcases within the selected Rust tests, not constructor-only proof
+or extra pass counts. Source-check the strict raw ItemId conversion before
+normalization; no schema, public identity format or consumer effects change.
+
 ## Holder refusals — SO52
 
 Run `bash scripts/verification/holder-refusals.sh` after changes to holder-change
@@ -126,6 +146,16 @@ same-session follow-up. The strengthened native_engine_identities product test
 separately checks the invalid UUIDv4 seed attempt: correlated InvalidShape,
 same-session Echo, and zero seed receipts after the owning process stops.
 
+The permanent native_frame_shapes test
+`unknown_fields_with_backticks_keep_their_complete_correlated_names` additionally
+sends embedded, leading and diagnostic-suffix-like backtick names over the real
+WebSocket. Require the whole offending field and exact frame ID, a valid
+follow-up on that same socket for each case, and only those follow-ups in the
+routed count. Run the full native_frame_shapes selection to retain the existing
+malformed-envelope and Unicode-cap controls; the new fields do not alter the cap.
+An empty expected-field list needs its own real request fixture; these outer
+envelope controls do not establish that diagnostic branch.
+
 Wrong build: treating every decode failure as an unreadable envelope.
 Cloudflare sessions belong to central's real runtime gate, outside this journey.
 
@@ -240,7 +270,8 @@ cp tests/normal-migrations-worker/shim.mjs tests/normal-migrations-worker/build/
 node tests/normal-migrations-worker/run-copy-certainty.mjs "$copy_fixture" "$copy_evidence"
 ```
 
-Use owned artifact paths and the matching pinned tools. Keep Piece JSON raw;
+Use the normal worktree build target, owned evidence paths and matching pinned
+tools. Keep Piece JSON raw;
 a JS parse can round its wide integers. All four controls must distinguish
 real rollback from commit using SQLite row/receipt counts, call production
 DurableObjectStore and classify_copy_store_error, then apply or reconcile the
@@ -248,6 +279,24 @@ same piece once. Keep controller results and native test counts separate.
 
 A registry call must not
 cache transient no-effect results as CallDone or end as Refused(Unavailable).
+Run the real-receiver Turso claim controls:
+
+```bash
+cargo test --offline --locked -p fleet-sync-lease --all-features --lib turso_claim -- --nocapture
+```
+
+An unseeded status or a copy missing after status stays pending with
+NoEffect/Uninitialized.
+Registry reopen preserves the view; real seed repair then grants the same
+operation, attempt, reservation, epoch floor and copy CallId, once. Retired and
+moved copies stay terminal. Keep the separate settlement-debt control using a
+seeded then retired copy and the absent-copy preview's Running/no-preview,
+no-transfer, no-floor assertions. The test host must return shared retryable_copy
+only after the actual receiver transaction commits. Administrative replacement
+and seeding of a lost fixture is not production automatic reseeding.
+The separate exact selectors are
+`turso_workflow_failure_tests::refused_claim_with_unanswered_settle_reports_owed_from_the_wrapped_reserve_answer`
+and `turso_epoch_proof_tests::absent_copy_and_floor_cannot_create_a_preview_or_manufacture_epoch_evidence`.
 Keep final-refusal replay separate. Authoritative NotInitialized reseed remains
 the design's explicit limit. Store-boundary injection does not prove real disk
 failure. Workerd receiver/driver atomicity and the codec use the real apply
@@ -367,8 +416,8 @@ consumer. Reuse the permanent real-path tests at the declared immutable head:
 cargo test -p fleet-sync-query-gen --offline --locked --features native --lib --tests --target-dir "$verification_target" -- --nocapture
 ```
 
-Run from the archived repository root, with `verification_target` naming this
-run's owned build directory. The native feature is required; an empty
+Run from the archived repository root, with `verification_target` naming the
+normal worktree target configured above. The native feature is required; an empty
 feature-gated target is not proof. Inspect each target's actual counts and the
 external test's observations, without counting its subcases as extra tests.
 

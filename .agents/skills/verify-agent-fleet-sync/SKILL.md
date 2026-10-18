@@ -1,6 +1,6 @@
 ---
 name: verify-agent-fleet-sync
-description: Use when verifying agent-fleet-sync native holder refusals, target schema support, malformed session frames, replication copy containment, guarded read transactions, transaction scope views, typed upgrade refusals, or checked-query freshness after protocol, registry, session, receiver, sender, writer, store, transport, or query-generator changes.
+description: Use when verifying agent-fleet-sync stored identity integrity, native holder refusals, target schema support, malformed session frames, replication copy containment, guarded read transactions, transaction scope views, typed upgrade refusals, or checked-query freshness after protocol, delivery, registry, session, receiver, sender, writer, store, transport, or query-generator changes.
 ---
 
 # Verify Agent Fleet Sync
@@ -16,7 +16,12 @@ Transaction scope views use their real Turso, TokioObject and Durable Object
 owners on the caller's declared targets.
 
 1. Establish the declared source revision, configuration and client. Work from
-   the repository root and coordinate an exclusive build window. The launcher
+   the pinned source archive's root and coordinate an exclusive build window.
+   Use [the build setup](references/build-and-evidence.md): the assigned worktree's
+   normal target only, with native binaries under `target/debug`. Never make
+   per-run or scratch target copies. Builds remain ordered by the exclusive slot.
+   Source pinning and recorded binary hashes establish each run's provenance;
+   a fresh target directory is not an independence requirement. The launcher
    builds the existing `tests/consumer` executable and the native journey driver
    using the repository's pinned Rust toolchain and Cargo configuration. It runs
    `df -h .` before each build and retains the output.
@@ -39,10 +44,13 @@ owners on the caller's declared targets.
    stopped and joined or disposed. Retain the emitted evidence and the session
    journeys' saved fixture databases until their consumer no longer needs them.
    Focused tests and controllers own their fixture cleanup. Clean only this
-   run's residue under the caller's cleanup authority.
+   run's residue under the caller's cleanup authority. Run `cargo clean` on the
+   normal worktree target after observation, before returning the build slot.
+   A completed run keeps its evidence and no per-run Cargo target directory.
 
 | Journey | Command | When to run |
 |---|---|---|
+| stored cancel identities (focused receive) | See the real inbox tests in the reference. | Stored cancellation identity decoding changes (SO51). |
 | holder-refusals | `bash scripts/verification/holder-refusals.sh` | Holder refusal payloads or recorded outcome replay change (SO52). |
 | target-capability | `bash scripts/verification/target-capability.sh` | Schema declarations, attach ordering or holder admission change (SO53). |
 | frame-shapes | `bash scripts/verification/frame-shapes.sh` | Frame decoding or native socket failure handling change (SO56). |
