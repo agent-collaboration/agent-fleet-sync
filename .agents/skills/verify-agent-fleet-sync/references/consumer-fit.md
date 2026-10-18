@@ -2,8 +2,8 @@
 
 The oracle is the caller's adopted consumer-fit Verification Design, rows SO52,
 SO53, SO56 and SO57, including native-session scope and staged C3/C6 controls.
-Guarded reader and upgrade refusal proof additionally use the adopted Program
-Design W-C12 and W-C13.
+Query freshness, guarded reader and upgrade refusal proof additionally use the
+adopted Program Design W-C11, W-C12 and W-C13.
 Take expected behavior from that source, never from today's product answer.
 
 ## Holder refusals — SO52
@@ -325,3 +325,70 @@ If moving an existing dependency from dev to normal dependencies changes a
 standalone local-package lock edge, refresh only that edge offline, inspect
 the exact diff, then rerun locked. Do not discard a lock refusal or silently
 omit the native verification driver's Cargo.lock from scoped upkeep.
+
+## Portable query freshness — W-C11, focused CLI/build proof
+
+The reference is adopted Program Design W-C11: generator-owned inputs have
+portable logical metadata keys, while Cargo watches use their actual physical
+paths. Both generation and public verification use the same classification.
+This is native generation and build-time consumer proof, without a session
+consumer. Reuse the permanent real-path tests at the declared immutable head:
+
+```bash
+cargo test -p fleet-sync-query-gen --offline --locked --features native --lib --tests --target-dir "$verification_target" -- --nocapture
+```
+
+Run from the archived repository root, with `verification_target` naming this
+run's owned build directory. The native feature is required; an empty
+feature-gated target is not proof. Inspect each target's actual counts and the
+external test's observations, without counting its subcases as extra tests.
+
+- `external_freshness` must invoke the actual CLI to generate an outside-workspace
+  Cargo consumer, then compile its generated module through a real build.rs
+  calling public verify_manifest. Distinct query names share one SQL file as a
+  positive coalescing control.
+- First move only the library, then move only the consumer to a different
+  depth. Both real Cargo builds must pass without regeneration; generated
+  source and metadata bytes stay unchanged. Moving both together cannot
+  substitute for these independent controls. The fixture copies source homes
+  directly and works from an archive without .git.
+- Actual emitted Cargo watches must exist and include the relocated generator,
+  driver, lock/toolchain, consumer SQL and generated output. Absolute physical
+  watch paths are expected; they do not belong in metadata keys.
+- Seven fixture-only mutations cover SQL, migration, generated output,
+  generator source, owned driver source, workspace lock and toolchain. Each
+  real build must fail on its exact intended Stale key, rather than a compiler
+  or fixture error. Restore the exact bytes and require a successful build.
+  Converting every generator entry to a complete, valid old relative-path map
+  must still be refused, without a legacy fallback.
+- Native generation must refuse a consumer input or generated output colliding
+  with `generator:workspace/Cargo.lock`, before overwriting artifacts. Keep the
+  generated-output marker unchanged on refusal. Catalog controls additionally
+  require same-canonical-input/same-origin coalescing, and refusal for identical
+  bytes under distinct paths or origins; digest equality alone cannot pass.
+- `generated_calls` checks committed freshness and executes generated calls
+  against real Turso transactions, with rollback and committed-value controls.
+
+Enumerate every library corpus at the declared head (nine at C9), including
+both delivery corpora and the standalone consumer. Using the test command's
+built CLI, run exactly one generation and one check per corpus in the ignored
+archive, with `corpus_manifest` set to that corpus's manifest:
+
+```bash
+"$verification_target/debug/fleet-sync-query-gen" --manifest "$corpus_manifest"
+"$verification_target/debug/fleet-sync-query-gen" --manifest "$corpus_manifest" --check
+```
+
+Compare with the pinned artifacts before generation. Regeneration must leave
+their bytes unchanged. For this freshness-key cutover, producer text, query
+descriptions, generated Rust and output digests must also match the parent
+revision. Inspect all source-map keys
+for absolute paths and require portable normalized generator keys. Retain
+per-corpus commands, exits and hashes separately from Rust test counts. These
+artifact-only writes do not authorize regeneration in a mutable live tree.
+
+The external test owns a separate nested Cargo target and waits for its child
+commands; confirm the parent and nested processes settled before slot return
+or cleanup. This proof does not establish consumer service runtime, wasm,
+workerd, board/central integration or hosted acceptance. Keep those receipts
+and C6's separate-proof gaps distinct.

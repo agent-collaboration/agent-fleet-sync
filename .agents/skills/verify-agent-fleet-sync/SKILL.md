@@ -1,6 +1,6 @@
 ---
 name: verify-agent-fleet-sync
-description: Use when verifying agent-fleet-sync native holder refusals, target schema support, malformed session frames, replication copy containment, guarded read transactions, or typed upgrade refusals after protocol, registry, session, receiver, sender, writer, or transport changes.
+description: Use when verifying agent-fleet-sync native holder refusals, target schema support, malformed session frames, replication copy containment, guarded read transactions, typed upgrade refusals, or checked-query freshness after protocol, registry, session, receiver, sender, writer, transport, or query-generator changes.
 ---
 
 # Verify Agent Fleet Sync
@@ -10,15 +10,16 @@ state. Each journey preserves evidence and distinguishes contract failures from
 unavailable controls. These scripts cover native sessions; workerd apply and
 Cloudflare sessions have separate real hosts.
 Guarded read transactions use focused tests through the real writer API,
-and upgrade refusals use real service and TCP transport tests.
+upgrade refusals use real service and TCP transport tests, and query freshness
+uses the native generator and real external Cargo consumers.
 
 1. Establish the declared source revision, configuration and client. Work from
    the repository root and coordinate an exclusive build window. The launcher
    builds the existing `tests/consumer` executable and the native journey driver
    using the repository's pinned Rust toolchain and Cargo configuration. It runs
    `df -h .` before each build and retains the output.
-   For focused API or transport proof, use the reference's test selection on
-   the archived target. Do not build an unrelated session journey.
+   For focused API, transport or generator proof, use the reference's selection
+   on the archived target. Do not build an unrelated session journey.
 2. MUST load `references/consumer-fit.md` and return the selected journey's
    adopted outcome, required cases, unavailable controls and target.
 3. For a session journey, run the selected script with Bash. `--help` describes
@@ -45,6 +46,7 @@ and upgrade refusals use real service and TCP transport tests.
 | copy-containment | `bash scripts/verification/copy-containment.sh` | Copy classification, sender retries or session containment change (SO57). |
 | guarded reads (focused API) | See the selected writer tests in the reference. | Reader snapshot, guard or publication exclusion changes (W-C12). |
 | upgrade refusals (focused transport) | See the selected service and transport tests in the reference. | HTTP authentication refusal encoding or decoding changes (W-C13). |
+| query freshness (focused CLI/build) | See the generator tests and corpus commands in the reference. | Freshness keys, source identity, Cargo watches or generation change (W-C11). |
 
 For a session journey, the read-only health check is authenticated Hello/Welcome
 on the owned service.
