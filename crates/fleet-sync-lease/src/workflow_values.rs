@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize};
 pub enum HolderChangePhase {
     Requested,
     Releasing,
-    Released { final_position: ReplicationPosition },
+    /// The holder stopped at this position; the copy can still be behind it.
+    Released {
+        final_position: ReplicationPosition,
+    },
     Reserved,
     Fencing,
     Cancelling,

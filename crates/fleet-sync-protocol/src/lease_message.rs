@@ -133,12 +133,17 @@ pub enum HolderChangeRefusal {
         transfer: TransferId,
     },
     PreviewStale,
-    MigrationPending,
+    MigrationPending {
+        migration: u64,
+        state: crate::MigrationState,
+    },
     SchemaTooNew {
         store: SchemaIdentity,
         supported: Option<u64>,
     },
-    AlreadyHeld,
+    AlreadyHeld {
+        holder: PeerId,
+    },
     NotFound,
     Unavailable,
     EpochUnprovable,

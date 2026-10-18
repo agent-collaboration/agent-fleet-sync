@@ -97,12 +97,15 @@ where
                         field: "holder rejected the release call identity".into(),
                     });
                 }
-                ReleaseAnswer::ReleaseRefused(ReleaseRefusal::MigrationPending { .. }) => {
+                ReleaseAnswer::ReleaseRefused(ReleaseRefusal::MigrationPending {
+                    migration,
+                    state,
+                }) => {
                     return change_completion::refuse::<C, D>(
                         ctx,
                         request,
                         "release_refused",
-                        HolderChangeRefusal::MigrationPending,
+                        HolderChangeRefusal::MigrationPending { migration, state },
                     )
                     .await;
                 }

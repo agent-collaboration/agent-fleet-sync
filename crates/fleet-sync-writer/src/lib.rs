@@ -113,6 +113,8 @@ mod sender_tests;
 #[cfg(test)]
 mod writer_journal_tests;
 #[cfg(test)]
+mod writer_pending_release_tests;
+#[cfg(test)]
 mod writer_release_tests;
 #[cfg(test)]
 mod writer_snapshot_tests;

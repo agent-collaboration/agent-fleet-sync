@@ -232,7 +232,15 @@ where
                                     DatabaseLifecycle::Unheld { .. }
                                 ) =>
                         {
-                            Some(HolderChangeRefusal::AlreadyHeld)
+                            let holder = existing
+                                .as_ref()
+                                .ok_or_else(|| {
+                                    step_error(LeaseError::Corrupt {
+                                        field: "registered database has no holder".into(),
+                                    })
+                                })?
+                                .holder;
+                            Some(HolderChangeRefusal::AlreadyHeld { holder })
                         }
                         HolderChangeRequest::Move { from_epoch, .. }
                             if existing
