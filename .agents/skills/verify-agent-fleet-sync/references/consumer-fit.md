@@ -2,8 +2,8 @@
 
 The oracle is the caller's adopted consumer-fit Verification Design, rows SO52,
 SO53, SO56 and SO57, including native-session scope and staged C3/C6 controls.
-Query freshness, guarded reader and upgrade refusal proof additionally use the
-adopted Program Design W-C11, W-C12 and W-C13.
+Query freshness, guarded reader, upgrade refusal and scope-view proof additionally
+use the adopted Program Design W-C11, W-C12, W-C13 and W-C14.
 Take expected behavior from that source, never from today's product answer.
 
 ## Holder refusals — SO52
@@ -392,3 +392,77 @@ commands; confirm the parent and nested processes settled before slot return
 or cleanup. This proof does not establish consumer service runtime, wasm,
 workerd, board/central integration or hosted acceptance. Keep those receipts
 and C6's separate-proof gaps distinct.
+
+## Shortened transaction scope views — W-C14
+
+The reference is adopted Program Design W-C14. ReborrowScope is an optional
+capability with three explicit implementations: TursoStore, TokioObject and
+DurableObjectStore. AtomicStore's scope GAT and callback contract stay unchanged.
+The view keeps the parent's transaction, journal, host and wake owner, while
+exclusively borrowing the parent. Match every check to its owning runtime and
+the caller's declared observation target.
+
+At the immutable archive root, run the existing native controls:
+
+```bash
+cargo test --offline --locked -p durable-steps -p fleet-sync-tokio-runner --all-features reborrow -- --nocapture
+```
+
+Inspect the actual selected tests; zero-test filtered targets add no passes.
+The real Turso helper requires the view to see the parent's uncommitted SQL
+and existing admission identity, then the parent to see the view's SQL and new
+admission before commit. Only committed business rows and journal admissions
+survive the later rollback case, with the same host deadline. TokioObject's
+real-file case separately checks its delegating view and parent commit/rollback.
+
+For the declared workerd target, use the archive's pinned Node dependencies,
+Worker build and existing controller. At C12 the wasm-bindgen CLI must be
+0.2.129, matching the crate; verify its version rather than using another
+executable on PATH. With owned `verification_worker_target` and the matching
+`verification_bindgen` executable:
+
+```bash
+pnpm install --offline --frozen-lockfile
+cargo build --offline --locked -p durable-steps-worker --target wasm32-unknown-unknown --target-dir "$verification_worker_target"
+"$verification_bindgen" --version
+"$verification_bindgen" --target bundler --no-typescript --out-dir tests/durable-steps/build --out-name index "$verification_worker_target/wasm32-unknown-unknown/debug/durable_steps_worker.wasm"
+cp tests/durable-steps/shim.mjs tests/durable-steps/build/shim.mjs
+node tests/durable-steps/run-workerd.mjs
+```
+
+The `/reborrow` response must contain all eight asserted observations:
+
+- Real DO SQL and journal writes share parent commit and rollback.
+- The test-support observer identifies the shared Arc/Mutex arbitration state,
+  not a wrapper's address. A legitimate clone matches; a new AlarmOwner over
+  the same storage differs. Capture the parent's identity before lending, then
+  compare the view directly without using the parent during its loan.
+- Four rollback controls cross callback/SQL error with absent/existing alarm.
+  Each first checks its exact requested pre-state, then reads the actual changed
+  durable alarm inside the transaction after the view wake. After the deliberate
+  error, SQL is absent and the durable alarm equals its exact previous value.
+  A SQL-only rollback or a wake that did nothing cannot satisfy these controls.
+- Both legal view/external wake polling orders use that same observed owner
+  and commit the earlier deadline. Do not alias the exclusively borrowed parent.
+
+The controller also checks the existing 19 shared scenarios, eight alarm race
+orders, alarm atomicity, NoEffect actual-runtime reopen and platform-alarm
+restart. Report these as endpoint/runtime observations, separately from native
+Rust test counts. The controller awaits readiness and disposes its runtimes;
+retain raw JSON and artifact hashes before cleaning owned output.
+
+Run the adopted one-off borrow probe outside the repository, with the actual
+public trait as a dependency. Keep a view live after a second attempted mutable
+parent borrow: rustc must reject that use with E0499 (or the applicable borrow
+diagnostic), at that use. Remove only the illegal function and require a passing
+control using the parent after the view ends, alongside an unchanged external
+AtomicStore forwarding wrapper. Preserve both sources, commands, lock and raw
+compiler results. This is type evidence; do not add a permanent compile-fail
+test or treat it as runtime proof.
+
+Source-check the exact optional signature, three faithful implementations and
+test-support-only identity observers. No new connection, transaction, lock,
+AlarmOwner, copied transaction state, unsafe or Clone escape belongs in reborrow.
+Consumer-composed frame/Engine publication, registration/Welcome rollback,
+recovered journal identity and native post-commit timer activation belong to
+B2b. Hosted Cloudflare and C6's separate-proof gaps remain outside this proof.

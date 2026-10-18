@@ -1,6 +1,6 @@
 ---
 name: verify-agent-fleet-sync
-description: Use when verifying agent-fleet-sync native holder refusals, target schema support, malformed session frames, replication copy containment, guarded read transactions, typed upgrade refusals, or checked-query freshness after protocol, registry, session, receiver, sender, writer, transport, or query-generator changes.
+description: Use when verifying agent-fleet-sync native holder refusals, target schema support, malformed session frames, replication copy containment, guarded read transactions, transaction scope views, typed upgrade refusals, or checked-query freshness after protocol, registry, session, receiver, sender, writer, store, transport, or query-generator changes.
 ---
 
 # Verify Agent Fleet Sync
@@ -12,6 +12,8 @@ Cloudflare sessions have separate real hosts.
 Guarded read transactions use focused tests through the real writer API,
 upgrade refusals use real service and TCP transport tests, and query freshness
 uses the native generator and real external Cargo consumers.
+Transaction scope views use their real Turso, TokioObject and Durable Object
+owners on the caller's declared targets.
 
 1. Establish the declared source revision, configuration and client. Work from
    the repository root and coordinate an exclusive build window. The launcher
@@ -28,15 +30,16 @@ uses the native generator and real external Cargo consumers.
    `--evidence-dir DIR` selects a nonexistent directory. The service owns its
    ephemeral loopback port and isolated Turso files. Readiness is its `READY`
    message with the matching child PID, then an authenticated matching Welcome.
-4. Read the JSON observations or focused test's raw counts, build logs, source
-   state and executable hashes where applicable.
+4. Read the JSON/controller observations or focused test's raw counts, build
+   logs, source state and executable hashes where applicable.
    A session response must carry its request's frame identity. Replay and
    durability claims additionally require stored-state readbacks. Return each
    case as supported, unsupported or unknown at the build that ran it.
-5. Confirm that owned consumer, pump and test server tasks stopped and joined.
-   Retain the evidence, including fixture databases, until its consumer no
-   longer needs it. Clean only this run's residue under the caller's cleanup
-   authority.
+5. Confirm that owned consumer, pump, test server and workerd runtime tasks
+   stopped and joined or disposed. Retain the emitted evidence and the session
+   journeys' saved fixture databases until their consumer no longer needs them.
+   Focused tests and controllers own their fixture cleanup. Clean only this
+   run's residue under the caller's cleanup authority.
 
 | Journey | Command | When to run |
 |---|---|---|
@@ -47,6 +50,7 @@ uses the native generator and real external Cargo consumers.
 | guarded reads (focused API) | See the selected writer tests in the reference. | Reader snapshot, guard or publication exclusion changes (W-C12). |
 | upgrade refusals (focused transport) | See the selected service and transport tests in the reference. | HTTP authentication refusal encoding or decoding changes (W-C13). |
 | query freshness (focused CLI/build) | See the generator tests and corpus commands in the reference. | Freshness keys, source identity, Cargo watches or generation change (W-C11). |
+| scope views (focused runtimes) | See the native, workerd and external type controls in the reference. | ReborrowScope or an owning store's shortened view changes (W-C14). |
 
 For a session journey, the read-only health check is authenticated Hello/Welcome
 on the owned service.
