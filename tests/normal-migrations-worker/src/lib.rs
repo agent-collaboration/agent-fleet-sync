@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+mod copy_certainty;
 use durable_steps::{CallId, storage::TransactionScope};
 use fleet_sync_protocol::{
     CopyStatus, CreateCopy, HookRefusal, HookRefusalCode, NoConsumer, PeerId, Piece,
@@ -27,12 +28,12 @@ impl TransactionScope for WorkerScope<'_> {
 struct ProbeHook {
     refusal: Option<HookRefusalCode>,
 }
-impl ReceiverHook<WorkerScope<'_>> for ProbeHook {
+impl<S: TransactionScope> ReceiverHook<S> for ProbeHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     async fn on_applied(
         &self,
-        _: &mut WorkerScope<'_>,
+        _: &mut S,
         _: &AppliedPiece<'_, ()>,
     ) -> Result<Vec<()>, HookRefusal> {
         if let Some(code) = &self.refusal {
@@ -50,8 +51,15 @@ impl ReceiverHook<WorkerScope<'_>> for ProbeHook {
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "camelCase")]
 enum ProbeRequest {
+    CertaintyApply {
+        piece: Piece,
+        sender: PeerId,
+        fault: copy_certainty::CopyProbeFault,
+    },
     Initialize {
         create: CreateCopy,
+        #[serde(default)]
+        journal: bool,
     },
     Apply {
         piece: Piece,
@@ -98,7 +106,12 @@ impl DurableObject for ProbeObject {
         let input: ProbeRequest = serde_json::from_str(&request.text().await?).map_err(error)?;
         let conn = DoConnection::new(self.state.storage());
         let reply: serde_json::Value = match input {
-            ProbeRequest::Initialize { create } => conn.transaction(move |tx| async move {
+            ProbeRequest::CertaintyApply { piece, sender, fault } => serde_json::to_value(
+                copy_certainty::apply(&self.state, piece, sender, fault).await?
+            ).map_err(error)?,
+            ProbeRequest::Initialize { create, journal } => {
+                if journal { copy_certainty::migrate_journal(&self.state).await?; }
+                conn.transaction(move |tx| async move {
                 for migration in [
                     include_str!("../../../crates/fleet-sync-receiver/migrations/0001_copy_rules.sql"),
                     include_str!("../../../crates/fleet-sync-receiver/migrations/0002_replicated_schema.sql"),
@@ -106,7 +119,7 @@ impl DurableObject for ProbeObject {
                 ] { (&tx).execute(migration).await?; }
                 let result = fleet_sync_receiver::create_copy(&mut WorkerScope(&tx), &create).await.map_err(storage_error)?;
                 Ok::<_, sqlx::Error>(serde_json::json!({"kind":"initialized", "result":format!("{result:?}")}))
-            }).await.map_err(error)?,
+            }).await.map_err(error)? },
             ProbeRequest::Apply { piece, sender, refuse } => {
                 let result = conn.transaction(move |tx| async move {
                     let refusal = if refuse { Some(HookRefusalCode::new("probe-refusal").map_err(storage_error)?) } else { None };

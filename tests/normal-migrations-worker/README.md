@@ -24,3 +24,14 @@ node tests/normal-migrations-worker/run-matrix.mjs tmp/d91-workerd-manifest.json
 Use fresh evidence directories on subsequent runs. The native suite must report five passing migration tests plus one bootstrap journey, and every workerd result must be `passed`: warm rename, reopen with the new bundle, fresh full bundle, the fresh `a → b → c` chain, and local history created/written in v1 then dropped in v3. `prefixOnly` means the writer did not produce the target stream and is not a passing rename case. The five workerd cases together have eighteen checkpoints. The dropped-local case checks the actual native receiver catalog inside its owning hook transaction after every applied piece, scans every exported Piece for local data/schema, and adds explicit catalog-absence queries to its six workerd checkpoints. The separate native bootstrap journey publishes the v1 prefix under the v2 rename bundle, migrates to tasks, writes, and verifies the authoritative copy follows; it does not export a workerd bootstrap case. Evidence is written under `tests/normal-migrations-worker/evidence/<run>/results.json`.
 
 The runtime pins are Miniflare 4.20260730.0, workerd 1.20260730.1 and compatibility date 2026-07-29. This is local workerd evidence; it does not establish hosted deployment behavior. Build output and runtime state are ignored by Git.
+
+
+## Copy certainty
+
+The C6 extension uses the production `DurableObjectStore`, `apply_piece`, rollback reason codec and copy failure classifier. Generate raw native Piece strings with `COPY_CERTAINTY_FIXTURE=<path>` when running the consumer's `native_copy_containment` test, build this worker as above, then run:
+
+```sh
+node tests/normal-migrations-worker/run-copy-certainty.mjs <fixture.json> <evidence-directory>
+```
+
+Four controls apply real schema/row pieces and inspect SQLite row and receipt counts: a callback refusal after apply rolls back and answers CopyUnavailable; lost rollback or committed replies answer OutcomeUnknown; an unrelated rollback code is corruption and cannot prove no-effect. The same piece then applies once or reconciles to AlreadyApplied. Boundary-reply loss is injected after real storage completion, not a physical I/O fault. The DO adapter's rollback certainty relies on the platform guarantee that rejecting a storage transaction rolls back its writes; these controls observe that behavior locally. They do not prove session containment or hosted Cloudflare behavior; those remain central G3 evidence.

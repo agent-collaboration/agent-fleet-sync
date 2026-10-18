@@ -21,7 +21,7 @@ durable-steps = { path = "../../crates/durable-steps", features = ["turso"] }
 fleet-sync-lease = { path = "../../crates/fleet-sync-lease" }
 fleet-sync-protocol = { path = "../../crates/fleet-sync-protocol" }
 fleet-sync-receiver = { path = "../../crates/fleet-sync-receiver" }
-fleet-sync-service = { path = "../../crates/fleet-sync-service", features = ["test-support"] }
+fleet-sync-service = { path = "../../crates/fleet-sync-service", features = ["test-support", "test-fault"] }
 fleet-sync-session = { path = "../../crates/fleet-sync-session" }
 fleet-sync-tokio-runner = { path = "../../crates/fleet-sync-tokio-runner" }
 fleet-sync-transport-websocket = { path = "../../crates/fleet-sync-transport-websocket" }

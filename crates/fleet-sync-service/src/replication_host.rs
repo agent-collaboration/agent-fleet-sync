@@ -41,7 +41,16 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             | ReplicationRequest::SnapshotPage { database, .. }
             | ReplicationRequest::CopyStatus { database } => *database,
         };
-        let copy = self.copy(database).await?;
+        let copy = match self.copy(database).await {
+            Ok(copy) => copy,
+            Err(error) => {
+                return Ok(ReplicationAnswer::OutcomeUnknown {
+                    reason: OutcomeUnknownReason::StoreBoundary {
+                        detail: DiagnosticText::from_error(error),
+                    },
+                });
+            }
+        };
         let consumer = self.consumer.clone();
         let now = copy.object.host().now();
         let result = copy
@@ -172,8 +181,27 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 })
             })
             .await;
+        // Typed callback errors arrive here only after rule_transaction rolled
+        // back successfully. Its storage errors carry no such certainty.
         let answer = match result {
             Ok(answer) => answer,
+            Err(CopyRuleError::Apply(
+                error @ (ApplyFailure::Storage(_)
+                | ApplyFailure::Refused(
+                    PieceRefusal::NotInitialized | PieceRefusal::CopyFull,
+                )),
+            )) => fleet_sync_receiver::classify_copy_store_error(
+                fleet_sync_receiver::apply_rollback(error),
+            )
+            .answer(),
+            Err(CopyRuleError::Receiver(error))
+                if fleet_sync_receiver::unavailable_receiver(&error).is_some() =>
+            {
+                fleet_sync_receiver::classify_copy_store_error(
+                    fleet_sync_receiver::receiver_rollback(error),
+                )
+                .answer()
+            }
             Err(CopyRuleError::Apply(ApplyFailure::Refused(reason))) => {
                 ReplicationAnswer::Refused(reason)
             }
@@ -181,7 +209,8 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 refusal,
                 transaction,
             })) => {
-                copy.object
+                if let Err(error) = copy
+                    .object
                     .transaction(move |scope| {
                         Box::pin(async move {
                             fleet_sync_receiver::discard_staged_parts(scope, &transaction)
@@ -189,7 +218,10 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                                 .map_err(StoreError::backend)
                         })
                     })
-                    .await?;
+                    .await
+                {
+                    return Ok(fleet_sync_receiver::classify_copy_store_error(error).answer());
+                }
                 ReplicationAnswer::Refused(refusal)
             }
             Err(CopyRuleError::Receiver(ReceiverError::SeedRefused { answer })) => {
@@ -207,19 +239,38 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             Err(CopyRuleError::Receiver(ReceiverError::SchemaUnsupported { form })) => {
                 ReplicationAnswer::Refused(PieceRefusal::SchemaUnsupported { form })
             }
-            Err(CopyRuleError::Storage(error)) => return Err(error.into()),
-            Err(CopyRuleError::Apply(error)) => return Err(ServiceError::rule(error)),
-            Err(CopyRuleError::Receiver(error)) => return Err(ServiceError::rule(error)),
+            Err(CopyRuleError::Storage(error)) => ReplicationAnswer::OutcomeUnknown {
+                reason: OutcomeUnknownReason::StoreBoundary {
+                    detail: DiagnosticText::from_error(error),
+                },
+            },
+            Err(CopyRuleError::Receiver(error)) => {
+                fleet_sync_receiver::classify_copy_store_error(StoreError::backend(error)).answer()
+            }
+        };
+        let answer = match answer {
+            ReplicationAnswer::CopyStatus(CopyStatusAnswer::NotInitialized) => {
+                ReplicationAnswer::CopyUnavailable {
+                    reason: CopyUnavailableReason::Uninitialized,
+                }
+            }
+            answer => answer,
         };
         copy.changed.send_replace(());
         // New follow-ups were admitted in the apply transaction; wake their
         // actual object owner after the commit, independently from the socket.
-        runtime_primitives::WakeScheduler::wake_at(
+        #[cfg(not(feature = "test-fault"))]
+        let _ = runtime_primitives::WakeScheduler::wake_at(
             copy.object.host().as_ref(),
             copy.object.host().now(),
         )
-        .await
-        .map_err(ServiceError::rule)?;
+        .await;
+        #[cfg(feature = "test-fault")]
+        let _ =
+            runtime_primitives::WakeScheduler::wake_at(&copy.apply_wake, copy.object.host().now())
+                .await;
+        // A timer hint cannot undo the committed answer. The admitted work is
+        // durable and the next wake or startup drives the same identity.
         Ok(answer)
     }
 }

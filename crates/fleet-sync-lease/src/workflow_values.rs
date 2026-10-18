@@ -127,6 +127,7 @@ pub struct Waiting {
     pub since: SyncTime,
     pub last_seen: Option<SyncTime>,
     pub reach: CallReach,
+    pub copy_unavailable: Option<fleet_sync_protocol::CopyUnavailableReason>,
     pub attempt: u32,
     pub next_attempt_at: SyncTime,
 }

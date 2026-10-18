@@ -212,6 +212,8 @@ struct StoredCallIntent {
     intent: CallIntent,
     reach: CallReach,
     last_seen: Option<SyncTime>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    retry_reason: Option<crate::CallRetryReason>,
 }
 impl StoredStepRow {
     pub fn encode(step: StepRecord) -> Result<Self, StoreError> {
@@ -234,6 +236,7 @@ impl StoredStepRow {
                         intent,
                         reach: attempt.reach,
                         last_seen: attempt.last_seen,
+                        retry_reason: attempt.retry_reason,
                     })
                     .map_err(StoreError::backend)?,
                 ),
@@ -280,6 +283,7 @@ impl TryFrom<StoredStepRow> for StepRecord {
                     first_attempt_at: SyncTime::from_unix_millis(first),
                     last_seen: stored.last_seen,
                     reach: stored.reach,
+                    retry_reason: stored.retry_reason,
                 };
                 match (kind, output) {
                     ("call_pending", None) => StepState::CallPending {

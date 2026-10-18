@@ -144,6 +144,12 @@ pub enum PieceRefusal {
     deny_unknown_fields
 )]
 pub enum ReplicationAnswer {
+    CopyUnavailable {
+        reason: CopyUnavailableReason,
+    },
+    OutcomeUnknown {
+        reason: OutcomeUnknownReason,
+    },
     Applied {
         through: ReplicationPosition,
     },

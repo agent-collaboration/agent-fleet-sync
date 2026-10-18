@@ -161,11 +161,13 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                         Box::pin(async move {
                             fleet_sync_receiver::create_copy(scope, &request)
                                 .await
-                                .map_err(StoreError::backend)
+                                .map_err(fleet_sync_receiver::receiver_rollback)
                         })
                     })
                     .await
-                    .map_err(lost)?;
+                    .map_err(|error| {
+                        fleet_sync_receiver::classify_copy_store_error(error).call_failure()
+                    })?;
                 copy.changed.send_replace(());
                 encode(answer)
             }
@@ -174,18 +176,29 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 self.local_receiver(target.copy)?;
                 let request: FenceRequest = decode(request)?;
                 let copy = self.copy(request.database).await.map_err(lost)?;
+                #[cfg(feature = "test-fault")]
+                copy.call_probe
+                    .before_call(crate::CopyCallKind::Fence, call.clone())
+                    .await;
                 let answer = copy
                     .object
                     .transaction(move |scope| {
                         Box::pin(async move {
                             fleet_sync_receiver::fence(scope, &request)
                                 .await
-                                .map_err(StoreError::backend)
+                                .map_err(fleet_sync_receiver::receiver_rollback)
                         })
                     })
                     .await
-                    .map_err(lost)?;
+                    .map_err(|error| {
+                        fleet_sync_receiver::classify_copy_store_error(error).call_failure()
+                    })?;
                 copy.changed.send_replace(());
+                if answer == FenceResult::NotInitialized {
+                    return Err(fleet_sync_receiver::retryable_copy(
+                        CopyUnavailableReason::Uninitialized,
+                    ));
+                }
                 encode(answer)
             }
             CopyRetire::KIND => {
@@ -212,17 +225,38 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 let target: CopyRead = decode(target)?;
                 self.local_receiver(target.copy)?;
                 let _: () = decode(request)?;
-                encode(self.copy_status(target.database).await.map_err(lost)?)
+                let answer = self
+                    .copy_status(target.database)
+                    .await
+                    .map_err(copy_call_failure)?;
+                if answer == CopyStatusAnswer::NotInitialized {
+                    return Err(fleet_sync_receiver::retryable_copy(
+                        CopyUnavailableReason::Uninitialized,
+                    ));
+                }
+                encode(answer)
             }
             CopyAcknowledged::KIND => {
                 let target: CopyAcknowledged = decode(target)?;
                 self.local_receiver(target.copy)?;
                 let request: AwaitAcked = decode(request)?;
-                encode(
-                    self.await_acked(target.database, request.through)
-                        .await
-                        .map_err(lost)?,
-                )
+                #[cfg(feature = "test-fault")]
+                self.copy(target.database)
+                    .await
+                    .map_err(lost)?
+                    .call_probe
+                    .before_call(crate::CopyCallKind::Acknowledged, call.clone())
+                    .await;
+                let answer = self
+                    .await_acked(target.database, request.through)
+                    .await
+                    .map_err(copy_call_failure)?;
+                if answer == AwaitAckedAnswer::NotInitialized {
+                    return Err(fleet_sync_receiver::retryable_copy(
+                        CopyUnavailableReason::Uninitialized,
+                    ));
+                }
+                encode(answer)
             }
             _ => Err(unreachable()),
         }
@@ -233,5 +267,14 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
         } else {
             Err(unreachable())
         }
+    }
+}
+
+fn copy_call_failure(error: crate::ServiceError) -> CallFailure {
+    match error {
+        crate::ServiceError::Storage(error) => {
+            fleet_sync_receiver::classify_copy_store_error(error).call_failure()
+        }
+        _ => CallFailure::AnswerLost,
     }
 }

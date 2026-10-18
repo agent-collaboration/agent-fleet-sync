@@ -368,9 +368,9 @@ async fn opening_revocation_blocks_late_hello_and_nonholder_cannot_start_seed() 
             OperationRequest::Replication(ReplicationRequest::CopyStatus { database })
         )
         .await?,
-        OperationAnswer::Replication(ReplicationAnswer::CopyStatus(
-            CopyStatusAnswer::NotInitialized
-        ))
+        OperationAnswer::Replication(ReplicationAnswer::CopyUnavailable {
+            reason: CopyUnavailableReason::Uninitialized
+        })
     ));
     let owned_attempt = SeedAttemptId::new(durable_steps::Uuid::now_v7())?;
     assert!(

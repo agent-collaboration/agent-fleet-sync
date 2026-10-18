@@ -116,6 +116,11 @@ pub enum ReplicationEvents {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SenderError {
+    #[error("copy {copy:?} is unavailable: {reason:?}")]
+    CopyUnavailable {
+        copy: ReceiverId,
+        reason: fleet_sync_protocol::CopyUnavailableReason,
+    },
     #[error("copy {copy:?} refused replication: {reason:?}")]
     Refused {
         copy: ReceiverId,

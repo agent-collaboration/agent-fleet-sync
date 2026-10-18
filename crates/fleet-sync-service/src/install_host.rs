@@ -200,7 +200,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                     .host()
                     .wake_at(copy.object.host().now())
                     .await
-                    .map_err(lost)?;
+                    .unwrap_or_else(|error| tracing::warn!(%error, "copy Ready wake failed after target transaction"));
                 answer
             }
         };

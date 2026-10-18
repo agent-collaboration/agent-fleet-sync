@@ -3,6 +3,8 @@ mod consumer;
 mod consumer_claim_gate;
 mod consumer_store;
 mod control;
+mod copy_faults;
+pub use copy_faults::CopyFaultRequest;
 mod schema_control;
 pub use schema_control::{SchemaControlAnswer, SchemaControlRequest};
 mod fixture_authenticator;

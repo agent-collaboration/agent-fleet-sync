@@ -136,6 +136,7 @@ pub async fn run_server_with_policy(
         authenticator,
         service: service.handle(),
         schema_drive: Default::default(),
+        copy_drives: Default::default(),
         shutdown: shutdown.clone(),
         source_events,
     });

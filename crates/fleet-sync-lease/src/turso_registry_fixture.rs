@@ -39,6 +39,7 @@ impl TransactionScope for CopyScope<'_> {
     }
 }
 pub(super) struct TestHost {
+    pub copy_no_effect: Mutex<Option<&'static str>>,
     pub now: AtomicI64,
     pub copies: Mutex<BTreeMap<DatabaseId, TursoConnection>>,
     pub gate: TursoGate,
@@ -97,6 +98,7 @@ impl TestHost {
             .await?;
         sqlx_core::raw_sql::raw_sql("CREATE TABLE IF NOT EXISTS calls(call TEXT PRIMARY KEY,request TEXT NOT NULL,answer TEXT NOT NULL); CREATE TABLE IF NOT EXISTS reservations(attempt TEXT PRIMARY KEY,change TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settlements(attempt TEXT PRIMARY KEY,outcome TEXT NOT NULL); CREATE TABLE IF NOT EXISTS releases(call TEXT PRIMARY KEY,request TEXT NOT NULL,answer TEXT NOT NULL); CREATE TABLE IF NOT EXISTS withdrawals(call TEXT PRIMARY KEY,request TEXT NOT NULL,answer TEXT NOT NULL);").execute(&mut gate).await?;
         Ok(Arc::new(Self {
+            copy_no_effect: Mutex::new(None),
             now: AtomicI64::new(1000),
             copies: Mutex::new(BTreeMap::new()),
             gate: TursoGate {

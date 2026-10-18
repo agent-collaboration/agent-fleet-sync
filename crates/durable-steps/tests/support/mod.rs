@@ -12,8 +12,12 @@ struct ReceiverReceipt {
     request: Vec<u8>,
     answer: Vec<u8>,
 }
+pub type ReceiverDispatch = dyn Fn(CallId, Vec<u8>) -> durable_steps::BoxFuture<'static, Result<(Vec<u8>, bool), CallFailure>>
+    + Send
+    + Sync;
 
 pub struct TestHost {
+    pub receiver_dispatch: Mutex<Option<Arc<ReceiverDispatch>>>,
     pub clock: AtomicI64,
     pub invalid_ids: AtomicBool,
     next_id: AtomicU64,
@@ -30,6 +34,7 @@ pub struct TestHost {
 impl TestHost {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
+            receiver_dispatch: Mutex::new(None),
             clock: AtomicI64::new(1_000),
             invalid_ids: AtomicBool::new(false),
             next_id: AtomicU64::new(1),
@@ -84,7 +89,14 @@ impl Host for TestHost {
         }
         let key = serde_json::to_string(&call).map_err(refused)?;
         let input = serde_json::to_vec(&request).map_err(refused)?;
-        let output = {
+        let persistent = self.receiver_dispatch.lock().map_err(refused)?.clone();
+        let output = if let Some(receiver) = persistent {
+            let (output, new_effect) = receiver(call, input).await?;
+            if new_effect {
+                self.effects.fetch_add(1, Ordering::SeqCst);
+            }
+            output
+        } else {
             let mut receiver = self.receiver.lock().map_err(refused)?;
             if let Some(recorded) = receiver.get(&key) {
                 if recorded.request != input {

@@ -4,6 +4,7 @@ mod conformance;
 #[path = "../../journey_task.rs"]
 mod journey_task;
 mod journey_worker;
+mod retry_journal;
 #[path = "../../../../crates/durable-steps/tests/support/mod.rs"]
 mod support;
 pub use journey_worker::{JourneyObject, ReceiverObject};
@@ -87,6 +88,36 @@ impl DurableObject for StepsObject {
             Ok(())
         })).await.map_err(worker_error)?;
         match request.path().as_str() {
+            "/retry-stage" => {
+                let operation = conformance::retryable_cases::stage_no_effect(
+                    self.store.clone(),
+                    self.host.clone(),
+                    "runtime-no-effect",
+                )
+                .await
+                .map_err(worker_error)?;
+                retry_journal::check_stored_reach(self.store.clone(), operation)
+                    .await
+                    .map_err(worker_error)?;
+                self.state.storage().sync().await?;
+                Response::from_json(&operation)
+            }
+            path if path.starts_with("/retry-finish/") => {
+                let operation = durable_steps::OperationId::try_from(
+                    path.trim_start_matches("/retry-finish/").to_owned(),
+                )
+                .map_err(worker_error)?;
+                conformance::retryable_cases::finish_no_effect(
+                    self.store.clone(),
+                    self.host.clone(),
+                    operation,
+                )
+                .await
+                .map_err(worker_error)?;
+                Response::from_json(
+                    &"NoEffect and reason reopened; non-deduplicating retry completed once",
+                )
+            }
             "/alarm-concurrent" => {
                 let observations = alarm_cases::overlapping_wakes(
                     &self.state,

@@ -193,6 +193,18 @@ pub enum CallFailure {
     NotSent { reason: NotSentReason },
     #[error("call answer was lost")]
     AnswerLost,
+    /// The receiver explicitly proved that this attempt made no new effect.
+    #[error("call can be retried without a new effect: {reason:?}")]
+    Retryable { reason: CallRetryReason },
+}
+
+/// Latest-attempt diagnostics, separate from the call's accumulated reach.
+/// The caller's domain owns the code and decodes it through its closed codec.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CallRetryReason {
+    pub code: String,
+    pub detail: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

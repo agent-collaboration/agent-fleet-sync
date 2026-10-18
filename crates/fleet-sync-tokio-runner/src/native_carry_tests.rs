@@ -313,6 +313,7 @@ async fn carry_keeps_real_durable_journal_operations_and_unanswered_call_identit
                     first_attempt_at: host.now(),
                     last_seen: Some(host.now()),
                     reach: CallReach::MayHaveReached,
+                    retry_reason: None,
                 },
             },
         };

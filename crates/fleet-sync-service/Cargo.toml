@@ -10,6 +10,7 @@ publish.workspace = true
 workspace = true
 
 [features]
+test-fault = ["fleet-sync-tokio-runner/test-fault"]
 test-support = ["fleet-sync-tokio-runner/test-support", "fleet-sync-delivery/test-support"]
 
 [dependencies]

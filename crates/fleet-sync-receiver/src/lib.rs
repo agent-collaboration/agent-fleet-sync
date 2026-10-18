@@ -5,6 +5,11 @@ mod apply_rules;
 mod bound_sql;
 mod checked_queries;
 mod copy_contract;
+mod copy_failure;
+pub use copy_failure::{
+    CopyTransactionFailure, apply_rollback, classify_copy_store_error, copy_rollback,
+    receiver_rollback, retryable_copy, unavailable_receiver,
+};
 mod copy_lifecycle;
 mod copy_storage;
 mod fence_rules;

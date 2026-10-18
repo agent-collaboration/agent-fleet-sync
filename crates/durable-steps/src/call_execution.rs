@@ -80,10 +80,11 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
                             first_attempt_at: now,
                             last_seen: None,
                             reach: CallReach::NeverSent,
+                            retry_reason: None,
                         },
                     };
                     let previous = attempt.clone();
-                    if attempt.reach == CallReach::NeverSent {
+                    if matches!(attempt.reach, CallReach::NeverSent | CallReach::NoEffect) {
                         attempt.reach = CallReach::Dispatching;
                     }
                     scope
@@ -129,10 +130,19 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
                 },
             )
             .await;
+        attempt.retry_reason = None;
         let result = match answer {
             Ok(answer) => Some(CallResult::Answered(answer)),
             Err(CallFailure::AnswerLost) => {
                 attempt.reach = CallReach::MayHaveReached;
+                None
+            }
+            Err(CallFailure::Retryable { reason }) => {
+                if matches!(attempt.reach, CallReach::NeverSent | CallReach::NoEffect) {
+                    attempt.reach = CallReach::NoEffect;
+                }
+                // A later refusal cannot erase an earlier possible effect.
+                attempt.retry_reason = Some(reason);
                 None
             }
             Err(CallFailure::NotSent { reason }) => {

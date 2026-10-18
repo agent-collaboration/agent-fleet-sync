@@ -4,6 +4,7 @@
 //! Operation identities belong to their owners; frame IDs only correlate replies.
 
 mod actor_reference;
+mod copy_failure;
 mod crate_call_frame;
 mod delivery_identity;
 mod delivery_item;
@@ -29,6 +30,7 @@ mod snapshot_page;
 mod transaction_part;
 
 pub use actor_reference::*;
+pub use copy_failure::*;
 pub use crate_call_frame::*;
 pub use delivery_identity::*;
 pub use delivery_item::*;

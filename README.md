@@ -44,6 +44,10 @@ Every host implements `SessionScope::publish_schema_support(input, now)` by admi
 
 Request and answer envelopes are identified before their body is decoded. A readable kind and frame ID with an invalid body gets a correlated `OperationAnswer::InvalidShape { field }` and leaves the session open. The field names a missing, unknown or duplicate field when reported by the decoder, or `body` for errors without a field location, and is capped at 64 Unicode characters. An unreadable kind or frame ID closes as `MalformedFrame`.
 
+A replication callback that refuses before applying or successfully rolls back can answer `CopyUnavailable { reason }`. The sender retains its piece, and seed and snapshot callers retain their generation or pinned install and retry. Store-boundary uncertainty answers `OutcomeUnknown { reason: StoreBoundary { detail } }` on the same socket; its diagnostic is validated and capped at 1024 characters. Callers reconcile the original identity through `AnswerLost`, including when a reason cannot decode. A failed timer hint after commit preserves the committed answer; durable follow-ups recover on the next wake or startup.
+
+Registry copy calls use `CallFailure::Retryable` only for known no-new-effect refusals. The call remains pending with its generic code/detail reason, while `holder_change_view.waiting.copy_unavailable` decodes the closed copy reason. `CallReach::NoEffect` records a receiver response with no earlier unresolved possible effect. It survives restart, cannot satisfy an unsent timeout, and records `Dispatching` before retry; an earlier `MayHaveReached` is never cleared by a later refusal. Unknown retry codes fail closed. Final holder-change refusals remain terminal. The library's `test-fault` feature supplies controls on the actual native copy transaction replies and host timer; normal builds omit them.
+
 ## Local workerd integration
 
 Install the wasm target, wasm-bindgen CLI **0.2.129**, Node.js, and the pinned package dependencies, then run:

@@ -1,1 +1,1 @@
-CREATE TABLE conformance_counters (name TEXT PRIMARY KEY NOT NULL, value INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS conformance_counters (name TEXT PRIMARY KEY NOT NULL, value INTEGER NOT NULL);

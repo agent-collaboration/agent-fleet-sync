@@ -1,0 +1,167 @@
+#[path = "support/copy_fixture.rs"]
+#[allow(dead_code)]
+mod fixture;
+#[allow(dead_code, unused_imports)]
+mod support;
+use durable_steps::{CallFailure, CallId, CallTarget, OperationId, StepName};
+use fixture::*;
+use fleet_sync_protocol::*;
+use fleet_sync_test_consumer::*;
+use fleet_sync_tokio_runner::{CallEnvelope, CallRouter, WriterSessionCalls};
+use fleet_sync_writer::*;
+use std::{path::Path, sync::Arc};
+use support::control_request;
+
+async fn marker(
+    service: &mut CopyService,
+    database: DatabaseId,
+    replacement: String,
+) -> TestResult<String> {
+    match control_request(
+        &mut service.control,
+        ControlRequest::CopyFault(CopyFaultRequest::ReplaceMarker {
+            database,
+            replacement,
+        }),
+    )
+    .await?
+    {
+        ControlAnswer::CopyMarker(previous) => Ok(previous),
+        _ => Err("copy owner did not replace the test marker".into()),
+    }
+}
+async fn seed_call(
+    calls: &WriterSessionCalls<SampleSchema, SampleProtocol>,
+    generation: durable_steps::Uuid,
+    request: SeedFileRequest,
+) -> Result<serde_json::Value, CallFailure> {
+    let name = match &request {
+        SeedFileRequest::Open { .. } => "open".into(),
+        SeedFileRequest::Page { page, .. } => format!("page-{page}"),
+        SeedFileRequest::Complete { .. } => "complete".into(),
+    };
+    calls
+        .dispatch(CallEnvelope {
+            kind: SeedFile::KIND,
+            target: serde_json::to_value(SeedFile {
+                receiver: local_receiver().map_err(|_| CallFailure::AnswerLost)?,
+            })
+            .map_err(|_| CallFailure::AnswerLost)?,
+            request: serde_json::to_value(request).map_err(|_| CallFailure::AnswerLost)?,
+            call: CallId {
+                operation: OperationId::new(generation).map_err(|_| CallFailure::AnswerLost)?,
+                step: StepName::new(name).map_err(|_| CallFailure::AnswerLost)?,
+            },
+        })
+        .await
+}
+fn seed_answer(value: serde_json::Value) -> TestResult<SeedFileAnswer> {
+    serde_json::from_value::<Result<SeedFileAnswer, SeedCopyRefusal>>(value)?
+        .map_err(|reason| format!("unexpected terminal seed refusal: {reason:?}").into())
+}
+fn known_wait(result: Result<serde_json::Value, CallFailure>) -> TestResult {
+    let Err(CallFailure::Retryable { reason }) = result else {
+        return Err("seed unavailability must be a typed retry, not a terminal answer".into());
+    };
+    assert!(matches!(
+        CopyUnavailableReason::decode_retry(&reason.code, &reason.detail)?,
+        CopyUnavailableReason::Damaged { .. }
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn seed_begin_page_and_complete_keep_their_generation_and_pinned_snapshot_when_copy_waits()
+-> TestResult {
+    let root = tempfile::tempdir()?;
+    let writer = Arc::new(
+        ReplicatedDatabase::create(
+            &root.path().join("writer.db"),
+            SampleSchema::new()?,
+            writer_peer()?,
+            lease_policy(),
+            WriterOptions {
+                allow_provisional_writes: true,
+            },
+        )
+        .await?,
+    );
+    let result = observe_seed_retries(root.path(), writer.clone()).await;
+    writer.close().await;
+    result
+}
+async fn observe_seed_retries(
+    root: &Path,
+    writer: Arc<ReplicatedDatabase<SampleSchema>>,
+) -> TestResult {
+    write_sample(&writer, "pinned seed row").await?;
+    let snapshot = writer.snapshot().await?;
+    let position = snapshot.position();
+    snapshot.close().await?;
+    let service_root = root.join("service");
+    let mut service = CopyService::start(&service_root, &root.join("client.db")).await?;
+    let calls = WriterSessionCalls::new(
+        writer.clone(),
+        local_receiver()?,
+        service.session.requests.clone(),
+    );
+    let observed: TestResult = async {
+        assert!(matches!(service.session.requests.request(OperationRequest::Lease(LeaseRequest::Register(Registration {
+            attempt: RequestId::new(durable_steps::Uuid::now_v7())?, database: writer.database(), writer: writer_peer()?, origin: Origin::Seeded { position },
+        }))).await?, OperationAnswer::Lease(LeaseAnswer::Register(RegistrationAnswer::Registered { .. }))));
+        let generation = durable_steps::Uuid::now_v7();
+        let original = marker(&mut service, writer.database(), "{damaged-before-seed-begin".into()).await?;
+        known_wait(seed_call(&calls, generation, SeedFileRequest::Open { generation, position }).await)?;
+        write_sample(&writer, "written after the pinned begin refusal").await?;
+        marker(&mut service, writer.database(), original).await?;
+        let (seed, schema) = match seed_answer(seed_call(&calls, generation, SeedFileRequest::Open { generation, position }).await?)? {
+            SeedFileAnswer::Opened { seed, schema, position: actual, .. } => { assert_eq!(actual, position); (seed, schema) },
+            _ => return Err("seed did not open after repair".into()),
+        };
+        let mut cursor = None;
+        let mut pages = 0;
+        let mut tables = Vec::new();
+        let mut total_rows = 0;
+        loop {
+            let page = SeedFileRequest::Page { generation, seed, page: pages, cursor: cursor.clone() };
+            if pages == 0 {
+                let original = marker(&mut service, writer.database(), "{damaged-before-seed-page".into()).await?;
+                known_wait(seed_call(&calls, generation, page.clone()).await)?;
+                write_sample(&writer, "written after the pinned page refusal").await?;
+                marker(&mut service, writer.database(), original).await?;
+            }
+            match seed_answer(seed_call(&calls, generation, page).await?)? {
+                SeedFileAnswer::Page { rows, next, completed, .. } => {
+                    total_rows += rows;
+                    cursor = next;
+                    if let Some(table) = completed { tables.push((table.table, table.digest)); }
+                }
+                _ => return Err("seed page did not resume".into()),
+            }
+            pages += 1;
+            if cursor.is_none() { break; }
+        }
+        assert_eq!(total_rows, 1, "later writer commits must stay outside the pinned seed");
+        let complete = SeedFileRequest::Complete { generation, request: SeedComplete { database: writer.database(), seed, position, pages, schema, table_digests: tables } };
+        let original = marker(&mut service, writer.database(), "{damaged-before-seed-complete".into()).await?;
+        known_wait(seed_call(&calls, generation, complete.clone()).await)?;
+        marker(&mut service, writer.database(), original).await?;
+        assert!(matches!(seed_answer(seed_call(&calls, generation, complete).await?)?, SeedFileAnswer::Published { position: actual } if actual == position));
+        let sent = service.session.outgoing_replication().await;
+        for kind in ["seedBegin", "seedPage", "seedComplete"] {
+            let attempts: Vec<_> = sent.iter().filter(|value| value["kind"] == kind).collect();
+            assert!(attempts.len() >= 2);
+            assert_eq!(attempts[0], attempts[1], "the retried operation must keep its entire original identity/content");
+        }
+        assert_eq!(service.session.connection_count(), 1);
+        Ok(())
+    }.await;
+    calls.close_seed().await;
+    service.stop().await?;
+    observed?;
+    let copy = read_copy_snapshot(&copy_file_path(&service_root, writer.database())?).await?;
+    assert_eq!(copy.rows.len(), 1);
+    assert_eq!(copy.rows[0].1, "pinned seed row");
+    assert_eq!(copy.hooks.len(), 1);
+    Ok(())
+}

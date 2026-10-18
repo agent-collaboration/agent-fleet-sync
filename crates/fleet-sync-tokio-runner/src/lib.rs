@@ -41,6 +41,8 @@ mod install_target;
 #[cfg(test)]
 mod native_carry_tests;
 mod native_object;
+#[cfg(feature = "test-fault")]
+pub use native_object::TransactionReplyFault;
 mod native_publish;
 mod object_key;
 mod object_runner;

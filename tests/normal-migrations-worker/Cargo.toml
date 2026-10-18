@@ -15,7 +15,8 @@ sqlx-core = { version = "=0.9.0", default-features = false }
 sqlx-durable-object = { path = "../../crates/sqlx-durable-object" }
 fleet-sync-protocol = { path = "../../crates/fleet-sync-protocol" }
 fleet-sync-receiver = { path = "../../crates/fleet-sync-receiver" }
-durable-steps = { path = "../../crates/durable-steps" }
+durable-steps = { path = "../../crates/durable-steps", features = ["durable-object"] }
+runtime-primitives = { path = "../../crates/runtime-primitives", features = ["durable-object"] }
 worker = { git = "https://github.com/cloudflare/workers-rs", rev = "b171cb4bdd6fa943bb81f429df0a6b0df37e14b3", default-features = false }
 wasm-bindgen = "=0.2.129"
 serde = { version = "1", features = ["derive"] }

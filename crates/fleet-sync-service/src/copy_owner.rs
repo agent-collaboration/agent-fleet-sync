@@ -12,6 +12,10 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, watch};
 
 pub(crate) struct CopyOwner {
+    #[cfg(feature = "test-fault")]
+    pub call_probe: crate::copy_call_probe::CopyCallProbe,
+    #[cfg(feature = "test-fault")]
+    pub apply_wake: crate::copy_apply_wake::CopyApplyWake,
     pub object: Arc<ServiceObject>,
     pub engine: Arc<Engine<ServiceObject, ServiceHost>>,
     pub changed: watch::Sender<()>,
@@ -75,6 +79,10 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 engine.register(ApplyFollowUp::<ServiceObject, C::HookItem>::new())?;
                 let (changed, _) = watch::channel(());
                 let owner = Arc::new(CopyOwner {
+                    #[cfg(feature = "test-fault")]
+                    call_probe: Default::default(),
+                    #[cfg(feature = "test-fault")]
+                    apply_wake: crate::copy_apply_wake::CopyApplyWake::new(object.host()),
                     object,
                     engine: Arc::new(engine),
                     changed,
@@ -99,7 +107,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 Box::pin(async move {
                     fleet_sync_receiver::copy_status(scope)
                         .await
-                        .map_err(StoreError::backend)
+                        .map_err(fleet_sync_receiver::receiver_rollback)
                 })
             })
             .await

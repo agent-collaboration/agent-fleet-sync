@@ -96,6 +96,12 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterInstaller<S, P> {
             .request(OperationRequest::Replication(request))
             .await?
         {
+            OperationAnswer::Replication(ReplicationAnswer::CopyUnavailable { reason }) => {
+                Err(fleet_sync_receiver::retryable_copy(reason))
+            }
+            OperationAnswer::Replication(ReplicationAnswer::OutcomeUnknown { .. }) => {
+                Err(CallFailure::AnswerLost)
+            }
             OperationAnswer::Replication(answer) => Ok(answer),
             _ => Err(CallFailure::AnswerLost),
         }

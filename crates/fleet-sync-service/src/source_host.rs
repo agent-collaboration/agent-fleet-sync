@@ -81,6 +81,12 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             .request(OperationRequest::Replication(request))
             .await?
         {
+            OperationAnswer::Replication(ReplicationAnswer::CopyUnavailable { reason }) => {
+                Err(fleet_sync_receiver::retryable_copy(reason))
+            }
+            OperationAnswer::Replication(ReplicationAnswer::OutcomeUnknown { .. }) => {
+                Err(CallFailure::AnswerLost)
+            }
             OperationAnswer::Replication(answer) => Ok(answer),
             _ => Err(lost("source answered another operation family")),
         }

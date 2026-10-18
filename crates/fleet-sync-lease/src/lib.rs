@@ -132,6 +132,8 @@ mod turso_workflow_tests;
 mod transfer_admission;
 pub use transfer_admission::{admit_holder_change, cancel_holder_change};
 mod holder_change_view;
+#[cfg(test)]
+mod turso_copy_retry_tests;
 pub use holder_change_view::holder_change_view;
 
 mod transfer_storage;

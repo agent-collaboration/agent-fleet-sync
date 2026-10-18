@@ -34,6 +34,20 @@ impl TestHost {
         request: serde_json::Value,
         call: CallId,
     ) -> Result<serde_json::Value, CallFailure> {
+        if self
+            .copy_no_effect
+            .lock()
+            .await
+            .is_some_and(|target| target == kind)
+        {
+            // A controlled pre-apply refusal, outside any receiver write. The
+            // native journey separately exercises real damaged-copy rollback.
+            return Err(fleet_sync_receiver::retryable_copy(
+                CopyUnavailableReason::Damaged {
+                    detail: "controlled pre-apply copy refusal".into(),
+                },
+            ));
+        }
         if kind == "fleet-sync.copy-retire" && self.retire_unreachable.load(Ordering::SeqCst) {
             return Err(CallFailure::NotSent {
                 reason: NotSentReason::Unreachable { last_seen: None },
