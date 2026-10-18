@@ -16,15 +16,29 @@ snapshot. P claims it. A different peer's claim must receive
 takeover gives it to Q; repeating the original claim must still name P and
 return its identical recorded outcome.
 
-The baseline also drives real moves whose owned fixture holder returns pending
-and failed migration 7 through the real Release call. This observes registry
-propagation only; the holder's migration state is a stand-in. A delivered C2
-observation must use a real ReplicatedDatabase writer with a genuinely pending
-migration and a genuinely failed migration recorded in its own history. If
-either cannot be produced, return the exact gap; the fixture cannot close it.
+The delivered C2 journey must also drive a real move against a real
+ReplicatedDatabase holder with a genuinely pending migration. Its refusal must
+name that exact migration and `pending`. The existing fixture-holder cases
+observe registry propagation only; they do not establish the real Pending
+producer. Replace that fixture path when the C2 head and setup are declared.
 The writer's entry is `ReplicatedDatabase::request_release` in
 `crates/fleet-sync-writer/src/writer_release.rs`; the registry consumes it in
 `crates/fleet-sync-lease/src/holder_change_rules.rs`.
+
+**Named limit: no real writer produces Failed.** A failed migration rolls back
+without recording a failed state and fails writer open. A later failing
+`migrate` call on an already-open writer leaves the migration unapplied, so its
+release check answers Pending. The Failed protocol variant remains unchanged;
+creating a durable failed state or changing writer-open behavior is outside
+this journey. Do not build a failed-holder fixture for delivered observation.
+
+The registry's product test owns Failed pass-through at the HolderRelease seam
+(`crates/fleet-sync-lease/src/turso_move_refusal_tests.rs`). It must check exact
+migration/state detail, replay the first result after the scripted answer
+changes, and show no extra release, fence, lease or epoch effect. That is the
+Implementer's product proof. The historical Failed fixture remains baseline
+registry evidence only; remove its case from the journey at the declared C2
+update. It is no evidence of a real Failed producer.
 
 Wrong builds: unit AlreadyHeld or MigrationPending, or a replay naming Q.
 
