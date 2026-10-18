@@ -26,7 +26,7 @@ pub use lease_holder::{HolderError, LeaseHolder};
 pub use lease_values::{LeasePolicy, RegistryConfig, WriterState};
 
 pub use registry_contract::{GateFailure, HolderChangeGate, LeaseError, LifecycleGate};
-pub use registry_records::DatabaseLifecycle;
+pub use registry_records::{DatabaseLifecycle, ImportOrigin};
 
 mod renew_rules;
 pub use renew_rules::{database_lifecycle, lease_status, renew};

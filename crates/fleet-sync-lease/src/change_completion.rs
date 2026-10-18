@@ -299,12 +299,15 @@ where
                         })
                         .await
                         .map_err(step_error)?;
-                    if matches!(record.lifecycle, DatabaseLifecycle::Unheld { .. }) {
+                    if let DatabaseLifecycle::Unheld { import_digest } = record.lifecycle {
                         storage
                             .save_database(&DatabaseRecord {
                                 database,
                                 lifecycle: DatabaseLifecycle::Registered {
                                     origin: Origin::Seeded { position: start },
+                                    imported_from: Some(ImportOrigin {
+                                        digest: import_digest,
+                                    }),
                                 },
                             })
                             .await

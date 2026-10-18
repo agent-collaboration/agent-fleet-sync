@@ -16,14 +16,26 @@ fn existing_import(record: DatabaseRecord, request: &Import) -> ImportAnswer {
         DatabaseLifecycle::Retired { .. } | DatabaseLifecycle::Retiring { .. } => {
             ImportAnswer::Retired
         }
-        DatabaseLifecycle::Unheld { import_digest } if import_digest == request.digest => {
-            ImportAnswer::AlreadyImported
+        DatabaseLifecycle::Unheld { import_digest }
+        | DatabaseLifecycle::Registered {
+            imported_from: Some(ImportOrigin {
+                digest: import_digest,
+            }),
+            ..
+        } => {
+            if import_digest == request.digest {
+                ImportAnswer::AlreadyImported
+            } else {
+                ImportAnswer::ImportConflict {
+                    existing: Some(import_digest),
+                    offered: request.digest.clone(),
+                }
+            }
         }
-        DatabaseLifecycle::Unheld { import_digest } => ImportAnswer::ImportConflict {
-            existing: Some(import_digest),
-            offered: request.digest.clone(),
-        },
-        DatabaseLifecycle::Registered { .. } => ImportAnswer::ImportConflict {
+        DatabaseLifecycle::Registered {
+            imported_from: None,
+            ..
+        } => ImportAnswer::ImportConflict {
             existing: None,
             offered: request.digest.clone(),
         },

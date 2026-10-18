@@ -248,6 +248,7 @@ where
                                 database: request.database,
                                 lifecycle: DatabaseLifecycle::Registered {
                                     origin: request.origin.clone(),
+                                    imported_from: None,
                                 },
                             })
                             .await

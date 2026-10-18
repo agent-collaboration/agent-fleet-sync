@@ -66,6 +66,7 @@ async fn setup() -> TestResult<TursoConnection> {
             database,
             lifecycle: DatabaseLifecycle::Registered {
                 origin: Origin::Empty,
+                imported_from: None,
             },
         })
         .await?;

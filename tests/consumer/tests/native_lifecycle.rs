@@ -1,13 +1,56 @@
 #[allow(dead_code, unused_imports)]
 mod support;
-use fleet_sync_lease::LeasePolicy;
 use fleet_sync_protocol::*;
 use fleet_sync_session::TransportConnection;
 use fleet_sync_test_consumer::*;
-use fleet_sync_transport_websocket::WebSocketConnection;
-use fleet_sync_writer::{ReplicatedDatabase, WriterOptions};
-use std::{path::Path, time::Duration};
+use std::time::Duration;
+use support::lifecycle_import::{assert_post_claim_imports, import_backup};
 use support::*;
+
+#[tokio::test]
+async fn claimed_import_origin_survives_fresh_attempts_and_registry_restart() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let service_path = root.path().join("service");
+    let mut service = ServiceProcess::start(&service_path).await?;
+    let mut control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let (import, _) = import_backup(&service, &mut control, &root.path().join("backup.db")).await?;
+    let mut target = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
+    let attempt = RequestId::new(durable_steps::Uuid::now_v7())?;
+    let transfer = TransferId::new(attempt.as_uuid())?;
+    request(
+        &mut target,
+        OperationRequest::Lease(LeaseRequest::Claim {
+            attempt,
+            database: import.database,
+        }),
+    )
+    .await?;
+    let change = HolderChangeRequest::Claim {
+        attempt: transfer,
+        database: import.database,
+        claimant: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
+    };
+    assert!(matches!(
+        control_request(&mut control, ControlRequest::WaitHolderChange(change)).await?,
+        ControlAnswer::HolderChange(HolderChangeAnswer::Granted { .. })
+    ));
+    assert_post_claim_imports(&mut control, &import).await?;
+    service.kill().await?;
+    drop(control);
+    service = ServiceProcess::start(&service_path).await?;
+    control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    assert_post_claim_imports(&mut control, &import).await?;
+    service.stop(&mut control).await?;
+    Ok(())
+}
 
 #[tokio::test]
 async fn cancelled_claim_dispatches_terminal_settlement_before_the_reservation_answers()
@@ -156,100 +199,6 @@ async fn cancelled_claim_dispatches_terminal_settlement_before_the_reservation_a
     );
     service.stop(&mut control).await?;
     Ok(())
-}
-
-async fn import_backup(
-    service: &ServiceProcess,
-    control: &mut WebSocketConnection,
-    path: &Path,
-) -> TestResult<(Import, ReplicationPosition)> {
-    let writer = ReplicatedDatabase::create(
-        path,
-        SampleSchema::new()?,
-        PeerId::new(durable_steps::Uuid::from_u128(
-            0x019eef00000070008000000000000002,
-        ))?,
-        LeasePolicy {
-            lease_duration: Duration::from_secs(600),
-            renew_interval: Duration::from_secs(30),
-        },
-        WriterOptions {
-            allow_provisional_writes: true,
-        },
-    )
-    .await?;
-    let mut write = writer.begin_write().await?;
-    insert_sample(
-        &mut write,
-        "019eef00-0000-7000-8000-000000000001".into(),
-        "imported backup".into(),
-        9_007_199_254_740_993,
-        vec![0, 255, 128],
-    )
-    .await?;
-    write.commit().await?;
-    let mut snapshot = writer.snapshot().await?;
-    let manifest = snapshot.manifest().await?;
-    let import = Import {
-        attempt: RequestId::new(durable_steps::Uuid::now_v7())?,
-        database: writer.database(),
-        digest: ImportDigest::of_canonical(&manifest)?,
-    };
-    assert!(matches!(
-        control_request(control, ControlRequest::Import(import.clone())).await?,
-        ControlAnswer::Import(ImportAnswer::Imported)
-    ));
-    let seed = match control_request(
-        control,
-        ControlRequest::SeedBegin {
-            database: writer.database(),
-            attempt: SeedAttemptId::new(durable_steps::Uuid::now_v7())?,
-        },
-    )
-    .await?
-    {
-        ControlAnswer::Replication(answer) => match *answer {
-            ReplicationAnswer::SeedStarted { seed } => seed,
-            _ => return Err("import seed did not begin".into()),
-        },
-        _ => return Err("import seed answer missing".into()),
-    };
-    let mut cursor = None;
-    let mut pages = 0;
-    loop {
-        let contents = snapshot.page(cursor).await?;
-        let next = contents.next.clone();
-        let page = SeedPage {
-            seed,
-            page: pages,
-            digest: PageDigest::of(&contents)?,
-            contents,
-        };
-        assert!(
-            matches!(control_request(control, ControlRequest::SeedPage(Box::new(page))).await?, ControlAnswer::Replication(answer) if matches!(*answer, ReplicationAnswer::SeedPage(SeedPageAnswer::Staged)))
-        );
-        pages += 1;
-        cursor = next;
-        if cursor.is_none() {
-            break;
-        }
-    }
-    assert!(
-        matches!(control_request(control, ControlRequest::SeedComplete(SeedComplete {
-        database: writer.database(), seed, position: manifest.position, pages, schema: manifest.schema,
-        table_digests: manifest.tables.into_iter().map(|table| (table.table, table.digest)).collect(),
-    })).await?, ControlAnswer::Replication(answer) if matches!(*answer, ReplicationAnswer::SeedComplete(SeedAnswer::Published { position }) if position==manifest.position))
-    );
-    let mut reader = service
-        .peer(5, SessionId::new(durable_steps::Uuid::now_v7())?)
-        .await?;
-    let rows = copy_rows(&mut reader, writer.database()).await?;
-    assert_eq!(rows.get("samples").map(Vec::len), Some(1));
-    assert!(rows.get("samples").ok_or("samples missing")?.iter().all(|row| matches!(row.as_slice(),[SqlValue::Text(_),SqlValue::Text(label),SqlValue::Integer(9_007_199_254_740_993),SqlValue::Blob(bytes)] if label=="imported backup" && bytes==&[0,255,128])));
-    reader.close(CloseReason::ClientClosed).await;
-    snapshot.close().await?;
-    writer.close().await;
-    Ok((import, manifest.position))
 }
 
 #[tokio::test]

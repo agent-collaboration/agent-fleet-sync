@@ -81,6 +81,10 @@ async fn claim_grants_the_next_epoch_and_settles_once_after_seed_publication() -
         scalar(&store, "SELECT epoch AS value FROM _fleet_sync_epoch_floor").await?,
         "2"
     );
+    let lease_before = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
+    let database_before =
+        scalar(&store, "SELECT record AS value FROM _fleet_sync_databases").await?;
+    let calls_before = host.calls.lock().await.len();
     let reimport = import_request(202, "a")?;
     assert_eq!(
         task_answer::<ImportTask<TestStore, Turso>>(
@@ -89,11 +93,53 @@ async fn claim_grants_the_next_epoch_and_settles_once_after_seed_publication() -
             reimport
         )
         .await?,
+        ImportAnswer::AlreadyImported
+    );
+    let mut conflicting = import.clone();
+    conflicting.attempt = import_request(203, "b")?.attempt;
+    conflicting.digest = ImportDigest::of_canonical(&"different")?;
+    assert_eq!(
+        task_answer::<ImportTask<TestStore, Turso>>(
+            &engine,
+            &lifecycle_request_key(conflicting.attempt)?,
+            conflicting.clone()
+        )
+        .await?,
         ImportAnswer::ImportConflict {
-            existing: None,
-            offered: import.digest
+            existing: Some(import.digest.clone()),
+            offered: conflicting.digest
         }
     );
+    assert_eq!(
+        task_answer::<ImportTask<TestStore, Turso>>(
+            &engine,
+            &lifecycle_request_key(import.attempt)?,
+            import
+        )
+        .await?,
+        ImportAnswer::Imported
+    );
+    assert_eq!(
+        scalar(&store, "SELECT epoch AS value FROM _fleet_sync_epoch_floor").await?,
+        "2"
+    );
+    assert_eq!(
+        scalar(
+            &store,
+            "SELECT CAST(count(*) AS TEXT) AS value FROM _fleet_sync_epoch_history"
+        )
+        .await?,
+        "1"
+    );
+    assert_eq!(
+        scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
+        lease_before
+    );
+    assert_eq!(
+        scalar(&store, "SELECT record AS value FROM _fleet_sync_databases").await?,
+        database_before
+    );
+    assert_eq!(host.calls.lock().await.len(), calls_before);
     Ok(())
 }
 

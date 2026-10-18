@@ -9,10 +9,24 @@ use serde::{Deserialize, Serialize};
     deny_unknown_fields
 )]
 pub enum DatabaseLifecycle {
-    Registered { origin: Origin },
-    Unheld { import_digest: ImportDigest },
-    Retiring { attempt: RequestId },
-    Retired { at: SyncTime },
+    Registered {
+        origin: Origin,
+        imported_from: Option<ImportOrigin>,
+    },
+    Unheld {
+        import_digest: ImportDigest,
+    },
+    Retiring {
+        attempt: RequestId,
+    },
+    Retired {
+        at: SyncTime,
+    },
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ImportOrigin {
+    pub digest: ImportDigest,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
