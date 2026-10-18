@@ -9,21 +9,32 @@ use fleet_sync_transport_websocket::WebSocketConnection;
 use serde_json::{Value, json};
 use std::path::Path;
 
-fn identified_cases(frame: FrameId) -> [(Value, &'static str); 4] {
+fn identified_cases(frame: FrameId) -> [(Value, String); 5] {
+    // The consumer README declares a 64 Unicode-character diagnostic cap.
+    // Mixed byte widths distinguish that claim from truncating UTF-8 bytes.
+    let long_field = "界🙂a".repeat(40);
+    // Twenty-one triples plus one character spell the expected 64-char prefix.
+    let bounded_field = format!("{}界", "界🙂a".repeat(21));
+    let mut oversized = json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{"text":"must not route"}}}}});
+    oversized["value"][long_field.as_str()] = json!(true);
     [
         (
             json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{}}}}}),
-            "text",
+            "text".to_owned(),
         ),
-        (json!({"kind":"request","value":{"frame":frame}}), "body"),
+        (
+            json!({"kind":"request","value":{"frame":frame}}),
+            "body".to_owned(),
+        ),
         (
             json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{"text":"must not route"}}},"unexpected":true}}),
-            "unexpected",
+            "unexpected".to_owned(),
         ),
         (
             json!({"kind":"answer","value":{"frame":frame,"body":{"kind":"consumer","value":{"notUnit":true}}}}),
-            "body",
+            "body".to_owned(),
         ),
+        (oversized, bounded_field),
     ]
 }
 
@@ -41,7 +52,7 @@ async fn identified_bodies(
 ) -> TestResult {
     let mut socket = attach_peer(service, new_peer().await?, 100).await?;
     let result: TestResult = async {
-        for index in 0..4 {
+        for index in 0..5 {
             // Correlation IDs are non-nil, not entity keys. Each case gets a
             // distinct public fixture UUIDv4, followed by a fresh valid frame.
             let frame = FrameId::new(durable_steps::Uuid::from_u128(
@@ -96,8 +107,8 @@ async fn identified_bodies(
         let count = request_count(control).await?;
         observations.check(
             "malformed-bodies-never-route",
-            count == 4,
-            json!({"validFollowUps":4,"consumerRequests":4}),
+            count == 5,
+            json!({"validFollowUps":5,"consumerRequests":5}),
             json!({"consumerRequests":count}),
         );
         Ok(())

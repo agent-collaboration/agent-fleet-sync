@@ -105,12 +105,16 @@ Run `bash scripts/verification/frame-shapes.sh` after session rules, frame types
 or native socket routing change.
 
 The script authenticates a real WebSocket session and sends identified frames
-with missing Echo text, missing body, an unexpected field and a malformed
-client answer. Each uses a distinct non-nil UUIDv4 correlation ID; entity-key
-UUIDv7 rules do not apply to FrameId. Each answer must be correlated
+with missing Echo text, missing body, an unexpected field, a malformed
+client answer and an oversized Unicode field name. Each uses a distinct
+non-nil UUIDv4 correlation ID; UUIDv7 entity-key rules do not apply to FrameId.
+Each answer must be correlated
 `invalidShape{field}` (the named field, or `body` for the unnamed variant
-failure), followed by a valid Echo on that same connection. Only the four
-valid follow-ups may reach the consumer.
+failure), followed by a valid Echo on that same connection. The oversized name
+mixes UTF-8 byte widths; its answer must name exactly the first 64 Unicode
+characters, the cap documented by the consumer README. That cap is an
+implementation choice under the bounded-field instruction, not a spec
+constant. Only the five valid follow-ups may reach the consumer.
 
 Separate authenticated connections receive malformed JSON, an invalid ID, a
 missing ID and an unknown kind. Each must close as malformedFrame, with no
