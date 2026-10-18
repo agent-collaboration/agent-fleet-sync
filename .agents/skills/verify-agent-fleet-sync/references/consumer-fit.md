@@ -153,8 +153,12 @@ WebSocket. Require the whole offending field and exact frame ID, a valid
 follow-up on that same socket for each case, and only those follow-ups in the
 routed count. Run the full native_frame_shapes selection to retain the existing
 malformed-envelope and Unicode-cap controls; the new fields do not alter the cap.
-An empty expected-field list needs its own real request fixture; these outer
-envelope controls do not establish that diagnostic branch.
+The companion `unknown_fields_choose_the_actual_empty_or_nonempty_diagnostic_suffix`
+uses a legal deny_unknown_fields empty request and the nonempty outer envelope.
+Require both actual diagnostic suffixes, with embedded opposite markers and
+line/column-like field text: six exact field/frame answers, six valid empty
+follow-ups on that same socket, and routed count six. Check the actual suffix
+after removing only serde_json's own location, before the unchanged Unicode cap.
 
 Wrong build: treating every decode failure as an unreadable envelope.
 Cloudflare sessions belong to central's real runtime gate, outside this journey.
