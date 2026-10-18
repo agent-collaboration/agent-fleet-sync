@@ -1,0 +1,40 @@
+[package]
+name = "consumer-fit-journeys"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+durable-steps = { path = "../../../crates/durable-steps", features = ["turso"] }
+fleet-sync-lease = { path = "../../../crates/fleet-sync-lease" }
+fleet-sync-protocol = { path = "../../../crates/fleet-sync-protocol" }
+fleet-sync-session = { path = "../../../crates/fleet-sync-session" }
+fleet-sync-test-consumer = { path = "../../../tests/consumer" }
+fleet-sync-tokio-runner = { path = "../../../crates/fleet-sync-tokio-runner" }
+fleet-sync-transport-websocket = { path = "../../../crates/fleet-sync-transport-websocket" }
+fleet-sync-writer = { path = "../../../crates/fleet-sync-writer" }
+runtime-primitives = { path = "../../../crates/runtime-primitives", features = ["tokio"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.149", features = ["float_roundtrip"] }
+sqlx = { version = "=0.9.0", default-features = false, features = ["migrate", "macros"] }
+sqlx-core = { version = "=0.9.0", default-features = false, features = ["migrate"] }
+sqlx-turso = { path = "../../../crates/sqlx-turso" }
+tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros", "net", "time", "sync", "process", "io-util", "fs"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+[profile.dev.package."*"]
+debug = 0
