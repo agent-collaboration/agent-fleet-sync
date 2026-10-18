@@ -135,6 +135,16 @@ where
     };
     match registration {
         ConnectionRegistration::Closed => return Ok(Vec::new()),
+        ConnectionRegistration::Attaching {
+            session_id: attached,
+            schema_support: declared,
+            ..
+        } => {
+            if attached != session_id || declared != schema_support {
+                return close_connection(scope, binding, CloseReason::MalformedFrame, now).await;
+            }
+            return Ok(Vec::new());
+        }
         ConnectionRegistration::Attached {
             session_id: attached,
             schema_support: declared,
@@ -196,14 +206,30 @@ where
         connection: binding.connection,
     };
     save_session(scope, &record).await?;
+    let attach_seq = crate::session_storage::next_attach_sequence(scope, binding.peer).await?;
     scope.set_registration(
         &binding.connection,
-        ConnectionRegistration::Attached {
+        ConnectionRegistration::Attaching {
             session_id,
             schema_support,
+            attach_seq,
         },
     );
-    effects.extend(welcome(binding, session_id));
+    scope
+        .publish_schema_support(
+            PublishSchemaSupportInput {
+                connection: binding.connection,
+                expires_at: binding.expires_at,
+                report: ReportSchemaSupport {
+                    peer: binding.peer,
+                    session_id,
+                    attach_seq,
+                    support: schema_support,
+                },
+            },
+            now,
+        )
+        .await?;
     Ok(effects)
 }
 
@@ -233,7 +259,11 @@ where
 {
     let registration = scope.registration(&binding.connection);
     scope.set_registration(&binding.connection, ConnectionRegistration::Closed);
-    if let Some(ConnectionRegistration::Attached { session_id, .. }) = registration {
+    if let Some(
+        ConnectionRegistration::Attached { session_id, .. }
+        | ConnectionRegistration::Attaching { session_id, .. },
+    ) = registration
+    {
         let key = SessionKey {
             peer: binding.peer,
             session_id,

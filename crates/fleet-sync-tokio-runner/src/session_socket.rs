@@ -62,6 +62,8 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
                 .pending
                 .retain(|_, pending| pending.connection != binding.connection);
         }
+        #[cfg(feature = "test-support")]
+        self.registration_changes.send_replace(());
         result?;
         self.dispatch_direct(detached?).await
     }

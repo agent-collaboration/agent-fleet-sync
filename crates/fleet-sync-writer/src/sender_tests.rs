@@ -324,7 +324,7 @@ async fn fencing_records_the_rejected_tail_and_preserves_it_until_consumer_ackno
                     epoch: Epoch::new(1)?,
                     acked: status.acked,
                 },
-                target_schema_max: 2,
+                target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 2 }),
                 holder: PeerId::new(durable_steps::Uuid::from_u128(
                     0x019eef0000007000800000000000000d,
                 ))?,

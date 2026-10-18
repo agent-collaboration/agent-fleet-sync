@@ -27,7 +27,7 @@ pub(super) async fn advance_copy(host: &TestHost, from: u64, to: u64) -> TestRes
             epoch: Epoch::new(from)?,
             acked: ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(0)),
         },
-        target_schema_max: 10,
+        target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 10 }),
         holder: peer(1)?,
     };
     assert!(

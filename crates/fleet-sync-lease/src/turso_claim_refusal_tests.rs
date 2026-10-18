@@ -85,7 +85,7 @@ async fn advance_copy(host: &TestHost, to: u64) -> TestResult {
                     epoch: status.fence,
                     acked: status.acked
                 },
-                target_schema_max: 10,
+                target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 10 }),
                 holder: peer(1)?
             }
         )

@@ -150,6 +150,9 @@ async fn withdrawal_keeps_original_real_clock_deadline_then_fresh_renewal_resume
         .connect("control", "Bearer consumer-control")
         .await?;
     let attempt = TransferId::new(durable_steps::Uuid::now_v7())?;
+    let _capability_change = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let change = HolderChangeRequest::Move {
         attempt,
         database,
@@ -293,6 +296,9 @@ async fn stale_holder_move_refuses_then_a_recently_renewed_holder_moves_over_its
     let mut control = service
         .connect("control", "Bearer consumer-control")
         .await?;
+    let _capability_stale = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let stale = HolderChangeRequest::Move {
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
@@ -332,6 +338,9 @@ async fn stale_holder_move_refuses_then_a_recently_renewed_holder_moves_over_its
     };
     writer.database.observe_renewal(renewal, started).await?;
     let attempt = TransferId::new(durable_steps::Uuid::now_v7())?;
+    let _capability_fresh = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let fresh = HolderChangeRequest::Move {
         attempt,
         database,
@@ -421,6 +430,9 @@ async fn authoritative_copy_refuses_the_takeover_tail_while_old_writer_keeps_it_
         ControlAnswer::TakeoverPreview(preview) => preview,
         _ => return Err("takeover preview missing".into()),
     };
+    let _capability_takeover = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let takeover = HolderChangeRequest::Takeover {
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,

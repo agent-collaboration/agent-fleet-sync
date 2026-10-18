@@ -349,6 +349,9 @@ async fn import_claim_settlement_and_renewal_replay_survive_registry_restart_and
         ControlAnswer::TakeoverPreview(preview) => preview,
         _ => return Err("takeover preview missing".into()),
     };
+    let _capability_takeover = service
+        .peer(6, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let takeover = HolderChangeRequest::Takeover {
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
@@ -416,6 +419,9 @@ async fn import_claim_settlement_and_renewal_replay_survive_registry_restart_and
         ControlAnswer::TakeoverPreview(preview) => preview,
         _ => return Err("restarted registry preview missing".into()),
     };
+    let _capability_takeover = service
+        .peer(8, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let takeover = HolderChangeRequest::Takeover {
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,

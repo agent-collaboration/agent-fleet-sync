@@ -593,6 +593,7 @@ pub(crate) struct StoredTransferAdmissionRow {
     pub request: Option<String>,
     pub requested_by: Option<String>,
     pub admitted_at: Option<String>,
+    pub target_schema: Option<String>,
     pub follow_up: Option<String>,
 }
 pub(crate) fn read_transfer_admission<S>(
@@ -620,6 +621,7 @@ where
                     request: row.try_get("request")?,
                     requested_by: row.try_get("requested_by")?,
                     admitted_at: row.try_get("admitted_at")?,
+                    target_schema: row.try_get("target_schema")?,
                     follow_up: row.try_get("follow_up")?,
                 })
             })
@@ -633,6 +635,7 @@ pub(crate) fn write_transfer_admission<S>(
     request: String,
     requested_by: String,
     admitted_at: String,
+    target_schema: String,
     follow_up: Option<String>,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
@@ -651,6 +654,7 @@ where
         .bind(request)
         .bind(requested_by)
         .bind(admitted_at)
+        .bind(target_schema)
         .bind(follow_up);
         statement.execute(scope.executor()).await?;
         Ok(())
@@ -726,6 +730,61 @@ where
         )))
         .bind(cleanup_failed)
         .bind(attempt);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredSchemaSupportRow {
+    pub peer: Option<String>,
+    pub record: Option<String>,
+}
+pub(crate) fn read_schema_support<S>(
+    scope: &mut S,
+    peer: String,
+) -> impl std::future::Future<Output = Result<Option<StoredSchemaSupportRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_schema_support.sql"
+        )))
+        .bind(peer);
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(StoredSchemaSupportRow {
+                    peer: row.try_get("peer")?,
+                    record: row.try_get("record")?,
+                })
+            })
+            .transpose()
+    }
+}
+pub(crate) fn write_schema_support<S>(
+    scope: &mut S,
+    peer: String,
+    record: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_schema_support.sql"
+        )))
+        .bind(peer)
+        .bind(record);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

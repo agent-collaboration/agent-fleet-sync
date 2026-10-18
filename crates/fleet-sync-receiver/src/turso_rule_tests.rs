@@ -344,7 +344,7 @@ async fn fencing_preserves_old_holder_cutoff_and_retirement_dominates_replays() 
             epoch: Epoch::new(1)?,
             acked: position(1)?,
         },
-        target_schema_max: 1,
+        target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 1 }),
         holder: next_writer,
     };
     let expected = FenceResult::Fenced {

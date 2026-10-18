@@ -324,7 +324,7 @@ async fn target_fence_and_saved_transfer_survive_snapshot_and_older_snapshot_is_
             epoch: Epoch::new(1)?,
             acked: install.position,
         },
-        target_schema_max: 10,
+        target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 10 }),
     };
     let fenced = fence(&mut TursoScope(&mut old), &transfer).await?;
     assert!(matches!(fenced, FenceResult::Fenced { .. }));

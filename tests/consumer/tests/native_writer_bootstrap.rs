@@ -36,6 +36,9 @@ async fn bootstrap_kill(after_rename: bool) -> TestResult {
     let mut control = service
         .connect("control", "Bearer consumer-control")
         .await?;
+    let _capability_change = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let change = HolderChangeRequest::Move {
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,

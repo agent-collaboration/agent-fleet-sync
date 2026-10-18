@@ -216,7 +216,7 @@ async fn claim_repairs_above_a_restored_imported_copys_fence_before_granting() -
                 epoch: Epoch::new(1)?,
                 acked: position,
             },
-            target_schema_max: 10,
+            target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 10 }),
             holder: peer(9)?,
         };
         assert!(matches!(

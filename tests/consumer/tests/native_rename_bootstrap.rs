@@ -34,6 +34,9 @@ async fn new_writer_publishes_v1_prefix_then_renames_writes_and_replicates() -> 
     let mut control = service
         .connect("control", "Bearer consumer-control")
         .await?;
+    let _capability_change = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let change = HolderChangeRequest::Move {
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,

@@ -217,8 +217,28 @@ async fn schema_refusal_after_reservation_is_settled_and_a_gate_refusal_has_no_s
             .reject_claim
             .store(reject_at_gate, Ordering::SeqCst);
         let mut engine = TestEngine::new(Arc::clone(&store), Arc::clone(&host));
-        let mut policy = config()?;
-        policy.target_schema_max = 0;
+        let policy = config()?;
+        store
+            .transaction(move |scope| {
+                Box::pin(async move {
+                    report_schema_support(
+                        scope,
+                        &ReportSchemaSupport {
+                            peer: peer(2).map_err(storage)?,
+                            session_id: SessionId::new(Uuid::from_u128(
+                                0x019eef00000070008000000000000802,
+                            ))
+                            .map_err(storage)?,
+                            attach_seq: AttachSequence::new(2).map_err(storage)?,
+                            support: SchemaSupport { max_version: 0 },
+                        },
+                    )
+                    .await
+                    .map_err(storage)?;
+                    Ok(())
+                })
+            })
+            .await?;
         engine.register(HolderChangeTask::<TestStore, Turso>::new(
             policy,
             host.clone(),

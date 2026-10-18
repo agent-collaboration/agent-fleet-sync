@@ -32,6 +32,16 @@ The admin surface can call `cancel_holder_change` before Fencing commits. A move
 
 These registry tests use actual Turso journals and receipted holder-call fixtures. The real holder's withdrawal, writer resumption and session integration belong to the writer/runner/service layer. Historical development transfer rows without admission identity or phase history fail closed; this foundation has no compatibility path that invents an authenticated requester.
 
+## Session schema support
+
+Before welcoming an attachment, the session owner durably reports its schema support to the registry. A per-peer `AttachSequence` orders reports across connection replacement and restart; an older report cannot overwrite a newer declaration. This projection is capability data, persists after disconnect, and has no expiry. `admit_holder_change` freezes the target's `Option<SchemaSupport>` in its admission transaction. Repeats, restart and both fence calls use that value. A target without an accepted report is refused with `SchemaTooNew { supported: None, .. }`; there is no global schema maximum in `RegistryConfig`.
+
+Every host implements `SessionScope::publish_schema_support(input, now)` by admitting `PublishSchemaSupport` and ensuring its durable deadline through the Hello transaction's borrowed journal. `welcome_after_commit(connection, peer, session_id)` buffers a host effect, while the finalizing local step records only `()`. A successful commit publishes staged registration edits and exposes effects; rollback discards both. External effects run after transaction exclusion is released, and the runtime then supplies activation. Route `SchemaSupportRegistry` to the registry's `report_schema_support` rule inside its own transaction.
+
+`FleetService` owns and joins the native session publication runner. Consumers embedding `SessionHost` directly also join its `run` future alongside their connection tasks and shutdown signal. Its adapter stages under the input path's runtime-to-connection lock order, publishes registrations on commit, drops both guards, then signals its native timer and dispatches Welcome. The connection, session and attach sequence are checked in the finalizing transaction; the later send by connection ID is not another identity check.
+
+`SessionClient::connect` activates the transport and sends Hello. Keep pumping receive and server answers during attachment; only the matching Welcome makes operation requests ready. `send_request` refuses before Welcome without sending a frame. A readiness or connection refusal returned before dispatch is `CallFailure::NotSent`; a timeout or uncertain dispatch stays `AnswerLost`, including other pre-send failures and the pump's local reply timeout. Only a durably settled NotSent with no earlier uncertain reach preserves NeverSent.
+
 ## Local workerd integration
 
 Install the wasm target, wasm-bindgen CLI **0.2.129**, Node.js, and the pinned package dependencies, then run:

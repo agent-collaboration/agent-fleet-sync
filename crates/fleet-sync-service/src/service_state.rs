@@ -39,6 +39,8 @@ pub(crate) struct ServiceState<
     pub shutdown: watch::Sender<bool>,
     #[cfg(feature = "test-support")]
     pub install_page_probe: crate::install_page_probe::InstallPageProbe,
+    #[cfg(feature = "test-support")]
+    pub schema_support_probe: crate::schema_support_probe::SchemaSupportProbe,
     pub copies: Mutex<BTreeMap<DatabaseId, Arc<OnceCell<Arc<CopyOwner>>>>>,
     pub copy_added: Notify,
     pub delivery: Mutex<

@@ -49,7 +49,6 @@ pub enum WriterState {
 pub struct RegistryConfig {
     pub lease: LeasePolicy,
     pub authoritative_receiver: ReceiverId,
-    pub target_schema_max: u64,
     pub release_unsent_for: Duration,
     pub move_needs_renewal_within: Option<Duration>,
 }

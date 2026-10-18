@@ -13,6 +13,8 @@ pub struct SqlScope {
     pub pool: Pool<Turso>,
     pub transaction: Transaction<'static, Turso>,
     pub registrations: BTreeMap<ConnectionId, ConnectionRegistration>,
+    pub publications: Vec<PublishSchemaSupportInput>,
+    pub effects: Vec<SessionEffect>,
 }
 impl SqlScope {
     pub async fn new() -> Self {
@@ -32,6 +34,8 @@ impl SqlScope {
             pool,
             transaction,
             registrations: BTreeMap::new(),
+            publications: Vec::new(),
+            effects: Vec::new(),
         }
     }
     pub async fn record(&mut self, key: &SessionKey) -> SessionRecord {
@@ -57,6 +61,26 @@ impl TransactionScope for SqlScope {
     }
 }
 impl SessionScope for SqlScope {
+    async fn publish_schema_support(
+        &mut self,
+        input: PublishSchemaSupportInput,
+        _: SyncTime,
+    ) -> Result<(), StoreError> {
+        self.publications.push(input);
+        Ok(())
+    }
+    fn welcome_after_commit(
+        &mut self,
+        connection: ConnectionId,
+        peer: PeerId,
+        session_id: SessionId,
+    ) {
+        self.effects.push(SessionEffect::Welcome {
+            connection,
+            peer,
+            session_id,
+        });
+    }
     fn registration(&self, connection: &ConnectionId) -> Option<ConnectionRegistration> {
         self.registrations.get(connection).copied()
     }
@@ -104,7 +128,16 @@ pub async fn attach(
     connection_opened::<_, NoConsumer>(scope, binding, now(1))
         .await
         .unwrap();
-    frame_received(scope, binding, &hello(id, 1), now(1))
+    let mut effects = frame_received(scope, binding, &hello(id, 1), now(1))
         .await
-        .unwrap()
+        .unwrap();
+    // Rule-only fixture: an acknowledged report stands in for the external registry.
+    // Native SessionHost tests keep the publication task and its adapter real.
+    for input in std::mem::take(&mut scope.publications) {
+        complete_schema_publication(scope, &input, now(1))
+            .await
+            .unwrap();
+    }
+    effects.append(&mut scope.effects);
+    effects
 }

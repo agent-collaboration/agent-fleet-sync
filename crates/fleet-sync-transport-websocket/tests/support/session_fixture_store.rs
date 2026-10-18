@@ -54,6 +54,8 @@ pub struct FixtureScope<'a> {
     pub transaction: &'a mut TursoConnection,
     pub state: FixtureState,
     pub registrations: BTreeMap<ConnectionId, ConnectionRegistration>,
+    pub publications: Vec<PublishSchemaSupportInput>,
+    pub effects: Vec<SessionEffect<FixtureProtocol>>,
 }
 fn store_error(error: impl std::fmt::Display) -> StoreError {
     StoreError::Unavailable {
@@ -71,6 +73,26 @@ impl TransactionScope for FixtureScope<'_> {
     }
 }
 impl SessionScope for FixtureScope<'_> {
+    async fn publish_schema_support(
+        &mut self,
+        input: PublishSchemaSupportInput,
+        _: SyncTime,
+    ) -> Result<(), StoreError> {
+        self.publications.push(input);
+        Ok(())
+    }
+    fn welcome_after_commit(
+        &mut self,
+        connection: ConnectionId,
+        peer: PeerId,
+        session_id: SessionId,
+    ) {
+        self.effects.push(SessionEffect::Welcome {
+            connection,
+            peer,
+            session_id,
+        });
+    }
     fn registration(&self, connection: &ConnectionId) -> Option<ConnectionRegistration> {
         self.registrations.get(connection).copied()
     }

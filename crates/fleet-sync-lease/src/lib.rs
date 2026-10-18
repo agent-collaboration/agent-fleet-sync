@@ -2,6 +2,10 @@
 //!
 //! Consumer hosts supply admission, copy calls, time and the transaction scope.
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "generated admission write binds its immutable fields together in SQL order"
+)]
 mod checked_queries;
 mod lease_holder;
 #[cfg(test)]
@@ -16,7 +20,11 @@ mod registry_contract;
 mod registry_reads;
 mod registry_records;
 mod registry_storage;
+mod schema_support_rules;
+#[cfg(test)]
+mod turso_schema_support_tests;
 pub use registry_reads::database_ids;
+pub use schema_support_rules::{accepted_schema_support, report_schema_support};
 
 pub use fleet_sync_protocol::{
     Epoch, HolderChangeAnswer, HolderChangeRefusal, HolderChangeRequest, LeaseRefusal, LeaseState,

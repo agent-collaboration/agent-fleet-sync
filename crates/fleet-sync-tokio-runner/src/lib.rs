@@ -46,9 +46,17 @@ mod object_key;
 mod object_runner;
 #[cfg(test)]
 mod object_store_tests;
+#[cfg(feature = "test-support")]
+mod schema_finalize_probe;
 mod session_host;
+mod session_journal_scope;
 mod session_peer_call;
+#[cfg(feature = "test-support")]
+mod session_publication_inspection;
 mod session_socket;
+mod session_store;
+#[cfg(feature = "test-support")]
+pub use session_publication_inspection::SchemaPublicationSnapshot;
 mod staging_publish;
 pub use install_target::{SnapshotTarget, WriterInstallTarget};
 #[cfg(feature = "test-support")]

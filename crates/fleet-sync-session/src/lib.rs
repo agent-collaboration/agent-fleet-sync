@@ -4,9 +4,11 @@
 mod transport_port;
 pub use bytes::Bytes;
 pub use transport_port::*;
+mod schema_support_publication;
 mod session_contract;
 mod session_notices;
 mod session_rules;
+pub use schema_support_publication::*;
 pub use session_contract::*;
 pub use session_notices::*;
 pub use session_rules::*;

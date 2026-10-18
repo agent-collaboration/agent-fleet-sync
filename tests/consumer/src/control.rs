@@ -11,6 +11,7 @@ use tokio::sync::watch;
 pub type ConsumerHandle = ServiceHandle<SampleProtocol, Consumer, FixtureAuthenticator>;
 #[derive(Serialize, Deserialize)]
 pub enum ControlRequest {
+    Schema(crate::SchemaControlRequest),
     AttachSource {
         receiver: ReceiverId,
         endpoint: String,
@@ -152,6 +153,7 @@ pub enum ControlRequest {
 }
 #[derive(Serialize, Deserialize)]
 pub enum ControlAnswer {
+    Schema(crate::SchemaControlAnswer),
     Install(fleet_sync_tokio_runner::InstallRecord),
     Staged(fleet_sync_receiver::InstallPageReceipt),
     #[cfg(feature = "test-support")]
@@ -203,6 +205,7 @@ pub(crate) struct ControlState {
     pub consumer: Arc<Consumer>,
     pub authenticator: Arc<FixtureAuthenticator>,
     pub service: ConsumerHandle,
+    pub schema_drive: tokio::sync::Mutex<Option<tokio::sync::OwnedMutexGuard<()>>>,
     pub shutdown: watch::Sender<bool>,
     pub source_events:
         tokio::sync::mpsc::Sender<fleet_sync_service::AttachedSource<SampleProtocol>>,
@@ -211,6 +214,7 @@ impl ControlState {
     pub async fn dispatch(&self, request: ControlRequest) -> ControlAnswer {
         let result: crate::TestResult<ControlAnswer> = async {
             Ok(match request {
+                ControlRequest::Schema(request) => self.schema_control(request).await?,
                 ControlRequest::AttachSource {
                     receiver,
                     endpoint,

@@ -3,6 +3,8 @@ mod consumer;
 mod consumer_claim_gate;
 mod consumer_store;
 mod control;
+mod schema_control;
+pub use schema_control::{SchemaControlAnswer, SchemaControlRequest};
 mod fixture_authenticator;
 mod protocol;
 mod sample_writes;

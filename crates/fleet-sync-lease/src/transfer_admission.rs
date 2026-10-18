@@ -36,12 +36,17 @@ where
             });
         }
     } else {
+        let target_schema =
+            crate::accepted_schema_support(storage.0, crate::change_checks::target(request))
+                .await?
+                .map(|report| report.support);
         storage
             .save_admission(&TransferAdmission {
                 operation: admitted.id(),
                 request: request.clone(),
                 requested_by: requested_by.clone(),
                 admitted_at: now,
+                target_schema,
                 follow_up: None,
             })
             .await?;

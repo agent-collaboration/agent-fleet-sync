@@ -42,6 +42,9 @@ async fn cancel_unanswered_release_restores_same_epoch_after_pruning_and_writer_
     writer.command(WriterCommand::HoldReleaseAnswer).await?;
     println!("OBS cancellation capture acknowledged and pruned");
     let attempt = TransferId::new(durable_steps::Uuid::now_v7())?;
+    let _capability_change = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let change = HolderChangeRequest::Move {
         attempt,
         database,
@@ -201,6 +204,9 @@ async fn cancel_answered_release_while_copy_is_behind_prevents_fencing_and_resum
         matches!(writer.command(WriterCommand::WaitTransportCall).await?, WriterReply::TransportCall(WriterTransportObservation::SendingPiece { through, .. }) if through==position)
     );
     let attempt = TransferId::new(durable_steps::Uuid::now_v7())?;
+    let _capability_change = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let change = HolderChangeRequest::Move {
         attempt,
         database,
@@ -297,12 +303,33 @@ async fn takeover_supersedes_a_cancelling_move_with_an_unanswered_withdrawal() -
     let database = writer.database;
     writer.command(WriterCommand::Register).await?;
     writer.command(WriterCommand::WaitReady).await?;
-    writer.command(WriterCommand::HoldReleaseAnswer).await?;
     let mut control = service
         .connect("control", "Bearer consumer-control")
         .await?;
+    // Prepare registry work before holding withdrawal. Preview drives the
+    // registry engine; doing it during the hold can let an unheld retry finish
+    // cancellation before the takeover is even admitted.
+    let _capability_takeover = service
+        .peer(6, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
+    let preview = match control_request(
+        &mut control,
+        ControlRequest::PreviewTakeover {
+            database,
+            attempt: durable_steps::Uuid::now_v7(),
+        },
+    )
+    .await?
+    {
+        ControlAnswer::TakeoverPreview(preview) => preview,
+        _ => return Err("takeover preview missing".into()),
+    };
+    writer.command(WriterCommand::HoldReleaseAnswer).await?;
     let epoch = Epoch::new(1)?;
     let attempt = TransferId::new(durable_steps::Uuid::now_v7())?;
+    let _capability_change = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let change = HolderChangeRequest::Move {
         attempt,
         database,
@@ -341,18 +368,6 @@ async fn takeover_supersedes_a_cancelling_move_with_an_unanswered_withdrawal() -
         };
     assert_eq!(view.phase, HolderChangePhase::Cancelling);
     assert!(view.outcome.is_none());
-    let preview = match control_request(
-        &mut control,
-        ControlRequest::PreviewTakeover {
-            database,
-            attempt: durable_steps::Uuid::now_v7(),
-        },
-    )
-    .await?
-    {
-        ControlAnswer::TakeoverPreview(preview) => preview,
-        _ => return Err("takeover preview missing".into()),
-    };
     let takeover = HolderChangeRequest::Takeover {
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
@@ -368,12 +383,17 @@ async fn takeover_supersedes_a_cancelling_move_with_an_unanswered_withdrawal() -
             _ => return Err("takeover did not grant".into()),
         };
     assert!(granted > Epoch::new(2)?);
-    assert!(matches!(
-        control_request(&mut control, ControlRequest::WaitHolderChange(change)).await?,
-        ControlAnswer::HolderChange(HolderChangeAnswer::Refused(
-            HolderChangeRefusal::Superseded { .. }
-        ))
-    ));
+    let old_move = control_request(&mut control, ControlRequest::WaitHolderChange(change)).await?;
+    assert!(
+        matches!(
+            old_move,
+            ControlAnswer::HolderChange(HolderChangeAnswer::Refused(
+                HolderChangeRefusal::Superseded { .. }
+            ))
+        ),
+        "old move after takeover: {}",
+        serde_json::to_string(&old_move)?
+    );
     writer.command(WriterCommand::ReleaseTransportCall).await?;
     writer
         .command(WriterCommand::WaitSuperseded { current: granted })

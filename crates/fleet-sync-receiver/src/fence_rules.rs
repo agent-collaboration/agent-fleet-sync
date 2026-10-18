@@ -52,10 +52,11 @@ where
                 acked: status.acked,
             });
         }
-        if status.schema.version > request.target_schema_max {
+        let supported = request.target_schema.map(|support| support.max_version);
+        if supported.is_none_or(|maximum| status.schema.version > maximum) {
             return Ok(FenceResult::SchemaTooNew {
                 store: status.schema,
-                supported: request.target_schema_max,
+                supported,
             });
         }
         let result = FenceResult::Fenced {

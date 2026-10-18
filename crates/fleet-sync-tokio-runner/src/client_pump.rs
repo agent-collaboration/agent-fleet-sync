@@ -41,6 +41,9 @@ impl<P: ConsumerProtocol> SessionRequests<P> {
     pub fn is_closed(&self) -> bool {
         self.sender.is_closed()
     }
+    /// A readiness or connection refusal returned before dispatch is
+    /// `CallFailure::NotSent`. A local reply timeout or uncertain dispatch is
+    /// `AnswerLost`, including other failures before a send can be confirmed.
     pub async fn request(
         &self,
         body: OperationRequest<P>,
@@ -86,6 +89,10 @@ impl<P: ConsumerProtocol> SessionRequests<P> {
 /// One owner pumps the consumer's existing client. The caller handles forwarded
 /// Welcome, server requests and notices, and acknowledges notices after handling.
 /// Correlated request answers go only to their waiting caller.
+/// Transport activation sends Hello; matching Welcome is the request readiness
+/// point. Readiness and connection refusals before dispatch are NotSent;
+/// timeouts and uncertain dispatch stay AnswerLost. Server calls can be answered
+/// during attachment.
 pub struct SessionPump<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> {
     client: SessionClient<T, S, P>,
     endpoint: Endpoint,
@@ -118,14 +125,24 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionPum
         let host = PumpClock::new();
         let mut pending = BTreeMap::new();
         let mut connected = false;
-        let result = loop {
+        let result = 'pumping: loop {
             if *shutdown.borrow() {
                 break Ok(());
             }
             if !connected {
-                let connected_result = tokio::select! {
-                    result=self.client.connect(&self.endpoint, &self.credential, &host)=>result,
-                    _=shutdown.changed()=>break Ok(()),
+                let connected_result = {
+                    let connecting = self.client.connect(&self.endpoint, &self.credential, &host);
+                    tokio::pin!(connecting);
+                    loop {
+                        tokio::select! {
+                            result=&mut connecting=>break result,
+                            command=self.commands.recv()=>match command {
+                                Some(command)=>refuse_command(command),
+                                None=>break 'pumping Ok(()),
+                            },
+                            _=shutdown.changed()=>break 'pumping Ok(()),
+                        }
+                    }
                 };
                 match connected_result {
                     Ok(()) => connected = true,
@@ -155,6 +172,7 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionPum
                         let frame=FrameId::new(Uuid::now_v7()).map_err(|_|ClientError::Protocol)?;
                         match self.client.send_request(frame, body, &host).await {
                             Ok(())=>{pending.insert(frame,answer);}
+                            Err(ClientError::NotConnected)=>{let _=answer.send(Err(unavailable()));}
                             Err(_)=>{let _=answer.send(Err(CallFailure::AnswerLost));connected=false;lose_pending(&mut pending);}
                         }
                     }

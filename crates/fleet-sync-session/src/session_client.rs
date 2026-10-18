@@ -72,7 +72,13 @@ pub enum ClientEvent<P: ConsumerProtocol = NoConsumer> {
 }
 
 /// Runtime-free owner of one current connection. Call `connect` on the host's
-/// wake, then pump `receive`; the client never starts a background task. A lost
+/// wake to activate the transport and send Hello, then pump `receive`. Only the
+/// matching Welcome makes operation requests ready; `send_request` returns
+/// `ClientError::NotConnected` before then without sending or tracking a frame.
+/// The receive/answer path remains available for server calls during attachment.
+/// A pump can report that readiness refusal as NotSent; timeouts and uncertain
+/// dispatch still require reconciliation under the operation's original identity.
+/// The client never starts a background task. A lost
 /// connection emits Unknown for every pending frame. Its operation owners, not
 /// this correlation layer, choose which operation identities to resend.
 pub struct SessionClient<
@@ -89,6 +95,7 @@ pub struct SessionClient<
     retry_at: Option<SyncTime>,
     ended: bool,
     connection: Option<T::Connection>,
+    welcomed: bool,
     pending: BTreeSet<FrameId>,
     events: VecDeque<ClientEvent<P>>,
     notice_seen: NoticePosition,
@@ -126,6 +133,7 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
             retry_at: None,
             ended: false,
             connection: None,
+            welcomed: false,
             pending: BTreeSet::new(),
             events: VecDeque::new(),
             notice_seen,
@@ -140,6 +148,8 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         self.retry_at
     }
 
+    /// Activate the transport and send Hello. Keep pumping `receive` until the
+    /// matching Welcome signals readiness; this method does not await Welcome.
     pub async fn connect<H: Clock + WakeScheduler>(
         &mut self,
         endpoint: &Endpoint,
@@ -177,6 +187,7 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
             return Err(error.into());
         }
         self.connection = Some(connection);
+        self.welcomed = false;
         // Welcome is received through the same pump as every other server frame.
         Ok(())
     }
@@ -187,6 +198,9 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         body: OperationRequest<P>,
         host: &H,
     ) -> Result<(), ClientError> {
+        if !self.welcomed {
+            return Err(ClientError::NotConnected);
+        }
         if self.pending.contains(&frame) {
             return Err(ClientError::FrameInFlight);
         }
@@ -253,6 +267,7 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
                     }
                     self.attempt = 0;
                     self.retry_at = None;
+                    self.welcomed = true;
                     return Ok(ClientEvent::Welcome { databases });
                 }
                 ServerFrame::Answer { frame, body } => {
@@ -310,6 +325,7 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
             connection.close(CloseReason::ClientClosed).await;
         }
         self.report_unknown();
+        self.welcomed = false;
         self.state = updated;
         self.notice_seen = NoticePosition::default();
         self.ended = false;
@@ -350,6 +366,7 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
             connection.close(CloseReason::ClientClosed).await;
         }
         self.report_unknown();
+        self.welcomed = false;
         self.ended = matches!(
             reason,
             Some(CloseReason::SessionEnded | CloseReason::CredentialRejected(AuthRefusal::Revoked))

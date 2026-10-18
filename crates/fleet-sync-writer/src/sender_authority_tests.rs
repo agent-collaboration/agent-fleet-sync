@@ -213,7 +213,7 @@ async fn replayed_renewal_can_close_gate_before_authoritative_probe_records_the_
                     epoch: Epoch::new(1)?,
                     acked: status.acked,
                 },
-                target_schema_max: 2,
+                target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 2 }),
                 holder: PeerId::new(Uuid::from_u128(0x019eef0000007000800000000000002b))?,
             },
         )

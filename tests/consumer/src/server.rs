@@ -94,7 +94,6 @@ pub async fn run_server_with_policy(
                 renew_interval: Duration::from_secs(30).min(lease_duration / 3),
             },
             authoritative_receiver: receiver,
-            target_schema_max: 100,
             release_unsent_for: Duration::from_secs(5),
             move_needs_renewal_within: Some(move_renewal_within),
         },
@@ -136,6 +135,7 @@ pub async fn run_server_with_policy(
         consumer,
         authenticator,
         service: service.handle(),
+        schema_drive: Default::default(),
         shutdown: shutdown.clone(),
         source_events,
     });

@@ -15,7 +15,7 @@ pub struct FenceRequest {
     pub transfer_id: TransferId,
     pub new_epoch: Epoch,
     pub expect: FenceExpectation,
-    pub target_schema_max: u64,
+    pub target_schema: Option<SchemaSupport>,
     pub holder: PeerId,
 }
 
@@ -41,7 +41,7 @@ pub enum FenceResult {
     },
     SchemaTooNew {
         store: SchemaIdentity,
-        supported: u64,
+        supported: Option<u64>,
     },
     NotInitialized,
     Retired,

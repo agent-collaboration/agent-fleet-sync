@@ -287,7 +287,7 @@ where
                 transfer_id: change_checks::attempt(request),
                 new_epoch,
                 expect: expect.clone(),
-                target_schema_max: config.target_schema_max,
+                target_schema: intent.target_schema,
                 holder: change_checks::target(request),
             },
         )
@@ -317,7 +317,7 @@ where
                     transfer_id: change_checks::attempt(request),
                     new_epoch,
                     expect: expect.clone(),
-                    target_schema_max: config.target_schema_max,
+                    target_schema: intent.target_schema,
                     holder: change_checks::target(request),
                 },
             )
@@ -340,7 +340,7 @@ where
         FenceResult::PreviewStale { .. } => Some(HolderChangeRefusal::PreviewStale),
         FenceResult::SchemaTooNew { store, supported } => Some(HolderChangeRefusal::SchemaTooNew {
             store: store.clone(),
-            supported: Some(*supported),
+            supported: *supported,
         }),
         FenceResult::NotInitialized => Some(HolderChangeRefusal::Unavailable),
         FenceResult::Retired => Some(HolderChangeRefusal::Retired),

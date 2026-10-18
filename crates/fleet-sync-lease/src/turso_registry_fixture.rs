@@ -277,7 +277,6 @@ pub(super) fn config() -> TestResult<RegistryConfig> {
         authoritative_receiver: ReceiverId::new(Uuid::from_u128(
             0x019eef00000070008000000000000065,
         ))?,
-        target_schema_max: 10,
         release_unsent_for: Duration::from_millis(100),
         move_needs_renewal_within: None,
     })
@@ -316,7 +315,9 @@ pub(super) async fn open_store(
                         "\n",
                         include_str!("../migrations/0002_holder_workflow.sql"),
                         "\n",
-                        include_str!("../migrations/0003_cleanup_failure.sql")
+                        include_str!("../migrations/0003_cleanup_failure.sql"),
+                        "\n",
+                        include_str!("../migrations/0004_schema_support.sql")
                     ))
                     .execute(scope.executor())
                     .await?;
@@ -324,6 +325,26 @@ pub(super) async fn open_store(
                 })
             })
             .await?;
+        for identity in 1..=10 {
+            let report = ReportSchemaSupport {
+                peer: peer(identity)?,
+                session_id: SessionId::new(Uuid::from_u128(
+                    0x019eef00000070008000000000000100 | identity,
+                ))?,
+                attach_seq: AttachSequence::new(1)?,
+                support: SchemaSupport { max_version: 10 },
+            };
+            store
+                .transaction(move |scope| {
+                    Box::pin(async move {
+                        report_schema_support(scope, &report)
+                            .await
+                            .map_err(storage)?;
+                        Ok(())
+                    })
+                })
+                .await?;
+        }
     }
     Ok(store)
 }

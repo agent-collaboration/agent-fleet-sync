@@ -110,6 +110,8 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             shutdown: watch::channel(false).0,
             #[cfg(feature = "test-support")]
             install_page_probe: Default::default(),
+            #[cfg(feature = "test-support")]
+            schema_support_probe: Default::default(),
             copies: Mutex::new(BTreeMap::new()),
             copy_added: Notify::new(),
             delivery: Mutex::new(BTreeMap::new()),
@@ -215,6 +217,14 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             .into_future();
         tokio::pin!(server);
         let mut tasks = JoinSet::new();
+        let session_runner = self.sessions.clone();
+        let session_stop = stopped.clone();
+        tasks.spawn(async move {
+            session_runner
+                .run(session_stop)
+                .await
+                .map_err(ServiceError::rule)
+        });
         let registry_runner = TokioRunner::new(
             self.state.registry_engine.clone(),
             self.state.registry.host(),

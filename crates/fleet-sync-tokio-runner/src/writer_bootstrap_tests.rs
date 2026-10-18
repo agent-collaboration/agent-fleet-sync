@@ -200,7 +200,7 @@ async fn real_snapshot_bootstraps_without_replaying_dml_and_later_migration_foll
             epoch: install.position.epoch,
             acked: install.position,
         },
-        target_schema_max: 3,
+        target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 3 }),
         holder: grant.lease.holder,
     };
     assert!(matches!(

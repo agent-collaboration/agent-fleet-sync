@@ -27,6 +27,9 @@ async fn idle_writer_answers_release_and_clean_move_keeps_every_accepted_row() -
     let mut control = service
         .connect("control", "Bearer consumer-control")
         .await?;
+    let _capability_request = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let request = HolderChangeRequest::Move {
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,

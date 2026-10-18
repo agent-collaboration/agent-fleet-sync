@@ -120,6 +120,7 @@ where
                         crate::registry_records::TransferIntent {
                             request: admission.request,
                             new_epoch: None,
+                            target_schema: admission.target_schema,
                         },
                         admission.admitted_at,
                     )

@@ -188,6 +188,9 @@ pub async fn control_request(
             | ControlRequest::WaitSourceUnattached { .. }
             | ControlRequest::WaitHolderChange(_)
             | ControlRequest::WaitClaimSettlement { .. }
+            | ControlRequest::Schema(
+                fleet_sync_test_consumer::SchemaControlRequest::WaitPublication(_)
+            )
     ) {
         Duration::from_secs(65)
     } else if matches!(request, ControlRequest::WaitAttempts { .. }) {
@@ -204,6 +207,20 @@ pub async fn control_request(
         return Err(message.into());
     }
     Ok(answer)
+}
+
+#[allow(
+    dead_code,
+    reason = "shared only by the schema publication and admission journeys"
+)]
+pub async fn schema_request(
+    socket: &mut WebSocketConnection,
+    request: fleet_sync_test_consumer::SchemaControlRequest,
+) -> TestResult<fleet_sync_test_consumer::SchemaControlAnswer> {
+    match control_request(socket, ControlRequest::Schema(request)).await? {
+        ControlAnswer::Schema(answer) => Ok(answer),
+        _ => Err("schema control answer missing".into()),
+    }
 }
 pub async fn effects(
     socket: &mut WebSocketConnection,

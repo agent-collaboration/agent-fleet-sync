@@ -65,7 +65,7 @@ async fn fence_copy(fixture: &SenderFixture, copy: ReceiverId) -> TestResult<Rep
                 epoch: Epoch::new(1)?,
                 acked: status.acked,
             },
-            target_schema_max: 2,
+            target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 2 }),
             holder: PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000008))?,
         },
     )

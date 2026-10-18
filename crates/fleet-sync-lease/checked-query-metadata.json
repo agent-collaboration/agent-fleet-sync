@@ -49,10 +49,11 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "a4c5b7b554afa0c8ee0e097182a5f08e233c9287ef61e55a12e667f17f3c01b5",
+    "checked-queries.json": "6466db252621c60d61a26a9c3cb80f4b85be3039905277671b1b999c5a2b6ee6",
     "migrations/0001_registry_rules.sql": "829a07950e82c7da2cf607c8b33d8e0c9289657677c7e871601a0ff180b9bc03",
     "migrations/0002_holder_workflow.sql": "c8e78248390133b284dba3cab7e55213ffdb2159f2e5b5f8762027cda866638c",
     "migrations/0003_cleanup_failure.sql": "8d3ed5a29f57e9dfd651e0a55fb1aeab485eb0aed13f89c410b67d771671543e",
+    "migrations/0004_schema_support.sql": "090cab7906d98b119a8ea39f289f09542b66d8094282d932a7ba126723bab29d",
     "sql/active_lifecycle.sql": "64bc3b0185802ec8bbea6de02e9c919033177065c9bf7858eaac9e53db149ced",
     "sql/active_transfer.sql": "711e0495b2393baee1bf9fc39d5f317cff66818abb443c968937c5dfc6fed44b",
     "sql/read_database.sql": "a4bbb901cb140530037a78b7523f4809e40cb4b1c191f12044bbd449dfb94573",
@@ -63,8 +64,9 @@
     "sql/read_lifecycle.sql": "e2b8fd8ab65e8b824f84d0af28659249c4d53d52f07b50635245bdaec32d690d",
     "sql/read_preview.sql": "03783b07995797fdc8c3cce98c5aba00bd174e16f572b43f9bbd6c7641b162ab",
     "sql/read_renewal.sql": "b642f0498c8a5da61fa27928c70c88bc43aa716ceb4562a24b7270cd79571dcc",
+    "sql/read_schema_support.sql": "78320ce76cd00a9a392d8fa41718b797f3ba750da4a5472d1083887332683ce2",
     "sql/read_transfer.sql": "4aa2feb88a6e1312bec57cc68f72fb47a56445d6fdfe16215bf6bcd1c184120a",
-    "sql/read_transfer_admission.sql": "3bb12fde9cbf3689f326e4a9f3b89b6df1fc2c48ad97207a84d0803cc647fd5d",
+    "sql/read_transfer_admission.sql": "e13a01d5f890007269f7cf6ae87c1aaa400b156d9e473b7d536e6675e0c1810f",
     "sql/read_transfer_cancel.sql": "556023f2ca49edd322eeb595d45ccdef3a8f5ed8d28df5e9afd340960a050f6a",
     "sql/repair_transfer_epoch.sql": "ed1c291c5575c97d9aa5494a98d8476a7d5df0e2f4de0e06917ee881b0f40257",
     "sql/write_cleanup_failure.sql": "2ef6902d104efd81b649f0ba5115ac007a202bf9ed30199bde62538a1adf213e",
@@ -75,10 +77,11 @@
     "sql/write_lifecycle.sql": "605edb5321dc5f6aea118bb1ffb025419258e83aac3cafcafeecbdb0f1751121",
     "sql/write_preview.sql": "3394d8da7cef6adb1f85433dfd713e70a7e41a2132b8eeeb98815744b251f28a",
     "sql/write_renewal.sql": "c24b06a98fc0e0d1542af9d711fad9a1e9be335d85a0853114383947b4d69e4e",
+    "sql/write_schema_support.sql": "34a722434ed22e91f4849e9e2ab7101579b47d0eb1a4e9d2a4e44384717f3735",
     "sql/write_transfer.sql": "4ed30617f4e77451d8eac4eea3880bd8b253be03bb1c10fa6a8048e85a9305c1",
-    "sql/write_transfer_admission.sql": "701ad11ddc02c312ddfaa291080caf10f0e4e68f32a2c9f7e3c3aae44ed5a110",
+    "sql/write_transfer_admission.sql": "26539f752f6fb4227902e809e5468d53ded1e0763bd91cb24df5fffb0b1019b4",
     "sql/write_transfer_cancel.sql": "e87289aae5156cf989da4748122eebec5e417d67c9d641e1e994ca75f6860975",
-    "src/checked_queries.rs": "9106aa221b108bdf336ce841392b4acfa0f2af989f12e6be0396ca91826cdc64"
+    "src/checked_queries.rs": "81b213cf259f029bf397a64d07dfe19706dcd28b3673f891d457836764aaac9f"
   },
   "queries": [
     {
@@ -386,6 +389,13 @@
           "type_source": "driver"
         },
         {
+          "name": "target_schema",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
           "name": "follow_up",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
@@ -396,7 +406,7 @@
     },
     {
       "name": "write_transfer_admission",
-      "bind_slots": 6,
+      "bind_slots": 7,
       "columns": []
     },
     {
@@ -419,6 +429,31 @@
     },
     {
       "name": "write_cleanup_failure",
+      "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "read_schema_support",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "peer",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "record",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_schema_support",
       "bind_slots": 2,
       "columns": []
     }

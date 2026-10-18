@@ -157,3 +157,56 @@ where
             .collect()
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct StoredAttachSequenceRow {
+    pub sequence: Option<String>,
+}
+pub(crate) fn read_attach_sequence<S>(
+    scope: &mut S,
+    peer: String,
+) -> impl std::future::Future<Output = Result<Option<StoredAttachSequenceRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_attach_sequence.sql"
+        )))
+        .bind(peer);
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(StoredAttachSequenceRow {
+                    sequence: row.try_get("sequence")?,
+                })
+            })
+            .transpose()
+    }
+}
+pub(crate) fn write_attach_sequence<S>(
+    scope: &mut S,
+    peer: String,
+    sequence: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_attach_sequence.sql"
+        )))
+        .bind(peer)
+        .bind(sequence);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}

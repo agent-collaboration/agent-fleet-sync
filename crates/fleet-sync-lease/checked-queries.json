@@ -404,6 +404,11 @@
           "nullable": false
         },
         {
+          "name": "target_schema",
+          "kind": "text",
+          "nullable": false
+        },
+        {
           "name": "follow_up",
           "kind": "text",
           "nullable": true
@@ -454,6 +459,37 @@
         },
         {
           "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_schema_support",
+      "sql": "sql/read_schema_support.sql",
+      "row": "StoredSchemaSupportRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "peer",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_schema_support",
+      "sql": "sql/write_schema_support.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "peer",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
           "kind": "text",
           "nullable": false
         }

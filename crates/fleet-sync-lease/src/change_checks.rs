@@ -343,6 +343,7 @@ where
                 let intent = TransferIntent {
                     request: offered,
                     new_epoch: Some(next),
+                    target_schema: admission.target_schema,
                 };
                 let mut transfer = TransferRecord::requested(intent.clone(), admission.admitted_at);
                 if matches!(intent.request, HolderChangeRequest::Move { .. }) {
@@ -390,6 +391,7 @@ where
         TransferIntent {
             request,
             new_epoch: None,
+            target_schema: admission.target_schema,
         },
         admission.admitted_at,
     );

@@ -1,11 +1,12 @@
-use crate::TokioObject;
-use durable_steps::{
-    AtomicStore, Host, StoreError, Uuid, storage::TransactionScope, turso_store::TursoScope,
+use crate::{
+    TokioObject,
+    session_store::{SessionEngine, SessionStore, SessionTransaction},
 };
+use durable_steps::{AtomicStore, Host, StoreError, Uuid, storage::TransactionScope};
 use fleet_sync_protocol::*;
 use fleet_sync_session::*;
 use sqlx_core::migrate::Migrator;
-use sqlx_turso::{Turso, TursoConnection};
+use sqlx_turso::Turso;
 use std::{collections::BTreeMap, future::Future, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, mpsc, oneshot, watch};
 
@@ -60,11 +61,13 @@ pub struct SessionHost<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHand
     pub(crate) object: Arc<TokioObject<H>>,
     pub(crate) authenticator: Arc<A>,
     pub(crate) handler: Arc<D>,
-    pub(crate) runtime: Mutex<SessionRuntime<P>>,
+    pub(crate) runtime: Arc<Mutex<SessionRuntime<P>>>,
+    pub(crate) store: Arc<SessionStore<P, A, D, H>>,
+    pub(crate) engine: Arc<SessionEngine<P, A, D, H>>,
     pub(crate) send_timeout: Duration,
     pub(crate) admission_owner: Arc<()>,
     #[cfg(feature = "test-support")]
-    registration_changes: watch::Sender<()>,
+    pub(crate) registration_changes: watch::Sender<()>,
 }
 pub(crate) struct SocketPeer {
     pub binding: ConnectionBinding,
@@ -87,32 +90,6 @@ pub(crate) enum SessionInput {
     Frame(Bytes),
     Closed(CloseCause),
     Revoke,
-}
-struct SessionTransaction<'scope, 'transaction, H: Host> {
-    inner: &'scope mut TursoScope<'transaction, H>,
-    registrations: BTreeMap<ConnectionId, ConnectionRegistration>,
-}
-impl<H: Host> TransactionScope for SessionTransaction<'_, '_, H> {
-    type Database = Turso;
-    type Executor<'query>
-        = &'query mut TursoConnection
-    where
-        Self: 'query;
-    fn executor(&mut self) -> Self::Executor<'_> {
-        self.inner.executor()
-    }
-}
-impl<H: Host> SessionScope for SessionTransaction<'_, '_, H> {
-    fn registration(&self, connection: &ConnectionId) -> Option<ConnectionRegistration> {
-        self.registrations.get(connection).copied()
-    }
-    fn set_registration(
-        &mut self,
-        connection: &ConnectionId,
-        registration: ConnectionRegistration,
-    ) {
-        self.registrations.insert(*connection, registration);
-    }
 }
 
 impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
@@ -160,16 +137,28 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
                 })
             })
             .await?;
+        let runtime = Arc::new(Mutex::new(SessionRuntime {
+            registrations: BTreeMap::new(),
+            sockets: BTreeMap::new(),
+            revocations: Arc::new(BTreeMap::new()),
+            pending: BTreeMap::new(),
+        }));
+        let store = Arc::new(SessionStore {
+            object: object.clone(),
+            runtime: runtime.clone(),
+            owner: Default::default(),
+            #[cfg(feature = "test-support")]
+            finalize_probe: Default::default(),
+        });
+        let mut engine = durable_steps::Engine::new(store.clone(), object.host());
+        engine.register(PublishSchemaSupport::<SessionStore<P, A, D, H>, Turso>::default())?;
         Ok(Self {
             object,
             authenticator,
             handler,
-            runtime: Mutex::new(SessionRuntime {
-                registrations: BTreeMap::new(),
-                sockets: BTreeMap::new(),
-                revocations: Arc::new(BTreeMap::new()),
-                pending: BTreeMap::new(),
-            }),
+            runtime,
+            store,
+            engine: Arc::new(engine),
             send_timeout,
             admission_owner: Arc::new(()),
             #[cfg(feature = "test-support")]
@@ -238,8 +227,9 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
             .filter_map(|(id, socket)| (socket.binding.peer == binding.peer).then_some(*id))
             .collect::<Vec<_>>();
         let now = self.object.host().now();
+        let host = self.object.host();
         let result=self.object.transaction(move |inner| Box::pin(async move {
-            let mut scope=SessionTransaction {inner,registrations};
+            let mut scope=SessionTransaction::<P,A,D,H>::new(inner.executor(), host.as_ref(), registrations);
             let mut effects=match input {
                 SessionInput::Revoke=>end_sessions::<_,P>(&mut scope,&binding.peer,EndReason::PeerRevoked,now).await,
                 SessionInput::Opened|SessionInput::Frame(_) if revoked=>{
@@ -258,9 +248,10 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
                     }
                 }
             }
-            Ok((scope.registrations,effects))
+            effects.extend(scope.effects);
+            Ok((scope.registrations,effects,scope.wake_at))
         })).await;
-        let (registrations, effects) = match result {
+        let (registrations, effects, wake_at) = match result {
             Ok(value) => value,
             Err(error) => {
                 if revoke {
@@ -284,6 +275,14 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
         runtime.registrations = registrations;
         #[cfg(feature = "test-support")]
         self.registration_changes.send_replace(());
+        drop(runtime);
+        if let Some(at) = wake_at {
+            self.object
+                .host()
+                .wake_at(at)
+                .await
+                .map_err(SessionHostError::rule)?;
+        }
         Ok(effects)
     }
 

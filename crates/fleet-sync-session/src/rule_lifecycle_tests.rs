@@ -333,6 +333,8 @@ async fn rollback_discards_session_notices_and_staged_registrations_before_effec
         transaction: pool.begin().await.unwrap(),
         pool,
         registrations: published_registrations,
+        publications: Vec::new(),
+        effects: Vec::new(),
     };
     assert!(
         crate::session_storage::load_session(&mut reopened, &key)

@@ -30,6 +30,42 @@ fn decode_session(row: checked::StoredSessionRow) -> Result<SessionRecord, Store
     }
     Ok(record)
 }
+pub(crate) async fn next_attach_sequence<S>(
+    scope: &mut S,
+    peer: PeerId,
+) -> Result<AttachSequence, SessionError>
+where
+    S: SessionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
+    for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database>,
+    for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
+{
+    let previous = match checked::read_attach_sequence(scope, peer.to_string())
+        .await
+        .map_err(store_error)?
+    {
+        None => 0,
+        Some(row) => {
+            let text = required(row.sequence, "attach sequence")?;
+            let value = text
+                .parse::<u64>()
+                .map_err(|_| corrupt("attach sequence"))?;
+            if value.to_string() != text || AttachSequence::new(value).is_err() {
+                return Err(corrupt("attach sequence").into());
+            }
+            value
+        }
+    };
+    let next = previous
+        .checked_add(1)
+        .and_then(|value| AttachSequence::new(value).ok())
+        .ok_or(SessionError::AttachSequenceExhausted)?;
+    checked::write_attach_sequence(scope, peer.to_string(), next.value().to_string())
+        .await
+        .map_err(store_error)?;
+    Ok(next)
+}
 pub(crate) async fn load_session<S>(
     scope: &mut S,
     key: &SessionKey,

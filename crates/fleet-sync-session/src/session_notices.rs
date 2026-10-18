@@ -35,14 +35,19 @@ where
     record.notice_head = position;
     save_session(scope, &record).await?;
     Ok(match record.state {
-        SessionState::Active { connection } => vec![SessionEffect::Send {
-            connection,
-            frame: ServerFrame::Notice {
-                position,
-                body: notice.body,
-            },
-        }],
-        SessionState::Detached { .. } | SessionState::Ended { .. } => Vec::new(),
+        SessionState::Active { connection } if matches!(scope.registration(&connection), Some(ConnectionRegistration::Attached { session_id, .. }) if session_id == key.session_id) =>
+        {
+            vec![SessionEffect::Send {
+                connection,
+                frame: ServerFrame::Notice {
+                    position,
+                    body: notice.body,
+                },
+            }]
+        }
+        SessionState::Active { .. }
+        | SessionState::Detached { .. }
+        | SessionState::Ended { .. } => Vec::new(),
     })
 }
 

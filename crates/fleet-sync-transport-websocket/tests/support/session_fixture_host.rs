@@ -94,8 +94,10 @@ impl FixtureHost {
             transaction: &mut transaction,
             state,
             registrations,
+            publications: Vec::new(),
+            effects: Vec::new(),
         };
-        let effects: Vec<SessionEffect<FixtureProtocol>> = match input {
+        let mut effects: Vec<SessionEffect<FixtureProtocol>> = match input {
             RuleInput::Opened if scope.state.revoked => vec![
                 SessionEffect::Send {
                     connection: binding.connection,
@@ -135,6 +137,12 @@ impl FixtureHost {
                 effects
             }
         };
+        // This transport-only fixture stands in for registry acknowledgement.
+        // The native SessionHost journeys prove the real publication barrier.
+        for input in std::mem::take(&mut scope.publications) {
+            complete_schema_publication(&mut scope, &input, now).await?;
+        }
+        effects.append(&mut scope.effects);
         let mut expanded = Vec::new();
         for effect in effects {
             match effect {

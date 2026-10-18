@@ -64,6 +64,7 @@ pub(crate) struct RenewalAttempt {
 pub(crate) struct TransferIntent {
     pub request: HolderChangeRequest,
     pub new_epoch: Option<Epoch>,
+    pub target_schema: Option<SchemaSupport>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TransferRecord {
@@ -87,6 +88,7 @@ pub(crate) struct TransferAdmission {
     pub request: HolderChangeRequest,
     pub requested_by: ActorRef,
     pub admitted_at: SyncTime,
+    pub target_schema: Option<SchemaSupport>,
     pub follow_up: Option<durable_steps::OperationId>,
 }
 

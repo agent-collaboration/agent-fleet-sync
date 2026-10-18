@@ -17,7 +17,7 @@ fn request(id: u128, epoch: u64, expected: u64, holder: PeerId) -> TestResult<Fe
             epoch: Epoch::new(expected)?,
             acked: position(0)?,
         },
-        target_schema_max: 1,
+        target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 1 }),
         holder,
     })
 }
@@ -41,13 +41,13 @@ async fn fence_checks_forward_motion_exact_preview_and_schema_before_mutation() 
         },
     ));
     let mut changed = request(503, 2, 1, target)?;
-    changed.target_schema_max = 0;
+    changed.target_schema = Some(fleet_sync_protocol::SchemaSupport { max_version: 0 });
     let status = ready_status(copy_status(&mut TursoScope(&mut connection)).await?)?;
     cases.push((
         changed,
         FenceResult::SchemaTooNew {
             store: status.schema.clone(),
-            supported: 0,
+            supported: Some(0),
         },
     ));
     for (request, expected) in cases {

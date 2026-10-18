@@ -55,7 +55,9 @@ async fn setup() -> TestResult<TursoConnection> {
         "\n",
         include_str!("../migrations/0002_holder_workflow.sql"),
         "\n",
-        include_str!("../migrations/0003_cleanup_failure.sql")
+        include_str!("../migrations/0003_cleanup_failure.sql"),
+        "\n",
+        include_str!("../migrations/0004_schema_support.sql")
     ))
     .execute(&mut *transaction)
     .await?;
@@ -249,6 +251,7 @@ async fn open_transfer_does_not_stop_renewal_and_retired_marker_precedes_saved_a
             request: offered.clone(),
             requested_by: ActorRef::new("renewal-fixture")?,
             admitted_at: now(200),
+            target_schema: None,
             follow_up: None,
         })
         .await?;
@@ -257,6 +260,7 @@ async fn open_transfer_does_not_stop_renewal_and_retired_marker_precedes_saved_a
             TransferIntent {
                 request: offered,
                 new_epoch: Some(Epoch::new(2)?),
+                target_schema: None,
             },
             now(200),
         ))

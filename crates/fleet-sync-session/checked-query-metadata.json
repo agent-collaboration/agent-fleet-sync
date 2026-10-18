@@ -49,14 +49,17 @@
     "../sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "../sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "../sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "checked-queries.json": "63150861486fe94f3a4842b9e15d319f01a9201ccaee4f565c3af375b092884c",
+    "checked-queries.json": "66120d18903a03f3c46a29bd6d2df53024f690371ea0e0d58a60e5fab59dd3ac",
     "migrations/202610160001_sessions.sql": "38e23c99919f90090a58c4bb014e6b61a18e258de229f1811170417939434098",
+    "migrations/202610180001_attach_sequence.sql": "d148ad2bf049f8967fc64bb0857dec33d3e17fdc3846c0a983ace549b8902793",
     "sql/load_session.sql": "3976945246644abe63295b1afc2d4df9f1d00c6e9a16ced9234c01beebffb127",
     "sql/notices_after.sql": "2c87f19171767130f09f90cefa18f8506a29ea3f8770442dca691bac8b704b32",
+    "sql/read_attach_sequence.sql": "8361a634d4bb9b5ff7d1925f2d9808e864f2292e4c66ab45eadc6ca2cd630020",
     "sql/save_notice.sql": "c260896db1543927f71d0f9fe662a40acaf06a1b3e9e550f587a246294edd9e0",
     "sql/save_session.sql": "193290a1ea39afc86c8e66035efe513567977a5939eb86dc1ef26b7cbecdfdac",
     "sql/sessions_for_peer.sql": "9118d5207d643f8ed3fcc717f476daba7e9084833791d80f190506b4aaf5443d",
-    "src/checked_session_queries.rs": "382002dee033fe6509492b0d773a6fb1dd3ce41f58c1bcd6438f458db92f9320"
+    "sql/write_attach_sequence.sql": "b49c137758976ee97ef3380607e5149ca9ca15a2df694c1ce7c75dceb1fb8bfe",
+    "src/checked_session_queries.rs": "e3d10874216b6845bb3ea4fa95978a2945c197017516c4c1ce653b84acf0c04c"
   },
   "queries": [
     {
@@ -142,6 +145,24 @@
           "type_source": "driver"
         }
       ]
+    },
+    {
+      "name": "read_attach_sequence",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "sequence",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "write_attach_sequence",
+      "bind_slots": 2,
+      "columns": []
     }
   ]
 }

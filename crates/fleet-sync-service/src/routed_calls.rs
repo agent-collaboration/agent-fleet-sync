@@ -32,6 +32,24 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             return self.delivery_publication(target, request, call).await;
         }
         match kind {
+            fleet_sync_session::SchemaSupportRegistry::KIND => {
+                let _: fleet_sync_session::SchemaSupportRegistry = decode(target)?;
+                let request: ReportSchemaSupport = decode(request)?;
+                #[cfg(feature = "test-support")]
+                self.schema_support_probe.before_report(&request).await;
+                encode(
+                    self.registry
+                        .transaction(move |scope| {
+                            Box::pin(async move {
+                                report_schema_support(scope, &request)
+                                    .await
+                                    .map_err(StoreError::backend)
+                            })
+                        })
+                        .await
+                        .map_err(lost)?,
+                )
+            }
             fleet_sync_tokio_runner::InstallSource::KIND => {
                 encode(self.install_source(decode(target)?).await?)
             }
