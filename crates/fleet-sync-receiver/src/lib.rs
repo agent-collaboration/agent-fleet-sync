@@ -75,6 +75,11 @@ mod turso_uuid_key_tests;
 mod turso_rule_tests;
 
 #[cfg(test)]
+mod turso_copy_rollback_fixture;
+#[cfg(test)]
+mod turso_copy_rollback_tests;
+
+#[cfg(test)]
 mod turso_seed_authority_tests;
 #[cfg(test)]
 mod turso_seed_tests;

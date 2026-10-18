@@ -1,13 +1,12 @@
 use crate::{ServiceConsumer, ServiceError, ServiceObject, service_state::ServiceState};
 use durable_steps::{AtomicStore, StoreError};
 use fleet_sync_protocol::*;
-use fleet_sync_receiver::{ApplyDecision, ApplyFailure, ReceiverError, admit_follow_ups};
+use fleet_sync_receiver::{ApplyDecision, CopyTransactionFailure, ReceiverError, admit_follow_ups};
 use fleet_sync_session::PeerAuthenticator;
 use runtime_primitives::Clock;
 
 enum CopyRuleError {
     Storage(StoreError),
-    Apply(ApplyFailure),
     Receiver(ReceiverError),
 }
 impl From<StoreError> for CopyRuleError {
@@ -73,8 +72,9 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                                 now,
                             )
                             .await
-                            .map_err(CopyRuleError::Apply)?
-                            {
+                            .map_err(|error| {
+                                CopyRuleError::Storage(fleet_sync_receiver::apply_rollback(error))
+                            })? {
                                 ApplyDecision::Applied {
                                     through,
                                     follow_ups,
@@ -181,19 +181,10 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 })
             })
             .await;
-        // Typed callback errors arrive here only after rule_transaction rolled
-        // back successfully. Its storage errors carry no such certainty.
+        // Callback errors arrive only after successful rollback. A failed
+        // storage boundary replaces them with Backend, losing refusal certainty.
         let answer = match result {
             Ok(answer) => answer,
-            Err(CopyRuleError::Apply(
-                error @ (ApplyFailure::Storage(_)
-                | ApplyFailure::Refused(
-                    PieceRefusal::NotInitialized | PieceRefusal::CopyFull,
-                )),
-            )) => fleet_sync_receiver::classify_copy_store_error(
-                fleet_sync_receiver::apply_rollback(error),
-            )
-            .answer(),
             Err(CopyRuleError::Receiver(error))
                 if fleet_sync_receiver::unavailable_receiver(&error).is_some() =>
             {
@@ -201,28 +192,6 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                     fleet_sync_receiver::receiver_rollback(error),
                 )
                 .answer()
-            }
-            Err(CopyRuleError::Apply(ApplyFailure::Refused(reason))) => {
-                ReplicationAnswer::Refused(reason)
-            }
-            Err(CopyRuleError::Apply(ApplyFailure::RefusedDiscardingParts {
-                refusal,
-                transaction,
-            })) => {
-                if let Err(error) = copy
-                    .object
-                    .transaction(move |scope| {
-                        Box::pin(async move {
-                            fleet_sync_receiver::discard_staged_parts(scope, &transaction)
-                                .await
-                                .map_err(StoreError::backend)
-                        })
-                    })
-                    .await
-                {
-                    return Ok(fleet_sync_receiver::classify_copy_store_error(error).answer());
-                }
-                ReplicationAnswer::Refused(refusal)
             }
             Err(CopyRuleError::Receiver(ReceiverError::SeedRefused { answer })) => {
                 ReplicationAnswer::SeedComplete(answer)
@@ -239,11 +208,32 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             Err(CopyRuleError::Receiver(ReceiverError::SchemaUnsupported { form })) => {
                 ReplicationAnswer::Refused(PieceRefusal::SchemaUnsupported { form })
             }
-            Err(CopyRuleError::Storage(error)) => ReplicationAnswer::OutcomeUnknown {
-                reason: OutcomeUnknownReason::StoreBoundary {
-                    detail: DiagnosticText::from_error(error),
-                },
-            },
+            Err(CopyRuleError::Storage(error)) => {
+                match fleet_sync_receiver::classify_copy_store_error(error) {
+                    CopyTransactionFailure::RefusedDiscardingParts {
+                        refusal,
+                        transaction,
+                    } => {
+                        if let Err(error) = copy
+                            .object
+                            .transaction(move |scope| {
+                                Box::pin(async move {
+                                    fleet_sync_receiver::discard_staged_parts(scope, &transaction)
+                                        .await
+                                        .map_err(StoreError::backend)
+                                })
+                            })
+                            .await
+                        {
+                            return Ok(
+                                fleet_sync_receiver::classify_copy_store_error(error).answer()
+                            );
+                        }
+                        ReplicationAnswer::Refused(refusal)
+                    }
+                    failure => failure.answer(),
+                }
+            }
             Err(CopyRuleError::Receiver(error)) => {
                 fleet_sync_receiver::classify_copy_store_error(StoreError::backend(error)).answer()
             }
