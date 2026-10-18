@@ -42,7 +42,7 @@ Every host implements `SessionScope::publish_schema_support(input, now)` by admi
 
 `SessionClient::connect` activates the transport and sends Hello. Keep pumping receive and server answers during attachment; only the matching Welcome makes operation requests ready. `send_request` refuses before Welcome without sending a frame. A readiness or connection refusal returned before dispatch is `CallFailure::NotSent`; a timeout or uncertain dispatch stays `AnswerLost`, including other pre-send failures and the pump's local reply timeout. Only a durably settled NotSent with no earlier uncertain reach preserves NeverSent.
 
-Request and answer envelopes are identified before their body is decoded. A readable kind and frame ID with an invalid body gets a correlated `OperationAnswer::InvalidShape { field }` and leaves the session open. The field names a missing, unknown or duplicate field when reported by the decoder, or `body` for errors without a field location. An unreadable kind or frame ID closes as `MalformedFrame`.
+Request and answer envelopes are identified before their body is decoded. A readable kind and frame ID with an invalid body gets a correlated `OperationAnswer::InvalidShape { field }` and leaves the session open. The field names a missing, unknown or duplicate field when reported by the decoder, or `body` for errors without a field location, and is capped at 64 Unicode characters. An unreadable kind or frame ID closes as `MalformedFrame`.
 
 ## Local workerd integration
 

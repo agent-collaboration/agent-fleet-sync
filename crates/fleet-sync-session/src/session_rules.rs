@@ -27,13 +27,18 @@ impl ClientEnvelope {
 }
 
 fn invalid_shape_field(error: &serde_json::Error) -> String {
+    // Serde's Display wording is version-dependent. Keep the body fallback and
+    // cap reflected client field names without splitting a Unicode character.
+    const MAX_FIELD_CHARACTERS: usize = 64;
     let diagnostic = error.to_string();
     ["missing field `", "unknown field `", "duplicate field `"]
         .iter()
         .find_map(|prefix| diagnostic.strip_prefix(prefix)?.split('`').next())
         // Serde reports no field location for some type/variant failures.
         .unwrap_or("body")
-        .to_owned()
+        .chars()
+        .take(MAX_FIELD_CHARACTERS)
+        .collect()
 }
 
 pub async fn connection_opened<S, P: ConsumerProtocol>(

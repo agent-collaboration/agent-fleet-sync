@@ -33,11 +33,16 @@ async fn identified_bad_bodies_are_correlated_and_the_same_session_stays_usable(
     let result: TestResult = async {
         // Frame IDs remain non-nil correlation IDs; they need not be UUIDv7.
         let frame = FrameId::new(durable_steps::Uuid::from_u128(0x019eef00000040008000000000000011))?;
+        let long_field = "界".repeat(100);
+        let bounded_field = "界".repeat(64);
+        let mut oversized = json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{"text":"must not route"}}}}});
+        oversized["value"][long_field.as_str()] = json!(true);
         let malformed = [
             (json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{}}}}}), "text"),
             (json!({"kind":"request","value":{"frame":frame}}), "body"),
             (json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{"text":"must not route"}}},"unexpected":true}}), "unexpected"),
             (json!({"kind":"answer","value":{"frame":frame,"body":{"kind":"consumer","value":{"notUnit":true}}}}), "body"),
+            (oversized, bounded_field.as_str()),
         ];
         for (index, (offered, field)) in malformed.into_iter().enumerate() {
             socket.send(serde_json::to_vec(&offered)?.into()).await?;
@@ -54,7 +59,7 @@ async fn identified_bad_bodies_are_correlated_and_the_same_session_stays_usable(
                 return Err("valid follow-up was not answered on the same session".into());
             }
         }
-        if !matches!(control_request(&mut control, ControlRequest::RequestCount).await?, ControlAnswer::RequestCount(4)) {
+        if !matches!(control_request(&mut control, ControlRequest::RequestCount).await?, ControlAnswer::RequestCount(5)) {
             return Err("malformed operations must never reach the consumer".into());
         }
         Ok(())
