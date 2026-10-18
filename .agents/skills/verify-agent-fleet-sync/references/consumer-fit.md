@@ -152,30 +152,70 @@ acknowledgement. A readback must show the committed row and receipt. Resending
 the identical Piece after restart must receive AlreadyApplied, advance the
 sender acknowledgement and leave the entire copy snapshot unchanged.
 
-The registry control publishes an unheld import, stops the service, removes
-only its copy marker, and submits a real claim. The claim must keep its
-reservation and chosen epoch while waiting for the copy. After service stop,
-exact marker restoration and restart, repeating that same attempt must grant
-the reserved epoch with the same gate reservation identity. An independent
-fresh import is the readiness control, and an already-held final refusal is
-replayed across another restart. Marker restoration stands in for repaired
-storage, not for a reseed API. The view observation reads the operation's own
-pending-copy or final-outcome state with a bound; it does not use a fixed sleep.
+The registry control publishes an unheld import, stops the service, damages
+only its copy marker, and submits a real claim. It waits on the operation's
+committed copy-wait state through CopyFaultRequest::WaitHolderChange. The
+claim must retain its reservation and chosen epoch, record a typed Damaged
+reason with NoEffect reach, and keep the copy call pending. Independent file
+readbacks inspect the pending step's reason and may_have_reached projection.
+The driver holds registry drive, then kills and awaits its owned child before
+reading the latest receiver reason. A graceful shutdown may legitimately make
+a newer NotSent attempt and clear that latest-attempt diagnostic without
+changing NoEffect history. Another restart before repair must preserve the
+frozen receiver state. After exact marker
+restoration and restart, the same attempt must grant the reserved epoch and
+settle the original gate reservation. An independent fresh import is the
+readiness control; an already-held final refusal replays across another
+restart. Marker restoration stands in for repaired storage, not a reseed API.
 
-Required cases still reported as gaps:
+The native C6 controls run at the declared immutable head:
 
-- The claim's typed availability reason and journal CallPending/CallDone
-  readback, plus the move acknowledgement-wait and fence repair cases.
-- C6's store wrapper hides a commit or rollback: A receives typed OutcomeUnknown,
-  never no-effect; B continues; A reconciles its original Piece. An unknown
-  reason kind takes the answer-loss reconciliation path.
-- C6's scheduler fails the real post-commit wake: committed Applied returns;
-  admitted follow-ups run once later or after restart.
-- Closed rollback-reason codec rejects unknown, malformed or unrelated codes
-  and preserves every typed reason's complete payload.
-- Seed and snapshot paths retain and resume identities after copy repair.
+- The actual copy object's test-fault feature loses a transaction reply after
+  a real commit or rollback. A must receive correlated OutcomeUnknown with
+  complete StoreBoundary detail; the sender retains its acknowledgement and
+  gets AnswerLost. B must keep progressing on that same connection. File
+  readbacks distinguish the real commit from rollback. A resends its original
+  Piece after restart, receiving AlreadyApplied or one apply respectively;
+  the explicit duplicate adds no effect.
+- A separate byte-boundary control changes the real OutcomeUnknown reason
+  kind to an unknown one. Decoding follows AnswerLost and the original Piece
+  reconciles after restart. That deliberate wire fault does not prove the
+  normal typed answer kept the socket open; the unmodified cases do.
+- A stopped-owner readback first verifies a quiescent initial copy journal.
+  The copy engine's drive is held while the actual host's post-apply-specific
+  wake wrapper fails the committed apply's hint. The correlated Applied
+  still returns, its follow-up remains owed, and startup completes it once.
+  The driver kills and awaits the child with drive still held, then reads the
+  owed operation ID and matches it to the recovered external effect. A second
+  wake and durable copy readback must add neither effect nor apply.
+- The closed reason codec round-trips complete payloads, discriminates only
+  by code, and refuses unknown or unrelated codes and malformed unit payloads.
+  Damaged details stay raw diagnostics even when they resemble JSON or another
+  code. These pure codec cases do not independently establish a producer's
+  rollback certainty.
+- SeedFile's real begin, page and complete calls each wait on copy damage,
+  then repeat the identical operation after repair. Writer commits after the
+  held begin/page stay outside the pinned snapshot. The same generation,
+  seed, page, position and content resume on one session. This drives the
+  owning WriterSessionCalls boundary, not a complete InstallCoordinator
+  recovery journey.
 
-Connect seam-dependent cases at the declared C6 head. A registry call must not
+The move controls hold the actual acknowledgement or fence call before SQL,
+damage its marker through the owning transaction, release the call and observe
+its pending NoEffect journal. Freeze/kill/reopen retains the call, epoch and
+reason; exact repair grants and replays the same attempt with one fence receipt.
+The holder's Release is supplied at its socket boundary; it does not prove
+real writer draining.
+
+The script deliberately emits two separate-proof gaps: real-engine NoEffect
+joins/reopen and closed-view controls, and the real workerd adapter/classifier
+receipts. It does not run those suites or turn their receipts into native
+journey passes. Check the focused durable-steps shared_conformance and lease
+turso_copy_retry_tests cases, plus the existing workerd engine/copy drivers,
+at the same immutable revision and report their counts separately. Passing
+native cases does not close those entries or central's G3 session gate.
+
+A registry call must not
 cache transient no-effect results as CallDone or end as Refused(Unavailable).
 Keep final-refusal replay separate. Authoritative NotInitialized reseed remains
 the design's explicit limit. Store-boundary injection does not prove real disk

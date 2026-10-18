@@ -24,6 +24,7 @@ use tokio::{
 #[derive(Default)]
 pub struct WireObservation {
     pub lose_next_applied: AtomicBool,
+    pub corrupt_next_unknown_reason: AtomicBool,
     pub connections: AtomicU64,
     pub frames: Mutex<Vec<Value>>,
 }
@@ -80,6 +81,29 @@ impl TransportConnection for ObservedConnection {
             _ => None,
         };
         self.observation.frames.lock().await.push(json!({"direction":"in","frame":frame,"transportEnded":!matches!(received,Some(Ok(_)))}));
+        if frame.as_ref().is_some_and(|frame| {
+            frame["kind"] == "answer"
+                && frame["value"]["body"]["kind"] == "replication"
+                && frame["value"]["body"]["value"]["kind"] == "outcomeUnknown"
+        }) && self
+            .observation
+            .corrupt_next_unknown_reason
+            .swap(false, Ordering::SeqCst)
+        {
+            let mut changed = frame?;
+            changed["value"]["body"]["value"]["value"]["reason"]["kind"] =
+                json!("futureStoreBoundary");
+            self.observation
+                .frames
+                .lock()
+                .await
+                .push(json!({"event":"unknown-reason-injected","frame":changed}));
+            return Some(
+                serde_json::to_vec(&changed)
+                    .map(Into::into)
+                    .map_err(|_| ConnectionClosed::UnsupportedFrame),
+            );
+        }
         if frame.as_ref().is_some_and(|frame| {
             frame["kind"] == "answer"
                 && frame["value"]["body"]["kind"] == "replication"

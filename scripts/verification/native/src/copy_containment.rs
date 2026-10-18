@@ -1,6 +1,12 @@
 //! Promotes X7's real native damage/repair route; assertions use VD SO57.
 mod answer_loss;
+mod fault_controls;
+mod move_resume;
+mod reason_codec;
 mod registry_resume;
+mod seed_resume;
+mod uncertainty;
+mod wake_failure;
 use crate::{
     Observations,
     fixture_service::{new_peer, new_receiver},
@@ -66,6 +72,7 @@ struct CopySnapshot {
     rows: Vec<(String, String)>,
     receipts: Vec<(String, String)>,
     hook_events: Vec<(String, String)>,
+    fences: Vec<(String, String)>,
 }
 async fn read_snapshot(path: &Path) -> TestResult<CopySnapshot> {
     let mut connection = TursoConnectOptions::new()
@@ -98,12 +105,20 @@ async fn read_snapshot(path: &Path) -> TestResult<CopySnapshot> {
             .into_iter()
             .map(|row| Ok((row.try_get("event_id")?, row.try_get("annotation")?)))
             .collect::<Result<Vec<_>, sqlx_core::Error>>()?;
+    let fences =
+        query::<Turso>("SELECT transfer,result FROM _fleet_sync_fence_receipts ORDER BY transfer")
+            .fetch_all(&mut connection)
+            .await?
+            .into_iter()
+            .map(|row| Ok((row.try_get("transfer")?, row.try_get("result")?)))
+            .collect::<Result<Vec<_>, sqlx_core::Error>>()?;
     connection.close().await?;
     Ok(CopySnapshot {
         record,
         rows,
         receipts,
         hook_events,
+        fences,
     })
 }
 async fn write_record(path: &Path, record: &str) -> TestResult {
@@ -364,26 +379,19 @@ pub async fn run(root: &Path, observations: &mut Observations) -> TestResult {
         writer.close().await;
     }
     registry_resume::observe(root, observations).await?;
+    move_resume::observe(root, observations).await?;
+    uncertainty::observe(root, observations).await?;
+    wake_failure::observe(root, observations).await?;
+    seed_resume::observe(root, observations).await?;
+    reason_codec::observe(observations)?;
     for (case, detail) in [
         (
             "registry-copy-call-detail",
-            "Claim repair is observed; C6's typed availability reason, journal CallPending/CallDone readback, and move acknowledgement/fence repair controls remain unobserved.",
+            "Native claim/move pending journals are observed here; independent engine NoEffect transitions, crash/reopen and closed-view controls still require their declared real-store proof receipts.",
         ),
         (
-            "unknown-store-outcome",
-            "C6's store-boundary wrapper must drive committed and rolled-back unknown outcomes with the healthy copy continuing.",
-        ),
-        (
-            "post-commit-wake-failure",
-            "C6's failing WakeScheduler must fail after a real committed apply; answer-loss is not a substitute.",
-        ),
-        (
-            "reason-codec-controls",
-            "C6's closed reason codec must reject corrupt codes and preserve every reason payload.",
-        ),
-        (
-            "seed-copy-resumption",
-            "Seed and snapshot unavailability/resumption must be driven through their C6-owned answer paths.",
+            "workerd-copy-certainty",
+            "Separate real DurableObjectStore/classifier and engine-reopen receipts must be checked at the declared C6 head; native proof does not establish that host.",
         ),
     ] {
         observations.gap(case, detail);
