@@ -5,7 +5,7 @@ use durable_steps::CallId;
 use fleet_sync_lease::{GateFailure, HolderChangeGate, LifecycleGate};
 use fleet_sync_protocol::*;
 use fleet_sync_receiver::{
-    AppliedPiece, FollowUpDone, FollowUpFailure, InstalledSnapshot, ReceiverHook,
+    AppliedPiece, FollowUpDone, FollowUpFailure, InstalledSnapshot, ReceiverRules,
 };
 use fleet_sync_service::{ConsumerHandler, ServiceConsumer, ServiceError, ServiceScope};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -114,7 +114,7 @@ impl ConsumerHandler<SampleProtocol> for Consumer {
 impl ServiceConsumer<SampleProtocol> for Consumer {
     type HookItem = HookEffect;
 }
-impl ReceiverHook<ServiceScope<'_>> for Consumer {
+impl ReceiverRules<ServiceScope<'_>> for Consumer {
     type Protocol = SampleProtocol;
     type FollowUp = HookEffect;
     fn local_migrations(&self) -> &'static [sqlx_core::migrate::Migration] {
@@ -147,6 +147,9 @@ impl ReceiverHook<ServiceScope<'_>> for Consumer {
         )
         .await
     }
+}
+impl fleet_sync_receiver::FollowUpHandler for Consumer {
+    type Item = HookEffect;
     async fn follow_up(
         &self,
         item: &HookEffect,
@@ -172,6 +175,7 @@ impl ReceiverHook<ServiceScope<'_>> for Consumer {
         Ok(FollowUpDone)
     }
 }
+
 impl LifecycleGate for Consumer {
     async fn admit_registration(
         &self,

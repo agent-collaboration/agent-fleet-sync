@@ -33,7 +33,7 @@ impl TransactionScope for TursoScope<'_> {
 pub(super) struct Hook {
     pub(super) refuse: bool,
 }
-impl ReceiverHook<TursoScope<'_>> for Hook {
+impl ReceiverRules<TursoScope<'_>> for Hook {
     type Protocol = NoConsumer;
     type FollowUp = String;
     fn local_migrations(&self) -> &'static [sqlx_core::migrate::Migration] {
@@ -70,10 +70,14 @@ impl ReceiverHook<TursoScope<'_>> for Hook {
         }
         Ok(vec!["deliver notice".into()])
     }
+}
+impl FollowUpHandler for Hook {
+    type Item = String;
     async fn follow_up(&self, _: &String, _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }
 }
+
 pub(super) fn uuid_key(index: i64) -> SqlValue {
     let payload = u128::from(index.unsigned_abs()) & ((1_u128 << 62) - 1);
     SqlValue::Text(uuid::Uuid::from_u128(0x019eef00000070008000000000000000 | payload).to_string())
@@ -167,7 +171,7 @@ pub(super) async fn connection_with_options(
 }
 
 struct SchemaHook;
-impl ReceiverHook<TursoScope<'_>> for SchemaHook {
+impl ReceiverRules<TursoScope<'_>> for SchemaHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     async fn on_applied(
@@ -177,10 +181,14 @@ impl ReceiverHook<TursoScope<'_>> for SchemaHook {
     ) -> Result<Vec<()>, HookRefusal> {
         Ok(Vec::new())
     }
+}
+impl FollowUpHandler for SchemaHook {
+    type Item = ();
     async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }
 }
+
 pub(super) async fn counts(
     connection: &mut TursoConnection,
 ) -> TestResult<(String, String, String)> {

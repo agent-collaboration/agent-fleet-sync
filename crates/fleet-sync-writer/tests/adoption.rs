@@ -134,7 +134,7 @@ impl durable_steps::storage::TransactionScope for CopyScope<'_> {
     }
 }
 struct CopyHook;
-impl fleet_sync_receiver::ReceiverHook<CopyScope<'_>> for CopyHook {
+impl fleet_sync_receiver::ReceiverRules<CopyScope<'_>> for CopyHook {
     type Protocol = fleet_sync_protocol::NoConsumer;
     type FollowUp = ();
     async fn on_applied(
@@ -144,6 +144,9 @@ impl fleet_sync_receiver::ReceiverHook<CopyScope<'_>> for CopyHook {
     ) -> Result<Vec<()>, fleet_sync_protocol::HookRefusal> {
         Ok(Vec::new())
     }
+}
+impl fleet_sync_receiver::FollowUpHandler for CopyHook {
+    type Item = ();
     async fn follow_up(
         &self,
         _: &(),

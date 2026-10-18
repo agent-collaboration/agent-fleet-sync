@@ -38,7 +38,8 @@ pub enum SeedDecision<TFollowUp> {
     Answer(fleet_sync_protocol::SeedAnswer),
 }
 
-pub trait ReceiverHook<S: TransactionScope>: Send + Sync + 'static {
+/// Transaction-time consumer rules return follow-up items for post-commit delivery.
+pub trait ReceiverRules<S: TransactionScope>: Send + Sync + 'static {
     type Protocol: ConsumerProtocol;
     type FollowUp: Serialize + DeserializeOwned + Send + Sync;
     /// Local tables initialized by the host before any piece is applied.
@@ -58,9 +59,14 @@ pub trait ReceiverHook<S: TransactionScope>: Send + Sync + 'static {
         scope: &mut S,
         applied: &AppliedPiece<'_, <Self::Protocol as ConsumerProtocol>::Annotation>,
     ) -> impl Future<Output = Result<Vec<Self::FollowUp>, HookRefusal>> + Send;
+}
+
+/// The host composes this handler with rules producing exactly its item type.
+pub trait FollowUpHandler: Send + Sync + 'static {
+    type Item: Serialize + DeserializeOwned + Send + Sync;
     fn follow_up(
         &self,
-        item: &Self::FollowUp,
+        item: &Self::Item,
         call: CallId,
     ) -> impl Future<Output = Result<FollowUpDone, FollowUpFailure>> + Send;
 }

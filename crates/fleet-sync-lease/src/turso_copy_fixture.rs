@@ -1,12 +1,12 @@
 use crate::turso_registry_fixture::*;
 use durable_steps::CallId;
 use fleet_sync_protocol::*;
-use fleet_sync_receiver::{AppliedPiece, FollowUpDone, FollowUpFailure, ReceiverHook};
+use fleet_sync_receiver::{AppliedPiece, FollowUpDone, FollowUpFailure, ReceiverRules};
 use sqlx_core::connection::Connection;
 use std::sync::Arc;
 
 struct EmptyHook;
-impl ReceiverHook<CopyScope<'_>> for EmptyHook {
+impl ReceiverRules<CopyScope<'_>> for EmptyHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     async fn on_applied(
@@ -16,10 +16,14 @@ impl ReceiverHook<CopyScope<'_>> for EmptyHook {
     ) -> Result<Vec<()>, HookRefusal> {
         Ok(Vec::new())
     }
+}
+impl fleet_sync_receiver::FollowUpHandler for EmptyHook {
+    type Item = ();
     async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }
 }
+
 pub(super) async fn push_rows(
     host: &Arc<TestHost>,
     commit: u64,

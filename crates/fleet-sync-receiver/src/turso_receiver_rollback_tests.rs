@@ -15,7 +15,7 @@ use std::sync::{Arc, atomic::Ordering};
 
 async fn complete_seed(
     store: &TursoStore<TestHost>,
-    hook: Arc<Hook>,
+    hook: Arc<ReceiverTestRules>,
     done: SeedComplete,
     fail_rollback: bool,
 ) -> ReplicationAnswer {
@@ -78,19 +78,35 @@ async fn seed_hook_refusal_preserves_answer_and_rolls_back_publication_through_a
     let host = host(&directory.path().join("consumer.db")).await?;
     let store =
         TursoStore::open_and_migrate(directory.path().join("copy.db"), Arc::clone(&host)).await?;
-    let done = staged_seed(&store, Arc::clone(&host.hook)).await?;
+    let done = staged_seed(&store, Arc::clone(&host.receiver_rules)).await?;
     let before = seed_identity_state(&store).await?;
-    host.hook.snapshot_refuse.store(true, Ordering::SeqCst);
+    host.receiver_rules
+        .snapshot_refuse
+        .store(true, Ordering::SeqCst);
 
     assert_eq!(
-        complete_seed(&store, Arc::clone(&host.hook), done.clone(), false).await,
+        complete_seed(
+            &store,
+            Arc::clone(&host.receiver_rules),
+            done.clone(),
+            false
+        )
+        .await,
         ReplicationAnswer::SeedComplete(SeedAnswer::Hook(snapshot_refusal()?))
     );
     assert_eq!(seed_identity_state(&store).await?, before);
-    assert_eq!(host.hook.snapshot_calls.load(Ordering::SeqCst), 1);
-    host.hook.snapshot_refuse.store(false, Ordering::SeqCst);
+    assert_eq!(host.receiver_rules.snapshot_calls.load(Ordering::SeqCst), 1);
+    host.receiver_rules
+        .snapshot_refuse
+        .store(false, Ordering::SeqCst);
     assert_eq!(
-        complete_seed(&store, Arc::clone(&host.hook), done.clone(), false).await,
+        complete_seed(
+            &store,
+            Arc::clone(&host.receiver_rules),
+            done.clone(),
+            false
+        )
+        .await,
         ReplicationAnswer::SeedComplete(SeedAnswer::Published {
             position: done.position
         })
@@ -122,10 +138,12 @@ async fn refused_seed_rollback_failure_is_unknown_with_no_publication() -> TestR
     let host = host(&directory.path().join("consumer.db")).await?;
     let store =
         TursoStore::open_and_migrate(directory.path().join("copy.db"), Arc::clone(&host)).await?;
-    let done = staged_seed(&store, Arc::clone(&host.hook)).await?;
+    let done = staged_seed(&store, Arc::clone(&host.receiver_rules)).await?;
     let before = seed_identity_state(&store).await?;
-    host.hook.snapshot_refuse.store(true, Ordering::SeqCst);
-    let answer = complete_seed(&store, Arc::clone(&host.hook), done, true).await;
+    host.receiver_rules
+        .snapshot_refuse
+        .store(true, Ordering::SeqCst);
+    let answer = complete_seed(&store, Arc::clone(&host.receiver_rules), done, true).await;
     assert!(matches!(answer, ReplicationAnswer::OutcomeUnknown {
         reason: OutcomeUnknownReason::StoreBoundary { detail },
     } if detail.as_str().contains("rollback")));

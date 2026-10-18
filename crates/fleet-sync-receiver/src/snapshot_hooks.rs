@@ -1,4 +1,4 @@
-use crate::{InstalledSnapshot, ReceiverHook};
+use crate::{InstalledSnapshot, ReceiverRules};
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::HookRefusal;
 
@@ -10,7 +10,7 @@ pub fn run_snapshot_hook<'scope, S, H>(
 ) -> impl std::future::Future<Output = Result<Vec<H::FollowUp>, HookRefusal>> + Send + 'scope
 where
     S: TransactionScope + 'scope,
-    H: ReceiverHook<S>,
+    H: ReceiverRules<S>,
 {
     hook.on_snapshot_installed(scope, installed)
 }

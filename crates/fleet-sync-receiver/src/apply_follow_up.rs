@@ -18,7 +18,7 @@ pub struct FollowUpInput<F> {
     pub item: F,
 }
 
-/// The host routes this call to its configured ReceiverHook::follow_up.
+/// The host routes this call to its configured FollowUpHandler::follow_up.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
 pub struct FollowUpCall<F> {

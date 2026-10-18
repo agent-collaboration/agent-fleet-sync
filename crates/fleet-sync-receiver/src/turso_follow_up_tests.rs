@@ -12,11 +12,11 @@ async fn follow_up_admission_rolls_back_with_apply_and_recovers_after_lost_answe
     let journal_path = directory.path().join("copy.db");
     let host = host(&directory.path().join("consumer.db")).await?;
     let store = Arc::new(TursoStore::open_and_migrate(&journal_path, Arc::clone(&host)).await?);
-    setup(&store, Arc::clone(&host.hook)).await?;
+    setup(&store, Arc::clone(&host.receiver_rules)).await?;
     let mut engine = Engine::new(Arc::clone(&store), Arc::clone(&host));
     engine.register(ApplyFollowUp::<TursoStore<TestHost>, String>::new())?;
     assert!(matches!(
-        apply_and_admit(&store, Arc::clone(&host.hook), true).await,
+        apply_and_admit(&store, Arc::clone(&host.receiver_rules), true).await,
         Err(durable_steps::StoreError::Aborted { .. })
     ));
     assert_eq!(
@@ -25,7 +25,7 @@ async fn follow_up_admission_rolls_back_with_apply_and_recovers_after_lost_answe
     );
     assert!(engine.drive_due().await?.retried.is_empty());
     assert!(host.calls.lock().await.is_empty());
-    apply_and_admit(&store, Arc::clone(&host.hook), false).await?;
+    apply_and_admit(&store, Arc::clone(&host.receiver_rules), false).await?;
     assert_eq!(
         counts(&store).await?,
         ("1".into(), "1".into(), "1".into(), "2".into())
@@ -43,7 +43,7 @@ async fn follow_up_admission_rolls_back_with_apply_and_recovers_after_lost_answe
     let calls = host.calls.lock().await.clone();
     assert_eq!(calls.len(), 2);
     assert_eq!(calls.first(), calls.last());
-    let mut delivered = host.hook.delivered.lock().await;
+    let mut delivered = host.follow_up_delivery.delivered.lock().await;
     let row = sqlx_core::query::query::<Turso>(
         "SELECT CAST(count(*) AS TEXT) AS effects,item FROM delivered",
     )
@@ -57,7 +57,7 @@ async fn follow_up_admission_rolls_back_with_apply_and_recovers_after_lost_answe
         counts(&reopened).await?,
         ("1".into(), "1".into(), "0".into(), "2".into())
     );
-    apply_and_admit(&reopened, Arc::clone(&host.hook), false).await?;
+    apply_and_admit(&reopened, Arc::clone(&host.receiver_rules), false).await?;
     assert!(engine.drive_due().await?.completed.is_empty());
     assert_eq!(host.calls.lock().await.len(), 2);
     Ok(())

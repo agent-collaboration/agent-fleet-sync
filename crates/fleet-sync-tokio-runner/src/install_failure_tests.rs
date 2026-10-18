@@ -19,7 +19,7 @@ struct InstallHook {
     code: HookRefusalCode,
 }
 impl<H: durable_steps::Host>
-    fleet_sync_receiver::ReceiverHook<durable_steps::turso_store::TursoScope<'_, H>>
+    fleet_sync_receiver::ReceiverRules<durable_steps::turso_store::TursoScope<'_, H>>
     for InstallHook
 {
     type Protocol = NoConsumer;
@@ -46,6 +46,9 @@ impl<H: durable_steps::Host>
             })?;
         Ok(Vec::new())
     }
+}
+impl fleet_sync_receiver::FollowUpHandler for InstallHook {
+    type Item = String;
     async fn follow_up(
         &self,
         _: &String,
@@ -54,6 +57,7 @@ impl<H: durable_steps::Host>
         Ok(fleet_sync_receiver::FollowUpDone)
     }
 }
+
 struct RaceRouter {
     coordinator: OnceLock<Weak<InstallCoordinator<RaceHost>>>,
     target: OnceLock<Weak<TokioObject<RaceHost>>>,

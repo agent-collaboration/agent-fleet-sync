@@ -11,11 +11,16 @@ Run `initialize_hook(scope, hook)` in the host's initialization transaction to
 apply the consumer's `local_migrations`. Their tables stay outside replicated
 schema membership, snapshot pages and schema identity.
 
-`apply_piece` calls the consumer's `ReceiverHook::on_applied` inside that transaction.
+The consumer's `ReceiverRules<Scope>` contains its transaction-time rules and
+returns typed follow-up items. A separate `FollowUpHandler` owns post-commit IO;
+it needs no transaction scope. At composition, bind the handler's `Item` to the
+rules' `FollowUp` type. A native consumer may implement both on one value.
+
+`apply_piece` calls the consumer's `ReceiverRules::on_applied` inside that transaction.
 For `Applied`, pass its returned items to `admit_follow_ups::<Store, Item>` on the
 same scope, then commit before answering. Register `ApplyFollowUp<Store, Item>` on
 the engine. Its one `FollowUpCall<Item>` carries the database and item; the host's
-`dispatch` routes it to the configured hook's `follow_up(item, call_id)`. Deliveries
+`dispatch` routes it to the configured handler's `follow_up(item, call_id)`. Deliveries
 can repeat under the same call ID, so the consumer owns their deduplication.
 Dispatch maps `Ok(FollowUpDone)` to `FollowUpAnswer::Done` and a permanent
 `FollowUpFailure::Failed { reason }` to `FollowUpAnswer::Failed { reason }`.
@@ -38,7 +43,7 @@ as other replication requests.
 `seed_begin` issues a monotonically increasing generation; repeat attempts return
 their original generation. Pages are staged without exposing rows. A successful
 `seed_complete(scope, done, hook, authority)` publishes schema, rows and position in one
-transaction, then calls `ReceiverHook::on_snapshot_installed` while those rows are
+transaction, then calls `ReceiverRules::on_snapshot_installed` while those rows are
 visible. For `SeedDecision::Published`, admit the returned items with
 `admit_snapshot_follow_ups` in that same transaction before committing. A replay
 returns `SeedDecision::Answer` and must not admit more work. Snapshot work uses

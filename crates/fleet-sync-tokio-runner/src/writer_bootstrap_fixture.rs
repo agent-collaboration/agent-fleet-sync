@@ -6,7 +6,7 @@ use durable_steps::{
 use fleet_sync_lease::LeasePolicy;
 use fleet_sync_protocol::*;
 use fleet_sync_receiver::{
-    AppliedPiece, ApplyDecision, FollowUpDone, FollowUpFailure, ReceiverHook, SnapshotInstall,
+    AppliedPiece, ApplyDecision, FollowUpDone, FollowUpFailure, ReceiverRules, SnapshotInstall,
 };
 use fleet_sync_writer::{
     BootstrapGrant, Migration, ReplicatedDatabase, ReplicatedSchema, ReplicationTransport,
@@ -77,7 +77,7 @@ impl CallRouter for NoCalls {
 }
 pub(super) type TestHost = TokioHost<NoCalls>;
 pub(super) struct Hook;
-impl<S: TransactionScope> ReceiverHook<S> for Hook {
+impl<S: TransactionScope> ReceiverRules<S> for Hook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     async fn on_applied(
@@ -87,6 +87,9 @@ impl<S: TransactionScope> ReceiverHook<S> for Hook {
     ) -> Result<Vec<()>, HookRefusal> {
         Ok(Vec::new())
     }
+}
+impl fleet_sync_receiver::FollowUpHandler for Hook {
+    type Item = ();
     async fn follow_up(
         &self,
         _: &(),
@@ -95,6 +98,7 @@ impl<S: TransactionScope> ReceiverHook<S> for Hook {
         Ok(FollowUpDone)
     }
 }
+
 pub(super) struct CopyTransport {
     pub copy: Arc<TokioObject<TestHost>>,
     pub sender: PeerId,

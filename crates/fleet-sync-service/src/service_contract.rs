@@ -1,7 +1,7 @@
 use fleet_sync_lease::RegistryConfig;
 use fleet_sync_lease::{HolderChangeGate, LifecycleGate};
 use fleet_sync_protocol::{ConsumerProtocol, PeerId, ReceiverId};
-use fleet_sync_receiver::ReceiverHook;
+use fleet_sync_receiver::{FollowUpHandler, ReceiverRules};
 use serde::{Serialize, de::DeserializeOwned};
 use std::{future::Future, path::PathBuf, time::Duration};
 
@@ -27,7 +27,8 @@ pub trait ServiceConsumer<P: ConsumerProtocol>:
     ConsumerHandler<P>
     + LifecycleGate
     + HolderChangeGate
-    + for<'transaction> ReceiverHook<
+    + FollowUpHandler<Item = <Self as ServiceConsumer<P>>::HookItem>
+    + for<'transaction> ReceiverRules<
         crate::ServiceScope<'transaction>,
         Protocol = P,
         FollowUp = <Self as ServiceConsumer<P>>::HookItem,

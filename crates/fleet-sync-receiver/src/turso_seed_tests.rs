@@ -520,7 +520,7 @@ async fn retired_marker_answers_without_any_other_replication_bookkeeping() -> T
 }
 
 pub(super) struct NoHook;
-impl ReceiverHook<TursoScope<'_>> for NoHook {
+impl ReceiverRules<TursoScope<'_>> for NoHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     async fn on_applied(
@@ -530,6 +530,9 @@ impl ReceiverHook<TursoScope<'_>> for NoHook {
     ) -> Result<Vec<()>, HookRefusal> {
         Ok(Vec::new())
     }
+}
+impl FollowUpHandler for NoHook {
+    type Item = ();
     async fn follow_up(
         &self,
         _: &(),
@@ -538,6 +541,7 @@ impl ReceiverHook<TursoScope<'_>> for NoHook {
         Ok(FollowUpDone)
     }
 }
+
 // This host has no follow-ups; translate the rule decision into its wire answer.
 async fn complete_seed(
     scope: &mut TursoScope<'_>,

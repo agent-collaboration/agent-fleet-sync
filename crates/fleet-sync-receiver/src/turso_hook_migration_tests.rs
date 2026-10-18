@@ -13,7 +13,7 @@ use sqlx_turso::Turso;
 use std::sync::LazyLock;
 
 struct LocalHook(&'static [Migration]);
-impl ReceiverHook<TursoScope<'_>> for LocalHook {
+impl ReceiverRules<TursoScope<'_>> for LocalHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     fn local_migrations(&self) -> &'static [Migration] {
@@ -26,10 +26,14 @@ impl ReceiverHook<TursoScope<'_>> for LocalHook {
     ) -> Result<Vec<()>, HookRefusal> {
         Ok(Vec::new())
     }
+}
+impl FollowUpHandler for LocalHook {
+    type Item = ();
     async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }
 }
+
 fn migration(version: i64, sql: &'static str) -> Migration {
     Migration::new(
         version,

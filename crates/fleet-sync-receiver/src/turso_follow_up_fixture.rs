@@ -22,17 +22,20 @@ pub(super) struct TestHost {
     pub(super) now: AtomicI64,
     pub(super) ids: AtomicU64,
     pub(super) lose_answer: AtomicBool,
-    pub(super) hook: Arc<Hook>,
+    pub(super) receiver_rules: Arc<ReceiverTestRules>,
+    pub(super) follow_up_delivery: Arc<FollowUpDelivery>,
     pub(super) calls: Mutex<Vec<CallId>>,
 }
-pub(super) struct Hook {
-    pub(super) delivered: Mutex<TursoConnection>,
+pub(super) struct ReceiverTestRules {
     pub(super) snapshot_refuse: AtomicBool,
     pub(super) snapshot_calls: AtomicU64,
+}
+pub(super) struct FollowUpDelivery {
+    pub(super) delivered: Mutex<TursoConnection>,
     pub(super) follow_up_calls: AtomicU64,
     pub(super) next_failure: Mutex<Option<FollowUpFailure>>,
 }
-impl ReceiverHook<TursoScope<'_, TestHost>> for Hook {
+impl ReceiverRules<TursoScope<'_, TestHost>> for ReceiverTestRules {
     type Protocol = NoConsumer;
     type FollowUp = String;
     fn local_migrations(&self) -> &'static [sqlx_core::migrate::Migration] {
@@ -62,27 +65,7 @@ impl ReceiverHook<TursoScope<'_, TestHost>> for Hook {
             })?;
         Ok(vec!["notice".into()])
     }
-    async fn follow_up(
-        &self,
-        item: &String,
-        call: CallId,
-    ) -> Result<FollowUpDone, FollowUpFailure> {
-        self.follow_up_calls.fetch_add(1, Ordering::SeqCst);
-        if let Some(failure) = self.next_failure.lock().await.take() {
-            return Err(failure);
-        }
-        let mut connection = self.delivered.lock().await;
-        let call = serde_json::to_string(&call).map_err(follow_up_failure)?;
-        sqlx_core::query::query::<Turso>(
-            "INSERT INTO delivered(call,item) VALUES(?1,?2) ON CONFLICT(call) DO NOTHING",
-        )
-        .bind(call)
-        .bind(item.clone())
-        .execute(&mut *connection)
-        .await
-        .map_err(follow_up_failure)?;
-        Ok(FollowUpDone)
-    }
+
     async fn on_snapshot_installed(
         &self,
         scope: &mut TursoScope<'_, TestHost>,
@@ -117,6 +100,30 @@ impl ReceiverHook<TursoScope<'_, TestHost>> for Hook {
             });
         }
         Ok(vec![item])
+    }
+}
+impl FollowUpHandler for FollowUpDelivery {
+    type Item = <ReceiverTestRules as ReceiverRules<TursoScope<'static, TestHost>>>::FollowUp;
+    async fn follow_up(
+        &self,
+        item: &String,
+        call: CallId,
+    ) -> Result<FollowUpDone, FollowUpFailure> {
+        self.follow_up_calls.fetch_add(1, Ordering::SeqCst);
+        if let Some(failure) = self.next_failure.lock().await.take() {
+            return Err(failure);
+        }
+        let mut connection = self.delivered.lock().await;
+        let call = serde_json::to_string(&call).map_err(follow_up_failure)?;
+        sqlx_core::query::query::<Turso>(
+            "INSERT INTO delivered(call,item) VALUES(?1,?2) ON CONFLICT(call) DO NOTHING",
+        )
+        .bind(call)
+        .bind(item.clone())
+        .execute(&mut *connection)
+        .await
+        .map_err(follow_up_failure)?;
+        Ok(FollowUpDone)
     }
 }
 fn follow_up_failure(_: impl std::fmt::Display) -> FollowUpFailure {
@@ -155,8 +162,8 @@ impl Host for TestHost {
         let item: String =
             serde_json::from_value(serde_json::to_value(request).map_err(lost)?).map_err(lost)?;
         self.calls.lock().await.push(call.clone());
-        let answer = match <Hook as ReceiverHook<TursoScope<'_, TestHost>>>::follow_up(
-            &*self.hook,
+        let answer = match <FollowUpDelivery as FollowUpHandler>::follow_up(
+            &*self.follow_up_delivery,
             &item,
             call,
         )
@@ -222,10 +229,12 @@ pub(super) async fn host(path: &std::path::Path) -> TestResult<Arc<TestHost>> {
         now: AtomicI64::new(1000),
         ids: AtomicU64::new(1),
         lose_answer: AtomicBool::new(true),
-        hook: Arc::new(Hook {
-            delivered: Mutex::new(delivered),
+        receiver_rules: Arc::new(ReceiverTestRules {
             snapshot_refuse: AtomicBool::new(false),
             snapshot_calls: AtomicU64::new(0),
+        }),
+        follow_up_delivery: Arc::new(FollowUpDelivery {
+            delivered: Mutex::new(delivered),
             follow_up_calls: AtomicU64::new(0),
             next_failure: Mutex::new(None),
         }),
@@ -235,7 +244,10 @@ pub(super) async fn host(path: &std::path::Path) -> TestResult<Arc<TestHost>> {
 pub(super) fn storage(error: impl std::fmt::Display) -> durable_steps::StoreError {
     durable_steps::StoreError::backend(error)
 }
-pub(super) async fn setup(store: &TursoStore<TestHost>, hook: Arc<Hook>) -> TestResult {
+pub(super) async fn setup(
+    store: &TursoStore<TestHost>,
+    hook: Arc<ReceiverTestRules>,
+) -> TestResult {
     let request = CreateCopy {
         database: database()?,
         epoch: Epoch::new(1)?,
@@ -289,7 +301,7 @@ pub(super) async fn setup(store: &TursoStore<TestHost>, hook: Arc<Hook>) -> Test
 }
 pub(super) async fn apply_and_admit(
     store: &TursoStore<TestHost>,
-    hook: Arc<Hook>,
+    hook: Arc<ReceiverTestRules>,
     rollback: bool,
 ) -> Result<(), durable_steps::StoreError> {
     let piece = incoming().map_err(storage)?;
@@ -337,7 +349,7 @@ pub(super) async fn counts(
 }
 
 struct SchemaHook;
-impl ReceiverHook<TursoScope<'_, TestHost>> for SchemaHook {
+impl ReceiverRules<TursoScope<'_, TestHost>> for SchemaHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     async fn on_applied(
@@ -347,6 +359,9 @@ impl ReceiverHook<TursoScope<'_, TestHost>> for SchemaHook {
     ) -> Result<Vec<()>, HookRefusal> {
         Ok(Vec::new())
     }
+}
+impl FollowUpHandler for SchemaHook {
+    type Item = ();
     async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }

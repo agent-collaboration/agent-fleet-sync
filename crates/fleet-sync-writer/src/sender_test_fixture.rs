@@ -8,7 +8,7 @@ use fleet_sync_protocol::{
     PeerId, Piece, ReceiverId, ReplicationAnswer, TableName,
 };
 use fleet_sync_receiver::{
-    AppliedPiece, ApplyDecision, ApplyFailure, FollowUpDone, FollowUpFailure, ReceiverHook,
+    AppliedPiece, ApplyDecision, ApplyFailure, FollowUpDone, FollowUpFailure, ReceiverRules,
 };
 use sqlx_core::{
     connection::{ConnectOptions, Connection},
@@ -98,7 +98,7 @@ pub(super) struct CopyHook {
     storage_code: HookRefusalCode,
     policy_code: HookRefusalCode,
 }
-impl ReceiverHook<WriterScope<'_>> for CopyHook {
+impl ReceiverRules<WriterScope<'_>> for CopyHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     fn local_migrations(&self) -> &'static [Migration] {
@@ -125,6 +125,9 @@ impl ReceiverHook<WriterScope<'_>> for CopyHook {
         }
         Ok(Vec::new())
     }
+}
+impl fleet_sync_receiver::FollowUpHandler for CopyHook {
+    type Item = ();
     async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }

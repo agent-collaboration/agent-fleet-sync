@@ -139,7 +139,7 @@ pub fn seed_complete<'scope, S, H>(
 + 'scope
 where
     S: TransactionScope + 'scope,
-    H: crate::ReceiverHook<S>,
+    H: crate::ReceiverRules<S>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'value> String:
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,

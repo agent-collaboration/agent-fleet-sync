@@ -52,7 +52,7 @@ pub(super) fn hook_refusal() -> TestResult<HookRefusal> {
         detail: "refused after business and hook writes".into(),
     })
 }
-impl ReceiverHook<TursoScope<'_, TestHost>> for HookMode {
+impl ReceiverRules<TursoScope<'_, TestHost>> for HookMode {
     type Protocol = NoConsumer;
     type FollowUp = ();
     fn local_migrations(&self) -> &'static [sqlx_core::migrate::Migration] {
@@ -89,6 +89,9 @@ impl ReceiverHook<TursoScope<'_, TestHost>> for HookMode {
             }),
         }
     }
+}
+impl FollowUpHandler for HookMode {
+    type Item = ();
     async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }

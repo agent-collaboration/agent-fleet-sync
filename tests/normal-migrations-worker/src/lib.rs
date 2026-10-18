@@ -6,7 +6,7 @@ use fleet_sync_protocol::{
     SnapshotCursor, SnapshotManifest, SnapshotPage, SyncTime,
 };
 use fleet_sync_receiver::{
-    AppliedPiece, ApplyDecision, FollowUpDone, FollowUpFailure, ReceiverHook, SnapshotInstall,
+    AppliedPiece, ApplyDecision, FollowUpDone, FollowUpFailure, ReceiverRules, SnapshotInstall,
     SnapshotInstallRules,
 };
 use serde::Deserialize;
@@ -28,7 +28,7 @@ impl TransactionScope for WorkerScope<'_> {
 struct ProbeHook {
     refusal: Option<HookRefusalCode>,
 }
-impl<S: TransactionScope> ReceiverHook<S> for ProbeHook {
+impl<S: TransactionScope> ReceiverRules<S> for ProbeHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     async fn on_applied(
@@ -44,10 +44,14 @@ impl<S: TransactionScope> ReceiverHook<S> for ProbeHook {
         }
         Ok(Vec::new())
     }
+}
+impl fleet_sync_receiver::FollowUpHandler for ProbeHook {
+    type Item = ();
     async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }
 }
+
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "camelCase")]
 enum ProbeRequest {

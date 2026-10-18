@@ -12,7 +12,7 @@ use std::sync::{Arc, atomic::Ordering};
 
 pub(super) async fn staged_seed(
     store: &TursoStore<TestHost>,
-    hook: Arc<Hook>,
+    hook: Arc<ReceiverTestRules>,
 ) -> TestResult<SeedComplete> {
     Ok(store
         .transaction(move |scope| {
@@ -124,7 +124,7 @@ pub(super) async fn staged_seed(
 }
 async fn publish(
     store: &TursoStore<TestHost>,
-    hook: Arc<Hook>,
+    hook: Arc<ReceiverTestRules>,
     done: SeedComplete,
 ) -> Result<SeedAnswer, JournalError> {
     store
@@ -172,9 +172,9 @@ async fn seed_hook_and_follow_up_run_once_while_retained_piece_work_keeps_its_ow
     let path = directory.path().join("copy.db");
     let host = host(&directory.path().join("consumer.db")).await?;
     let store = Arc::new(TursoStore::open_and_migrate(&path, Arc::clone(&host)).await?);
-    let done = staged_seed(&store, Arc::clone(&host.hook)).await?;
+    let done = staged_seed(&store, Arc::clone(&host.receiver_rules)).await?;
     assert_eq!(
-        publish(&store, Arc::clone(&host.hook), done.clone()).await?,
+        publish(&store, Arc::clone(&host.receiver_rules), done.clone()).await?,
         SeedAnswer::Published {
             position: done.position
         }
@@ -183,7 +183,7 @@ async fn seed_hook_and_follow_up_run_once_while_retained_piece_work_keeps_its_ow
         committed_counts(&store).await?,
         ("1".into(), "1".into(), "2".into())
     );
-    assert_eq!(host.hook.snapshot_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(host.receiver_rules.snapshot_calls.load(Ordering::SeqCst), 1);
     let projection = store
         .transaction(|scope| {
             Box::pin(async move {
@@ -196,12 +196,12 @@ async fn seed_hook_and_follow_up_run_once_while_retained_piece_work_keeps_its_ow
         .await?;
     assert_eq!(projection, "snapshot:1:7:v3:1");
     assert_eq!(
-        publish(&store, Arc::clone(&host.hook), done.clone()).await?,
+        publish(&store, Arc::clone(&host.receiver_rules), done.clone()).await?,
         SeedAnswer::Published {
             position: done.position
         }
     );
-    assert_eq!(host.hook.snapshot_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(host.receiver_rules.snapshot_calls.load(Ordering::SeqCst), 1);
     assert_eq!(committed_counts(&store).await?.2, "2");
     let mut engine = Engine::new(Arc::clone(&store), Arc::clone(&host));
     engine.register(ApplyFollowUp::<TursoStore<TestHost>, String>::new())?;
@@ -216,7 +216,7 @@ async fn seed_hook_and_follow_up_run_once_while_retained_piece_work_keeps_its_ow
     engine.register(ApplyFollowUp::<TursoStore<TestHost>, String>::new())?;
     assert_eq!(engine.drive_due().await?.completed.len(), 1);
     assert_eq!(
-        publish(&store, Arc::clone(&host.hook), done.clone()).await?,
+        publish(&store, Arc::clone(&host.receiver_rules), done.clone()).await?,
         SeedAnswer::Published {
             position: done.position
         }
@@ -229,7 +229,7 @@ async fn seed_hook_and_follow_up_run_once_while_retained_piece_work_keeps_its_ow
     let calls = host.calls.lock().await.clone();
     assert_eq!(calls.len(), 3);
     assert_eq!(calls.first(), calls.last());
-    let mut delivered = host.hook.delivered.lock().await;
+    let mut delivered = host.follow_up_delivery.delivered.lock().await;
     let rows = sqlx_core::query::query::<Turso>(
         "SELECT item,CAST(count(*) AS TEXT) AS effects FROM delivered GROUP BY item ORDER BY item",
     )
@@ -262,9 +262,11 @@ async fn a_snapshot_hook_refusal_rolls_back_rows_ready_state_hook_writes_and_new
     let store = Arc::new(
         TursoStore::open_and_migrate(&directory.path().join("copy.db"), Arc::clone(&host)).await?,
     );
-    let done = staged_seed(&store, Arc::clone(&host.hook)).await?;
-    host.hook.snapshot_refuse.store(true, Ordering::SeqCst);
-    let result = publish(&store, Arc::clone(&host.hook), done.clone()).await;
+    let done = staged_seed(&store, Arc::clone(&host.receiver_rules)).await?;
+    host.receiver_rules
+        .snapshot_refuse
+        .store(true, Ordering::SeqCst);
+    let result = publish(&store, Arc::clone(&host.receiver_rules), done.clone()).await;
     let Err(JournalError::Aborted { reason }) = result else {
         return Err("snapshot hook did not refuse publication".into());
     };
@@ -272,15 +274,17 @@ async fn a_snapshot_hook_refusal_rolls_back_rows_ready_state_hook_writes_and_new
         serde_json::from_str::<serde_json::Value>(&reason)?,
         serde_json::json!({"kind":"hook","value":{"code":"snapshot_policy","detail":"snapshot projection refused"}})
     );
-    assert_eq!(host.hook.snapshot_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(host.receiver_rules.snapshot_calls.load(Ordering::SeqCst), 1);
     store.transaction(|scope|Box::pin(async move {
         assert_eq!(copy_status(scope).await.map_err(storage)?,CopyStatusAnswer::NotInitialized);
         let row=sqlx_core::query::query::<Turso>("SELECT CAST((SELECT count(*) FROM sqlite_schema WHERE name='records') AS TEXT) AS tables,CAST((SELECT count(*) FROM consumer_applied) AS TEXT) AS hooks,CAST((SELECT count(*) FROM _fleet_sync_operations) AS TEXT) AS operations,CAST((SELECT count(*) FROM _fleet_sync_seed_pages) AS TEXT) AS pages").fetch_one(scope.executor()).await?;
         assert_eq!(row.try_get::<String,_>("tables")?,"0");assert_eq!(row.try_get::<String,_>("hooks")?,"0");assert_eq!(row.try_get::<String,_>("operations")?,"1");assert_eq!(row.try_get::<String,_>("pages")?,"1");Ok(())
     })).await?;
-    host.hook.snapshot_refuse.store(false, Ordering::SeqCst);
+    host.receiver_rules
+        .snapshot_refuse
+        .store(false, Ordering::SeqCst);
     assert_eq!(
-        publish(&store, Arc::clone(&host.hook), done.clone()).await?,
+        publish(&store, Arc::clone(&host.receiver_rules), done.clone()).await?,
         SeedAnswer::Published {
             position: done.position
         }
@@ -289,7 +293,7 @@ async fn a_snapshot_hook_refusal_rolls_back_rows_ready_state_hook_writes_and_new
         committed_counts(&store).await?,
         ("1".into(), "1".into(), "2".into())
     );
-    assert_eq!(host.hook.snapshot_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(host.receiver_rules.snapshot_calls.load(Ordering::SeqCst), 2);
     Ok(())
 }
 
@@ -312,7 +316,7 @@ async fn reject_stored_seed_database_mismatch(actions: &[SeedIdentityAction]) ->
     let host = host(&directory.path().join("consumer.db")).await?;
     let store =
         TursoStore::open_and_migrate(&directory.path().join("copy.db"), Arc::clone(&host)).await?;
-    let done = staged_seed(&store, Arc::clone(&host.hook)).await?;
+    let done = staged_seed(&store, Arc::clone(&host.receiver_rules)).await?;
     let seed = done.seed;
     let page = store
         .transaction(move |scope| {
@@ -347,7 +351,7 @@ async fn reject_stored_seed_database_mismatch(actions: &[SeedIdentityAction]) ->
         let action = *action;
         let mut page = page.clone();
         let done = done.clone();
-        let hook = Arc::clone(&host.hook);
+        let hook = Arc::clone(&host.receiver_rules);
         // Return the typed rule error as data so the enclosing transaction commits.
         let error = store
             .transaction(move |scope| {
@@ -397,8 +401,13 @@ async fn reject_stored_seed_database_mismatch(actions: &[SeedIdentityAction]) ->
             }))
         );
         assert_eq!(seed_identity_state(&store).await?, before);
-        assert_eq!(host.hook.snapshot_calls.load(Ordering::SeqCst), 0);
-        assert_eq!(host.hook.follow_up_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(host.receiver_rules.snapshot_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            host.follow_up_delivery
+                .follow_up_calls
+                .load(Ordering::SeqCst),
+            0
+        );
         store
             .transaction(|scope| {
                 Box::pin(async move {

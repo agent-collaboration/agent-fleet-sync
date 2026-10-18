@@ -1,5 +1,5 @@
 use crate::{
-    CopyStatus, InstallPageReceipt, ReceiverError, ReceiverHook, SnapshotInstall,
+    CopyStatus, InstallPageReceipt, ReceiverError, ReceiverRules, SnapshotInstall,
     SnapshotInstallError, SnapshotInstallState, SnapshotReady, StoreError, checked_queries,
     copy_contract::{CopyRecord, validate_copy_status},
     copy_storage::{CopyStorage, encode_record},
@@ -232,7 +232,7 @@ where
             InstallStorage(self.0).save(&marker).await
         }
     }
-    pub async fn mark_ready<H: ReceiverHook<S>>(
+    pub async fn mark_ready<H: ReceiverRules<S>>(
         &mut self,
         install: &SnapshotInstall,
         hook: &H,

@@ -116,7 +116,7 @@ async fn retirement_erases_install_receipts_and_marker() -> TestResult {
 struct InstallHook {
     refuse: bool,
 }
-impl ReceiverHook<TursoScope<'_>> for InstallHook {
+impl ReceiverRules<TursoScope<'_>> for InstallHook {
     type Protocol = NoConsumer;
     type FollowUp = String;
     fn local_migrations(&self) -> &'static [sqlx_core::migrate::Migration] {
@@ -162,6 +162,9 @@ impl ReceiverHook<TursoScope<'_>> for InstallHook {
         }
         Ok(vec!["snapshot published".into()])
     }
+}
+impl FollowUpHandler for InstallHook {
+    type Item = String;
     async fn follow_up(
         &self,
         _: &String,
@@ -170,6 +173,7 @@ impl ReceiverHook<TursoScope<'_>> for InstallHook {
         Ok(FollowUpDone)
     }
 }
+
 async fn prepared(
     connection: &mut TursoConnection,
     install: &SnapshotInstall,
