@@ -192,25 +192,11 @@ pub fn snapshot_schema_statements(
         .collect::<Vec<_>>();
     // Strings serialize infallibly. Count through the serializer without keeping
     // a second potentially large encoded copy of the catalog.
-    let mut counter = EncodedBytes(0);
-    if serde_json::to_writer(&mut counter, &statements).is_err()
-        || counter.0 > MAX_SNAPSHOT_SCHEMA_BYTES
-    {
-        return Err(SnapshotSchemaTooLarge {
-            encoded_size: counter.0,
-        });
+    let encoded_size = crate::encoded_size::encoded_json_size(&statements).unwrap_or(usize::MAX);
+    if encoded_size > MAX_SNAPSHOT_SCHEMA_BYTES {
+        return Err(SnapshotSchemaTooLarge { encoded_size });
     }
     Ok(statements)
-}
-struct EncodedBytes(usize);
-impl std::io::Write for EncodedBytes {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0 = self.0.saturating_add(bytes.len());
-        Ok(bytes.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
 }
 
 #[cfg(test)]

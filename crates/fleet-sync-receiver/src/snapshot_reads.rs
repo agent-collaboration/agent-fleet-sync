@@ -3,6 +3,9 @@ use crate::{
     row_apply::primary_columns, schema_reads::SchemaReads,
 };
 use durable_steps::storage::TransactionScope;
+use fleet_sync_protocol::unit_budget::{
+    MAX_UNIT_BYTES, TARGET_UNIT_BYTES, UnitTooLarge, measure_snapshot_unit,
+};
 use fleet_sync_protocol::{SnapshotCursor, SnapshotPage, SnapshotRead};
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
@@ -73,39 +76,64 @@ where
     };
     let table = tables.get(table_index).cloned().unwrap_or_default();
     let schema_steps = SchemaReads(scope).snapshot_statements().await?;
-    let mut rows = Vec::new();
-    let mut next = None;
-    if !table.is_empty() {
-        let columns = SchemaReads(scope).table_columns(&table).await?;
-        let keys = primary_columns(&columns);
-        let column_names = columns
-            .iter()
-            .map(|column| column.name.clone())
-            .collect::<Vec<_>>();
-        let column_sql = column_names
-            .iter()
-            .map(|name| quoted_identifier(name))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let key_sql = keys
-            .iter()
-            .map(|column| quoted_identifier(&column.name))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let after = cursor
-            .as_ref()
-            .map(|cursor| cursor.after_key.as_slice())
-            .unwrap_or_default();
-        if !after.is_empty()
-            && (after.len() != keys.len()
-                || after
-                    .iter()
-                    .any(|value| matches!(value, fleet_sync_protocol::SqlValue::Null)))
-        {
-            return Err(ReceiverError::InvalidInput {
-                field: "snapshot cursor key shape mismatch".into(),
-            });
+    let next_table = tables.get(table_index + 1).map(|table| SnapshotCursor {
+        position: status.acked,
+        table: table.clone(),
+        after_key: Vec::new(),
+    });
+    let page = SnapshotPage {
+        database: status.database,
+        position: status.acked,
+        schema: status.schema.clone(),
+        schema_steps,
+        table: table.clone(),
+        rows: Vec::new(),
+        next: next_table.clone(),
+    };
+    let measured = measure_snapshot_unit(page).map_err(|_| ReceiverError::InvalidInput {
+        field: "snapshot encoding".into(),
+    })?;
+    if measured.encoded_size > MAX_UNIT_BYTES {
+        return Err(UnitTooLarge::SnapshotSchema {
+            encoded_size: measured.encoded_size,
         }
+        .into());
+    }
+    let mut page = measured.unit;
+    if table.is_empty() {
+        return Ok(SnapshotRead::Page(Box::new(page)));
+    }
+    let columns = SchemaReads(scope).table_columns(&table).await?;
+    let keys = primary_columns(&columns);
+    let column_names = columns
+        .iter()
+        .map(|column| column.name.clone())
+        .collect::<Vec<_>>();
+    let column_sql = column_names
+        .iter()
+        .map(|name| quoted_identifier(name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let key_sql = keys
+        .iter()
+        .map(|column| quoted_identifier(&column.name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let after = cursor
+        .as_ref()
+        .map(|cursor| cursor.after_key.as_slice())
+        .unwrap_or_default();
+    if !after.is_empty()
+        && (after.len() != keys.len()
+            || after
+                .iter()
+                .any(|value| matches!(value, fleet_sync_protocol::SqlValue::Null)))
+    {
+        return Err(ReceiverError::InvalidInput {
+            field: "snapshot cursor key shape mismatch".into(),
+        });
+    }
+    let read_next = |after: &[fleet_sync_protocol::SqlValue]| {
         let predicate = if after.is_empty() {
             String::new()
         } else {
@@ -114,54 +142,70 @@ where
                 after.iter().map(|_| "?").collect::<Vec<_>>().join(", ")
             )
         };
-        let result = BoundStatement::query(
+        BoundStatement::query(
             format!(
-                "SELECT {column_sql} FROM {}{predicate} ORDER BY {key_sql} LIMIT {}",
-                quoted_identifier(&table),
-                PAGE_SIZE + 1
+                "SELECT {column_sql} FROM {}{predicate} ORDER BY {key_sql} LIMIT 1",
+                quoted_identifier(&table)
             ),
             after.to_vec(),
-            column_names,
+            column_names.clone(),
         )
-        .fetch_rows(scope)
-        .await?;
-        for row in result.iter().take(PAGE_SIZE) {
-            rows.push(
-                columns
-                    .iter()
-                    .map(|column| row.value(&column.name).cloned())
-                    .collect::<Result<Vec<_>, StoreError>>()?,
-            );
-        }
-        if result.len() > PAGE_SIZE {
-            let last = result
-                .get(PAGE_SIZE - 1)
-                .ok_or_else(|| StoreError::Corrupt {
-                    field: "snapshot page".into(),
-                })?;
-            next = Some(SnapshotCursor {
+    };
+    // The DO SQLx executor eagerly drains each SQL query. LIMIT 1 bounds that
+    // backend buffer while every keyset read stays in the host-owned transaction.
+    let mut pending = read_next(after).fetch_rows(scope).await?.pop();
+    while let Some(row) = pending {
+        let key = keys
+            .iter()
+            .map(|column| row.value(&column.name).cloned())
+            .collect::<Result<Vec<_>, StoreError>>()?;
+        let values = columns
+            .iter()
+            .map(|column| row.value(&column.name).cloned())
+            .collect::<Result<Vec<_>, StoreError>>()?;
+        let following = read_next(&key).fetch_rows(scope).await?.pop();
+        let next = if following.is_some() {
+            Some(SnapshotCursor {
                 position: status.acked,
                 table: table.clone(),
-                after_key: keys
-                    .iter()
-                    .map(|column| last.value(&column.name).cloned())
-                    .collect::<Result<Vec<_>, StoreError>>()?,
-            });
-        } else if let Some(table) = tables.get(table_index + 1) {
-            next = Some(SnapshotCursor {
-                position: status.acked,
-                table: table.clone(),
-                after_key: Vec::new(),
-            });
+                after_key: key.clone(),
+            })
+        } else {
+            next_table.clone()
+        };
+        let previous_next = page.next.take();
+        page.rows.push(values);
+        page.next = next;
+        let measured = measure_snapshot_unit(page).map_err(|_| ReceiverError::InvalidInput {
+            field: "snapshot encoding".into(),
+        })?;
+        page = measured.unit;
+        if page.rows.len() > 1 && measured.encoded_size > TARGET_UNIT_BYTES {
+            page.rows.pop();
+            page.next = previous_next;
+            break;
         }
+        if measured.encoded_size > MAX_UNIT_BYTES {
+            let key = key
+                .into_iter()
+                .map(|value| match value {
+                    fleet_sync_protocol::SqlValue::Text(value) => Ok(value),
+                    _ => Err(StoreError::Corrupt {
+                        field: "snapshot row key".into(),
+                    }),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            return Err(UnitTooLarge::Row {
+                table: table.clone(),
+                key,
+                encoded_size: measured.encoded_size,
+            }
+            .into());
+        }
+        if measured.encoded_size >= TARGET_UNIT_BYTES || page.rows.len() == PAGE_SIZE {
+            break;
+        }
+        pending = following;
     }
-    Ok(SnapshotRead::Page(Box::new(SnapshotPage {
-        database: status.database,
-        position: status.acked,
-        schema: status.schema,
-        schema_steps,
-        table,
-        rows,
-        next,
-    })))
+    Ok(SnapshotRead::Page(Box::new(page)))
 }

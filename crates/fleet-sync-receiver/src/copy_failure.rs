@@ -85,6 +85,7 @@ pub fn receiver_rollback(error: ReceiverError) -> StoreError {
         | ReceiverError::Storage(_)
         | ReceiverError::InvalidInput { .. }
         | ReceiverError::SnapshotSchema { .. }
+        | ReceiverError::UnitTooLarge(_)
         | ReceiverError::FenceConflict) => match unavailable_receiver(&error) {
             Some(reason) => copy_rollback(reason),
             None => StoreError::backend(error),

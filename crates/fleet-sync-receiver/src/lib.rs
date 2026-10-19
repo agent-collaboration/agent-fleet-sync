@@ -78,6 +78,8 @@ mod turso_transport_tests;
 mod turso_uuid_key_tests;
 
 #[cfg(test)]
+mod turso_bounded_snapshot_tests;
+#[cfg(test)]
 mod turso_rule_tests;
 
 #[cfg(test)]

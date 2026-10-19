@@ -146,6 +146,8 @@ mod sender_tests;
 #[cfg(test)]
 mod admitted_epoch_tests;
 #[cfg(test)]
+mod bounded_piece_tests;
+#[cfg(test)]
 mod writer_journal_tests;
 #[cfg(test)]
 mod writer_pending_release_tests;

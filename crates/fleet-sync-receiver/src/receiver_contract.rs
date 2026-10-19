@@ -172,6 +172,9 @@ impl From<ReceiverError> for ApplyFailure {
             ReceiverError::SnapshotSchema { .. } => Self::Storage(StoreError::Corrupt {
                 field: "unexpected snapshot producer refusal during apply".into(),
             }),
+            ReceiverError::UnitTooLarge(_) => Self::Storage(StoreError::Corrupt {
+                field: "unexpected unit producer refusal during apply".into(),
+            }),
             ReceiverError::SchemaUnsupported { form } => {
                 Self::Refused(PieceRefusal::SchemaUnsupported { form })
             }
@@ -181,6 +184,8 @@ impl From<ReceiverError> for ApplyFailure {
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ReceiverError {
+    #[error(transparent)]
+    UnitTooLarge(#[from] fleet_sync_protocol::unit_budget::UnitTooLarge),
     #[error("current snapshot schema encodes to {encoded_size} bytes, exceeding 256 KiB")]
     SnapshotSchema { encoded_size: usize },
     #[error("unsupported replicated schema: {form:?}")]

@@ -10,6 +10,7 @@ mod delivery_identity;
 mod delivery_item;
 mod delivery_message;
 mod delivery_outcome;
+mod encoded_size;
 mod gate_message;
 mod holder_change_message;
 mod lease_message;
@@ -31,6 +32,7 @@ mod session_frame;
 mod snapshot_manifest;
 mod snapshot_page;
 mod transaction_part;
+pub mod unit_budget;
 
 pub use actor_reference::*;
 pub use copy_failure::*;

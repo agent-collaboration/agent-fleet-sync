@@ -52,6 +52,8 @@ pub enum AdoptionHistory {
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum OpenError {
+    #[error(transparent)]
+    UnitTooLarge(#[from] fleet_sync_protocol::unit_budget::UnitTooLarge),
     #[error("the physical file is live in an incompatible access mode")]
     FileInUse,
     #[error("native library file paths must be lossless UTF-8")]

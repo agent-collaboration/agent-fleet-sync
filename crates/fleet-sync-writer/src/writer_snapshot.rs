@@ -6,6 +6,9 @@ use crate::{
     snapshot_schema::snapshot_schema,
     writer_file_record::read_file_record,
 };
+use fleet_sync_protocol::unit_budget::{
+    MAX_UNIT_BYTES, TARGET_UNIT_BYTES, UnitTooLarge, measure_snapshot_unit,
+};
 use fleet_sync_protocol::{
     DatabaseId, ReplicationPosition, SchemaIdentity, SnapshotCursor, SnapshotManifest,
     SnapshotPage, TableDigestBuilder, TableManifest, TableName,
@@ -100,81 +103,125 @@ impl WriterSnapshot {
         } else {
             0
         };
-        let Some(table) = self.tables.get(index) else {
-            return Ok(SnapshotPage {
-                database: self.database,
-                position: self.position,
-                schema: self.schema.clone(),
-                schema_steps: self.statements.clone(),
-                table: String::new(),
-                rows: Vec::new(),
-                next: None,
-            });
-        };
-        let after = cursor
-            .as_ref()
-            .map_or(&[][..], |cursor| cursor.after_key.as_slice());
-        let mut rows = read_rows(&mut self.transaction, table, after, PAGE_ROWS + 1).await?;
-        let next = if rows.len() > PAGE_ROWS {
-            rows.truncate(PAGE_ROWS);
-            Some(SnapshotCursor {
-                position: self.position,
-                table: table.name().into(),
-                after_key: row_key(
-                    table,
-                    rows.last()
-                        .ok_or_else(|| OpenError::corrupt("snapshot.page"))?,
-                )?,
-            })
-        } else {
-            self.tables.get(index + 1).map(|table| SnapshotCursor {
-                position: self.position,
-                table: table.name().into(),
-                after_key: Vec::new(),
-            })
-        };
-        Ok(SnapshotPage {
+        let table = self.tables.get(index);
+        let next_table = self.tables.get(index + 1).map(|table| SnapshotCursor {
+            position: self.position,
+            table: table.name().into(),
+            after_key: Vec::new(),
+        });
+        let page = SnapshotPage {
             database: self.database,
             position: self.position,
             schema: self.schema.clone(),
             schema_steps: self.statements.clone(),
-            table: table.name().into(),
-            rows,
-            next,
-        })
+            table: table.map_or_else(String::new, |table| table.name().into()),
+            rows: Vec::new(),
+            next: next_table.clone(),
+        };
+        let measured =
+            measure_snapshot_unit(page).map_err(|_| OpenError::corrupt("snapshot.encoding"))?;
+        if measured.encoded_size > MAX_UNIT_BYTES {
+            return Err(UnitTooLarge::SnapshotSchema {
+                encoded_size: measured.encoded_size,
+            }
+            .into());
+        }
+        let mut page = measured.unit;
+        let Some(table) = table else {
+            return Ok(page);
+        };
+        let after = cursor
+            .as_ref()
+            .map_or(&[][..], |cursor| cursor.after_key.as_slice());
+        // One bounded query per row also works for SQLx backends which collect
+        // a query's entire result before yielding its first Rust stream item.
+        let mut pending = read_rows(&mut self.transaction, table, after, 1)
+            .await?
+            .pop();
+        while let Some(row) = pending {
+            let key = row_key(table, &row)?;
+            let following = read_rows(&mut self.transaction, table, &key, 1)
+                .await?
+                .pop();
+            let next = if following.is_some() {
+                Some(SnapshotCursor {
+                    position: self.position,
+                    table: table.name().into(),
+                    after_key: key.clone(),
+                })
+            } else {
+                next_table.clone()
+            };
+            let previous_next = page.next.take();
+            page.rows.push(row);
+            page.next = next;
+            let measured =
+                measure_snapshot_unit(page).map_err(|_| OpenError::corrupt("snapshot.encoding"))?;
+            page = measured.unit;
+            if page.rows.len() > 1 && measured.encoded_size > TARGET_UNIT_BYTES {
+                page.rows.pop();
+                page.next = previous_next;
+                break;
+            }
+            if measured.encoded_size > MAX_UNIT_BYTES {
+                let key = key
+                    .into_iter()
+                    .map(|value| match value {
+                        fleet_sync_protocol::SqlValue::Text(value) => Ok(value),
+                        _ => Err(OpenError::corrupt("snapshot.row_key")),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Err(UnitTooLarge::Row {
+                    table: table.name().into(),
+                    key,
+                    encoded_size: measured.encoded_size,
+                }
+                .into());
+            }
+            if measured.encoded_size >= TARGET_UNIT_BYTES || page.rows.len() == PAGE_ROWS {
+                break;
+            }
+            pending = following;
+        }
+        Ok(page)
     }
 
     pub async fn manifest(&mut self) -> Result<SnapshotManifest, OpenError> {
         let mut tables = Vec::new();
-        for table in &self.tables {
-            let mut after = Vec::new();
-            let mut digest = TableDigestBuilder::new();
-            let mut row_count = 0_u64;
-            loop {
-                let rows = read_rows(&mut self.transaction, table, &after, PAGE_ROWS).await?;
-                for row in &rows {
-                    digest
-                        .push_row(row)
-                        .map_err(|_| OpenError::corrupt("snapshot.table_digest"))?;
-                    row_count = row_count
-                        .checked_add(1)
-                        .ok_or_else(|| OpenError::corrupt("snapshot.row_count"))?;
-                }
-                if rows.len() < PAGE_ROWS {
-                    break;
-                }
-                after = row_key(
-                    table,
-                    rows.last()
-                        .ok_or_else(|| OpenError::corrupt("snapshot.page"))?,
-                )?;
+        let mut cursor = None;
+        let mut digest = TableDigestBuilder::new();
+        let mut row_count = 0_u64;
+        loop {
+            let page = self.page(cursor).await?;
+            if page.table.is_empty() {
+                break;
             }
-            tables.push(TableManifest {
-                table: TableName::new(table.name())
-                    .map_err(|_| OpenError::corrupt("snapshot.table"))?,
-                row_count,
-                digest: digest.finish(),
-            });
+            for row in &page.rows {
+                digest
+                    .push_row(row)
+                    .map_err(|_| OpenError::corrupt("snapshot.table_digest"))?;
+                row_count = row_count
+                    .checked_add(1)
+                    .ok_or_else(|| OpenError::corrupt("snapshot.row_count"))?;
+            }
+            if page
+                .next
+                .as_ref()
+                .is_none_or(|next| next.table != page.table)
+            {
+                tables.push(TableManifest {
+                    table: TableName::new(&page.table)
+                        .map_err(|_| OpenError::corrupt("snapshot.table"))?,
+                    row_count,
+                    digest: digest.finish(),
+                });
+                digest = TableDigestBuilder::new();
+                row_count = 0;
+            }
+            cursor = page.next;
+            if cursor.is_none() {
+                break;
+            }
         }
         Ok(SnapshotManifest {
             database: self.database,
