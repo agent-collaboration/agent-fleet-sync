@@ -36,6 +36,14 @@ where
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
+    /// Read the stored recipient without inventing one or changing an empty store.
+    /// Read again on each alarm, then construct and expire the mailbox in this transaction.
+    pub async fn stored_recipient(scope: &mut S) -> Result<Option<PeerId>, DeliveryError> {
+        Ok(MailStorage::stored_state(scope)
+            .await?
+            .map(|state| state.peer))
+    }
+
     /// Allow new submissions on enrollment or readmission, preserving prior custody and answers.
     pub async fn open(&mut self) -> Result<(), DeliveryError> {
         let mut state = self.storage.state().await?;

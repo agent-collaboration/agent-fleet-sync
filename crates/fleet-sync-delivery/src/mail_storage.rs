@@ -18,20 +18,27 @@ where
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    pub async fn state(&mut self) -> Result<MailState, DeliveryError> {
-        let state: MailState = match queries::read_mail_state(self.scope)
-            .await
-            .map_err(sql_error)?
-        {
-            Some(row) => decode(row.record, "mail state")?,
-            None => MailState::new(self.owner),
+    pub async fn stored_state(scope: &mut S) -> Result<Option<MailState>, DeliveryError> {
+        let Some(row) = queries::read_mail_state(scope).await.map_err(sql_error)? else {
+            return Ok(None);
         };
-        if state.peer != self.owner
-            || state.items.value() > i64::MAX as u64
+        let state: MailState = decode(row.record, "mail state")?;
+        if state.items.value() > i64::MAX as u64
             || state.controls.value() > i64::MAX as u64
             || state.received_items > state.items
             || state.received_controls > state.controls
         {
+            return Err(DeliveryError::Corrupt {
+                field: "mail state owner or sequence",
+            });
+        }
+        Ok(Some(state))
+    }
+    pub async fn state(&mut self) -> Result<MailState, DeliveryError> {
+        let state = Self::stored_state(self.scope)
+            .await?
+            .unwrap_or_else(|| MailState::new(self.owner));
+        if state.peer != self.owner {
             return Err(DeliveryError::Corrupt {
                 field: "mail state owner or sequence",
             });
