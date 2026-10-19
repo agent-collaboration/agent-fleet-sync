@@ -84,8 +84,9 @@ impl NativeFileOwner {
         };
         // A cancelled close stays terminal while retaining its physical claim
         // until a retry finishes draining or the final owner is dropped.
-        *owner = OwnerState::Closing(admission);
+        *owner = OwnerState::Closing(admission.clone());
         self.close_pools().await;
+        admission.release_claim();
         *owner = OwnerState::Closed;
     }
     async fn close_pools(&self) {

@@ -4,7 +4,10 @@ use crate::OpenError;
 use std::{
     collections::{HashMap, hash_map::Entry},
     num::NonZeroUsize,
-    sync::{LazyLock, Mutex},
+    sync::{
+        LazyLock, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use std::{path::Path, sync::Arc};
 
@@ -54,6 +57,8 @@ pub(crate) struct FileAdmission {
     identity: FileIdentity,
     #[cfg(unix)]
     mode: AccessMode,
+    #[cfg(unix)]
+    released: AtomicBool,
 }
 impl FileAdmission {
     pub async fn writer(path: &Path, create_if_missing: bool) -> Result<Arc<Self>, OpenError> {
@@ -118,7 +123,11 @@ impl FileAdmission {
                     .ok_or_else(|| storage("file admission exhausted"))?;
             }
         }
-        Ok(Arc::new(Self { identity, mode }))
+        Ok(Arc::new(Self {
+            identity,
+            mode,
+            released: AtomicBool::new(false),
+        }))
     }
     #[cfg(not(unix))]
     async fn acquire(
@@ -133,34 +142,46 @@ impl FileAdmission {
             AccessMode::Writer => Ok(Arc::new(Self {})),
         }
     }
+    /// Release terminally after every associated SDK connection has drained.
+    /// Closed pool metadata may keep Arc clones alive; their later drops must
+    /// not decrement another owner's claim for the same physical file.
+    pub fn release_claim(&self) {
+        #[cfg(unix)]
+        {
+            if self.released.swap(true, Ordering::AcqRel) {
+                return;
+            }
+            if let Ok(mut files) = FILE_ADMISSIONS.lock() {
+                if matches!(self.mode, AccessMode::ReadCopy) {
+                    if matches!(files.get(&self.identity), Some(FileAccess::ReadCopy)) {
+                        files.remove(&self.identity);
+                    }
+                    return;
+                }
+                let remove = match files
+                    .get_mut(&self.identity)
+                    .and_then(|access| access.claims(self.mode).ok())
+                {
+                    Some(claims) => match NonZeroUsize::new(claims.get() - 1) {
+                        Some(remaining) => {
+                            *claims = remaining;
+                            false
+                        }
+                        None => true,
+                    },
+                    None => false,
+                };
+                if remove {
+                    files.remove(&self.identity);
+                }
+            }
+        }
+    }
 }
 #[cfg(unix)]
 impl Drop for FileAdmission {
     fn drop(&mut self) {
-        if let Ok(mut files) = FILE_ADMISSIONS.lock() {
-            if matches!(self.mode, AccessMode::ReadCopy) {
-                if matches!(files.get(&self.identity), Some(FileAccess::ReadCopy)) {
-                    files.remove(&self.identity);
-                }
-                return;
-            }
-            let remove = match files
-                .get_mut(&self.identity)
-                .and_then(|access| access.claims(self.mode).ok())
-            {
-                Some(claims) => match NonZeroUsize::new(claims.get() - 1) {
-                    Some(remaining) => {
-                        *claims = remaining;
-                        false
-                    }
-                    None => true,
-                },
-                None => false,
-            };
-            if remove {
-                files.remove(&self.identity);
-            }
-        }
+        self.release_claim();
     }
 }
 pub(crate) fn validate_native_path(path: &Path) -> Result<(), OpenError> {

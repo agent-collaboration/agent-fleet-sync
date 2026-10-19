@@ -163,3 +163,87 @@ async fn retained_non_utf8_path_cannot_claim_one_file_and_open_another() -> Test
     database.close().await;
     Ok(())
 }
+
+#[tokio::test]
+async fn closed_pool_metadata_does_not_keep_a_drained_writer_claim() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("closed-writer.db");
+    let database = writer(&path).await?;
+    add_mark(&database, "before close").await?;
+    // These are real SQLx pool handles. They retain only metadata after close,
+    // just as SQLx's queued return task can retain its extra PoolInner Arc.
+    let closed_pools = [
+        database.writer.current()?,
+        database.maintenance.current()?,
+        database.reader().pool.current()?,
+    ];
+    let mut connection = database.writer.acquire().await?;
+    let mut closing = Box::pin(database.close());
+
+    // Force an actual checked-out connection to outlive the start of close.
+    {
+        let mut context = std::task::Context::from_waker(futures_util::task::noop_waker_ref());
+        assert!(std::future::Future::poll(closing.as_mut(), &mut context).is_pending());
+    }
+    assert!(matches!(
+        RetainedFile::open_read_only(&path, ReadSchema).await,
+        Err(OpenError::FileInUse)
+    ));
+    assert_eq!(
+        sqlx_core::query::query::<sqlx_turso::Turso>("SELECT COUNT(*) AS count FROM local_marks")
+            .fetch_one(&mut *connection)
+            .await?
+            .try_get::<i64, _>("count")?,
+        1,
+        "the checked-out connection must remain able to touch the file"
+    );
+    connection.close().await?;
+    closing.await;
+    drop(database);
+    for pool in &closed_pools {
+        assert!(pool.is_closed());
+        assert_eq!(pool.size(), 0);
+    }
+
+    // No SDK connection remains, although every closed pool handle still lives.
+    let retained = RetainedFile::open_read_only(&path, ReadSchema).await;
+    assert!(
+        retained.is_ok(),
+        "post-drain retained open with closed pool metadata: {:?}",
+        retained.as_ref().err()
+    );
+    let retained = retained?;
+    assert_eq!(mark_count(retained.reader()).await?, 1);
+    drop(closed_pools);
+    let pool = retained.reader().pool.current()?;
+    drop(retained);
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn dropping_old_closed_pool_metadata_cannot_release_a_new_writer_claim() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("reopened-writer.db");
+    let database = writer(&path).await?;
+    let identity = WriterIdentity::observe(&database).await;
+    let closed_pools = [
+        database.writer.current()?,
+        database.maintenance.current()?,
+        database.reader().pool.current()?,
+    ];
+    database.close().await;
+    drop(database);
+    let reopened = identity.open(&path).await?;
+
+    // A later Arc drop must not decrement the next owner's physical claim.
+    drop(closed_pools);
+    assert!(matches!(
+        RetainedFile::open_read_only(&path, ReadSchema).await,
+        Err(OpenError::FileInUse)
+    ));
+    add_mark(&reopened, "new writer remains live").await?;
+    assert_eq!(mark_count(reopened.reader()).await?, 1);
+    reopened.close().await;
+    Ok(())
+}
