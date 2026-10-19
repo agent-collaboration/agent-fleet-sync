@@ -1,4 +1,6 @@
-use crate::session_storage::{load_notices_after, load_session, save_notice, save_session};
+use crate::session_storage::{
+    load_notices_after, load_session, save_notice, save_session, sessions_for_peer, store_error,
+};
 use crate::*;
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
@@ -6,6 +8,39 @@ use sqlx_core::{
 };
 
 use fleet_sync_protocol::*;
+
+/// Append to every non-ended logical session in the caller's transaction.
+/// Send effects target attached connections and run only after commit.
+/// A peer with no non-ended session has no effects or writes.
+pub async fn publish_notice_to_peer<S, P: ConsumerProtocol>(
+    scope: &mut S,
+    peer: &PeerId,
+    body: Notice<P>,
+) -> Result<Vec<SessionEffect<P>>, SessionError>
+where
+    S: SessionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+{
+    let mut sessions = sessions_for_peer(scope, peer)
+        .await?
+        .into_iter()
+        .filter(|record| !matches!(record.state, SessionState::Ended { .. }))
+        .peekable();
+    if sessions.peek().is_none() {
+        return Ok(Vec::new());
+    }
+    // Consumer notices need not implement Clone. Reuse their existing wire contract.
+    let encoded = serde_json::to_vec(&body).map_err(store_error)?;
+    let mut effects = Vec::new();
+    for record in sessions {
+        let body = serde_json::from_slice::<Notice<P>>(&encoded).map_err(store_error)?;
+        effects.extend(publish_notice::<S, P>(scope, &record.key(), body).await?);
+    }
+    Ok(effects)
+}
 
 /// Call inside the transaction that creates this notice. Effects run after commit.
 pub async fn publish_notice<S, P: ConsumerProtocol>(

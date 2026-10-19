@@ -22,6 +22,8 @@ pub use durable_steps::storage::TransactionScope;
 pub static SESSION_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 #[cfg(test)]
+mod peer_notice_tests;
+#[cfg(test)]
 mod rule_lifecycle_tests;
 #[cfg(test)]
 mod rule_test_support;
