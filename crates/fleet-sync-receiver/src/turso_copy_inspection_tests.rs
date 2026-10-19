@@ -137,13 +137,47 @@ async fn live_inspection_preserves_each_persisted_stage_and_reports_actual_finge
         },
     )
     .await?;
-    assert!(matches!(
-        inspect_copy(&mut TursoScope(&mut seeding)).await,
+    // Inspection projects persisted replicated membership, not every local table.
+    // Construct that schema-bearing Seeding state without claiming seed publication.
+    sqlx_core::raw_sql::raw_sql(concat!(
+        "CREATE TABLE seeding_records(id TEXT NOT NULL PRIMARY KEY, body TEXT);",
+        "INSERT INTO _fleet_sync_copy_tables(name) VALUES('seeding_records');"
+    ))
+    .execute(&mut seeding)
+    .await?;
+    let recorded_before: String =
+        sqlx_core::query::query::<Turso>("SELECT record FROM _fleet_sync_copy")
+            .fetch_one(&mut seeding)
+            .await?
+            .try_get("record")?;
+    let expected_seeding = schema_fingerprint(&[SchemaEntry {
+        kind: SchemaObjectKind::Table,
+        name: "seeding_records".into(),
+        sql: "CREATE TABLE seeding_records(id TEXT NOT NULL PRIMARY KEY, body TEXT)".into(),
+    }])?;
+    match inspect_copy(&mut TursoScope(&mut seeding)).await {
         CopyInspection::Live {
             stage: CopyStage::Seeding,
-            ..
+            status,
+            fingerprint,
+            staged_parts,
+        } => {
+            assert_eq!(fingerprint, expected_seeding);
+            assert_eq!(status.schema.fingerprint, schema_fingerprint(&[])?);
+            assert_ne!(
+                fingerprint, status.schema.fingerprint,
+                "a mid-seed difference is diagnostic, not damage"
+            );
+            assert!(staged_parts.is_empty());
         }
-    ));
+        answer => return Err(format!("expected Seeding facts: {answer:?}").into()),
+    }
+    let recorded_after: String =
+        sqlx_core::query::query::<Turso>("SELECT record FROM _fleet_sync_copy")
+            .fetch_one(&mut seeding)
+            .await?
+            .try_get("record")?;
+    assert_eq!(recorded_after, recorded_before);
     assert_eq!(
         copy_status(&mut TursoScope(&mut seeding)).await?,
         CopyStatusAnswer::NotInitialized
