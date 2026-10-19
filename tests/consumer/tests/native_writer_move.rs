@@ -31,6 +31,7 @@ async fn idle_writer_answers_release_and_clean_move_keeps_every_accepted_row() -
         .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
     let request = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         from_epoch: through.epoch,

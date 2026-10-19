@@ -77,6 +77,7 @@ async fn takeover(
     )
     .await?;
     let request = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: id,
         database: database()?,
         preview,

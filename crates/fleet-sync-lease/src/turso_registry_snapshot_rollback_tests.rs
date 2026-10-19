@@ -141,6 +141,7 @@ async fn registry_snapshot_lifecycle_and_holder_mutators_rollback_then_commit_on
         if mutation == "move" || mutation == "claim" {
             let request = if mutation == "move" {
                 HolderChangeRequest::Move {
+                    reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
                     attempt: change_id,
                     database: database()?,
                     from_epoch: Epoch::new(1)?,

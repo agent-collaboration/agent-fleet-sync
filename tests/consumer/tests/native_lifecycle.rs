@@ -353,6 +353,7 @@ async fn import_claim_settlement_and_renewal_replay_survive_registry_restart_and
         .peer(6, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
     let takeover = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         preview,
@@ -423,6 +424,7 @@ async fn import_claim_settlement_and_renewal_replay_survive_registry_restart_and
         .peer(8, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
     let takeover = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         preview,

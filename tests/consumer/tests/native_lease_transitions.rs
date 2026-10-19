@@ -154,6 +154,7 @@ async fn withdrawal_keeps_original_real_clock_deadline_then_fresh_renewal_resume
         .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
     let change = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database,
         from_epoch: writer.lease.epoch,
@@ -300,6 +301,7 @@ async fn stale_holder_move_refuses_then_a_recently_renewed_holder_moves_over_its
         .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
     let stale = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         from_epoch: writer.lease.epoch,
@@ -342,6 +344,7 @@ async fn stale_holder_move_refuses_then_a_recently_renewed_holder_moves_over_its
         .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
     let fresh = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database,
         from_epoch: writer.lease.epoch,
@@ -434,6 +437,7 @@ async fn authoritative_copy_refuses_the_takeover_tail_while_old_writer_keeps_it_
         .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
     let takeover = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         preview,

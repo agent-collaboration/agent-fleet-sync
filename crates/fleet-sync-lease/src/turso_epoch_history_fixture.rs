@@ -32,6 +32,7 @@ pub(super) async fn move_to(
         engine,
         &holder_change_request_key(id)?,
         HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt: id,
             database: database()?,
             from_epoch: Epoch::new(from)?,
@@ -58,6 +59,7 @@ pub(super) async fn takeover(
         engine,
         &holder_change_request_key(id)?,
         HolderChangeRequest::Takeover {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt: id,
             database: database()?,
             preview,

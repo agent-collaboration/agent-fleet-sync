@@ -86,6 +86,7 @@ async fn history_skips_a_real_repaired_reservation_and_preserves_frozen_paging()
     let gate = FenceGate::new();
     host.fence_gates.lock().await.insert(id, Arc::clone(&gate));
     let request = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: id,
         database: database()?,
         preview,

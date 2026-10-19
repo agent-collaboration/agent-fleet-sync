@@ -46,6 +46,7 @@ async fn cancel_unanswered_release_restores_same_epoch_after_pruning_and_writer_
         .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
     let change = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database,
         from_epoch: before.epoch,
@@ -208,6 +209,7 @@ async fn cancel_answered_release_while_copy_is_behind_prevents_fencing_and_resum
         .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
     let change = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database,
         from_epoch: position.epoch,
@@ -331,6 +333,7 @@ async fn takeover_supersedes_a_cancelling_move_with_an_unanswered_withdrawal() -
         .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
     let change = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database,
         from_epoch: epoch,
@@ -369,6 +372,7 @@ async fn takeover_supersedes_a_cancelling_move_with_an_unanswered_withdrawal() -
     assert_eq!(view.phase, HolderChangePhase::Cancelling);
     assert!(view.outcome.is_none());
     let takeover = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         preview,

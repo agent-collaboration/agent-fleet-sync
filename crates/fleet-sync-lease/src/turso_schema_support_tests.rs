@@ -95,6 +95,7 @@ async fn admission_freezes_support_before_check_even_across_registry_reopen() ->
         publish(&store, report(2, 2, 1)?).await?;
         let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000001101))?;
         let change = HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt,
             database: database()?,
             from_epoch: Epoch::new(1)?,
@@ -176,6 +177,7 @@ async fn missing_report_is_refused_even_for_schema_zero_then_a_known_zero_target
     .await?;
     let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000001201))?;
     let change = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database: database()?,
         preview,
@@ -201,6 +203,7 @@ async fn missing_report_is_refused_even_for_schema_zero_then_a_known_zero_target
     .await?;
     let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000001202))?;
     let change = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database: database()?,
         preview,
@@ -231,6 +234,7 @@ async fn admitted_absence_stays_absent_when_a_report_appears_before_check() -> T
         assert_eq!(projected(&store, peer(99)?).await?, None);
         let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000001301))?;
         let change = HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt,
             database: database()?,
             from_epoch: Epoch::new(1)?,

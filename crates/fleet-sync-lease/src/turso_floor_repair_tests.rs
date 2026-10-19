@@ -60,6 +60,7 @@ async fn restored_registry_reserves_above_the_fresh_previews_copy_fence() -> Tes
     .await?;
     assert_eq!(preview.fence, Epoch::new(5)?);
     let request = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: transfer(911)?,
         database: database()?,
         preview,
@@ -117,6 +118,7 @@ async fn fence_not_advanced_repairs_once_from_the_real_copys_proven_fence() -> T
         .await
         .insert(transfer(912)?, Arc::clone(&gate));
     let request = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: transfer(912)?,
         database: database()?,
         preview,
@@ -183,6 +185,7 @@ async fn a_second_floor_refusal_keeps_its_reservation_without_granting_or_changi
         .await
         .insert(transfer(913)?, Arc::clone(&gate));
     let request = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: transfer(913)?,
         database: database()?,
         preview,

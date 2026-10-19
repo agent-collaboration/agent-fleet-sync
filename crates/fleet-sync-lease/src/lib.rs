@@ -136,6 +136,8 @@ mod turso_claim_refusal_tests;
 #[cfg(test)]
 mod turso_claim_replay_tests;
 #[cfg(test)]
+mod turso_holder_change_reason_tests;
+#[cfg(test)]
 mod turso_idle_move_tests;
 #[cfg(test)]
 mod turso_move_refusal_tests;

@@ -181,6 +181,7 @@ async fn epoch_holder_preserves_the_historical_grant_after_a_real_move_and_store
         &engine,
         &holder_change_request_key(attempt)?,
         HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt,
             database: database()?,
             from_epoch: Epoch::new(1)?,

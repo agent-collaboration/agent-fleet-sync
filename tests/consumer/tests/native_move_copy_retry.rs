@@ -105,6 +105,7 @@ async fn actual_move_ack_and_fence_calls_retry_damage_across_restart_without_end
         let database = DatabaseId::new(durable_steps::Uuid::now_v7())?;
         let attempt = TransferId::new(durable_steps::Uuid::now_v7())?;
         let change = HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt,
             database,
             from_epoch: Epoch::new(1)?,

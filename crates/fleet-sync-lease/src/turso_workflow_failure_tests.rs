@@ -131,6 +131,7 @@ async fn version_failed_withdrawal_stays_cancelling_records_failure_and_can_be_s
         )
         .await?;
         let request = HolderChangeRequest::Takeover {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt: new,
             database: database()?,
             preview,

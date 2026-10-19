@@ -17,6 +17,7 @@ pub(super) fn attempt(value: u128) -> TestResult<TransferId> {
 }
 pub(super) fn move_request(id: TransferId) -> TestResult<HolderChangeRequest> {
     Ok(HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: id,
         database: database()?,
         from_epoch: Epoch::new(1)?,

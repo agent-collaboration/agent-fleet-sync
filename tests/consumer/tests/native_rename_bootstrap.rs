@@ -38,6 +38,7 @@ async fn new_writer_publishes_v1_prefix_then_renames_writes_and_replicates() -> 
         .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
     let change = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         from_epoch: through.epoch,

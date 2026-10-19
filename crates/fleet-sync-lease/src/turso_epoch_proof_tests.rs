@@ -33,6 +33,7 @@ async fn move_holder(
         engine,
         &holder_change_request_key(attempt)?,
         HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt,
             database: database()?,
             from_epoch: Epoch::new(from)?,

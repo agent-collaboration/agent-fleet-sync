@@ -33,6 +33,7 @@ async fn move_refuses_just_past_renewal_age_without_calling_the_holder() -> Test
     host.now.store(1_801_001, Ordering::SeqCst);
     let attempt = TransferId::new(Uuid::from_u128(0x019eef000000700080000000000009c5))?;
     let request = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database: database()?,
         from_epoch: Epoch::new(1)?,
@@ -94,6 +95,7 @@ async fn move_admits_just_inside_and_exactly_at_the_renewal_age_bound() -> TestR
         host.now.store(now, Ordering::SeqCst);
         let attempt = TransferId::new(Uuid::from_u128(0x019eef000000700080000000000009c6))?;
         let request = HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt,
             database: database()?,
             from_epoch: Epoch::new(1)?,

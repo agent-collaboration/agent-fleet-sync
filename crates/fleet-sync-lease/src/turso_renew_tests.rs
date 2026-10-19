@@ -246,6 +246,7 @@ async fn open_transfer_does_not_stop_renewal_and_retired_marker_precedes_saved_a
     let mut scope = TursoScope(&mut transaction);
     let transfer = TransferId::new(uuid::Uuid::from_u128(0x019eef00000070008000000000000014))?;
     let offered = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: transfer,
         database: database()?,
         from_epoch: Epoch::new(1)?,

@@ -20,6 +20,7 @@ fn transfer(value: u128) -> TestResult<TransferId> {
 }
 fn movement(id: u128, from: u64, to: u128) -> TestResult<HolderChangeRequest> {
     Ok(HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: transfer(id)?,
         database: database()?,
         from_epoch: Epoch::new(from)?,
@@ -190,6 +191,7 @@ async fn takeover_then_clean_move_preserves_rows_and_replays_one_successor_grant
         &store,
         &host,
         HolderChangeRequest::Takeover {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt: transfer(2401)?,
             database: database()?,
             preview,

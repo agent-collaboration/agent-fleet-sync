@@ -92,6 +92,7 @@ async fn typed_release_refusals_replay_without_fencing_or_changing_the_lease() -
         *host.release_answer.lock().await = Some(ReleaseAnswer::ReleaseRefused(release));
         let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000641))?;
         let request = HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt,
             database: database()?,
             from_epoch: Epoch::new(1)?,
@@ -205,6 +206,7 @@ async fn an_already_held_claim_replays_its_recorded_holder_after_takeover_and_re
     .await?;
     let takeover_attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000902))?;
     let takeover = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: takeover_attempt,
         database: database()?,
         preview,
@@ -260,6 +262,7 @@ async fn released_final_position_waits_for_the_real_copy_then_grants_once() -> T
     *host.release_answer.lock().await = Some(ReleaseAnswer::Released { final_position });
     let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000642))?;
     let request = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database: database()?,
         from_epoch: Epoch::new(1)?,

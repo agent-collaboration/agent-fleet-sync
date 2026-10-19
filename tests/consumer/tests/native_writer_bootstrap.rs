@@ -40,6 +40,7 @@ async fn bootstrap_kill(after_rename: bool) -> TestResult {
         .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
     let change = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         from_epoch: through.epoch,

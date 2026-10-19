@@ -59,6 +59,7 @@ fn peer_session_lease_frames_exclude_administrative_operations() {
     };
     let administrative = [
         serde_json::to_value(HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change").unwrap(),
             attempt,
             database,
             from_epoch: Epoch::new(1).unwrap(),
@@ -66,6 +67,7 @@ fn peer_session_lease_frames_exclude_administrative_operations() {
         })
         .unwrap(),
         serde_json::to_value(HolderChangeRequest::Takeover {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change").unwrap(),
             attempt,
             database,
             preview: TakeoverPreview {
