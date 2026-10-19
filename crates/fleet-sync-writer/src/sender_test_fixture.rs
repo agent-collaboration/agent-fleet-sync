@@ -108,7 +108,7 @@ impl ReceiverRules<WriterScope<'_>> for CopyHook {
         &self,
         scope: &mut WriterScope<'_>,
         applied: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, fleet_sync_protocol::HookRefusal> {
+    ) -> Result<Vec<()>, fleet_sync_receiver::HookError> {
         query::<Turso>("INSERT INTO hook_calls(position) VALUES(?)")
             .bind(applied.through.sequence.value().to_string())
             .execute(&mut *scope.0)
@@ -121,7 +121,8 @@ impl ReceiverRules<WriterScope<'_>> for CopyHook {
             return Err(fleet_sync_protocol::HookRefusal {
                 code: self.policy_code.clone(),
                 detail: "refused after hook write".into(),
-            });
+            }
+            .into());
         }
         Ok(Vec::new())
     }

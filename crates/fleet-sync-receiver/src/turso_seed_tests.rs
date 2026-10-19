@@ -527,7 +527,7 @@ impl ReceiverRules<TursoScope<'_>> for NoHook {
         &self,
         _: &mut TursoScope<'_>,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, HookRefusal> {
+    ) -> Result<Vec<()>, HookError> {
         Ok(Vec::new())
     }
 }

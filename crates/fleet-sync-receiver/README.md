@@ -17,6 +17,13 @@ returns typed follow-up items. A separate `FollowUpHandler` owns post-commit IO;
 it needs no transaction scope. At composition, bind the handler's `Item` to the
 rules' `FollowUp` type. A native consumer may implement both on one value.
 
+Both callbacks return `HookError`. Use `HookError::Refused` for a terminal
+consumer policy decision. Preserve SQL errors with
+`query.execute(scope.executor()).await.map_err(classify_sqlx_error)?`; that
+public conversion feeds `HookError::Storage` without erasing the storage class.
+Storage-full remains retryable after the host establishes rollback. A failed
+commit or an unproven rollback still takes precedence and stays unknown.
+
 `apply_piece` calls the consumer's `ReceiverRules::on_applied` inside that transaction.
 For `Applied`, pass its returned items to `admit_follow_ups::<Store, Item>` on the
 same scope, then commit before answering. Register `ApplyFollowUp<Store, Item>` on

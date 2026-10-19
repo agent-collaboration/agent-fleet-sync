@@ -35,6 +35,29 @@ struct TransactionState {
     depth: usize,
     pending_rollback_depths: VecDeque<usize>,
     rollback_failed: bool,
+    engine_outcome: EngineTransactionOutcome,
+}
+
+#[derive(Debug, Default, Eq, PartialEq)]
+enum EngineTransactionOutcome {
+    #[default]
+    Managed,
+    RolledBack,
+    Uncertain,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct StatementRollbackObservation {
+    live_managed_transaction: bool,
+    may_witness_rollback: bool,
+    check_success: bool,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(crate) enum CallerTransactionControl {
+    Ordinary,
+    PreservesOuterTransaction,
+    MayEndTransaction,
 }
 
 impl TransactionState {
@@ -92,6 +115,9 @@ impl TursoConnection {
     }
 
     pub(crate) fn increment_transaction_depth(&mut self) {
+        if self.transaction_state.depth() == 0 {
+            self.transaction_state.engine_outcome = EngineTransactionOutcome::Managed;
+        }
         self.transaction_state.increment_depth();
     }
 
@@ -109,8 +135,11 @@ impl TursoConnection {
         }
 
         while let Some(depth) = self.transaction_state.pop_pending_rollback() {
-            let sql = sqlx_core::transaction::rollback_ansi_transaction_sql(depth);
             self.forget_cached_statements();
+            if self.engine_rolled_back() {
+                continue;
+            }
+            let sql = sqlx_core::transaction::rollback_ansi_transaction_sql(depth);
             if let Err(error) = self.execute_raw_statement(sql.as_str()).await {
                 if depth == 1 && rollback_error_is_inactive_transaction(&error) {
                     continue;
@@ -122,6 +151,84 @@ impl TursoConnection {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn engine_rolled_back(&self) -> bool {
+        self.transaction_state.engine_outcome == EngineTransactionOutcome::RolledBack
+    }
+
+    pub(crate) fn require_live_transaction(&self) -> Result<(), Error> {
+        if self.transaction_depth() > 0 && self.engine_rolled_back() {
+            return Err(Error::Protocol(
+                "Turso transaction was rolled back by the engine".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn require_certain_transaction(&self, boundary: &'static str) -> Result<(), Error> {
+        match self.transaction_state.engine_outcome {
+            EngineTransactionOutcome::Managed => Ok(()),
+            EngineTransactionOutcome::RolledBack => Err(Error::Protocol(format!(
+                "Turso {boundary} cannot complete: transaction was rolled back by the engine"
+            ))),
+            EngineTransactionOutcome::Uncertain => Err(Error::Protocol(format!(
+                "Turso {boundary} cannot be certified: transaction boundary is not tracked by the driver"
+            ))),
+        }
+    }
+
+    pub(crate) fn before_statement(
+        &mut self,
+        control: CallerTransactionControl,
+    ) -> Result<StatementRollbackObservation, Error> {
+        self.require_live_transaction()?;
+        let tracked = self.transaction_depth() > 0;
+        let engine_live = self.raw().is_autocommit().map(|autocommit| !autocommit);
+        if tracked
+            && (control == CallerTransactionControl::MayEndTransaction
+                || !matches!(engine_live, Ok(true)))
+        {
+            self.transaction_state.engine_outcome = EngineTransactionOutcome::Uncertain;
+        }
+        Ok(StatementRollbackObservation {
+            live_managed_transaction: tracked
+                && matches!(engine_live, Ok(true))
+                && self.transaction_state.engine_outcome == EngineTransactionOutcome::Managed,
+            may_witness_rollback: control == CallerTransactionControl::Ordinary,
+            check_success: control == CallerTransactionControl::PreservesOuterTransaction,
+        })
+    }
+
+    pub(crate) fn after_statement_error(&mut self, observation: StatementRollbackObservation) {
+        if !observation.live_managed_transaction
+            || self.transaction_state.engine_outcome != EngineTransactionOutcome::Managed
+        {
+            return;
+        }
+        match self.raw().is_autocommit() {
+            Ok(true) => {
+                self.transaction_state.engine_outcome = if observation.may_witness_rollback {
+                    EngineTransactionOutcome::RolledBack
+                } else {
+                    EngineTransactionOutcome::Uncertain
+                };
+                self.forget_cached_statements();
+            }
+            Ok(false) => {}
+            Err(_) => {
+                self.transaction_state.engine_outcome = EngineTransactionOutcome::Uncertain;
+            }
+        }
+    }
+
+    pub(crate) fn after_statement_success(&mut self, observation: StatementRollbackObservation) {
+        if observation.live_managed_transaction
+            && observation.check_success
+            && !matches!(self.raw().is_autocommit(), Ok(false))
+        {
+            self.transaction_state.engine_outcome = EngineTransactionOutcome::Uncertain;
+        }
     }
 
     /// Returns the options used to create this connection

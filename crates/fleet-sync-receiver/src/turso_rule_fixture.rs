@@ -53,7 +53,7 @@ impl ReceiverRules<TursoScope<'_>> for Hook {
         &self,
         scope: &mut TursoScope<'_>,
         applied: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<String>, HookRefusal> {
+    ) -> Result<Vec<String>, HookError> {
         sqlx_core::query::query::<Turso>("INSERT INTO hook_records(value) VALUES(?1)")
             .bind(applied.through.sequence.value().to_string())
             .execute(scope.executor())
@@ -66,7 +66,8 @@ impl ReceiverRules<TursoScope<'_>> for Hook {
             return Err(HookRefusal {
                 code: fixture_refusal_code("policy"),
                 detail: "refused after writing".into(),
-            });
+            }
+            .into());
         }
         Ok(vec!["deliver notice".into()])
     }
@@ -178,7 +179,7 @@ impl ReceiverRules<TursoScope<'_>> for SchemaHook {
         &self,
         _: &mut TursoScope<'_>,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, HookRefusal> {
+    ) -> Result<Vec<()>, HookError> {
         Ok(Vec::new())
     }
 }

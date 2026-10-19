@@ -7,6 +7,53 @@
 
 use std::iter::Peekable;
 
+pub(super) fn transaction_control(sql: &str) -> crate::connection::CallerTransactionControl {
+    use crate::connection::CallerTransactionControl;
+    use turso_parser::ast::{Cmd, Stmt};
+    let mut parser = turso_parser::parser::Parser::new(sql.as_bytes());
+    let mut statements = 0;
+    let mut has_control = false;
+    let mut has_release = false;
+    loop {
+        match parser.next_cmd() {
+            Ok(Some(Cmd::Stmt(
+                Stmt::Begin { .. }
+                | Stmt::Commit { .. }
+                | Stmt::Rollback {
+                    savepoint_name: None,
+                    ..
+                },
+            ))) => return CallerTransactionControl::MayEndTransaction,
+            Ok(Some(Cmd::Stmt(Stmt::Release { .. }))) => {
+                statements += 1;
+                has_release = true;
+                has_control = true;
+            }
+            Ok(Some(Cmd::Stmt(
+                Stmt::Savepoint { .. }
+                | Stmt::Rollback {
+                    savepoint_name: Some(_),
+                    ..
+                },
+            ))) => {
+                statements += 1;
+                has_control = true;
+            }
+            Ok(Some(_)) => statements += 1,
+            Ok(None) => {
+                return if has_release && statements > 1 {
+                    CallerTransactionControl::MayEndTransaction
+                } else if has_control {
+                    CallerTransactionControl::PreservesOuterTransaction
+                } else {
+                    CallerTransactionControl::Ordinary
+                };
+            }
+            Err(_) => return CallerTransactionControl::MayEndTransaction,
+        }
+    }
+}
+
 #[derive(Debug, Default, Eq, PartialEq)]
 pub(super) struct SqlInspection {
     pub(super) may_contain_multiple_statements: bool,

@@ -153,7 +153,12 @@ where
         let follow_ups = hook
             .on_applied(scope, &applied)
             .await
-            .map_err(|refusal| ApplyFailure::Refused(PieceRefusal::Hook(refusal)))?;
+            .map_err(|error| match error {
+                crate::HookError::Refused(refusal) => {
+                    ApplyFailure::Refused(PieceRefusal::Hook(refusal))
+                }
+                crate::HookError::Storage(error) => crate::ReceiverError::Storage(error).into(),
+            })?;
         for fragment in &staged {
             CopyStorage(scope).save_receipt(fragment).await?;
         }

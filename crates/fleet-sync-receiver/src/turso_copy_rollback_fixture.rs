@@ -72,7 +72,7 @@ impl ReceiverRules<TursoScope<'_, TestHost>> for HookMode {
         &self,
         scope: &mut TursoScope<'_, TestHost>,
         applied: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, HookRefusal> {
+    ) -> Result<Vec<()>, HookError> {
         sqlx_core::query::query::<Turso>("INSERT INTO hook_records(value) VALUES(?)")
             .bind(applied.through.sequence.value().to_string())
             .execute(scope.executor())
@@ -86,7 +86,8 @@ impl ReceiverRules<TursoScope<'_, TestHost>> for HookMode {
             Self::RefuseAfterWrite => Err(HookRefusal {
                 code: crate::turso_rule_fixture::fixture_refusal_code("policy"),
                 detail: "refused after business and hook writes".into(),
-            }),
+            }
+            .into()),
         }
     }
 }

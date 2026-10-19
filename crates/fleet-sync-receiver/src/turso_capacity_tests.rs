@@ -162,7 +162,7 @@ impl ReceiverRules<CapacityScope<'_>> for NoHook {
         &self,
         _: &mut CapacityScope<'_>,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, HookRefusal> {
+    ) -> Result<Vec<()>, HookError> {
         Ok(Vec::new())
     }
 }

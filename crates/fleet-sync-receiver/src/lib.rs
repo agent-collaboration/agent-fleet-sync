@@ -59,15 +59,16 @@ pub use fleet_sync_protocol::{CopyRole, CopyStatus};
 pub use hook_migrations::initialize_hook;
 pub use receiver_contract::{
     AppliedPiece, ApplyDecision, ApplyFailure, FollowUpAnswer, FollowUpDone, FollowUpFailure,
-    FollowUpHandler, InstalledSnapshot, ReceiverError, ReceiverRules, SeedAuthority, SeedDecision,
+    FollowUpHandler, HookError, InstalledSnapshot, ReceiverError, ReceiverRules, SeedAuthority,
+    SeedDecision,
 };
 pub use seed_rules::{seed_begin, seed_complete, seed_page};
 pub use snapshot_follow_up::{admit_snapshot_follow_ups, snapshot_follow_up_key};
 pub use snapshot_hooks::run_snapshot_hook;
 pub use snapshot_manifest::snapshot_manifest;
 pub use snapshot_reads::snapshot_page;
-pub use sql_transport::StoreError;
 use sql_transport::{BoundStatement, BoundValue};
+pub use sql_transport::{StoreError, sql_error as classify_sqlx_error};
 
 #[cfg(test)]
 mod turso_autoincrement_tests;
@@ -111,6 +112,10 @@ mod turso_copy_identity_tests;
 mod turso_fence_integrity_tests;
 #[cfg(test)]
 mod turso_hook_migration_tests;
+#[cfg(test)]
+mod turso_hook_storage_fixture;
+#[cfg(test)]
+mod turso_hook_storage_tests;
 #[cfg(test)]
 mod turso_integrity_tests;
 #[cfg(test)]

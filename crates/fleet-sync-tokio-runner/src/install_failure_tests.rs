@@ -28,14 +28,14 @@ impl<H: durable_steps::Host>
         &self,
         _: &mut durable_steps::turso_store::TursoScope<'_, H>,
         _: &fleet_sync_receiver::AppliedPiece<'_, ()>,
-    ) -> Result<Vec<String>, HookRefusal> {
+    ) -> Result<Vec<String>, fleet_sync_receiver::HookError> {
         Ok(Vec::new())
     }
     async fn on_snapshot_installed(
         &self,
         scope: &mut durable_steps::turso_store::TursoScope<'_, H>,
         installed: &fleet_sync_receiver::InstalledSnapshot,
-    ) -> Result<Vec<String>, HookRefusal> {
+    ) -> Result<Vec<String>, fleet_sync_receiver::HookError> {
         query::<sqlx_turso::Turso>("INSERT INTO hook_hits(position) VALUES(?)")
             .bind(installed.position.sequence.value().to_string())
             .execute(scope.executor())

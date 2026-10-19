@@ -38,6 +38,21 @@ pub enum SeedDecision<TFollowUp> {
     Answer(fleet_sync_protocol::SeedAnswer),
 }
 
+/// A consumer policy refusal is terminal; a storage failure keeps its storage class.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum HookError {
+    #[error("receiver rule refused: {0:?}")]
+    Refused(HookRefusal),
+    #[error(transparent)]
+    Storage(#[from] StoreError),
+}
+
+impl From<HookRefusal> for HookError {
+    fn from(refusal: HookRefusal) -> Self {
+        Self::Refused(refusal)
+    }
+}
+
 /// Transaction-time consumer rules return follow-up items for post-commit delivery.
 pub trait ReceiverRules<S: TransactionScope>: Send + Sync + 'static {
     type Protocol: ConsumerProtocol;
@@ -51,14 +66,14 @@ pub trait ReceiverRules<S: TransactionScope>: Send + Sync + 'static {
         &self,
         _scope: &mut S,
         _installed: &InstalledSnapshot,
-    ) -> impl Future<Output = Result<Vec<Self::FollowUp>, HookRefusal>> + Send {
+    ) -> impl Future<Output = Result<Vec<Self::FollowUp>, HookError>> + Send {
         async { Ok(Vec::new()) }
     }
     fn on_applied(
         &self,
         scope: &mut S,
         applied: &AppliedPiece<'_, <Self::Protocol as ConsumerProtocol>::Annotation>,
-    ) -> impl Future<Output = Result<Vec<Self::FollowUp>, HookRefusal>> + Send;
+    ) -> impl Future<Output = Result<Vec<Self::FollowUp>, HookError>> + Send;
 }
 
 /// The host composes this handler with rules producing exactly its item type.

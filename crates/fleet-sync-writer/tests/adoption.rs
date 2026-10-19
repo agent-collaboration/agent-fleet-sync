@@ -141,7 +141,7 @@ impl fleet_sync_receiver::ReceiverRules<CopyScope<'_>> for CopyHook {
         &self,
         _: &mut CopyScope<'_>,
         _: &fleet_sync_receiver::AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, fleet_sync_protocol::HookRefusal> {
+    ) -> Result<Vec<()>, fleet_sync_receiver::HookError> {
         Ok(Vec::new())
     }
 }

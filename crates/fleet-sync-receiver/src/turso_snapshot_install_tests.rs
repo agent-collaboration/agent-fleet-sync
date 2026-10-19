@@ -138,14 +138,14 @@ impl ReceiverRules<TursoScope<'_>> for InstallHook {
         &self,
         _: &mut TursoScope<'_>,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<String>, HookRefusal> {
+    ) -> Result<Vec<String>, HookError> {
         Ok(Vec::new())
     }
     async fn on_snapshot_installed(
         &self,
         scope: &mut TursoScope<'_>,
         installed: &InstalledSnapshot,
-    ) -> Result<Vec<String>, HookRefusal> {
+    ) -> Result<Vec<String>, HookError> {
         query::<Turso>("INSERT INTO installed_marks(position) VALUES(?1)")
             .bind(installed.position.sequence.value().to_string())
             .execute(scope.executor())
@@ -158,7 +158,8 @@ impl ReceiverRules<TursoScope<'_>> for InstallHook {
             return Err(HookRefusal {
                 code: crate::turso_rule_fixture::fixture_refusal_code("policy"),
                 detail: "refused after local write".into(),
-            });
+            }
+            .into());
         }
         Ok(vec!["snapshot published".into()])
     }

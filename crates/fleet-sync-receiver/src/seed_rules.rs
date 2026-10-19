@@ -233,8 +233,11 @@ where
         };
         let follow_ups = crate::run_snapshot_hook(scope, hook, &installed)
             .await
-            .map_err(|refusal| ReceiverError::SeedRefused {
-                answer: SeedAnswer::Hook(refusal),
+            .map_err(|error| match error {
+                crate::HookError::Refused(refusal) => ReceiverError::SeedRefused {
+                    answer: SeedAnswer::Hook(refusal),
+                },
+                crate::HookError::Storage(error) => ReceiverError::Storage(error),
             })?;
         seed.published = Some(done.clone());
         SeedStorage(scope).save(&seed).await?;

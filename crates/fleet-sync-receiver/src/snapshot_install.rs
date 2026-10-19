@@ -260,7 +260,10 @@ where
             .await?;
         let follow_ups = crate::run_snapshot_hook(self.0, hook, &installed)
             .await
-            .map_err(|refusal| SnapshotInstallError::Hook { refusal })?;
+            .map_err(|error| match error {
+                crate::HookError::Refused(refusal) => SnapshotInstallError::Hook { refusal },
+                crate::HookError::Storage(error) => SnapshotInstallError::Storage(error),
+            })?;
         marker.ready = true;
         InstallStorage(self.0).save(&marker).await?;
         Ok(SnapshotReady::Ready {

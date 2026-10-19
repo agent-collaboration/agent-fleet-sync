@@ -35,12 +35,13 @@ impl<S: TransactionScope> ReceiverRules<S> for ProbeHook {
         &self,
         _: &mut S,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, HookRefusal> {
+    ) -> Result<Vec<()>, fleet_sync_receiver::HookError> {
         if let Some(code) = &self.refusal {
             return Err(HookRefusal {
                 code: code.clone(),
                 detail: "injected after schema/rows before receipt".into(),
-            });
+            }
+            .into());
         }
         Ok(Vec::new())
     }

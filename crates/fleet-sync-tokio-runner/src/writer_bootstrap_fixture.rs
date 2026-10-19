@@ -84,7 +84,7 @@ impl<S: TransactionScope> ReceiverRules<S> for Hook {
         &self,
         _: &mut S,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, HookRefusal> {
+    ) -> Result<Vec<()>, fleet_sync_receiver::HookError> {
         Ok(Vec::new())
     }
 }

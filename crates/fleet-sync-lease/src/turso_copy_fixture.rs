@@ -13,7 +13,7 @@ impl ReceiverRules<CopyScope<'_>> for EmptyHook {
         &self,
         _: &mut CopyScope<'_>,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, HookRefusal> {
+    ) -> Result<Vec<()>, fleet_sync_receiver::HookError> {
         Ok(Vec::new())
     }
 }

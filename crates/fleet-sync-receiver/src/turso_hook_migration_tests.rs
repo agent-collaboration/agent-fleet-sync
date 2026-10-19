@@ -2,7 +2,7 @@
 #![allow(clippy::panic_in_result_fn)]
 use crate::{turso_rule_fixture::*, *};
 use durable_steps::CallId;
-use fleet_sync_protocol::{HookRefusal, NoConsumer};
+use fleet_sync_protocol::NoConsumer;
 use sqlx_core::{
     connection::Connection,
     migrate::{Migration, MigrationType},
@@ -23,7 +23,7 @@ impl ReceiverRules<TursoScope<'_>> for LocalHook {
         &self,
         _: &mut TursoScope<'_>,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, HookRefusal> {
+    ) -> Result<Vec<()>, HookError> {
         Ok(Vec::new())
     }
 }

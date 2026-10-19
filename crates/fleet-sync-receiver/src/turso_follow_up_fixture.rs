@@ -55,7 +55,7 @@ impl ReceiverRules<TursoScope<'_, TestHost>> for ReceiverTestRules {
         &self,
         scope: &mut TursoScope<'_, TestHost>,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<String>, HookRefusal> {
+    ) -> Result<Vec<String>, HookError> {
         sqlx_core::query::query::<Turso>("INSERT INTO consumer_applied(value) VALUES('applied')")
             .execute(scope.executor())
             .await
@@ -70,7 +70,7 @@ impl ReceiverRules<TursoScope<'_, TestHost>> for ReceiverTestRules {
         &self,
         scope: &mut TursoScope<'_, TestHost>,
         installed: &InstalledSnapshot,
-    ) -> Result<Vec<String>, HookRefusal> {
+    ) -> Result<Vec<String>, HookError> {
         self.snapshot_calls.fetch_add(1, Ordering::SeqCst);
         let refusal = |error: sqlx_core::Error| HookRefusal {
             code: fixture_refusal_code("storage"),
@@ -97,7 +97,8 @@ impl ReceiverRules<TursoScope<'_, TestHost>> for ReceiverTestRules {
             return Err(HookRefusal {
                 code: fixture_refusal_code("snapshot_policy"),
                 detail: "snapshot projection refused".into(),
-            });
+            }
+            .into());
         }
         Ok(vec![item])
     }
@@ -356,7 +357,7 @@ impl ReceiverRules<TursoScope<'_, TestHost>> for SchemaHook {
         &self,
         _: &mut TursoScope<'_, TestHost>,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, HookRefusal> {
+    ) -> Result<Vec<()>, HookError> {
         Ok(Vec::new())
     }
 }

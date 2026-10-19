@@ -196,7 +196,8 @@ pub enum StoreError {
     Corrupt { field: String },
 }
 
-pub(crate) fn sql_error(error: sqlx_core::error::Error) -> StoreError {
+/// Preserve the SQLx storage class before a consumer rule returns its failure.
+pub fn sql_error(error: sqlx_core::error::Error) -> StoreError {
     match &error {
         sqlx_core::error::Error::Database(database) => match database.code().as_deref() {
             Some("SQLITE_FULL") => StoreError::Full,
