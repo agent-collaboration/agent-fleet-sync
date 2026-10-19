@@ -2,6 +2,8 @@ use fleet_sync_protocol::{Epoch, GateReason, SyncTime, TableName, TransferId};
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SchemaForm {
+    #[error("current snapshot schema encodes to {encoded_size} bytes, exceeding 256 KiB")]
+    SnapshotSchema { encoded_size: usize },
     #[error("replicated key column {column:?} of {table:?} must be TEXT NOT NULL")]
     KeyNotUuidV7 {
         table: TableName,

@@ -226,6 +226,9 @@ async fn apply_migration(
                 message: error.to_string(),
             })?;
         let layouts = inspect_present_tables(&mut transaction, tables).await?;
+        // Admit the current replicated catalog inside this transaction, before
+        // schema history or captured changes can become durable.
+        crate::snapshot_schema::snapshot_schema(&mut transaction, tables).await?;
         let encoded_statements = serde_json::to_string(&statements)
             .map_err(|_| OpenError::corrupt("migration.statements"))?;
         let encoded_layout =

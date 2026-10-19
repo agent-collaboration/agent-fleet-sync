@@ -73,6 +73,8 @@ pub use staging_store::{StagedPage, StagedVerification, StagingError, StagingSto
 #[cfg(all(test, unix))]
 mod native_file_inspection_tests;
 #[cfg(test)]
+mod schema_catalog_tests;
+#[cfg(test)]
 mod staging_store_tests;
 #[cfg(test)]
 mod writer_bootstrap_fixture;

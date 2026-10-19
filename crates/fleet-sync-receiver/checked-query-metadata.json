@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-queries.json": "48797c5d4f9117bc12771aebe2d304e988c6f2afb6872a267b6341387499b2d0",
+    "checked-queries.json": "8a516bad83a63465616b4ea527a3480e8172c7e48c1693fb74b405964abd074a",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -84,9 +84,8 @@
     "sql/read_install_pages.sql": "1c76ee82df66ecf76bcdeb568d80d5ba1c53ff54a53a7df89f901b3bb3940c8b",
     "sql/read_parts.sql": "2fe22ce90680daad8cb3383c1b56df163c14c99dd133035f1dd5c448ed8b46ac",
     "sql/read_receipt.sql": "ce1cc00141af64623c12bd8454c45b4d242c0e22a747a3ae30a5831bd7136ac6",
-    "sql/read_schema_entries.sql": "dd4e747eba02bdc39bc4a562d74a6509b71e7eb5deced1ab596ba9712dd28fdf",
+    "sql/read_schema_entries.sql": "93797f46475d01b3a5e33f02141c704b0ba59feb6c57636e7df29b5163ef1f05",
     "sql/read_schema_owner.sql": "a300db526e5af339d968f77aaf10d70f98d6a774eb97817c52a788bc6ad5058e",
-    "sql/read_schema_steps.sql": "bfe7d370b74549e803669be060cbe094d4c4417a910a9d262ffe7495c85179be",
     "sql/read_seed.sql": "96d25711b4b3d0ba7dc86597d46915ad4cba52ae075428b2b94dbb8e62377557",
     "sql/read_seed_attempt.sql": "42dee6e1535ed9ea8bbc8a089cd60d70e2be2e6bb2e4e8a173c93f85f6dd23d5",
     "sql/read_seed_page.sql": "f4c6b1c4c8ec825fafe22fb3b144146a402fc07f6ec078c7a77d678e3368bc76",
@@ -106,9 +105,9 @@
     "sql/write_seed.sql": "1760686d585a282c49d7eee530ebe6bcd883d49623d339587ba861adfb372783",
     "sql/write_seed_attempt.sql": "6b7bb9dd642308388c49521b264703c0291d95870d6c172caece780aecd583eb",
     "sql/write_seed_page.sql": "2f10b3342821b1a27f8683e064f8445dd16f74c761b5d095a0c56e0f991c95d8",
-    "src/checked_queries.rs": "ce6f59af05e10383b541a1ef2a8a3d33056db691abc7966b956920d924e6dc3f"
+    "src/checked_queries.rs": "73524de00b347c23f143e494b1870e92564949997767a68afda3d9e24deca2ae"
   },
-  "queries_digest": "d66eb09547a8176bb2309237117d433b71bd3af33515f4d08e48b3dec4aa61e6",
+  "queries_digest": "7a03eb6a366cd9164cf3d1d595c713b2b1d0568127c0763a274c8d3c0e983446",
   "queries": [
     {
       "name": "read_copy",
@@ -182,19 +181,6 @@
       "name": "drop_parts",
       "bind_slots": 1,
       "columns": []
-    },
-    {
-      "name": "read_schema_steps",
-      "bind_slots": 0,
-      "columns": [
-        {
-          "name": "record",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
     },
     {
       "name": "write_schema_step",
@@ -356,6 +342,20 @@
         },
         {
           "name": "statement_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "owner",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "owner_class",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,

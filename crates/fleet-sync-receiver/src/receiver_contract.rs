@@ -169,6 +169,9 @@ impl From<ReceiverError> for ApplyFailure {
             ReceiverError::SeedRefused { .. } => Self::Storage(StoreError::Corrupt {
                 field: "unexpected seed refusal during apply".into(),
             }),
+            ReceiverError::SnapshotSchema { .. } => Self::Storage(StoreError::Corrupt {
+                field: "unexpected snapshot producer refusal during apply".into(),
+            }),
             ReceiverError::SchemaUnsupported { form } => {
                 Self::Refused(PieceRefusal::SchemaUnsupported { form })
             }
@@ -178,6 +181,8 @@ impl From<ReceiverError> for ApplyFailure {
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ReceiverError {
+    #[error("current snapshot schema encodes to {encoded_size} bytes, exceeding 256 KiB")]
+    SnapshotSchema { encoded_size: usize },
     #[error("unsupported replicated schema: {form:?}")]
     SchemaUnsupported {
         form: fleet_sync_protocol::SchemaStatementForm,

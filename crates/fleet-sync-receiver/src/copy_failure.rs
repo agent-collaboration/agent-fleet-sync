@@ -84,6 +84,7 @@ pub fn receiver_rollback(error: ReceiverError) -> StoreError {
         error @ (ReceiverError::NotInitialized
         | ReceiverError::Storage(_)
         | ReceiverError::InvalidInput { .. }
+        | ReceiverError::SnapshotSchema { .. }
         | ReceiverError::FenceConflict) => match unavailable_receiver(&error) {
             Some(reason) => copy_rollback(reason),
             None => StoreError::backend(error),

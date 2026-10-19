@@ -72,7 +72,7 @@ where
         None => 0,
     };
     let table = tables.get(table_index).cloned().unwrap_or_default();
-    let schema_steps = SchemaReads(scope).steps().await?;
+    let schema_steps = SchemaReads(scope).snapshot_statements().await?;
     let mut rows = Vec::new();
     let mut next = None;
     if !table.is_empty() {

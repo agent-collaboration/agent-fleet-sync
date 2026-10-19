@@ -14,7 +14,6 @@ mod foreign_key_integrity;
 mod guarded_query;
 mod maintenance_transaction;
 mod migration_execution;
-mod migration_inspection;
 mod migration_lineage;
 mod migration_ownership;
 pub mod native_file;
@@ -128,6 +127,8 @@ mod capture_cursor_tests;
 mod capture_stream_tests;
 #[cfg(test)]
 mod guarded_executor_tests;
+#[cfg(test)]
+mod schema_catalog_tests;
 #[cfg(test)]
 mod schema_metadata_tests;
 

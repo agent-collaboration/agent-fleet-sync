@@ -187,35 +187,6 @@ where
         Ok(())
     }
 }
-
-#[derive(Debug)]
-pub(crate) struct StoredSchemaStepRow {
-    pub record: Option<String>,
-}
-pub(crate) fn read_schema_steps<S>(
-    scope: &mut S,
-) -> impl std::future::Future<Output = Result<Vec<StoredSchemaStepRow>, sqlx_core::Error>> + Send
-where
-    S: TransactionScope,
-    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
-    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
-    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
-{
-    async move {
-        let statement = query::<S::Database>(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/sql/read_schema_steps.sql"
-        )));
-        let rows = statement.fetch_all(scope.executor()).await?;
-        rows.iter()
-            .map(|row| {
-                Ok(StoredSchemaStepRow {
-                    record: row.try_get("record")?,
-                })
-            })
-            .collect()
-    }
-}
 pub(crate) fn write_schema_step<S>(
     scope: &mut S,
     version: String,
@@ -390,6 +361,8 @@ pub(crate) struct StoredSchemaEntryRow {
     pub name_class: Option<String>,
     pub statement: Option<String>,
     pub statement_class: Option<String>,
+    pub owner: Option<String>,
+    pub owner_class: Option<String>,
 }
 pub(crate) fn read_schema_entries<S>(
     scope: &mut S,
@@ -415,6 +388,8 @@ where
                     name_class: row.try_get("name_class")?,
                     statement: row.try_get("statement")?,
                     statement_class: row.try_get("statement_class")?,
+                    owner: row.try_get("owner")?,
+                    owner_class: row.try_get("owner_class")?,
                 })
             })
             .collect()

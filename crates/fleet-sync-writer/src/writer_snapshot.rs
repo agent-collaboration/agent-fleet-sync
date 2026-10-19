@@ -51,7 +51,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             inspect_replicated_tables(&mut transaction, self.schema.replicated_tables()).await?
         };
         tables.sort_by(|left, right| left.name().cmp(right.name()));
-        let (schema, statements) = snapshot_schema(&mut transaction, &names, &tables).await?;
+        let (schema, statements) = snapshot_schema(&mut transaction, &names).await?;
         if bootstrapped {
             let latest = crate::migration_execution::offered_migrations(&self.schema)?
                 .last()

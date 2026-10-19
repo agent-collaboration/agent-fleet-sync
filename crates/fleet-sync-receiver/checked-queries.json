@@ -107,13 +107,6 @@
       ]
     },
     {
-      "name": "read_schema_steps",
-      "sql": "sql/read_schema_steps.sql",
-      "row": "StoredSchemaStepRow",
-      "result": "many",
-      "parameters": []
-    },
-    {
       "name": "write_schema_step",
       "sql": "sql/write_schema_step.sql",
       "result": "execute",

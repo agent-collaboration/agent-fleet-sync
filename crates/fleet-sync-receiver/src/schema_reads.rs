@@ -1,6 +1,7 @@
 use crate::{ReceiverError, StoreError, checked_queries, row_apply::TableColumn};
 use durable_steps::storage::TransactionScope;
-use fleet_sync_protocol::{SchemaEntry, SchemaObjectKind, reserved_namespace};
+use fleet_sync_protocol::schema_catalog::{current_replicated_catalog, snapshot_schema_statements};
+use fleet_sync_protocol::{SchemaEntry, SchemaObjectKind, TableName, reserved_namespace};
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
@@ -32,21 +33,12 @@ where
     for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    pub(crate) async fn steps(&mut self) -> Result<Vec<String>, ReceiverError> {
-        let rows = checked_queries::read_schema_steps(self.0)
-            .await
-            .map_err(crate::sql_transport::sql_error)?;
-        let mut steps = rows
-            .into_iter()
-            .map(|row| {
-                crate::copy_storage::decode_record::<crate::row_transactions::SchemaStepRecord>(
-                    row.record,
-                    "schema step",
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        steps.sort_by_key(|step| step.version);
-        Ok(steps.into_iter().flat_map(|step| step.statements).collect())
+    pub(crate) async fn snapshot_statements(&mut self) -> Result<Vec<String>, ReceiverError> {
+        snapshot_schema_statements(self.entries().await?).map_err(|error| {
+            ReceiverError::SnapshotSchema {
+                encoded_size: error.encoded_size,
+            }
+        })
     }
 
     pub(crate) async fn table_columns(
@@ -112,20 +104,42 @@ where
         let rows = checked_queries::read_schema_entries(self.0)
             .await
             .map_err(crate::sql_transport::sql_error)?;
-        rows.into_iter()
+        let catalog = rows
+            .into_iter()
             .map(|row| {
                 let kind = required_text(row.object_kind, row.kind_class, "schema object kind")?;
                 let kind =
                     SchemaObjectKind::try_from(kind.as_str()).map_err(|_| StoreError::Corrupt {
                         field: "schema object kind".into(),
                     })?;
-                Ok(SchemaEntry {
-                    kind,
-                    name: required_text(row.object_name, row.name_class, "schema object name")?,
-                    sql: required_text(row.statement, row.statement_class, "schema statement")?,
+                Ok((
+                    SchemaEntry {
+                        kind,
+                        name: required_text(row.object_name, row.name_class, "schema object name")?,
+                        sql: required_text(row.statement, row.statement_class, "schema statement")?,
+                    },
+                    required_text(row.owner, row.owner_class, "schema object owner")?,
+                ))
+            })
+            .collect::<Result<Vec<_>, ReceiverError>>()?;
+        let members = crate::schema_membership::SchemaMembership(self.0)
+            .names()
+            .await?;
+        // Membership includes views. Only physical member tables admit their
+        // owned indexes; view dependencies go through the shared classifier.
+        let tables = catalog
+            .iter()
+            .filter(|(entry, _)| {
+                entry.kind == SchemaObjectKind::Table
+                    && members.contains(&entry.name.to_ascii_lowercase())
+            })
+            .map(|(entry, _)| {
+                TableName::new(&entry.name).map_err(|_| StoreError::Corrupt {
+                    field: "replicated schema membership".into(),
                 })
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(current_replicated_catalog(&catalog, &tables))
     }
 
     pub(crate) async fn fingerprint(&mut self) -> Result<String, ReceiverError> {

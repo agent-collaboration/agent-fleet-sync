@@ -21,6 +21,10 @@ use sqlx_core::{
 use sqlx_turso::{TursoConnectOptions, TursoConnection};
 use std::{path::Path, sync::Arc};
 
+#[cfg(test)]
+#[path = "bootstrap_catalog_tests.rs"]
+mod catalog_tests;
+
 /// The observed grant and the fenced predecessor's final position. The original
 /// request time anchors lease admission across a restart.
 #[derive(Clone, Debug)]
@@ -120,7 +124,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(
-            crate::snapshot_schema::replicated_entries(&mut connection, &tables, &layouts)
+            crate::snapshot_schema::replicated_entries(&mut connection, &tables)
                 .await?
                 .into_iter()
                 .map(|entry| entry.name)
@@ -265,7 +269,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             .map_err(|error| OpenError::Storage {
                 message: error.to_string(),
             })?;
-        let (found, statements) = snapshot_schema(&mut transaction, tables, &layouts).await?;
+        let (found, statements) = snapshot_schema(&mut transaction, tables).await?;
         if found != install.schema {
             return Err(OpenError::BootstrapSchemaMismatch {
                 expected: install.schema.clone(),

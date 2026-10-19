@@ -1,18 +1,13 @@
-use crate::{
-    OpenError, StatementGuard, TableLayout, migration_ownership::MigrationKind,
-    schema_inspection::schema_entries, writer_scope::WriterScope,
-};
-use fleet_sync_protocol::{
-    SchemaEntry, SchemaIdentity, SchemaObjectKind, TableName, schema_fingerprint,
-};
+use crate::{OpenError, schema_inspection::schema_entries, writer_scope::WriterScope};
+use fleet_sync_protocol::schema_catalog::{current_replicated_catalog, snapshot_schema_statements};
+use fleet_sync_protocol::{SchemaEntry, SchemaIdentity, TableName, schema_fingerprint};
 use sqlx_turso::TursoConnection;
 
 pub(crate) async fn snapshot_schema(
     connection: &mut TursoConnection,
     tables: &[TableName],
-    layouts: &[TableLayout],
 ) -> Result<(SchemaIdentity, Vec<String>), OpenError> {
-    let mut entries = replicated_entries(connection, tables, layouts).await?;
+    let entries = replicated_entries(connection, tables).await?;
     let versions =
         crate::checked_queries::read_applied_migrations(&mut WriterScope(connection)).await?;
     let mut version = 0;
@@ -30,40 +25,22 @@ pub(crate) async fn snapshot_schema(
         .map_err(|_| OpenError::corrupt("snapshot.schema_fingerprint"))?;
     let identity = SchemaIdentity::new(version, fingerprint)
         .map_err(|_| OpenError::corrupt("snapshot.schema_fingerprint"))?;
-    let rank = |kind| match kind {
-        SchemaObjectKind::Table => 0,
-        SchemaObjectKind::Index => 1,
-        SchemaObjectKind::View => 2,
-        SchemaObjectKind::Trigger => 3,
-    };
-    entries
-        .sort_by(|left, right| (rank(left.kind), &left.name).cmp(&(rank(right.kind), &right.name)));
     Ok((
         identity,
-        entries.into_iter().map(|entry| entry.sql).collect(),
+        snapshot_schema_statements(entries).map_err(|error| OpenError::SchemaUnsupported {
+            form: crate::SchemaForm::SnapshotSchema {
+                encoded_size: error.encoded_size,
+            },
+        })?,
     ))
 }
+
 pub(crate) async fn replicated_entries(
     connection: &mut TursoConnection,
     tables: &[TableName],
-    layouts: &[TableLayout],
 ) -> Result<Vec<SchemaEntry>, OpenError> {
-    let catalog = schema_entries(connection).await?;
-    let mut guard = StatementGuard::new(layouts.to_vec());
-    let mut entries = Vec::<SchemaEntry>::new();
-    for (entry, owner) in &catalog {
-        let replicated = match entry.kind {
-            SchemaObjectKind::Table | SchemaObjectKind::Index => tables
-                .iter()
-                .any(|table| table.as_str().eq_ignore_ascii_case(owner)),
-            SchemaObjectKind::View => guard
-                .migration_statements(&entry.sql, tables, &catalog, MigrationKind::Replicated)
-                .is_ok(),
-            SchemaObjectKind::Trigger => false,
-        };
-        if replicated && !fleet_sync_protocol::reserved_namespace(&entry.name) {
-            entries.push(entry.clone());
-        }
-    }
-    Ok(entries)
+    Ok(current_replicated_catalog(
+        &schema_entries(connection).await?,
+        tables,
+    ))
 }
