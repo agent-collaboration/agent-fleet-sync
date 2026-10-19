@@ -26,7 +26,7 @@ mod registry_storage;
 mod schema_support_rules;
 #[cfg(test)]
 mod turso_schema_support_tests;
-pub use registry_reads::database_ids;
+pub use registry_reads::{EpochGrant, database_ids, epoch_holder};
 pub use schema_support_rules::{accepted_schema_support, report_schema_support};
 
 pub use fleet_sync_protocol::{
