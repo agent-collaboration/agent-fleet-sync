@@ -91,9 +91,21 @@ where
                     field: "lease duration must be positive".into(),
                 });
             }
-            lease.expires_at = now.after(policy.lease_duration);
+            let mut database = database.ok_or_else(|| LeaseError::Corrupt {
+                field: "renewal database".into(),
+            })?;
+            database.validate_grant(Some(&lease))?;
+            let expires_at = now.after(policy.lease_duration);
+            let changed = lease.expires_at != expires_at;
+            if changed {
+                database.advance_revision(lease.epoch, now)?;
+            }
+            lease.expires_at = expires_at;
             lease.last_renewed_at = now;
             storage.save_lease(&lease).await?;
+            if changed {
+                storage.save_database(&database).await?;
+            }
             RenewAnswer::Renewed {
                 recorded: RenewResult {
                     epoch: lease.epoch,

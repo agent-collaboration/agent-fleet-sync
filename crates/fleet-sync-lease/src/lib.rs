@@ -24,7 +24,11 @@ mod registry_contract;
 pub use epoch_history::{EpochEnd, EpochHistoryEntry, EpochHistoryPage, epoch_history};
 mod registry_reads;
 mod registry_records;
+mod registry_snapshot;
 mod registry_storage;
+pub use registry_snapshot::{
+    RegistryGrant, RegistryRevision, RegistrySnapshot, registry_snapshot, registry_snapshot_ids,
+};
 mod schema_support_rules;
 #[cfg(test)]
 mod turso_schema_support_tests;
@@ -100,6 +104,14 @@ mod turso_registry_copy;
 mod turso_registry_fixture;
 #[cfg(test)]
 mod turso_registry_gates;
+#[cfg(test)]
+mod turso_registry_snapshot_fixture;
+#[cfg(test)]
+mod turso_registry_snapshot_lifecycle_tests;
+#[cfg(test)]
+mod turso_registry_snapshot_rollback_tests;
+#[cfg(test)]
+mod turso_registry_snapshot_tests;
 
 #[cfg(test)]
 mod turso_lifecycle_tests;

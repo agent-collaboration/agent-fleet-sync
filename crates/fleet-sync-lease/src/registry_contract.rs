@@ -10,6 +10,11 @@ pub enum LeaseError {
     Corrupt { field: String },
     #[error("invalid registry input: {field}")]
     InvalidInput { field: String },
+    #[error("registry revision exhausted for {database:?} at {epoch:?}")]
+    RevisionExhausted {
+        database: DatabaseId,
+        epoch: fleet_sync_protocol::Epoch,
+    },
     #[error("database is retired")]
     Retired,
     #[error("database is not registered or imported")]

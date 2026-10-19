@@ -64,13 +64,15 @@ async fn setup() -> TestResult<TursoConnection> {
     let mut scope = TursoScope(&mut transaction);
     let database = database()?;
     RegistryStorage(&mut scope)
-        .save_database(&DatabaseRecord {
+        .save_database(&DatabaseRecord::initial(
             database,
-            lifecycle: DatabaseLifecycle::Registered {
+            DatabaseLifecycle::Registered {
                 origin: Origin::Empty,
                 imported_from: None,
             },
-        })
+            Epoch::new(1)?,
+            now(0),
+        ))
         .await?;
     RegistryStorage(&mut scope)
         .save_lease(&RegistryLease {
@@ -202,6 +204,12 @@ async fn replay_preserves_recorded_answer_but_returns_current_lease_after_later_
             expires_at: now(460),
         })
         .await?;
+    let mut record = RegistryStorage(&mut scope)
+        .database(database()?)
+        .await?
+        .ok_or("database missing")?;
+    record.advance_revision(Epoch::new(2)?, now(260))?;
+    RegistryStorage(&mut scope).save_database(&record).await?;
     let replay = renew(
         &mut scope,
         &request(10, 1)?,
@@ -276,12 +284,12 @@ async fn open_transfer_does_not_stop_renewal_and_retired_marker_precedes_saved_a
             ..
         })
     ));
-    RegistryStorage(&mut scope)
-        .save_database(&DatabaseRecord {
-            database: database()?,
-            lifecycle: DatabaseLifecycle::Retired { at: now(500) },
-        })
-        .await?;
+    let mut record = RegistryStorage(&mut scope)
+        .database(database()?)
+        .await?
+        .ok_or("database missing")?;
+    record.change_lifecycle(DatabaseLifecycle::Retired { at: now(500) }, now(500))?;
+    RegistryStorage(&mut scope).save_database(&record).await?;
     assert_eq!(
         renew(
             &mut scope,

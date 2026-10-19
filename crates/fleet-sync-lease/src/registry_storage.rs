@@ -56,6 +56,15 @@ where
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
     pub(crate) async fn database_ids(&mut self) -> Result<Vec<DatabaseId>, LeaseError> {
+        Ok(self
+            .database_records()
+            .await?
+            .into_iter()
+            .filter(|record| !matches!(record.lifecycle, DatabaseLifecycle::Retired { .. }))
+            .map(|record| record.database)
+            .collect())
+    }
+    pub(crate) async fn database_records(&mut self) -> Result<Vec<DatabaseRecord>, LeaseError> {
         let mut databases = Vec::new();
         for row in checked_queries::read_databases(self.0).await? {
             let record: DatabaseRecord = decode(row.record, "database record")?;
@@ -64,9 +73,9 @@ where
                     field: "database record".into(),
                 });
             }
-            if !matches!(record.lifecycle, DatabaseLifecycle::Retired { .. }) {
-                databases.push(record.database);
-            }
+            let lease = self.lease(record.database).await?;
+            record.validate_grant(lease.as_ref())?;
+            databases.push(record);
         }
         Ok(databases)
     }

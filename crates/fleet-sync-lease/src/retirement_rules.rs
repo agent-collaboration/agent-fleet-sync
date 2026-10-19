@@ -111,11 +111,12 @@ where
         }
     }
     let offered = request.clone();
+    let retiring_at = ctx.now();
     let decision = ctx
         .local(step("retiring")?, move |scope| {
             Box::pin(async move {
                 let mut storage = RegistryStorage(scope);
-                let record = storage
+                let mut record = storage
                     .database(offered.database)
                     .await
                     .map_err(step_error)?
@@ -155,15 +156,15 @@ where
                     storage.save_lifecycle(&attempt).await.map_err(step_error)?;
                     return Ok(Decision::Answer(answer));
                 }
-                storage
-                    .save_database(&DatabaseRecord {
-                        database: offered.database,
-                        lifecycle: DatabaseLifecycle::Retiring {
+                record
+                    .change_lifecycle(
+                        DatabaseLifecycle::Retiring {
                             attempt: offered.attempt,
                         },
-                    })
-                    .await
+                        retiring_at,
+                    )
                     .map_err(step_error)?;
+                storage.save_database(&record).await.map_err(step_error)?;
                 Ok(Decision::Continue)
             })
         })
@@ -227,11 +228,12 @@ where
     Ok(ctx.local(step(name)?,move|scope|Box::pin(async move{
         let mut storage=RegistryStorage(scope);
         let mut attempt=storage.lifecycle(offered.attempt).await.map_err(step_error)?.ok_or_else(||step_error(LeaseError::Corrupt{field:"retirement attempt".into()}))?;
-        let record=storage.database(offered.database).await.map_err(step_error)?.ok_or_else(||step_error(LeaseError::NotRegistered))?;
+        let mut record=storage.database(offered.database).await.map_err(step_error)?.ok_or_else(||step_error(LeaseError::NotRegistered))?;
         let answer=if let DatabaseLifecycle::Retired{at}=record.lifecycle{RetirementAnswer::Retired{at}}
             else if let Some(refusal)=refusal{RetirementAnswer::Refused(refusal)}else{
                 if !matches!(record.lifecycle,DatabaseLifecycle::Retiring{attempt} if attempt==offered.attempt){return Err(step_error(LeaseError::Corrupt{field:"retirement seal".into()}));}
-                storage.save_database(&DatabaseRecord{database:offered.database,lifecycle:DatabaseLifecycle::Retired{at:now}}).await.map_err(step_error)?;
+                record.change_lifecycle(DatabaseLifecycle::Retired{at:now},now).map_err(step_error)?;
+                storage.save_database(&record).await.map_err(step_error)?;
                 RetirementAnswer::Retired{at:now}
             };
         attempt.outcome=Some(LifecycleOutcome::Retirement(answer.clone()));

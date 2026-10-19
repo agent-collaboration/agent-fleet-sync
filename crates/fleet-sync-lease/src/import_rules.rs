@@ -132,6 +132,7 @@ where
         CreateCopyAnswer::CopyCreated | CreateCopyAnswer::AlreadyCreated => None,
     };
     let request = request.clone();
+    let now = ctx.now();
     Ok(ctx
         .local(step("reserve")?, move |scope| {
             Box::pin(async move {
@@ -170,12 +171,14 @@ where
                         }));
                     }
                     storage
-                        .save_database(&DatabaseRecord {
-                            database: request.database,
-                            lifecycle: DatabaseLifecycle::Unheld {
+                        .save_database(&DatabaseRecord::initial(
+                            request.database,
+                            DatabaseLifecycle::Unheld {
                                 import_digest: request.digest.clone(),
                             },
-                        })
+                            epoch,
+                            now,
+                        ))
                         .await
                         .map_err(step_error)?;
                     storage
