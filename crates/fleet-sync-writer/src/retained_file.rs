@@ -61,7 +61,7 @@ impl RetainedFile {
                 record
                     .authority
                     .as_ref()
-                    .and_then(|authority| authority.retained_authority(record.epoch)),
+                    .and_then(|authority| authority.retained_authority(record.epoch, record.peer)),
             )
         };
         Ok(Self {
@@ -90,6 +90,7 @@ impl RetainedFile {
     }
 
     /// Latest persisted authority observed when this file opened.
+    /// Absence of a loss observation does not establish a current write lease.
     pub fn authority(&self) -> Option<RetainedAuthority> {
         self.authority.clone()
     }

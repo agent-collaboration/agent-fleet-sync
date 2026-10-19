@@ -33,7 +33,7 @@ pub use fleet_sync_protocol::{
     Epoch, HolderChangeAnswer, HolderChangeRefusal, HolderChangeRequest, LeaseRefusal, LeaseState,
     LeaseStatus, RenewAnswer, RenewRequest, RenewResult, ReplicationPosition, SyncTime, TransferId,
 };
-pub use lease_holder::{HolderError, LeaseHolder};
+pub use lease_holder::{CurrentLeaseRelation, HolderError, LeaseHolder, current_lease_relation};
 pub use lease_values::{LeasePolicy, RegistryConfig, WriterState};
 
 pub use registry_contract::{GateFailure, HolderChangeGate, LeaseError, LifecycleGate};

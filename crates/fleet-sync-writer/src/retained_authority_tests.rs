@@ -180,7 +180,7 @@ async fn retained_fenced_authority_and_tail_survive_process_restart() -> TestRes
 #[tokio::test]
 async fn retained_projects_not_writer_and_newer_current_without_reclassifying_registration()
 -> TestResult {
-    for case in 0..4 {
+    for case in 0..5 {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("retained.db");
         let database = writer(&path).await?;
@@ -215,9 +215,10 @@ async fn retained_projects_not_writer_and_newer_current_without_reclassifying_re
                     ended_at: None,
                 })
             }
-            2 => {
+            2 | 4 => {
+                let current_epoch = Epoch::new(if case == 2 { 2 } else { 1 })?;
                 let current = LeaseStatus {
-                    epoch: Epoch::new(2)?,
+                    epoch: current_epoch,
                     holder: PeerId::new(Uuid::now_v7())?,
                     ..lease.clone()
                 };
@@ -236,7 +237,7 @@ async fn retained_projects_not_writer_and_newer_current_without_reclassifying_re
                     )
                     .await?;
                 Some(RetainedAuthority::Superseded {
-                    current: Some(Epoch::new(2)?),
+                    current: Some(current_epoch),
                     ended_at: None,
                 })
             }
@@ -368,6 +369,65 @@ async fn retained_rejects_corrupt_tail_records_and_positions_without_writing() -
         let pool = retained.reader().pool.current()?;
         drop(retained);
         pool.close().await;
+        assert_eq!(snapshot(directory.path())?, before);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn retained_refuses_a_stale_epoch_cutoff_that_disagrees_with_the_saved_end() -> TestResult {
+    use sqlx_core::row::Row;
+    for missing_saved_end in [false, true] {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("retained.db");
+        let database = writer(&path).await?;
+        let ended_at = ReplicationPosition {
+            epoch: Epoch::new(1)?,
+            sequence: CommitSequence::new(0),
+        };
+        database
+            .observe_renewal(
+                RenewAnswer::Refused(LeaseRefusal::StaleEpoch {
+                    current_epoch: Epoch::new(2)?,
+                    epoch_ended_at: ended_at,
+                }),
+                database.clock.now(),
+            )
+            .await?;
+        database.close().await;
+        drop(database);
+        let mut connection = TursoConnectOptions::new().filename(&path).connect().await?;
+        let row = query::<Turso>("SELECT record FROM _fleet_sync_writer")
+            .fetch_one(&mut connection)
+            .await?;
+        let mut record: crate::writer_file_record::WriterFileRecord =
+            serde_json::from_str(&row.try_get::<String, _>("record")?)?;
+        if missing_saved_end {
+            record.epoch_ended_at = None;
+        } else {
+            let Some(crate::writer_authority::AuthorityObservation::Renewal {
+                answer: RenewAnswer::Refused(LeaseRefusal::StaleEpoch { epoch_ended_at, .. }),
+                ..
+            }) = &mut record.authority
+            else {
+                return Err("missing stale-epoch fixture observation".into());
+            };
+            epoch_ended_at.sequence = CommitSequence::new(1);
+        }
+        query::<Turso>("UPDATE _fleet_sync_writer SET record=?")
+            .bind(serde_json::to_string(&record)?)
+            .execute(&mut connection)
+            .await?;
+        connection.close().await?;
+        let _permissions = ReadOnlyFixture::apply(directory.path())?;
+        let before = snapshot(directory.path())?;
+        assert!(
+            matches!(
+                RetainedFile::open_read_only(&path, ReadSchema).await,
+                Err(OpenError::Corrupt { .. })
+            ),
+            "accepted disagreeing cutoff, missing_saved_end={missing_saved_end}"
+        );
         assert_eq!(snapshot(directory.path())?, before);
     }
     Ok(())

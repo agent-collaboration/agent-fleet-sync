@@ -3,8 +3,10 @@ use crate::{
     writer_file_record::{read_file_record, write_file_record},
     writer_release_record::restore_releases,
 };
-use fleet_sync_lease::LeaseHolder;
-use fleet_sync_protocol::{DatabaseId, Epoch, GateReason, LeaseRefusal, RenewAnswer, SyncTime};
+use fleet_sync_lease::{CurrentLeaseRelation, LeaseHolder, current_lease_relation};
+use fleet_sync_protocol::{
+    DatabaseId, Epoch, GateReason, LeaseRefusal, PeerId, RenewAnswer, SyncTime,
+};
 use serde::{Deserialize, Serialize};
 use sqlx_core::connection::Connection;
 use sqlx_turso::TursoConnection;
@@ -27,12 +29,41 @@ pub(crate) enum AuthorityObservation {
 }
 impl AuthorityObservation {
     // Both restoration and passive inspection recognize newer epochs here.
-    fn superseding_epoch(&self, file_epoch: Epoch) -> Option<Epoch> {
-        self.epoch().filter(|current| *current > file_epoch)
+    fn superseding_epoch(&self, file_epoch: Epoch, file_peer: PeerId) -> Option<Epoch> {
+        match self {
+            Self::Renewal {
+                answer: RenewAnswer::Renewed { current, .. },
+                ..
+            } => matches!(
+                current_lease_relation(current, file_peer, Some(file_epoch)),
+                CurrentLeaseRelation::NewerEpoch
+            )
+            .then_some(current.epoch),
+            _ => self.epoch().filter(|current| *current > file_epoch),
+        }
     }
 
-    pub(crate) fn retained_authority(&self, file_epoch: Epoch) -> Option<RetainedAuthority> {
-        if let Some(current) = self.superseding_epoch(file_epoch) {
+    pub(crate) fn retained_authority(
+        &self,
+        file_epoch: Epoch,
+        file_peer: PeerId,
+    ) -> Option<RetainedAuthority> {
+        if let Self::Renewal {
+            answer: RenewAnswer::Renewed { current, .. },
+            ..
+        } = self
+        {
+            return match current_lease_relation(current, file_peer, Some(file_epoch)) {
+                CurrentLeaseRelation::NewerEpoch | CurrentLeaseRelation::OtherWriter => {
+                    Some(RetainedAuthority::Superseded {
+                        current: Some(current.epoch),
+                        ended_at: None,
+                    })
+                }
+                CurrentLeaseRelation::OlderEpoch | CurrentLeaseRelation::SameWriter => None,
+            };
+        }
+        if let Some(current) = self.superseding_epoch(file_epoch, file_peer) {
             let ended_at = match self {
                 Self::Renewal {
                     answer: RenewAnswer::Refused(LeaseRefusal::StaleEpoch { epoch_ended_at, .. }),
@@ -98,7 +129,7 @@ impl AuthorityObservation {
         file_epoch: Epoch,
     ) -> Result<(), OpenError> {
         self.validate_database(holder.database())?;
-        if let Some(current) = self.superseding_epoch(file_epoch) {
+        if let Some(current) = self.superseding_epoch(file_epoch, holder.peer()) {
             holder.observe_supersession(current);
             return Ok(());
         }

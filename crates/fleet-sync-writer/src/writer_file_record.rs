@@ -87,6 +87,17 @@ pub(crate) async fn read_file_record(
         serde_json::from_str(&encoded).map_err(|_| OpenError::corrupt("writer.record"))?;
     if let Some(authority) = &record.authority {
         authority.validate_database(record.database)?;
+        if let crate::writer_authority::AuthorityObservation::Renewal {
+            answer:
+                fleet_sync_protocol::RenewAnswer::Refused(
+                    fleet_sync_protocol::LeaseRefusal::StaleEpoch { epoch_ended_at, .. },
+                ),
+            ..
+        } = authority
+            && record.epoch_ended_at != Some(*epoch_ended_at)
+        {
+            return Err(OpenError::corrupt("writer.authority_end"));
+        }
     }
     if let Some(marker) = &record.bootstrap
         && (!marker.verified

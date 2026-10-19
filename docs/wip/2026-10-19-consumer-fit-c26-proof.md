@@ -1,5 +1,7 @@
 # C26: retained supersession inspection
 
+This records the original C26 target. The amended semantic checks and their fresh proof are tracked in [C26b](2026-10-19-consumer-fit-c26b-proof.md); the original observations do not establish those added cases.
+
 Scope: expose rejected tails and persisted authority through the native retained-file reader, preserving registration-outcome meaning. C24 remains parked and excluded. The implementation begins at `d439dffa`.
 
 The commission names program design section 13a W-C28 and the r4 plan C26 row as the expected-outcome sources. The retained reader must identify supersession after restart, including an empty tail, preserve bytes and modification times, and reject corrupt stored values. Its registration result remains independent of current authority.
