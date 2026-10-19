@@ -66,7 +66,7 @@ pub(crate) struct DeliveryOwner {
     schema: OnceCell<()>,
 }
 impl DeliveryOwner {
-    pub fn mark_corrupt(&self, mailbox: PeerId, field: &'static str) {
+    pub fn mark_corrupt(&self, mailbox: PeerId, field: &str) {
         let changed = self.health.send_if_modified(|failure| {
             if failure.is_some() {
                 return false;

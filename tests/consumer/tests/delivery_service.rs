@@ -1,3 +1,6 @@
+#[cfg(feature = "test-support")]
+#[path = "support/delivery_atomic.rs"]
+mod atomic;
 #[expect(
     dead_code,
     unused_imports,
@@ -290,6 +293,94 @@ async fn native_relay_custody_and_status_stream_are_bound_to_the_authenticated_o
     drop(sender);
     drop(recipient);
     drop(other);
+    process.stop(&mut control).await?;
+    Ok(())
+}
+
+#[cfg(feature = "test-support")]
+#[tokio::test]
+async fn native_mailbox_failures_match_the_final_atomic_store_result() -> TestResult {
+    use fleet_sync_delivery::MailboxOperation;
+    let directory = tempfile::tempdir()?;
+    let process = ServiceProcess::start(directory.path()).await?;
+    let mut control = process
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let mut sender = connect(&process, 2).await?;
+    let mut recipient = connect(&process, 4).await?;
+    let identity = ItemId::new(durable_steps::Uuid::now_v7())?;
+    let oversized = DeliveryEnvelope::Item(DeliveryItem::<SampleDelivery>::new(
+        identity,
+        "x".repeat(256),
+        Recipient {
+            peer: peer(4)?,
+            address: "inbox".into(),
+        },
+        None,
+        "body".into(),
+    )?);
+    let refused = sender
+        .request(DeliveryRequest::Submit {
+            call: call("oversized sender")?,
+            item: oversized,
+        })
+        .await?;
+    assert_eq!(
+        serde_json::to_value(refused)?,
+        atomic::failed_answer(MailboxOperation::Submit, peer(4)?, peer(2)?, identity).await?
+    );
+    assert!(matches!(
+        sender
+            .request(DeliveryRequest::Submit {
+                call: call("healthy before report")?,
+                item: item(identity, peer(4)?, "body")?
+            })
+            .await?,
+        DeliveryAnswer::Submit(SubmitResult::Accepted { .. })
+    ));
+    sender
+        .wait_publication(identity, StatusVersion::new(1))
+        .await?;
+    let refused = recipient
+        .request(DeliveryRequest::Report {
+            call: call("oversized acceptance")?,
+            report: RecipientReport {
+                item: identity,
+                report_seq: ReportSeq::new(1),
+                outcome: RecipientOutcome::Delivered {
+                    acceptance: "x".repeat(256),
+                },
+            },
+        })
+        .await?;
+    assert_eq!(
+        serde_json::to_value(refused)?,
+        atomic::failed_answer(MailboxOperation::Report, peer(4)?, peer(2)?, identity).await?
+    );
+    assert!(matches!(
+        control_request(
+            &mut control,
+            ControlRequest::CorruptDeliveryCustody {
+                mailbox: peer(4)?,
+                item: identity
+            }
+        )
+        .await?,
+        ControlAnswer::CorruptedDelivery { .. }
+    ));
+    let unavailable = sender
+        .request(DeliveryRequest::Query {
+            call: call("corrupt custody")?,
+            mailbox: peer(4)?,
+            items: vec![identity],
+        })
+        .await?;
+    assert_eq!(
+        serde_json::to_value(unavailable)?,
+        atomic::failed_answer(MailboxOperation::Query, peer(4)?, peer(2)?, identity).await?
+    );
+    drop(sender);
+    drop(recipient);
     process.stop(&mut control).await?;
     Ok(())
 }
