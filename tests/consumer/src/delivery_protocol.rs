@@ -13,6 +13,7 @@ impl DeliveryTypes for SampleDelivery {
     type Address = String;
     type Acceptance = String;
     type LocalObservation = ();
+    const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
     type StatusRoute = String;
 }
 pub fn delivery_limits() -> Result<DeliveryLimits, DeliveryConfigError> {

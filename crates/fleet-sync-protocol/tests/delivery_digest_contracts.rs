@@ -38,6 +38,7 @@ impl DeliveryTypes for MapDelivery {
     type Address = ();
     type Acceptance = ();
     type LocalObservation = ();
+    const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
     type StatusRoute = ();
 }
 #[test]

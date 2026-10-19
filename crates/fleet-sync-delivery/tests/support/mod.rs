@@ -64,6 +64,7 @@ impl DeliveryTypes for TestTypes {
     type Address = String;
     type Acceptance = Acceptance;
     type LocalObservation = ();
+    const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
     type StatusRoute = String;
 }
 #[derive(Serialize, Deserialize)]

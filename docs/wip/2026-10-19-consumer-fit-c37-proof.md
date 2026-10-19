@@ -13,7 +13,7 @@ The delivery inbox now calls consumer projection hooks through the same borrowed
 
 `DeliveryConsumer::on_outcome(scope, item_id, outcome, observation)` runs once in `record_header_outcome`, before its local-route return. Its borrowed `RecipientOutcome` retains every existing variant and the consumer's exact acceptance value. The existing consumer is threaded through receive-time recording, attempt completion, terminal failure, and cancellation recording for both the original and its control. A malformed stored digest adds no header validation to terminal failure.
 
-`DeliveryTypes::LocalObservation` belongs to the consumer. `MAX_LOCAL_OBSERVATION_BYTES` bounds its canonical JSON; the default four bytes admit unit observations. A consumer returns `LocalDelivery { outcome, observation }`. The local adapter validates both acceptance and observation bounds, then journals `LocalDeliveryAnswer::Observed { outcome, observation }`; an invalid receipt journals `Uncertain` with no observation. This enum prevents arbitrary non-uncertain outcomes without their observation. No competing answer byte bound was found in durable-steps' CallDone serializer.
+`DeliveryTypes::LocalObservation` belongs to the consumer. Every implementation must declare `MAX_LOCAL_OBSERVATION_BYTES`, which bounds its canonical JSON. Unit observations explicitly declare four bytes for `null`; the real-observation fixture declares 96. A consumer returns `LocalDelivery { outcome, observation }`. The local adapter validates both acceptance and observation bounds, then journals `LocalDeliveryAnswer::Observed { outcome, observation }`; an invalid receipt journals `Uncertain` with no observation. This enum prevents arbitrary non-uncertain outcomes without their observation. No competing answer byte bound was found in durable-steps' CallDone serializer.
 
 Only an outcome recorded from a validated local answer receives `Some(&observation)`. Receive-time recording, check-time expiry, terminal failure and cancellation receive `None`. The observation is present in the local call checkpoint and application projection only; recipient reports, inbox custody records and peer publications retain their existing shapes.
 
@@ -60,6 +60,8 @@ One added test initially expected the Engine to return an error for a hook stora
 
 All eight mutations were rerun on the decision-448 code. Each ran alone against a permanent exact-selected test, failed at runtime with 0 passed / 1 failed, and exited 101. No compiler failure counts as a caught mutation. All five mutated production files were restored byte for byte before the final crate run.
 
+The subsequent review correction removes the observation bound's default and requires its explicit declaration. Effective limits, validator logic and hook paths are unchanged. The Lead requested fresh scoped package gates and explicitly excluded another mutation run; the retained controls above remain applicable to those unchanged paths.
+
 | Mutation | Deciding observation |
 |---|---|
 | Move `on_received` out of the new-item branch | Replay/duplicate test reads three received projections instead of one. |
@@ -91,8 +93,7 @@ delivery_calls.rs  c742a272544dfa6ef56a5807d35c71087c8bb836e766536bd704d85c3e194
 
 | Command | Result | Exit |
 |---|---|---|
-| `cargo test -p fleet-sync-delivery` | 93 passed, 0 failed, 0 ignored across 27 harnesses, including empty unit/doc harnesses; 76 pre-existing tests and 17 new tests | 0 |
-| `cargo test -p fleet-sync-delivery -p fleet-sync-protocol` | 93 delivery and 60 protocol tests passed, 0 failed or ignored. Reused for unchanged protocol sources; final delivery run covers the later local type-parameter simplification. | 0 |
+| `cargo test -p fleet-sync-delivery -p fleet-sync-protocol` | After the required-bound correction: 93 delivery and 60 protocol tests passed, 0 failed or ignored, across 41 harnesses including empty unit/doc harnesses. Delivery includes 76 pre-existing tests and 17 new tests. | 0 |
 | `cargo clippy -p fleet-sync-delivery -p fleet-sync-protocol --all-targets -- -D warnings` | Passed | 0 |
 | `cargo fmt -p fleet-sync-delivery -p fleet-sync-protocol -- --check` | Passed | 0 |
 | `cargo fmt --manifest-path tests/consumer/Cargo.toml -- --check` | Passed | 0 |
@@ -101,6 +102,8 @@ delivery_calls.rs  c742a272544dfa6ef56a5807d35c71087c8bb836e766536bd704d85c3e194
 | `git diff --check` | Passed | 0 |
 
 Local raw evidence remains under the worktree's ignored `tmp/`: `c37-pre-wiring.log`, `c37-projection-green.log`, `c37-v448-crate-tests.log`, `c37-v448-final-delivery-tests.log`, `c37-v448-clippy.log`, `c37-v448-consumer-check.log`, `c37-v448-consumer-clippy.log`, `c37-v448-wrong-*.log`, and `c37-v448-wrong-build-results.json`. These local logs do not travel with the commit; permanent tests and this report do. The earlier decision-447 logs remain separately retained.
+
+All listed package, consumer, clippy and formatting gates were rerun after making the observation bound mandatory. Fresh raw logs are `c37-required-bound-tests.log`, `c37-required-bound-clippy.log`, `c37-required-bound-consumer-check.log` and `c37-required-bound-consumer-clippy.log`. Every command exited 0. The required constant replaces a silent default that could otherwise make a real-observation consumer return Uncertain simply because it forgot to declare its bound.
 
 Some build invocations emit diagnostic text while enumerating invalid template manifests in the pinned workers-rs dependency checkout. Cargo's final build/test result succeeds; no dependency checkout or build gate was modified to suppress those diagnostics.
 
@@ -115,6 +118,6 @@ Clippy initially rejected the fixture's explicit future as `manual_async_fn`. A 
 - No independent Verifier observation has arrived. The Lead owns commissioning it on the declared head and accepting this result. This work does not claim delivery acceptance.
 - No production casts, duplicate recipient-outcome types, non-exhaustive outcome conversions, or peer formats were introduced. Test-only `serde_json::Value` reads inspect independently stored records; shared fixtures retain the repository's test-only unwrap/dead-code allowances. The observation fixture's host is a controlled local recipient; real custody resolution, consumer invocation, validation, journal and Turso transactions remain on the exercised path.
 - The local answer hard cutover advances DeliverLocally to version 2. Existing version-1 operations are subject to the engine's existing version-mismatch handling; there is no old-answer decoder or migration. External consumers must add the associated type and adapt the local delivery result/validator call before compiling against this API.
-- The first hook slice was committed as `4d352a4` before decision 448 arrived. The addition is a second scoped commit because the commission permits only new commits and forbids history rewriting. Both commits belong to the final handback; neither was pushed.
+- The first hook slice was committed as `4d352a4` before decision 448 arrived; the addition is `c391e37`. The Lead accepted that packaging and requested a third commit to require explicit observation bounds. All three commits belong to the final handback; none was pushed.
 
 If merged with a misbehaving consumer, a projection hook that writes outside its supplied scope could still create an application-side crash gap. This change supplies the atomic seam; the consuming application's use of it remains its own integration obligation.
