@@ -12,8 +12,12 @@ pub struct SchemaPublicationSnapshot {
     pub registrations: Vec<(ConnectionId, ConnectionRegistration)>,
     pub attach_steps: u64,
 }
-impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: durable_steps::Host>
-    SessionHost<P, A, D, H>
+impl<
+    P: ConsumerProtocol,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
+    D: SessionHandler<P>,
+    H: durable_steps::Host,
+> SessionHost<P, A, D, H>
 {
     pub fn fail_next_schema_finalize(&self, peer: PeerId) -> Result<(), StoreError> {
         self.store.finalize_probe.arm(peer)

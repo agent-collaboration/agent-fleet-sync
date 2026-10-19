@@ -7,10 +7,12 @@ impl DeliveryTypes for SampleDelivery {
     const MAX_SENDER_BYTES: u32 = 128;
     const MAX_ADDRESS_BYTES: u32 = 128;
     const MAX_ACCEPTANCE_BYTES: u32 = 256;
+    const MAX_STATUS_ROUTE_BYTES: u32 = 128;
     type Body = String;
     type Sender = String;
     type Address = String;
     type Acceptance = String;
+    type StatusRoute = String;
 }
 pub fn delivery_limits() -> Result<DeliveryLimits, DeliveryConfigError> {
     DeliveryLimits::new::<SampleDelivery>(

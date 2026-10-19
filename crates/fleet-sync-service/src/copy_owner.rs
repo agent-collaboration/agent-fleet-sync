@@ -22,8 +22,14 @@ pub(crate) struct CopyOwner {
     pub health: Mutex<Option<CopyUnavailableReason>>,
 }
 
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceState<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceState<P, C, A>
 {
     pub(crate) async fn copy(&self, database: DatabaseId) -> Result<Arc<CopyOwner>, ServiceError> {
         let slot = self

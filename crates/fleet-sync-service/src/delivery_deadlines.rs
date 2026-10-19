@@ -89,7 +89,10 @@ pub(crate) async fn run_mailbox<P, C, A>(
 ) where
     P: ConsumerProtocol,
     C: ServiceConsumer<P>,
-    A: PeerAuthenticator<Material = String>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
 {
     let mut attempt = 0_u32;
     loop {

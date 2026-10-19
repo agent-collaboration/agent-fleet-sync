@@ -146,4 +146,5 @@ pub enum DeliverySizeField {
     Sender,
     Address,
     Acceptance,
+    StatusRoute,
 }

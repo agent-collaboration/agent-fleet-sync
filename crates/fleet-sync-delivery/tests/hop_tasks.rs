@@ -167,7 +167,13 @@ async fn header_loss_before_first_gate_reconciles_same_digest_conflict_and_unkno
                 .transaction(move |scope| {
                     Box::pin(async move {
                         Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                            .submit(peer(1), item(1, &body), SyncTime::from_unix_millis(0))
+                            .submit(
+                                peer(1),
+                                item(1, &body),
+                                SyncTime::from_unix_millis(0),
+                                "fixture-route".to_owned(),
+                                None,
+                            )
                             .await
                             .map_err(storage_error)?;
                         Ok(())
@@ -321,7 +327,7 @@ async fn atomic_settlement_fences_a_submit_that_was_already_in_flight() {
     );
     let delayed = network.routes.deferred.lock().unwrap().take().unwrap();
     network.mailbox.store.transaction(move|scope|Box::pin(async move {
-        assert!(matches!(Mailbox::<_,TestTypes>::new(scope,peer(2),limits()).submit(peer(1),delayed.item,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,SubmitResult::Replayed{status:DeliveryStatus::Refused{reason:DeliveryRefusal::ProcessingFailed{kind}},version,..} if kind.as_str()=="custodyUnresolvable"&&version.value()==1));
+        assert!(matches!(Mailbox::<_,TestTypes>::new(scope,peer(2),limits()).submit(peer(1),delayed.item,SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None).await.map_err(storage_error)?,SubmitResult::Replayed{status:DeliveryStatus::Refused{reason:DeliveryRefusal::ProcessingFailed{kind}},version,..} if kind.as_str()=="custodyUnresolvable"&&version.value()==1));
         let row=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT stream,seq,live,capacity_slot,payload_bytes FROM _fleet_sync_mail_items").fetch_one(scope.executor()).await.map_err(durable_steps::StoreError::backend)?;
         assert_eq!(row.try_get::<Option<String>,_>("stream").unwrap(),None);assert_eq!(row.try_get::<Option<i64>,_>("seq").unwrap(),None);assert_eq!(row.try_get::<i64,_>("live").unwrap(),0);assert_eq!(row.try_get::<i64,_>("capacity_slot").unwrap(),0);assert_eq!(row.try_get::<i64,_>("payload_bytes").unwrap(),0);Ok(())
     })).await.unwrap();

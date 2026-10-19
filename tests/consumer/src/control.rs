@@ -143,6 +143,14 @@ pub enum ControlRequest {
     AllowPeer {
         peer: PeerId,
     },
+    #[cfg(feature = "test-support")]
+    HoldNextRetirementReply,
+    #[cfg(feature = "test-support")]
+    WaitRetirementReplyCommitted,
+    ConfigureStatusRoute {
+        peer: PeerId,
+        route: String,
+    },
     HoldNextVerification {
         peer: PeerId,
     },
@@ -532,6 +540,20 @@ impl ControlState {
                 }
                 ControlRequest::AllowPeer { peer } => {
                     self.authenticator.set_allowed(peer, true).await;
+                    ControlAnswer::Ok
+                }
+                #[cfg(feature = "test-support")]
+                ControlRequest::HoldNextRetirementReply => {
+                    self.service.hold_next_retirement_reply().await?;
+                    ControlAnswer::Ok
+                }
+                #[cfg(feature = "test-support")]
+                ControlRequest::WaitRetirementReplyCommitted => {
+                    self.service.wait_retirement_reply_committed().await?;
+                    ControlAnswer::Ok
+                }
+                ControlRequest::ConfigureStatusRoute { peer, route } => {
+                    self.authenticator.set_route(peer, route).await;
                     ControlAnswer::Ok
                 }
                 ControlRequest::HoldNextVerification { peer } => {

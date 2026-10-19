@@ -237,9 +237,13 @@ where
                 .retired
                 .iter()
                 .chain(answer.unknown.iter())
+                .chain(answer.not_current_target.iter())
                 .copied()
                 .collect();
-            if result_ids != unique || answer.retired.len() + answer.unknown.len() != items.len() {
+            if result_ids != unique
+                || answer.retired.len() + answer.unknown.len() + answer.not_current_target.len()
+                    != items.len()
+            {
                 return Err(DeliveryError::Corrupt {
                     field: "retirement receipt items",
                 });
@@ -250,23 +254,28 @@ where
         let mut answer = RetireResult {
             retired: Vec::new(),
             unknown: Vec::new(),
+            not_current_target: Vec::new(),
         };
+        let mut newly_retired = Vec::new();
         for item in items {
             match self.storage.item::<D>(*item).await? {
-                Some(MailRecord::Live(record))
-                    if record.origin == origin && record.status.is_terminal() =>
-                {
+                Some(MailRecord::Live(record)) if record.status_target.peer != origin => {
+                    answer.not_current_target.push(*item);
+                }
+                Some(MailRecord::Live(record)) if record.status.is_terminal() => {
                     self.storage.save_compacted(&record).await?;
                     answer.retired.push(*item);
+                    newly_retired.push(*item);
                 }
+                Some(MailRecord::Compacted(_)) => answer.retired.push(*item),
                 _ => answer.unknown.push(*item),
             }
         }
-        if !answer.retired.is_empty() {
+        if !newly_retired.is_empty() {
             let seq = state.allocate(DeliveryStream::Controls)?;
             let control = FetchEntry::<D>::Retired {
                 seq,
-                items: answer.retired.clone(),
+                items: newly_retired,
             };
             queries::write_control(
                 self.storage.scope,

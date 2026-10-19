@@ -18,8 +18,14 @@ fn decode<T: DeserializeOwned>(value: Value) -> Result<T, CallFailure> {
 fn encode<T: Serialize>(value: T) -> Result<Value, CallFailure> {
     serde_json::to_value(value).map_err(lost)
 }
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceState<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceState<P, C, A>
 {
     pub(crate) async fn route_call(&self, envelope: CallEnvelope) -> Result<Value, CallFailure> {
         let CallEnvelope {

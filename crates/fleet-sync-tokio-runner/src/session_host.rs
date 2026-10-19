@@ -44,6 +44,7 @@ pub trait SessionHandler<P: ConsumerProtocol>: Send + Sync + 'static {
     fn request(
         &self,
         session: SessionKey,
+        route: <P::Delivery as DeliveryTypes>::StatusRoute,
         operation: OperationRequest<P>,
     ) -> impl Future<Output = Result<OperationAnswer<P>, SessionHostError>> + Send;
 }
@@ -51,13 +52,19 @@ pub trait SessionHandler<P: ConsumerProtocol>: Send + Sync + 'static {
 /// One verified admission for its native host. The host consumes it once and
 /// checks that no revocation occurred during verification or before Opening.
 #[derive(Debug)]
-pub struct SessionAdmission {
+pub struct SessionAdmission<R> {
     pub(crate) verified: VerifiedPeer,
+    pub(crate) route: R,
     pub(crate) revocation_generation: Option<Uuid>,
     pub(crate) owner: Arc<()>,
 }
 
-pub struct SessionHost<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host> {
+pub struct SessionHost<
+    P: ConsumerProtocol,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
+    D: SessionHandler<P>,
+    H: Host,
+> {
     pub(crate) object: Arc<TokioObject<H>>,
     pub(crate) authenticator: Arc<A>,
     pub(crate) handler: Arc<D>,
@@ -69,8 +76,9 @@ pub struct SessionHost<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHand
     #[cfg(feature = "test-support")]
     pub(crate) registration_changes: watch::Sender<()>,
 }
-pub(crate) struct SocketPeer {
+pub(crate) struct SocketPeer<R> {
     pub binding: ConnectionBinding,
+    pub route: R,
     pub revocation_generation: Option<Uuid>,
     pub outgoing: mpsc::Sender<Bytes>,
     pub close: watch::Sender<Option<CloseReason>>,
@@ -81,7 +89,7 @@ pub(crate) struct PendingPeerCall<P: ConsumerProtocol> {
 }
 pub(crate) struct SessionRuntime<P: ConsumerProtocol> {
     pub registrations: BTreeMap<ConnectionId, ConnectionRegistration>,
-    pub sockets: BTreeMap<ConnectionId, SocketPeer>,
+    pub sockets: BTreeMap<ConnectionId, SocketPeer<<P::Delivery as DeliveryTypes>::StatusRoute>>,
     pub revocations: Arc<BTreeMap<PeerId, Uuid>>,
     pub pending: BTreeMap<(SessionKey, FrameId), PendingPeerCall<P>>,
 }
@@ -92,8 +100,12 @@ pub(crate) enum SessionInput {
     Revoke,
 }
 
-impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
-    SessionHost<P, A, D, H>
+impl<
+    P: ConsumerProtocol,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
+    D: SessionHandler<P>,
+    H: Host,
+> SessionHost<P, A, D, H>
 {
     /// Observe the committed host registration without changing session order.
     #[cfg(feature = "test-support")]
@@ -169,11 +181,11 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
     pub async fn authenticate(
         &self,
         material: A::Material,
-    ) -> Result<SessionAdmission, AuthRefusal> {
+    ) -> Result<SessionAdmission<A::Route>, AuthRefusal> {
         // A shared immutable snapshot spans external verification without
         // holding the host lock or rejecting an unrelated peer's revocation.
         let before = self.runtime.lock().await.revocations.clone();
-        let verified = self.authenticator.verify(material).await?;
+        let (verified, route) = self.authenticator.verify(material).await?;
         let runtime = self.runtime.lock().await;
         let revocation_generation = runtime.revocations.get(&verified.peer).copied();
         if before.get(&verified.peer).copied() != revocation_generation {
@@ -184,6 +196,7 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
         }
         Ok(SessionAdmission {
             verified,
+            route,
             revocation_generation,
             owner: self.admission_owner.clone(),
         })

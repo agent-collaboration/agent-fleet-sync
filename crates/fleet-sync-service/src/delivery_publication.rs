@@ -14,8 +14,14 @@ use runtime_primitives::{Clock, WakeScheduler};
 use serde_json::Value;
 use sqlx_turso::Turso;
 
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceState<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceState<P, C, A>
 {
     pub(crate) async fn delivery_publication(
         &self,
@@ -27,18 +33,18 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
         let publication: StatusPublication<<P::Delivery as DeliveryTypes>::Acceptance> =
             serde_json::from_value(request).map_err(lost)?;
         let answer = match target.target {
-            PublicationTarget::StatusStream { sender } => {
+            PublicationTarget::StatusStream { sender, route } => {
                 let owner = self
                     .delivery_owner(DeliveryObject::Status(sender))
                     .await
                     .map_err(|_| unreachable())?;
-                match owner.object.rule_transaction(move|scope|Box::pin(async move {StatusStream::<_,P::Delivery>::new(scope,sender).append_and_admit::<PublishStatus<ServiceObject,Turso,P::Delivery>>(&publication).await})).await {
+                match owner.object.rule_transaction(move|scope|Box::pin(async move {StatusStream::<_,P::Delivery>::new(scope,sender,route).append_and_admit::<PublishStatus<ServiceObject,Turso,P::Delivery>>(&publication).await})).await {
                     Ok(_)=>{owner.object.host().wake_at(owner.object.host().now()).await.map_err(lost)?;StatusPublicationResult::Applied},
                     Err(DeliveryError::Refused{reason})=>StatusPublicationResult::Refused{reason},
                     Err(_)=>return Err(unreachable()),
                 }
             }
-            PublicationTarget::Peer { peer } => {
+            PublicationTarget::Peer { peer, .. } => {
                 match self
                     .sessions()
                     .map_err(lost)?

@@ -18,7 +18,8 @@ use tokio::{
 struct RefusingAuthenticator(AuthRefusal);
 impl PeerAuthenticator for RefusingAuthenticator {
     type Material = String;
-    async fn verify(&self, _: String) -> Result<VerifiedPeer, AuthRefusal> {
+    type Route = String;
+    async fn verify(&self, _: String) -> Result<(VerifiedPeer, String), AuthRefusal> {
         Err(self.0)
     }
 }

@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, dead_code)]
 pub mod interleaving;
 pub mod network;
+pub mod publication_network;
 use durable_steps::{
     AtomicStore, CallFailure, CallId, CallTarget, Host, NotSentReason, SyncTime,
     turso_store::TursoStore,
@@ -54,10 +55,12 @@ impl DeliveryTypes for TestTypes {
     const MAX_SENDER_BYTES: u32 = 64;
     const MAX_ADDRESS_BYTES: u32 = 64;
     const MAX_ACCEPTANCE_BYTES: u32 = 128;
+    const MAX_STATUS_ROUTE_BYTES: u32 = 64;
     type Body = String;
     type Sender = String;
     type Address = String;
     type Acceptance = Acceptance;
+    type StatusRoute = String;
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

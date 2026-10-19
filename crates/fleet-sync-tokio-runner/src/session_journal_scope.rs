@@ -8,8 +8,12 @@ use durable_steps::{
 use fleet_sync_protocol::ConsumerProtocol;
 use fleet_sync_session::PeerAuthenticator;
 
-impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host> JournalScope
-    for SessionTransaction<'_, P, A, D, H>
+impl<
+    P: ConsumerProtocol,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
+    D: SessionHandler<P>,
+    H: Host,
+> JournalScope for SessionTransaction<'_, P, A, D, H>
 {
     async fn admit<T: Task>(
         &mut self,
@@ -22,8 +26,12 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host> J
         self.inner.ensure_wake(at).await
     }
 }
-impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host> JournalStorage
-    for SessionTransaction<'_, P, A, D, H>
+impl<
+    P: ConsumerProtocol,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
+    D: SessionHandler<P>,
+    H: Host,
+> JournalStorage for SessionTransaction<'_, P, A, D, H>
 {
     async fn operation(&mut self, id: OperationId) -> Result<Option<OperationRecord>, StoreError> {
         self.inner.operation(id).await

@@ -9,8 +9,14 @@ pub struct DeliveryServiceSnapshot {
     pub mailbox: Vec<DeliveryObservation>,
     pub origin: Vec<DeliveryObservation>,
 }
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceHandle<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceHandle<P, C, A>
 {
     /// Observe a registered mailbox's successful native acquisition, without initializing it.
     pub async fn wait_delivery_owner(&self, mailbox: PeerId) -> Result<(), ServiceError> {

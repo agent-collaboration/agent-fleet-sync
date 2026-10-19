@@ -5,8 +5,14 @@ use fleet_sync_receiver::{ApplyDecision, CopyTransactionFailure, admit_follow_up
 use fleet_sync_session::PeerAuthenticator;
 use runtime_primitives::Clock;
 
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceState<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceState<P, C, A>
 {
     pub(crate) async fn replicate(
         &self,

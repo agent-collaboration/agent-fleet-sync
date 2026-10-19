@@ -427,7 +427,8 @@ impl FixtureHost {
 
 impl PeerAuthenticator for FixtureHost {
     type Material = String;
-    async fn verify(&self, material: String) -> Result<VerifiedPeer, AuthRefusal> {
+    type Route = ();
+    async fn verify(&self, material: String) -> Result<(VerifiedPeer, ()), AuthRefusal> {
         let expires_at = match material.as_str() {
             "Bearer fixture" => SyncTime::from_unix_millis(10_000),
             "Bearer short" => SyncTime::from_unix_millis(50),
@@ -443,10 +444,13 @@ impl PeerAuthenticator for FixtureHost {
         if expires_at <= state.now {
             return Err(AuthRefusal::Expired);
         }
-        Ok(VerifiedPeer {
-            peer: PeerId::new(uuid::Uuid::from_u128(0x019eef00000070008000000000000001))
-                .map_err(|_| AuthRefusal::WrongKind)?,
-            expires_at,
-        })
+        Ok((
+            VerifiedPeer {
+                peer: PeerId::new(uuid::Uuid::from_u128(0x019eef00000070008000000000000001))
+                    .map_err(|_| AuthRefusal::WrongKind)?,
+                expires_at,
+            },
+            (),
+        ))
     }
 }

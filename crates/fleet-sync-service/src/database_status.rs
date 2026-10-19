@@ -6,8 +6,14 @@ use fleet_sync_protocol::*;
 use fleet_sync_receiver::SnapshotInstallRules;
 use fleet_sync_session::PeerAuthenticator;
 
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceState<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceState<P, C, A>
 {
     pub(crate) async fn database_status(
         &self,

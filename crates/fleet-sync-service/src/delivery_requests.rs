@@ -10,12 +10,19 @@ use fleet_sync_session::PeerAuthenticator;
 use runtime_primitives::{Clock, WakeScheduler};
 use sqlx_turso::Turso;
 
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceState<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceState<P, C, A>
 {
     pub(crate) async fn delivery_request(
         &self,
         peer: PeerId,
+        route: <P::Delivery as DeliveryTypes>::StatusRoute,
         request: DeliveryRequest<P::Delivery>,
     ) -> Result<DeliveryAnswer<P::Delivery>, ServiceError> {
         let limits = self.delivery_limits()?;
@@ -25,7 +32,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 .object
                 .rule_transaction(move |scope| {
                     Box::pin(async move {
-                        StatusStream::<_, P::Delivery>::new(scope, peer)
+                        StatusStream::<_, P::Delivery>::new(scope, peer, route)
                             .fetch(peer, after, limit)
                             .await
                     })
@@ -47,6 +54,8 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
         let now = owner.object.host().now();
         let submit = matches!(&request, DeliveryRequest::Submit { .. });
         let report = matches!(&request, DeliveryRequest::Report { .. });
+        #[cfg(feature = "test-support")]
+        let retirement = matches!(&request, DeliveryRequest::Retire { .. });
         if let Some(kind) = *owner.health.borrow() {
             return Ok(DeliveryAnswer::MailboxUnavailable {
                 reason: DeliveryRefusal::ProcessingFailed { kind },
@@ -62,9 +71,9 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 Box::pin(async move {
                     let mut mailbox = Mailbox::<_, P::Delivery>::new(scope, mailbox, limits);
                     let answer = match request {
-                        DeliveryRequest::Submit { item, .. } => {
-                            DeliveryAnswer::Submit(mailbox.submit(peer, item, now).await?)
-                        }
+                        DeliveryRequest::Submit { item, .. } => DeliveryAnswer::Submit(
+                            mailbox.submit(peer, item, now, route, None).await?,
+                        ),
                         DeliveryRequest::Fetch {
                             stream,
                             after,
@@ -112,6 +121,10 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 tracing::warn!(?mailbox, phase="requestWake", %error, "delivery mailbox operation retry");
                 ServiceError::rule(error)
             })?;
+        }
+        #[cfg(feature = "test-support")]
+        if retirement && result.is_ok() {
+            self.retirement_reply_probe.after_commit().await;
         }
         match result {
             Ok(answer) => Ok(answer),

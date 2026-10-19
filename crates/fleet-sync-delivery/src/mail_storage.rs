@@ -72,6 +72,13 @@ where
                 field: "stored mail envelope bounds",
             })?;
         }
+        if let MailRecord::Live(record) = &record {
+            crate::delivery_sizes::check_status_route::<D>(&record.status_target.route).map_err(
+                |_| DeliveryError::Corrupt {
+                    field: "stored status route bounds",
+                },
+            )?;
+        }
         if row.item_id.as_deref() != Some(item_key(record.id()).as_str())
             || expected.is_some_and(|expected| expected != record.id())
         {
@@ -181,15 +188,18 @@ where
         .await
         .map_err(sql_error)
     }
-    pub async fn publication<A: serde::Serialize>(
+    pub async fn publication<R: serde::Serialize + Sync, A: serde::Serialize + Sync>(
         &mut self,
-        target: PeerId,
+        target: &CurrentStatusTarget<R>,
         publication: &StatusPublication<A>,
     ) -> Result<(), DeliveryError> {
         queries::write_publication(
             self.scope,
             item_key(publication.item),
-            encode(&crate::PublicationTarget::StatusStream { sender: target })?,
+            crate::status_stream::canonical_encode(&crate::PublicationTarget::StatusStream {
+                sender: target.peer,
+                route: &target.route,
+            })?,
             publication.version.value().to_string(),
             encode(publication)?,
         )

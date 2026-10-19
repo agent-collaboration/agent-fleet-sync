@@ -139,13 +139,13 @@ impl<D: DeliveryTypes> CallTarget for ReportCall<D> {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
-pub struct PublishCall<D> {
-    pub target: PublicationTarget,
+pub struct PublishCall<D: DeliveryTypes> {
+    pub target: PublicationTarget<D::StatusRoute>,
     #[serde(skip)]
     payload: PhantomData<fn() -> D>,
 }
-impl<D> PublishCall<D> {
-    pub const fn new(target: PublicationTarget) -> Self {
+impl<D: DeliveryTypes> PublishCall<D> {
+    pub const fn new(target: PublicationTarget<D::StatusRoute>) -> Self {
         Self {
             target,
             payload: PhantomData,

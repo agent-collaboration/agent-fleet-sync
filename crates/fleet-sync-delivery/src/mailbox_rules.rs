@@ -71,24 +71,40 @@ where
         item: DeliveryEnvelope<D>,
 
         now: SyncTime,
+        route: D::StatusRoute,
+        rank: Option<u64>,
     ) -> Result<SubmitResult<D::Acceptance>, DeliveryError> {
         self.limits.validate::<D>()?;
-        crate::delivery_sizes::check_envelope(&item)?;
         let mut state = self.storage.state().await?;
-        if let Some(existing) = self.storage.item::<D>(item.id()).await? {
-            return if existing.digest() == item.digest() {
-                Ok(SubmitResult::Replayed {
-                    status: copy_wire(existing.status())?,
-                    version: existing.version(),
-                    cancel: existing.cancel(),
-                })
-            } else {
-                Ok(SubmitResult::Refused {
-                    reason: DeliveryRefusal::ItemConflict {
-                        existing: existing.digest().clone(),
-                    },
-                })
-            };
+        let existing = self.storage.item::<D>(item.id()).await?;
+        if let Some(existing) = &existing
+            && existing.digest() != item.digest()
+        {
+            return Ok(SubmitResult::Refused {
+                reason: DeliveryRefusal::ItemConflict {
+                    existing: existing.digest().clone(),
+                },
+            });
+        }
+        crate::delivery_sizes::check_envelope(&item)?;
+        crate::delivery_sizes::check_status_route::<D>(&route)?;
+        if let Some(mut existing) = existing {
+            if let MailRecord::Live(record) = &mut existing
+                && rank.is_some()
+                && rank > record.status_target.rank
+            {
+                record.status_target = CurrentStatusTarget {
+                    peer: origin,
+                    route,
+                    rank,
+                };
+                self.storage.save_live(record).await?;
+            }
+            return Ok(SubmitResult::Replayed {
+                status: copy_wire(existing.status())?,
+                version: existing.version(),
+                cancel: existing.cancel(),
+            });
         }
         if state.closed {
             return Ok(SubmitResult::Refused {
@@ -173,6 +189,11 @@ where
             id: item.id(),
             digest: item.digest().clone(),
             origin,
+            status_target: CurrentStatusTarget {
+                peer: origin,
+                route,
+                rank,
+            },
 
             stream,
             seq,
@@ -215,7 +236,7 @@ where
     pub(crate) async fn owe(&mut self, record: &LiveMail<D>) -> Result<(), DeliveryError> {
         self.storage
             .publication(
-                record.origin,
+                &record.status_target,
                 &StatusPublication {
                     item: record.id,
                     status: copy_wire(&record.status)?,

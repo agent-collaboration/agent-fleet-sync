@@ -14,21 +14,30 @@ use tokio::sync::{mpsc, oneshot};
 
 // Axum owns upgrade tasks. A completed upgrade hands the transport to the
 // service's owner channel and waits until that owned connection task is joined.
-pub(crate) struct AcceptedConnection {
+pub(crate) struct AcceptedConnection<R> {
     pub socket: axum::extract::ws::WebSocket,
-    pub admission: SessionAdmission,
+    pub admission: SessionAdmission<R>,
     pub done: oneshot::Sender<()>,
 }
 struct UpgradeState<
     P: ConsumerProtocol,
     C: ServiceConsumer<P>,
-    A: PeerAuthenticator<Material = String>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
 > {
     sessions: Arc<crate::service_state::ServiceSessions<P, C, A>>,
-    accepted: mpsc::Sender<AcceptedConnection>,
+    accepted: mpsc::Sender<AcceptedConnection<A::Route>>,
 }
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>> Clone
-    for UpgradeState<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> Clone for UpgradeState<P, C, A>
 {
     fn clone(&self) -> Self {
         Self {
@@ -37,11 +46,17 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
         }
     }
 }
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    FleetService<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> FleetService<P, C, A>
 {
-    pub(crate) fn session_router(&self) -> (Router, mpsc::Receiver<AcceptedConnection>) {
-        let (accepted, incoming) = mpsc::channel::<AcceptedConnection>(64);
+    pub(crate) fn session_router(&self) -> (Router, mpsc::Receiver<AcceptedConnection<A::Route>>) {
+        let (accepted, incoming) = mpsc::channel::<AcceptedConnection<A::Route>>(64);
         (
             Router::new()
                 .route("/session", get(upgrade::<P, C, A>))
@@ -56,7 +71,10 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
 async fn upgrade<
     P: ConsumerProtocol,
     C: ServiceConsumer<P>,
-    A: PeerAuthenticator<Material = String>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
 >(
     State(state): State<UpgradeState<P, C, A>>,
     headers: HeaderMap,

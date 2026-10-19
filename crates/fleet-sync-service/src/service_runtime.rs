@@ -28,7 +28,10 @@ use tokio::{
 pub struct FleetService<
     P: ConsumerProtocol,
     C: ServiceConsumer<P>,
-    A: PeerAuthenticator<Material = String>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
 > {
     pub(crate) state: Arc<ServiceState<P, C, A>>,
     pub(crate) sessions: Arc<ServiceSessions<P, C, A>>,
@@ -37,13 +40,22 @@ pub struct FleetService<
 pub struct ServiceHandle<
     P: ConsumerProtocol,
     C: ServiceConsumer<P>,
-    A: PeerAuthenticator<Material = String>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
 > {
     pub(crate) state: Arc<ServiceState<P, C, A>>,
     pub(crate) sessions: Arc<ServiceSessions<P, C, A>>,
 }
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>> Clone
-    for ServiceHandle<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> Clone for ServiceHandle<P, C, A>
 {
     fn clone(&self) -> Self {
         Self {
@@ -52,8 +64,14 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
         }
     }
 }
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    FleetService<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> FleetService<P, C, A>
 {
     pub async fn open(
         options: ServiceOptions,
@@ -112,6 +130,8 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             install_page_probe: Default::default(),
             #[cfg(feature = "test-support")]
             schema_support_probe: Default::default(),
+            #[cfg(feature = "test-support")]
+            retirement_reply_probe: Default::default(),
             copies: Mutex::new(BTreeMap::new()),
             copy_added: Notify::new(),
             delivery: Mutex::new(BTreeMap::new()),

@@ -2,11 +2,15 @@ use crate::TestResult;
 use fleet_sync_protocol::{AuthRefusal, PeerId};
 use fleet_sync_session::{PeerAuthenticator, VerifiedPeer};
 use runtime_primitives::{Clock, SystemClock};
-use std::{collections::BTreeSet, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 use tokio::sync::{Mutex, Notify, RwLock, watch};
 
 pub struct FixtureAuthenticator {
     denied: RwLock<BTreeSet<PeerId>>,
+    routes: RwLock<BTreeMap<PeerId, String>>,
     hold_next: Mutex<Option<PeerId>>,
     observed: watch::Sender<Option<PeerId>>,
     resume: Notify,
@@ -15,6 +19,7 @@ impl Default for FixtureAuthenticator {
     fn default() -> Self {
         Self {
             denied: RwLock::new(BTreeSet::new()),
+            routes: RwLock::new(BTreeMap::new()),
             hold_next: Mutex::new(None),
             observed: watch::channel(None).0,
             resume: Notify::new(),
@@ -22,6 +27,9 @@ impl Default for FixtureAuthenticator {
     }
 }
 impl FixtureAuthenticator {
+    pub async fn set_route(&self, peer: PeerId, route: String) {
+        self.routes.write().await.insert(peer, route);
+    }
     pub async fn set_allowed(&self, peer: PeerId, allowed: bool) {
         let mut denied = self.denied.write().await;
         if allowed {
@@ -49,7 +57,8 @@ impl FixtureAuthenticator {
 }
 impl PeerAuthenticator for FixtureAuthenticator {
     type Material = String;
-    async fn verify(&self, material: String) -> Result<VerifiedPeer, AuthRefusal> {
+    type Route = String;
+    async fn verify(&self, material: String) -> Result<(VerifiedPeer, String), AuthRefusal> {
         let peer = material
             .strip_prefix("Bearer peer-")
             .and_then(|value| value.parse::<u128>().ok())
@@ -67,6 +76,13 @@ impl PeerAuthenticator for FixtureAuthenticator {
             peer,
             expires_at: SystemClock.now().after(Duration::from_secs(3600)),
         };
+        let route = self
+            .routes
+            .read()
+            .await
+            .get(&peer)
+            .cloned()
+            .unwrap_or_else(|| "fixture-route".into());
         let hold = {
             let mut next = self.hold_next.lock().await;
             if *next == Some(peer) {
@@ -82,6 +98,6 @@ impl PeerAuthenticator for FixtureAuthenticator {
             self.observed.send_replace(Some(peer));
             self.resume.notified().await;
         }
-        Ok(verified)
+        Ok((verified, route))
     }
 }

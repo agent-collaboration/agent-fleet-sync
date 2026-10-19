@@ -95,10 +95,12 @@ pub struct VerifiedPeer {
 
 pub trait PeerAuthenticator: Send + Sync + 'static {
     type Material: Send;
+    /// Owned address from the same authenticated binding as `VerifiedPeer`.
+    type Route: Clone + Send + Sync + 'static;
     fn verify(
         &self,
         material: Self::Material,
-    ) -> impl Future<Output = Result<VerifiedPeer, AuthRefusal>> + Send;
+    ) -> impl Future<Output = Result<(VerifiedPeer, Self::Route), AuthRefusal>> + Send;
 }
 
 /// Host-created identity for one authenticated transport, never decoded from a frame.

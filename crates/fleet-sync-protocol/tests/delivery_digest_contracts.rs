@@ -32,10 +32,12 @@ impl DeliveryTypes for MapDelivery {
     const MAX_SENDER_BYTES: u32 = 1024;
     const MAX_ADDRESS_BYTES: u32 = 1024;
     const MAX_ACCEPTANCE_BYTES: u32 = 1024;
+    const MAX_STATUS_ROUTE_BYTES: u32 = 4;
     type Body = ConsumerMap;
     type Sender = ();
     type Address = ();
     type Acceptance = ();
+    type StatusRoute = ();
 }
 #[test]
 fn consumer_map_field_order_does_not_change_item_identity() {

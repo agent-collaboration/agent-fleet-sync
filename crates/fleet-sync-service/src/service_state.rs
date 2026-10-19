@@ -22,7 +22,10 @@ pub(crate) type ServiceSessions<P, C, A> =
 pub(crate) struct ServiceState<
     P: ConsumerProtocol,
     C: ServiceConsumer<P>,
-    A: PeerAuthenticator<Material = String>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
 > {
     pub options: ServiceOptions,
     pub consumer: Arc<C>,
@@ -41,6 +44,8 @@ pub(crate) struct ServiceState<
     pub install_page_probe: crate::install_page_probe::InstallPageProbe,
     #[cfg(feature = "test-support")]
     pub schema_support_probe: crate::schema_support_probe::SchemaSupportProbe,
+    #[cfg(feature = "test-support")]
+    pub retirement_reply_probe: crate::retirement_reply_probe::RetirementReplyProbe,
     pub copies: Mutex<BTreeMap<DatabaseId, Arc<OnceCell<Arc<CopyOwner>>>>>,
     pub copy_added: Notify,
     pub delivery: Mutex<
@@ -49,8 +54,14 @@ pub(crate) struct ServiceState<
     pub delivery_added: Notify,
     pub sessions: OnceLock<Weak<ServiceSessions<P, C, A>>>,
 }
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceState<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceState<P, C, A>
 {
     pub(crate) fn sessions(&self) -> Result<Arc<ServiceSessions<P, C, A>>, ServiceError> {
         self.sessions

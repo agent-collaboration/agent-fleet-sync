@@ -244,6 +244,7 @@ pub struct QueryResult<A> {
 pub struct RetireResult {
     pub retired: Vec<ItemId>,
     pub unknown: Vec<ItemId>,
+    pub not_current_target: Vec<ItemId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

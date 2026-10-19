@@ -41,7 +41,7 @@ async fn session_upgrade(
         .and_then(|header| header.to_str().ok())
         .unwrap_or_default()
         .to_owned();
-    let verified = match state.host.verify(material).await {
+    let (verified, _) = match state.host.verify(material).await {
         Ok(peer) => peer,
         Err(_) => return StatusCode::UNAUTHORIZED.into_response(),
     };

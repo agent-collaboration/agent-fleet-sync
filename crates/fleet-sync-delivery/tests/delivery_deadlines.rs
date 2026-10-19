@@ -203,7 +203,13 @@ async fn an_initial_expiry_publication_before_the_late_submit_receipt_keeps_the_
         .transaction(move |scope| {
             Box::pin(async move {
                 let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .submit(peer(1), resolved.item, SyncTime::from_unix_millis(50))
+                    .submit(
+                        peer(1),
+                        resolved.item,
+                        SyncTime::from_unix_millis(50),
+                        "fixture-route".to_owned(),
+                        None,
+                    )
                     .await
                     .map_err(storage_error)?;
                 admit_publications::<_, TestTypes, PublishTask>(scope)

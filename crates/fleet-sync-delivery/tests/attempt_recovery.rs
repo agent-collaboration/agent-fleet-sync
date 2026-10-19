@@ -241,7 +241,13 @@ async fn cancel_waiting_for_a_saved_held_answer_prevents_the_original_in_the_out
         .transaction(|scope| {
             Box::pin(async move {
                 Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .submit(peer(1), cancel(2, 1), SyncTime::from_unix_millis(0))
+                    .submit(
+                        peer(1),
+                        cancel(2, 1),
+                        SyncTime::from_unix_millis(0),
+                        "fixture-route".to_owned(),
+                        None,
+                    )
                     .await
                     .map_err(storage_error)?;
                 Ok(())

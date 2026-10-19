@@ -38,18 +38,19 @@ where
     const VERSION: u32 = 1;
     const KEEP_RESULT: bool = false;
     type Store = S;
-    type Input = PublicationRef;
+    type Input = PublicationRef<D::StatusRoute>;
     type Output = ();
     async fn run<O: OperationContext<Store = S>>(
         &self,
         ctx: &mut O,
-        input: &PublicationRef,
+        input: &PublicationRef<D::StatusRoute>,
     ) -> Result<(), OperationFailure> {
-        let input = *input;
+        let input = input.clone();
+        let read_reference = input.clone();
         let publication = ctx
             .local(step("read_publication")?, move |scope| {
                 Box::pin(async move {
-                    resolve_publication::<_, D>(scope, input)
+                    resolve_publication::<_, D>(scope, read_reference)
                         .await
                         .map_err(step_error)
                 })
@@ -61,7 +62,7 @@ where
         let answer = ctx
             .call(
                 step("publish")?,
-                PublishCall::<D>::new(input.target),
+                PublishCall::<D>::new(input.target.clone()),
                 publication,
             )
             .await?;
@@ -69,7 +70,11 @@ where
             return Err(step_error(DeliveryError::Refused { reason }).into());
         }
         ctx.local(step("retire_publication")?, move |scope| {
-            Box::pin(async move { retire_publication(scope, input).await.map_err(step_error) })
+            Box::pin(async move {
+                retire_publication::<_, D>(scope, input)
+                    .await
+                    .map_err(step_error)
+            })
         })
         .await?;
         Ok(())
@@ -80,7 +85,7 @@ where
         key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<()>, StoreError>> {
         Box::pin(async move {
-            let reference: PublicationRef =
+            let reference: PublicationRef<D::StatusRoute> =
                 serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
             if resolve_publication::<_, D>(scope, reference)
                 .await

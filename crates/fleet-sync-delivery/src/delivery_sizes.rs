@@ -24,6 +24,15 @@ fn check(
     }
     Ok(())
 }
+pub(crate) fn check_status_route<D: DeliveryTypes>(
+    route: &D::StatusRoute,
+) -> Result<(), DeliveryError> {
+    check(
+        route,
+        D::MAX_STATUS_ROUTE_BYTES,
+        DeliverySizeField::StatusRoute,
+    )
+}
 pub(crate) fn check_item<D: DeliveryTypes>(item: &DeliveryItem<D>) -> Result<(), DeliveryError> {
     check(
         item.sender(),

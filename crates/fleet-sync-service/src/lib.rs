@@ -15,6 +15,8 @@ mod install_host;
 #[cfg(feature = "test-support")]
 mod install_page_probe;
 #[cfg(feature = "test-support")]
+mod retirement_reply_probe;
+#[cfg(feature = "test-support")]
 mod schema_support_probe;
 mod source_host;
 pub use source_host::AttachedSource;

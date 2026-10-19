@@ -7,8 +7,14 @@ use runtime_primitives::{Clock, WakeScheduler};
 use sqlx_core::{query::query, row::Row};
 use sqlx_turso::Turso;
 
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceHandle<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceHandle<P, C, A>
 {
     pub async fn hold_copy_call_for_test(
         &self,

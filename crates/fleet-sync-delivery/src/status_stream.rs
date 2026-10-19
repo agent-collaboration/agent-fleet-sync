@@ -8,42 +8,52 @@ use sqlx_core::{
 };
 use std::marker::PhantomData;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
     content = "value",
     rename_all = "camelCase",
     deny_unknown_fields
 )]
-pub enum PublicationTarget {
-    StatusStream { sender: PeerId },
-    Peer { peer: PeerId },
+pub enum PublicationTarget<R> {
+    StatusStream { sender: PeerId, route: R },
+    Peer { peer: PeerId, route: R },
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+impl<R> PublicationTarget<R> {
+    pub(crate) const fn route(&self) -> &R {
+        match self {
+            Self::StatusStream { route, .. } | Self::Peer { route, .. } => route,
+        }
+    }
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PublicationRef {
+pub struct PublicationRef<R> {
     pub item: ItemId,
     pub version: StatusVersion,
-    pub target: PublicationTarget,
+    pub target: PublicationTarget<R>,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct StreamState {
+struct StreamState<R> {
     sender: PeerId,
+    owner_route: R,
     head: StatusCursor,
 }
 
-pub struct StatusStream<'s, S, D> {
+pub struct StatusStream<'s, S, D: DeliveryTypes> {
     scope: &'s mut S,
     sender: PeerId,
+    owner_route: D::StatusRoute,
     payload: PhantomData<fn() -> D>,
 }
-impl<'s, S, D> StatusStream<'s, S, D> {
-    pub fn new(scope: &'s mut S, sender: PeerId) -> Self {
+impl<'s, S, D: DeliveryTypes> StatusStream<'s, S, D> {
+    pub fn new(scope: &'s mut S, sender: PeerId, owner_route: D::StatusRoute) -> Self {
         Self {
             scope,
             sender,
+            owner_route,
             payload: PhantomData,
         }
     }
@@ -57,7 +67,7 @@ where
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    pub async fn append_and_admit<T: durable_steps::Task<Input = PublicationRef>>(
+    pub async fn append_and_admit<T: durable_steps::Task<Input = PublicationRef<D::StatusRoute>>>(
         &mut self,
         publication: &StatusPublication<D::Acceptance>,
     ) -> Result<StatusEvent<D::Acceptance>, DeliveryError>
@@ -67,24 +77,37 @@ where
         let (event, reference) = self.append(publication).await?;
         if let Some(reference) = reference {
             self.scope
-                .admit::<T>(&crate::delivery_request_key(&reference)?, &reference)
+                .admit::<T>(
+                    &crate::status_publication::publication_request_key(&reference)?,
+                    &reference,
+                )
                 .await
                 .map_err(|error| DeliveryError::Storage(error.to_string()))?;
         }
         Ok(event)
     }
-    async fn state(&mut self) -> Result<StreamState, DeliveryError> {
-        let state: StreamState = match queries::read_status_state(self.scope)
+    async fn state(&mut self) -> Result<StreamState<D::StatusRoute>, DeliveryError> {
+        crate::delivery_sizes::check_status_route::<D>(&self.owner_route)?;
+        let state: StreamState<D::StatusRoute> = match queries::read_status_state(self.scope)
             .await
             .map_err(sql_error)?
         {
             Some(row) => decode(row.record, "status stream state")?,
             None => StreamState {
                 sender: self.sender,
+                owner_route: self.owner_route.clone(),
                 head: StatusCursor::new(0),
             },
         };
-        if state.sender != self.sender || state.head.value() > i64::MAX as u64 {
+        crate::delivery_sizes::check_status_route::<D>(&state.owner_route).map_err(|_| {
+            DeliveryError::Corrupt {
+                field: "stored stream route bounds",
+            }
+        })?;
+        if state.sender != self.sender
+            || state.head.value() > i64::MAX as u64
+            || canonical_encode(&state.owner_route)? != canonical_encode(&self.owner_route)?
+        {
             return Err(DeliveryError::Corrupt {
                 field: "status stream owner or cursor",
             });
@@ -113,7 +136,13 @@ where
     pub async fn append(
         &mut self,
         publication: &StatusPublication<D::Acceptance>,
-    ) -> Result<(StatusEvent<D::Acceptance>, Option<PublicationRef>), DeliveryError> {
+    ) -> Result<
+        (
+            StatusEvent<D::Acceptance>,
+            Option<PublicationRef<D::StatusRoute>>,
+        ),
+        DeliveryError,
+    > {
         crate::delivery_sizes::check_status::<D>(&publication.status)?;
         if publication.version.value() == 0
             || publication.version.value() > i64::MAX as u64
@@ -163,11 +192,14 @@ where
         )
         .await
         .map_err(sql_error)?;
-        let target = PublicationTarget::Peer { peer: self.sender };
+        let target = PublicationTarget::Peer {
+            peer: self.sender,
+            route: state.owner_route.clone(),
+        };
         queries::write_publication(
             self.scope,
             item_key(publication.item),
-            encode(&target)?,
+            canonical_encode(&target)?,
             publication.version.value().to_string(),
             encode(publication)?,
         )

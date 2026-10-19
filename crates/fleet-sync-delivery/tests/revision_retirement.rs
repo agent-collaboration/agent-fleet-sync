@@ -12,7 +12,7 @@ async fn owed_publication_refuses_a_stored_non_v7_peer_before_admitting_a_task()
     let fixture = Fixture::new().await;
     fixture.store.transaction(|scope| Box::pin(async move {
         Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-            .submit(peer(1), item(1, "body"), SyncTime::from_unix_millis(0))
+            .submit(peer(1), item(1, "body"), SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None)
             .await.map_err(storage_error)?;
         let target = serde_json::json!({"kind":"peer","value":{"peer":"019eef00-0000-4000-8000-000000000001"}}).to_string();
         sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_status_owed SET target=?")
@@ -34,7 +34,13 @@ async fn an_old_publication_completion_cannot_retire_a_newer_owed_revision() {
         .transaction(|scope| {
             Box::pin(async move {
                 Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .submit(peer(1), item(1, "body"), SyncTime::from_unix_millis(0))
+                    .submit(
+                        peer(1),
+                        item(1, "body"),
+                        SyncTime::from_unix_millis(0),
+                        "fixture-route".to_owned(),
+                        None,
+                    )
                     .await
                     .map_err(storage_error)?;
                 Ok(())
@@ -45,14 +51,18 @@ async fn an_old_publication_completion_cannot_retire_a_newer_owed_revision() {
     let old = PublicationRef {
         item: item_id(1),
         version: StatusVersion::new(1),
-        target: PublicationTarget::StatusStream { sender: peer(1) },
+        target: PublicationTarget::StatusStream {
+            sender: peer(1),
+            route: "fixture-route".into(),
+        },
     };
+    let first_read = old.clone();
     fixture
         .store
         .transaction(move |scope| {
             Box::pin(async move {
                 assert!(
-                    resolve_publication::<_, TestTypes>(scope, old)
+                    resolve_publication::<_, TestTypes>(scope, first_read)
                         .await
                         .map_err(storage_error)?
                         .is_some()
@@ -89,23 +99,23 @@ async fn an_old_publication_completion_cannot_retire_a_newer_owed_revision() {
             Box::pin(async move {
                 let newer = PublicationRef {
                     version: StatusVersion::new(2),
-                    ..old
+                    ..old.clone()
                 };
-                retire_publication(scope, old)
+                retire_publication::<_, TestTypes>(scope, old.clone())
                     .await
                     .map_err(storage_error)?;
                 assert!(
-                    resolve_publication::<_, TestTypes>(scope, old)
+                    resolve_publication::<_, TestTypes>(scope, old.clone())
                         .await
                         .map_err(storage_error)?
                         .is_none()
                 );
-                let saved = resolve_publication::<_, TestTypes>(scope, newer)
+                let saved = resolve_publication::<_, TestTypes>(scope, newer.clone())
                     .await
                     .map_err(storage_error)?
                     .unwrap();
                 assert!(matches!(saved.status, DeliveryStatus::AtRecipient));
-                retire_publication(scope, newer)
+                retire_publication::<_, TestTypes>(scope, newer.clone())
                     .await
                     .map_err(storage_error)?;
                 assert!(

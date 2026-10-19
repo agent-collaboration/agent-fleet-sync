@@ -20,7 +20,7 @@ use tokio::sync::Mutex;
 
 pub(crate) struct SessionStore<
     P: ConsumerProtocol,
-    A: PeerAuthenticator,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
     D: SessionHandler<P>,
     H: Host,
 > {
@@ -33,7 +33,7 @@ pub(crate) struct SessionStore<
 pub(crate) struct SessionTransaction<
     't,
     P: ConsumerProtocol,
-    A: PeerAuthenticator,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
     D: SessionHandler<P>,
     H: Host,
 > {
@@ -43,8 +43,13 @@ pub(crate) struct SessionTransaction<
     pub wake_at: Option<SyncTime>,
     marker: PhantomData<fn() -> (A, D)>,
 }
-impl<'t, P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
-    SessionTransaction<'t, P, A, D, H>
+impl<
+    't,
+    P: ConsumerProtocol,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
+    D: SessionHandler<P>,
+    H: Host,
+> SessionTransaction<'t, P, A, D, H>
 {
     pub fn new(
         connection: &'t mut TursoConnection,
@@ -60,8 +65,12 @@ impl<'t, P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Hos
         }
     }
 }
-impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host> TransactionScope
-    for SessionTransaction<'_, P, A, D, H>
+impl<
+    P: ConsumerProtocol,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
+    D: SessionHandler<P>,
+    H: Host,
+> TransactionScope for SessionTransaction<'_, P, A, D, H>
 {
     type Database = Turso;
     type Executor<'q>
@@ -72,8 +81,12 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host> T
         self.inner.executor()
     }
 }
-impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host> SessionScope
-    for SessionTransaction<'_, P, A, D, H>
+impl<
+    P: ConsumerProtocol,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
+    D: SessionHandler<P>,
+    H: Host,
+> SessionScope for SessionTransaction<'_, P, A, D, H>
 {
     fn registration(&self, connection: &ConnectionId) -> Option<ConnectionRegistration> {
         self.registrations.get(connection).copied()
@@ -116,8 +129,12 @@ fn session_error(error: impl std::fmt::Display) -> fleet_sync_session::StoreErro
         message: error.to_string(),
     }
 }
-impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host> AtomicStore
-    for SessionStore<P, A, D, H>
+impl<
+    P: ConsumerProtocol,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
+    D: SessionHandler<P>,
+    H: Host,
+> AtomicStore for SessionStore<P, A, D, H>
 {
     type Scope<'t> = SessionTransaction<'t, P, A, D, H>;
     async fn transaction<T, F>(&self, run: F) -> Result<T, StoreError>
@@ -184,7 +201,7 @@ pub(crate) type SessionEngine<P, A, D, H> = Engine<SessionStore<P, A, D, H>, H>;
 impl<P, A, D, R, C> SessionHost<P, A, D, crate::TokioHost<R, C>>
 where
     P: ConsumerProtocol,
-    A: PeerAuthenticator,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
     D: SessionHandler<P>,
     R: crate::CallRouter,
     C: runtime_primitives::Clock + 'static,

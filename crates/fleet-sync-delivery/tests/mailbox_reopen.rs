@@ -20,11 +20,14 @@ async fn open_mailbox(fixture: &Fixture) {
         .unwrap();
 }
 
-fn refused_publication() -> PublicationRef {
+fn refused_publication() -> PublicationRef<String> {
     PublicationRef {
         item: item_id(1),
         version: StatusVersion::new(2),
-        target: PublicationTarget::StatusStream { sender: peer(1) },
+        target: PublicationTarget::StatusStream {
+            sender: peer(1),
+            route: "fixture-route".into(),
+        },
     }
 }
 
@@ -44,7 +47,7 @@ async fn opening_an_absent_or_open_mailbox_is_idempotent_and_preserves_sequences
                                 peer(1),
                                 item(identity, "new enrollment"),
                                 SyncTime::from_unix_millis(0),
-                            )
+                             "fixture-route".to_owned(), None,)
                             .await
                             .map_err(storage_error)?,
                         SubmitResult::Accepted { seq, version, .. }
@@ -69,13 +72,25 @@ async fn readmission_accepts_new_ids_without_reviving_refused_items_or_losing_pu
                 {
                     let mut mailbox = Mailbox::<_, TestTypes>::new(scope, peer(2), limits());
                     mailbox
-                        .submit(peer(1), item(1, "old item"), SyncTime::from_unix_millis(0))
+                        .submit(
+                            peer(1),
+                            item(1, "old item"),
+                            SyncTime::from_unix_millis(0),
+                            "fixture-route".to_owned(),
+                            None,
+                        )
                         .await
                         .map_err(storage_error)?;
                     mailbox.close().await.map_err(storage_error)?;
                     assert!(matches!(
                         mailbox
-                            .submit(peer(1), item(2, "new item"), SyncTime::from_unix_millis(1))
+                            .submit(
+                                peer(1),
+                                item(2, "new item"),
+                                SyncTime::from_unix_millis(1),
+                                "fixture-route".to_owned(),
+                                None
+                            )
                             .await
                             .map_err(storage_error)?,
                         SubmitResult::Refused {
@@ -125,7 +140,7 @@ async fn readmission_accepts_new_ids_without_reviving_refused_items_or_losing_pu
                         } if version.value() == 2
                     ));
                     assert!(matches!(
-                        mailbox.submit(peer(1), item(1, "old item"), SyncTime::from_unix_millis(2))
+                        mailbox.submit(peer(1), item(1, "old item"), SyncTime::from_unix_millis(2), "fixture-route".to_owned(), None)
                             .await.map_err(storage_error)?,
                         SubmitResult::Replayed {
                             status: DeliveryStatus::Refused { reason: DeliveryRefusal::RecipientRevoked },
@@ -133,7 +148,7 @@ async fn readmission_accepts_new_ids_without_reviving_refused_items_or_losing_pu
                         } if version.value() == 2
                     ));
                     assert!(matches!(
-                        mailbox.submit(peer(1), item(2, "new item"), SyncTime::from_unix_millis(2))
+                        mailbox.submit(peer(1), item(2, "new item"), SyncTime::from_unix_millis(2), "fixture-route".to_owned(), None)
                             .await.map_err(storage_error)?,
                         SubmitResult::Accepted { seq, version, .. }
                             if seq.value() == 2 && version.value() == 1
@@ -164,7 +179,13 @@ async fn reopening_preserves_compacted_dedup_answers_and_retirement_controls() {
             Box::pin(async move {
                 let mut mailbox = Mailbox::<_, TestTypes>::new(scope, peer(2), limits());
                 mailbox
-                    .submit(peer(1), item(1, "completed"), SyncTime::from_unix_millis(0))
+                    .submit(
+                        peer(1),
+                        item(1, "completed"),
+                        SyncTime::from_unix_millis(0),
+                        "fixture-route".to_owned(),
+                        None,
+                    )
                     .await
                     .map_err(storage_error)?;
                 mailbox
@@ -203,13 +224,13 @@ async fn reopening_preserves_compacted_dedup_answers_and_retirement_controls() {
             Box::pin(async move {
                 let mut mailbox = Mailbox::<_, TestTypes>::new(scope, peer(2), limits());
                 assert!(matches!(
-                    mailbox.submit(peer(1), item(1, "completed"), SyncTime::from_unix_millis(1))
+                    mailbox.submit(peer(1), item(1, "completed"), SyncTime::from_unix_millis(1), "fixture-route".to_owned(), None)
                         .await.map_err(storage_error)?,
                     SubmitResult::Replayed { status: DeliveryStatus::Delivered { acceptance }, version, .. }
                         if acceptance.receipt == "one effect" && version.value() == 2
                 ));
                 assert!(matches!(
-                    mailbox.submit(peer(1), item(1, "conflict"), SyncTime::from_unix_millis(1))
+                    mailbox.submit(peer(1), item(1, "conflict"), SyncTime::from_unix_millis(1), "fixture-route".to_owned(), None)
                         .await.map_err(storage_error)?,
                     SubmitResult::Refused { reason: DeliveryRefusal::ItemConflict { .. } }
                 ));
