@@ -18,7 +18,11 @@ mod migration_inspection;
 mod migration_lineage;
 mod migration_ownership;
 pub mod native_file;
+mod native_file_inspection;
 mod native_file_owner;
+pub use native_file_inspection::{NativeFileInspection, inspect_native_file};
+#[cfg(all(test, unix))]
+mod native_file_inspection_tests;
 #[cfg(test)]
 mod native_file_tests;
 mod native_pool;
