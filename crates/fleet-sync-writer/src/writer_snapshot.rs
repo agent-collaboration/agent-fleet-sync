@@ -18,7 +18,7 @@ const PAGE_ROWS: usize = 256;
 /// One read transaction pins rows, schema and capture position for every page.
 pub struct WriterSnapshot {
     transaction: Transaction<'static, Turso>,
-    _reader: tokio::sync::OwnedRwLockReadGuard<()>,
+    _reader: crate::read_pool::ReadPin,
     database: DatabaseId,
     position: ReplicationPosition,
     schema: SchemaIdentity,

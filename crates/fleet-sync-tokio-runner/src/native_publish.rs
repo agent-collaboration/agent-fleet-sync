@@ -8,6 +8,31 @@ use sqlx_turso::sqlx::Connection;
 use std::path::Path;
 
 impl<H: Host> TokioObject<H> {
+    /// Permanently close one disposable generation after checkpointing its writes.
+    pub(crate) async fn close_for_read_copy(&self) -> Result<(), PublishError> {
+        let _engine = self.engine_work.lock().await;
+        let mut owner = self.connection.lock().await;
+        match &mut *owner {
+            ObjectConnection::Closed => {}
+            ObjectConnection::Publishing => return Err(PublishError::Closed),
+            ObjectConnection::Open(connection) => checkpoint_for_publish(connection).await?,
+        }
+        let connection = std::mem::replace(&mut *owner, ObjectConnection::Closed);
+        if let ObjectConnection::Open(connection) = connection {
+            (*connection).close().await.map_err(StoreError::backend)?;
+        }
+        let mut wal = self.path().as_os_str().to_owned();
+        wal.push("-wal");
+        match tokio::fs::metadata(wal).await {
+            Ok(metadata) if metadata.len() != 0 => Err(PublishError::WalRemains {
+                bytes: metadata.len(),
+            }),
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(PublishError::io(error)),
+        }
+    }
+
     /// Hold the object's engine and transaction owners while publication carries
     /// local state and renames a verified file. The callback runs only after all
     /// native work has drained and the checkpointed connection has closed.

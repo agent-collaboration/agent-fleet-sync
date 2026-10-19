@@ -23,6 +23,9 @@ mod install_failure_tests;
 mod install_records;
 mod install_staging_calls;
 mod install_task;
+mod read_copy;
+#[cfg(all(test, unix))]
+mod read_copy_tests;
 pub use install_calls::{
     InstallFile, InstallFileRequest, InstallFileResult, InstallRefusal, InstallSource,
 };

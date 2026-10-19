@@ -104,10 +104,34 @@ impl CallRouter for RaceRouter {
                     }
                     InstallFileRequest::Page { page, cursor } => {
                         let mut contents = self.page.clone();
-                        let moved = self.mode.load(Ordering::SeqCst) == 3
+                        let mode = self.mode.load(Ordering::SeqCst);
+                        let moved = matches!(mode, 3 | 4)
+                            && page > 0
                             && !self.moved.swap(true, Ordering::SeqCst);
+                        if matches!(mode, 3 | 4) && page == 0 && !self.moved.load(Ordering::SeqCst)
+                        {
+                            contents.next = Some(SnapshotCursor {
+                                position: contents.position,
+                                table: contents.table.clone(),
+                                after_key: vec![
+                                    contents
+                                        .rows
+                                        .first()
+                                        .and_then(|row| row.first())
+                                        .cloned()
+                                        .ok_or(CallFailure::AnswerLost)?,
+                                ],
+                            });
+                        }
                         if self.moved.load(Ordering::SeqCst) {
                             contents.position.sequence = CommitSequence::new(30);
+                        } else if matches!(mode, 3..=5) {
+                            *contents
+                                .rows
+                                .first_mut()
+                                .and_then(|row| row.get_mut(1))
+                                .ok_or(CallFailure::AnswerLost)? =
+                                SqlValue::Text("abandoned first generation".into());
                         }
                         owner
                             .fetch_page(
@@ -115,7 +139,7 @@ impl CallRouter for RaceRouter {
                                 page,
                                 cursor.as_ref(),
                                 move || async move {
-                                    Ok(if moved {
+                                    Ok(if moved && mode == 3 {
                                         SnapshotRead::Moved {
                                             position: contents.position,
                                         }
@@ -128,6 +152,8 @@ impl CallRouter for RaceRouter {
                     }
                     InstallFileRequest::Verify => {
                         let mut manifest = self.manifest.clone();
+                        let moved_manifest = self.mode.load(Ordering::SeqCst) == 5
+                            && !self.moved.swap(true, Ordering::SeqCst);
                         if self.moved.load(Ordering::SeqCst) {
                             manifest.position.sequence = CommitSequence::new(30);
                         }
@@ -138,7 +164,13 @@ impl CallRouter for RaceRouter {
                         }
                         owner
                             .verify_from(file.install_id, move || async move {
-                                Ok(SnapshotManifestAnswer::Manifest(manifest))
+                                Ok(if moved_manifest {
+                                    SnapshotManifestAnswer::Moved {
+                                        position: manifest.position,
+                                    }
+                                } else {
+                                    SnapshotManifestAnswer::Manifest(manifest)
+                                })
                             })
                             .await
                     }
@@ -447,9 +479,16 @@ async fn file_images(path: &std::path::Path) -> TestResult<(Vec<u8>, Vec<u8>)> {
 #[tokio::test]
 async fn moved_source_restarts_with_a_new_generation_and_installs_its_new_pinned_position()
 -> TestResult {
+    for mode in [3, 4, 5] {
+        assert_fresh_generation_after_source_moves(mode).await?;
+    }
+    Ok(())
+}
+
+async fn assert_fresh_generation_after_source_moves(mode: u8) -> TestResult {
     let root = tempfile::tempdir()?;
     let fixture = Fixture::open(root.path()).await?;
-    fixture.router.mode.store(3, Ordering::SeqCst);
+    fixture.router.mode.store(mode, Ordering::SeqCst);
     let request = fixture.request()?;
     let old_id = InstallId::new(request.attempt.as_uuid())?;
     let handle = fixture.coordinator.start(request, &fixture.target).await?;
@@ -477,6 +516,46 @@ async fn moved_source_restarts_with_a_new_generation_and_installs_its_new_pinned
     assert!(
         matches!(status, CopyStatusAnswer::Status(status) if status.acked.sequence == CommitSequence::new(30))
     );
+    let abandoned = fixture.coordinator.record(old_id).await?;
+    let old_snapshot = abandoned
+        .status
+        .snapshot()
+        .ok_or("old generation lost its pin")?;
+    assert!(
+        fixture
+            .coordinator
+            .staging
+            .page_receipt(old_snapshot, 0)
+            .await?
+            .is_some()
+    );
+    assert!(
+        fixture
+            .coordinator
+            .staging
+            .page_receipt(old_snapshot, 1)
+            .await?
+            .is_none()
+    );
+    #[cfg(unix)]
+    {
+        let copy = fixture
+            .coordinator
+            .read_copy(installed.install_id, &fixture.target)
+            .await?;
+        assert_eq!(copy.installed().position.sequence.value(), 30);
+        let row = copy
+            .reader()
+            .fetch_one("SELECT count(*) AS count, min(value) AS value FROM records")
+            .await?;
+        assert_eq!(
+            row.try_get::<i64, _>("count")?,
+            1,
+            "abandoned page rows leaked into the new generation"
+        );
+        assert_eq!(row.try_get::<String, _>("value")?, "verified snapshot");
+        copy.close().await?;
+    }
     fixture.objects.close().await?;
     Ok(())
 }

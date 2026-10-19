@@ -11,14 +11,13 @@ use sqlx_core::{
 };
 use sqlx_turso::{Turso, TursoQueryResult, TursoRow, TursoStatement, TursoTypeInfo};
 use std::fmt;
-use tokio::sync::OwnedRwLockReadGuard;
 
 /// Related reads on one snapshot, without writable SQL or connection access.
 /// Close rolls back; dropping it uses SQLx's existing pooled rollback cleanup.
 pub struct ReadTransaction {
     transaction: Transaction<'static, Turso>,
     _pool: Pool<Turso>,
-    _reader: OwnedRwLockReadGuard<()>,
+    _reader: crate::read_pool::ReadPin,
     statements: StatementGuard,
 }
 

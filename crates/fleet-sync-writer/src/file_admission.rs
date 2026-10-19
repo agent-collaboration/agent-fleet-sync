@@ -18,11 +18,13 @@ struct FileIdentity {
 enum AccessMode {
     Writer,
     Retained,
+    ReadCopy,
 }
 #[cfg(unix)]
 enum FileAccess {
     Writers(NonZeroUsize),
     RetainedReaders(NonZeroUsize),
+    ReadCopy,
 }
 #[cfg(unix)]
 impl FileAccess {
@@ -30,6 +32,7 @@ impl FileAccess {
         match mode {
             AccessMode::Writer => Self::Writers(NonZeroUsize::MIN),
             AccessMode::Retained => Self::RetainedReaders(NonZeroUsize::MIN),
+            AccessMode::ReadCopy => Self::ReadCopy,
         }
     }
     fn claims(&mut self, mode: AccessMode) -> Result<&mut NonZeroUsize, OpenError> {
@@ -60,6 +63,10 @@ impl FileAdmission {
     pub async fn retained(path: &Path) -> Result<Arc<Self>, OpenError> {
         validate_native_path(path)?;
         Self::acquire(path, AccessMode::Retained, false).await
+    }
+    pub async fn read_copy(path: &Path) -> Result<Arc<Self>, OpenError> {
+        validate_native_path(path)?;
+        Self::acquire(path, AccessMode::ReadCopy, false).await
     }
     #[cfg(unix)]
     async fn acquire(
@@ -120,7 +127,7 @@ impl FileAdmission {
         _create_if_missing: bool,
     ) -> Result<Arc<Self>, OpenError> {
         match mode {
-            AccessMode::Retained => Err(OpenError::FileIdentityUnsupported),
+            AccessMode::Retained | AccessMode::ReadCopy => Err(OpenError::FileIdentityUnsupported),
             // Existing writer behavior is unchanged on unsupported platforms;
             // no retained reader can be admitted there.
             AccessMode::Writer => Ok(Arc::new(Self {})),
@@ -131,6 +138,12 @@ impl FileAdmission {
 impl Drop for FileAdmission {
     fn drop(&mut self) {
         if let Ok(mut files) = FILE_ADMISSIONS.lock() {
+            if matches!(self.mode, AccessMode::ReadCopy) {
+                if matches!(files.get(&self.identity), Some(FileAccess::ReadCopy)) {
+                    files.remove(&self.identity);
+                }
+                return;
+            }
             let remove = match files
                 .get_mut(&self.identity)
                 .and_then(|access| access.claims(self.mode).ok())
