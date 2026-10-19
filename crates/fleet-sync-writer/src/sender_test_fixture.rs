@@ -284,16 +284,19 @@ pub(super) struct SenderFixture {
     pub second: ReceiverId,
 }
 impl SenderFixture {
+    pub(super) fn schema() -> TestResult<SenderSchema> {
+        Ok(SenderSchema {
+            tables: TABLES.as_ref().map_err(Clone::clone)?,
+            migration_count: Arc::new(AtomicUsize::new(2)),
+        })
+    }
     pub async fn open() -> TestResult<Self> {
         let directory = tempfile::tempdir()?;
         let peer = PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002))?;
         let database = Arc::new(
             ReplicatedDatabase::create(
                 &directory.path().join("writer.db"),
-                SenderSchema {
-                    tables: TABLES.as_ref().map_err(Clone::clone)?,
-                    migration_count: Arc::new(AtomicUsize::new(2)),
-                },
+                Self::schema()?,
                 peer,
                 LeasePolicy {
                     lease_duration: Duration::from_secs(600),

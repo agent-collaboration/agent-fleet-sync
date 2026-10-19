@@ -28,7 +28,7 @@ mod read_pool;
 mod read_transaction;
 mod retained_file;
 mod retained_file_format;
-pub use retained_file::RetainedFile;
+pub use retained_file::{RetainedAuthority, RetainedFile};
 #[cfg(test)]
 mod read_transaction_guard_tests;
 #[cfg(test)]
@@ -39,6 +39,8 @@ mod registration_contract;
 mod renewal_task;
 mod replicated_database;
 mod replicated_schema;
+#[cfg(all(test, unix))]
+mod retained_authority_tests;
 #[cfg(all(test, unix))]
 mod retained_file_fixture;
 #[cfg(all(test, unix))]

@@ -1,5 +1,5 @@
 use crate::{
-    OpenError, ReplicatedDatabase, ReplicatedSchema,
+    OpenError, ReplicatedDatabase, ReplicatedSchema, RetainedAuthority,
     writer_file_record::{read_file_record, write_file_record},
     writer_release_record::restore_releases,
 };
@@ -26,6 +26,45 @@ pub(crate) enum AuthorityObservation {
     },
 }
 impl AuthorityObservation {
+    // Both restoration and passive inspection recognize newer epochs here.
+    fn superseding_epoch(&self, file_epoch: Epoch) -> Option<Epoch> {
+        self.epoch().filter(|current| *current > file_epoch)
+    }
+
+    pub(crate) fn retained_authority(&self, file_epoch: Epoch) -> Option<RetainedAuthority> {
+        if let Some(current) = self.superseding_epoch(file_epoch) {
+            let ended_at = match self {
+                Self::Renewal {
+                    answer: RenewAnswer::Refused(LeaseRefusal::StaleEpoch { epoch_ended_at, .. }),
+                    ..
+                } => Some(*epoch_ended_at),
+                _ => None,
+            };
+            return Some(RetainedAuthority::Superseded {
+                current: Some(current),
+                ended_at,
+            });
+        }
+        match self {
+            Self::Renewal {
+                answer: RenewAnswer::Refused(LeaseRefusal::NotWriter { current }),
+                ..
+            } => Some(RetainedAuthority::Superseded {
+                current: *current,
+                ended_at: None,
+            }),
+            Self::Renewal {
+                answer: RenewAnswer::Refused(LeaseRefusal::Retired),
+                ..
+            } => Some(RetainedAuthority::Retired),
+            Self::RegistrationRejected { reason } => {
+                Some(RetainedAuthority::RegistrationRejected {
+                    reason: reason.clone(),
+                })
+            }
+            _ => None,
+        }
+    }
     fn epoch(&self) -> Option<Epoch> {
         match self {
             Self::Renewal {
@@ -59,9 +98,7 @@ impl AuthorityObservation {
         file_epoch: Epoch,
     ) -> Result<(), OpenError> {
         self.validate_database(holder.database())?;
-        if let Some(current) = self.epoch()
-            && current > file_epoch
-        {
+        if let Some(current) = self.superseding_epoch(file_epoch) {
             holder.observe_supersession(current);
             return Ok(());
         }
