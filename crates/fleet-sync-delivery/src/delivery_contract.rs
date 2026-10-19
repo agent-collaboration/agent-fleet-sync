@@ -45,7 +45,32 @@ pub enum DispatchOutcome<A> {
     Unresolvable { reason: DeliveryFailureKind },
 }
 pub type SubmitOutcome<A> = DispatchOutcome<SubmitResult<A>>;
-pub type LocalDeliveryOutcome<A> = DispatchOutcome<LocalOutcome<A>>;
+/// The consumer's result, before the local call adapter enforces receipt bounds.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
+pub struct LocalDelivery<D: DeliveryTypes> {
+    pub outcome: LocalOutcome<D::Acceptance>,
+    pub observation: D::LocalObservation,
+}
+
+/// A validated local answer journals either the complete observation or an
+/// uncertain outcome when an invalid receipt cannot establish what happened.
+#[derive(Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "camelCase",
+    deny_unknown_fields,
+    bound = ""
+)]
+pub enum LocalDeliveryAnswer<D: DeliveryTypes> {
+    Observed {
+        outcome: LocalOutcome<D::Acceptance>,
+        observation: D::LocalObservation,
+    },
+    Uncertain,
+}
+pub type LocalDeliveryOutcome<D> = DispatchOutcome<LocalDeliveryAnswer<D>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeliveryError {
@@ -104,12 +129,17 @@ pub trait DeliveryConsumer<S: TransactionScope>: Send + Sync + 'static {
     /// Project each recorded inbox outcome using its custody transaction,
     /// including held attempts and cancellation controls. Returning an error
     /// aborts that transaction. The ID remains usable for corrupt-custody failures.
+    /// The observation is present only for a validated local-attempt answer;
+    /// receive-time outcomes, expiry checks, failures and cancellations carry none.
     fn on_outcome(
         &self,
         _scope: &mut S,
         _item: ItemId,
         _outcome: &RecipientOutcome<
             <<Self::Protocol as ConsumerProtocol>::Delivery as DeliveryTypes>::Acceptance,
+        >,
+        _observation: Option<
+            &<<Self::Protocol as ConsumerProtocol>::Delivery as DeliveryTypes>::LocalObservation,
         >,
     ) -> impl Future<Output = Result<(), DeliveryError>> + Send {
         async { Ok(()) }
@@ -123,11 +153,7 @@ pub trait DeliveryConsumer<S: TransactionScope>: Send + Sync + 'static {
         &self,
         item: &DeliveryItem<<Self::Protocol as ConsumerProtocol>::Delivery>,
         call: CallId,
-    ) -> impl Future<
-        Output = LocalOutcome<
-            <<Self::Protocol as ConsumerProtocol>::Delivery as DeliveryTypes>::Acceptance,
-        >,
-    > + Send;
+    ) -> impl Future<Output = LocalDelivery<<Self::Protocol as ConsumerProtocol>::Delivery>> + Send;
     fn may_cancel(
         &self,
         requester: &<<Self::Protocol as ConsumerProtocol>::Delivery as DeliveryTypes>::Sender,

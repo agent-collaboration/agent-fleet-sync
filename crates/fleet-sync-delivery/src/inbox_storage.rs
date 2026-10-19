@@ -249,12 +249,13 @@ where
         record: &mut InboxRecord<D>,
         outcome: RecipientOutcome<D::Acceptance>,
         consumer: &C,
+        observation: Option<&D::LocalObservation>,
     ) -> Result<Option<ReportRef>, DeliveryError>
     where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
-        self.record_header_outcome(&mut record.header, outcome, consumer)
+        self.record_header_outcome(&mut record.header, outcome, consumer, observation)
             .await
     }
     pub(crate) async fn record_header_outcome<C>(
@@ -262,6 +263,7 @@ where
         header: &mut InboxHeader<D>,
         outcome: RecipientOutcome<D::Acceptance>,
         consumer: &C,
+        observation: Option<&D::LocalObservation>,
     ) -> Result<Option<ReportRef>, DeliveryError>
     where
         C: DeliveryConsumer<S>,
@@ -278,7 +280,7 @@ where
             outcome,
         };
         consumer
-            .on_outcome(self.scope, header.id, &report.outcome)
+            .on_outcome(self.scope, header.id, &report.outcome, observation)
             .await?;
         if matches!(header.route, InboxRoute::Local) {
             return Ok(None);

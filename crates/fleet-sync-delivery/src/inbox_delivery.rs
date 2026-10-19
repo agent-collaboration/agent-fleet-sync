@@ -68,7 +68,7 @@ where
         header.release_requested = false;
         let mut effects = InboxEffects::default();
         effects.reports.extend(
-            self.record_header_outcome(&mut header, outcome, consumer)
+            self.record_header_outcome(&mut header, outcome, consumer, None)
                 .await?,
         );
         self.update_header(&header).await?;
@@ -146,6 +146,7 @@ where
         outcome: LocalOutcome<D::Acceptance>,
         consumer: &C,
         now: SyncTime,
+        observation: Option<&D::LocalObservation>,
     ) -> Result<InboxEffects, DeliveryError>
     where
         C: DeliveryConsumer<S>,
@@ -220,7 +221,7 @@ where
         }
         record.header.release_requested = false;
         effects.reports.extend(
-            self.record_outcome(&mut record, recipient_outcome, consumer)
+            self.record_outcome(&mut record, recipient_outcome, consumer, observation)
                 .await?,
         );
         self.save(&record).await?;

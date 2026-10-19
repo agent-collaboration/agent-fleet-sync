@@ -148,7 +148,7 @@ where
                     };
                     original.release_requested = false;
                     effects.reports.extend(
-                        self.record_header_outcome(&mut original, original_outcome, consumer)
+                        self.record_header_outcome(&mut original, original_outcome, consumer, None)
                             .await?,
                     );
                     self.update_header(&original).await?;
@@ -171,7 +171,7 @@ where
         };
         cancel.header.progress = InboxProgress::Control { outcome };
         effects.reports.extend(
-            self.record_outcome(&mut cancel, report_outcome, consumer)
+            self.record_outcome(&mut cancel, report_outcome, consumer, None)
                 .await?,
         );
         self.save(&cancel).await?;

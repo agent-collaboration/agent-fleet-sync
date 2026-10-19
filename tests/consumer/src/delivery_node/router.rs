@@ -105,7 +105,7 @@ impl CallRouter for NodeRouter {
                         encoded(answer)
                     }
                     Err(DeliveryError::Storage(_)) => Err(unreachable()),
-                    Err(error) => encoded(DispatchOutcome::<LocalOutcome<String>>::Unresolvable {
+                    Err(error) => encoded(LocalDeliveryOutcome::<SampleDelivery>::Unresolvable {
                         reason: error.failure_kind(),
                     }),
                 }

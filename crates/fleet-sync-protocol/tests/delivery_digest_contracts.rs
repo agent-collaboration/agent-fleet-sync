@@ -37,6 +37,7 @@ impl DeliveryTypes for MapDelivery {
     type Sender = ();
     type Address = ();
     type Acceptance = ();
+    type LocalObservation = ();
     type StatusRoute = ();
 }
 #[test]

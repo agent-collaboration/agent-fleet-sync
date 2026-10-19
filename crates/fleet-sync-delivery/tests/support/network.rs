@@ -242,7 +242,10 @@ impl TestNetwork {
                         if self.lose_delivery.swap(false, Ordering::SeqCst) {
                             return Err(CallFailure::AnswerLost);
                         }
-                        DeliverCall::<TestTypes>::validated_answer(answer)
+                        DeliverCall::<TestTypes>::validated_answer(LocalDelivery {
+                            outcome: answer,
+                            observation: (),
+                        })
                     }
                     Err(error) => DispatchOutcome::Unresolvable {
                         reason: error.failure_kind(),

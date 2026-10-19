@@ -40,11 +40,14 @@ impl<S: durable_steps::storage::TransactionScope> DeliveryConsumer<S> for TestCo
         &self,
         item: &DeliveryItem<TestTypes>,
         _call: CallId,
-    ) -> LocalOutcome<Acceptance> {
-        LocalOutcome::Delivered {
-            acceptance: Acceptance {
-                receipt: format!("accepted {}", item.id().as_uuid()),
+    ) -> LocalDelivery<TestTypes> {
+        LocalDelivery {
+            outcome: LocalOutcome::Delivered {
+                acceptance: Acceptance {
+                    receipt: format!("accepted {}", item.id().as_uuid()),
+                },
             },
+            observation: (),
         }
     }
     fn may_cancel(&self, requester: &String, item: &DeliveryHeader<TestTypes>) -> bool {
@@ -60,6 +63,7 @@ impl DeliveryTypes for TestTypes {
     type Sender = String;
     type Address = String;
     type Acceptance = Acceptance;
+    type LocalObservation = ();
     type StatusRoute = String;
 }
 #[derive(Serialize, Deserialize)]

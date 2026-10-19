@@ -12,6 +12,7 @@ impl DeliveryTypes for SampleDelivery {
     type Sender = String;
     type Address = String;
     type Acceptance = String;
+    type LocalObservation = ();
     type StatusRoute = String;
 }
 pub fn delivery_limits() -> Result<DeliveryLimits, DeliveryConfigError> {

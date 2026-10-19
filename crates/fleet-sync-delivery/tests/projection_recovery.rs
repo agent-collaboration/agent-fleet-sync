@@ -63,10 +63,13 @@ async fn abort_after_saved_answer_recovers_custody_and_projection_together() {
                 .fetch_one(scope.executor())
                 .await?;
                 let saved: Vec<u8> = row.try_get("output")?;
-                let answer: durable_steps::CallResult<LocalDeliveryOutcome<Acceptance>> =
+                let answer: durable_steps::CallResult<LocalDeliveryOutcome<TestTypes>> =
                     serde_json::from_slice(&saved).unwrap();
                 let durable_steps::CallResult::Answered(DispatchOutcome::Answered(
-                    LocalOutcome::Delivered { acceptance },
+                    LocalDeliveryAnswer::Observed {
+                        outcome: LocalOutcome::Delivered { acceptance },
+                        observation: (),
+                    },
                 )) = answer
                 else {
                     return Err(durable_steps::StoreError::backend(

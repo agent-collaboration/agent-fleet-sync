@@ -38,6 +38,7 @@ impl<S: TransactionScope<Database = Turso>> DeliveryConsumer<S> for ProjectionCo
         scope: &mut S,
         item: ItemId,
         outcome: &RecipientOutcome<Acceptance>,
+        _observation: Option<&()>,
     ) -> Result<(), DeliveryError> {
         let value = serde_json::to_string(outcome).unwrap();
         write_projection(scope, item, "outcome", &value).await?;
@@ -59,11 +60,14 @@ impl<S: TransactionScope<Database = Turso>> DeliveryConsumer<S> for ProjectionCo
         &self,
         item: &DeliveryItem<TestTypes>,
         _call: CallId,
-    ) -> LocalOutcome<Acceptance> {
-        LocalOutcome::Delivered {
-            acceptance: Acceptance {
-                receipt: item.body().clone(),
+    ) -> LocalDelivery<TestTypes> {
+        LocalDelivery {
+            outcome: LocalOutcome::Delivered {
+                acceptance: Acceptance {
+                    receipt: item.body().clone(),
+                },
             },
+            observation: (),
         }
     }
 

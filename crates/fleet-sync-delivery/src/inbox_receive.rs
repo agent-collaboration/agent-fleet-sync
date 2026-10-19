@@ -101,7 +101,8 @@ where
                             if let InboxProgress::Final { outcome, .. } = &record.header.progress {
                                 let outcome = copy_wire(outcome)?;
                                 effects.reports.extend(
-                                    self.record_outcome(&mut record, outcome, consumer).await?,
+                                    self.record_outcome(&mut record, outcome, consumer, None)
+                                        .await?,
                                 );
                             }
                             self.save(&record).await?;

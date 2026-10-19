@@ -5,12 +5,16 @@ pub trait DeliveryTypes: Send + Sync + 'static {
     const MAX_SENDER_BYTES: u32;
     const MAX_ADDRESS_BYTES: u32;
     const MAX_ACCEPTANCE_BYTES: u32;
+    /// Maximum canonical JSON bytes of the consumer's local-only observation.
+    const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
     /// Maximum canonical JSON bytes of the host-owned status address.
     const MAX_STATUS_ROUTE_BYTES: u32;
     type Body: Serialize + DeserializeOwned + Send + Sync;
     type Sender: Serialize + DeserializeOwned + Send + Sync;
     type Address: Serialize + DeserializeOwned + Send + Sync;
     type Acceptance: Serialize + DeserializeOwned + Send + Sync;
+    /// Consumer-owned evidence retained only in the local delivery journal.
+    type LocalObservation: Serialize + DeserializeOwned + Send + Sync;
     /// Verified submitter address carried unchanged through both publication hops.
     type StatusRoute: Clone + Serialize + DeserializeOwned + Send + Sync + 'static;
 }
@@ -26,6 +30,7 @@ impl DeliveryTypes for NoDelivery {
     type Sender = ();
     type Address = ();
     type Acceptance = ();
+    type LocalObservation = ();
     type StatusRoute = ();
 }
 
