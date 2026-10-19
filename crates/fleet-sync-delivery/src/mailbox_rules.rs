@@ -36,6 +36,13 @@ where
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
+    /// Allow new submissions on enrollment or readmission, preserving prior custody and answers.
+    pub async fn open(&mut self) -> Result<(), DeliveryError> {
+        let mut state = self.storage.state().await?;
+        state.closed = false;
+        self.storage.save_state(&state).await
+    }
+
     pub async fn close(&mut self) -> Result<(), DeliveryError> {
         let mut state = self.storage.state().await?;
         state.closed = true;
