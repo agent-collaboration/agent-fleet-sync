@@ -43,6 +43,10 @@ pub enum DeliveryRequest<D: DeliveryTypes = NoDelivery> {
         after: StatusCursor,
         limit: u32,
     },
+    StatusAck {
+        call: CallId,
+        through: StatusCursor,
+    },
     Query {
         call: CallId,
         mailbox: PeerId,
@@ -68,6 +72,7 @@ impl<D: DeliveryTypes> DeliveryRequest<D> {
             | Self::Received { call, .. }
             | Self::Report { call, .. }
             | Self::StatusFetch { call, .. }
+            | Self::StatusAck { call, .. }
             | Self::Query { call, .. }
             | Self::Retire { call, .. }
             | Self::Settle { call, .. } => call,
@@ -94,6 +99,7 @@ pub enum DeliveryAnswer<D: DeliveryTypes = NoDelivery> {
     Received(ReceivedResult),
     Report(ReportResult<D::Acceptance>),
     StatusFetch(StatusFetchResult<D::Acceptance>),
+    StatusAck(StatusAckResult),
     Query(QueryResult<D::Acceptance>),
     Retire(RetireResult),
     Settle(SettleResult<D::Acceptance>),
@@ -209,6 +215,25 @@ pub struct StatusEvent<A> {
 pub struct StatusFetchResult<A> {
     pub events: Vec<StatusEvent<A>>,
     pub through: StatusCursor,
+}
+
+/// The remote retirement floor never advances a consumer's applied cursor.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum StatusAckResult {
+    Acknowledged {
+        floor: StatusCursor,
+    },
+    /// Diagnostic only: unread events and the acknowledged floor are unchanged.
+    Refused {
+        head: StatusCursor,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

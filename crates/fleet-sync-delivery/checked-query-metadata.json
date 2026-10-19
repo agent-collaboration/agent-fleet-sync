@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-queries.json": "d997dadd30de2c01efc946a38fe615818e56c819b50eb6398331d4d650e804d7",
+    "checked-queries.json": "ba49f4f7382148bea66947c86ee6454561c03e66689f24f1c2318c93f05692d9",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -57,6 +57,7 @@
     "sql/drop_controls.sql": "37e074f9a266324cd8eef8b207bc8e8bb6ac7b0faa6d5fcf79c5d186b9aae07b",
     "sql/drop_inbox_cancel_link.sql": "4377a26c27c954d92d5e38c1e63c55b57956745206ca0bd0509b83fcb83e794b",
     "sql/drop_inbox_item.sql": "058ff3f7aa917adc1b5a4f49df608b4eff4ea4ee0c0d6ac24cba3fe0c6bcc8f1",
+    "sql/drop_status_events.sql": "67368fc80d890f924620c11fc2f37034aae4e2ae6f3fdb96da3a53309b1b787f",
     "sql/list_mail_items.sql": "de89ac4abdbd3b49171534d051a5daee465ae6a3e4ccb5806389920f9d9945e5",
     "sql/list_publications.sql": "04cd43b6ca532ff467ef144b6595551bd47b4354f8bc8548c8d1441dceb8b6ef",
     "sql/read_controls.sql": "16577fba3f76d4e1854b74b76f8c79423c278ae42e45b77c64b229d003508235",
@@ -98,9 +99,9 @@
     "sql/write_report.sql": "21eaec3d63aa3c09645a2fe3503797a84f969f152809a0e80b9998e9ecfcde62",
     "sql/write_status_event.sql": "37e7153541748530abb38d98a4563e1a9c0fc9987976ae39160b7b858d76777a",
     "sql/write_status_state.sql": "006017160514f16c0d1474ea57fa358214d56479e1294cb08d98d7af4d3267e9",
-    "src/checked_queries.rs": "d7a7571284081c568545a8a93cf4e658f20aab897b6b9c6d73f052eba2861fa0"
+    "src/checked_queries.rs": "f944167218025e6e6204734b4b23c650a81b656e54bf45bdea839abd099e42e5"
   },
-  "queries_digest": "39f54cd6aa710f6568970662f714e77ee413dfa4d2ac7b4fc8603cd851bc2f71",
+  "queries_digest": "350597346feca10e32800ce45214fa423bba5f8d8b85a5b8a45ec91e3402362a",
   "queries": [
     {
       "name": "read_mail_item",
@@ -984,6 +985,11 @@
           "type_source": "driver"
         }
       ]
+    },
+    {
+      "name": "drop_status_events",
+      "bind_slots": 1,
+      "columns": []
     },
     {
       "name": "write_report",

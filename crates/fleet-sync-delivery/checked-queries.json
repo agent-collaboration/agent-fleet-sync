@@ -501,6 +501,18 @@
       "row": "StoredStatusEventRow"
     },
     {
+      "name": "drop_status_events",
+      "sql": "sql/drop_status_events.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "through",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
       "name": "write_report",
       "sql": "sql/write_report.sql",
       "result": "execute",

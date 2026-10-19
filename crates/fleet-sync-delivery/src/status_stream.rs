@@ -40,6 +40,7 @@ struct StreamState<R> {
     sender: PeerId,
     owner_route: R,
     head: StatusCursor,
+    floor: StatusCursor,
 }
 
 pub struct StatusStream<'s, S, D: DeliveryTypes> {
@@ -97,6 +98,7 @@ where
                 sender: self.sender,
                 owner_route: self.owner_route.clone(),
                 head: StatusCursor::new(0),
+                floor: StatusCursor::new(0),
             },
         };
         crate::delivery_sizes::check_status_route::<D>(&state.owner_route).map_err(|_| {
@@ -106,6 +108,7 @@ where
         })?;
         if state.sender != self.sender
             || state.head.value() > i64::MAX as u64
+            || state.floor > state.head
             || canonical_encode(&state.owner_route)? != canonical_encode(&self.owner_route)?
         {
             return Err(DeliveryError::Corrupt {
@@ -160,6 +163,11 @@ where
         .map_err(sql_error)?
         {
             let event = self.decode_event(row)?;
+            if event.cursor <= state.floor || event.cursor > state.head {
+                return Err(DeliveryError::Corrupt {
+                    field: "status stream event cursor",
+                });
+            }
             let existing = StatusPublication {
                 item: event.item,
                 status: copy_wire(&event.status)?,
@@ -218,6 +226,26 @@ where
             }),
         ))
     }
+    /// Retire a durably applied prefix in the host's transaction.
+    pub async fn acknowledge(
+        &mut self,
+        through: StatusCursor,
+    ) -> Result<StatusAckResult, DeliveryError> {
+        let mut state = self.state().await?;
+        if through > state.head {
+            return Ok(StatusAckResult::Refused { head: state.head });
+        }
+        if through > state.floor {
+            queries::drop_status_events(self.scope, through.value().to_string())
+                .await
+                .map_err(sql_error)?;
+            state.floor = through;
+            queries::write_status_state(self.scope, encode(&state)?)
+                .await
+                .map_err(sql_error)?;
+        }
+        Ok(StatusAckResult::Acknowledged { floor: state.floor })
+    }
     pub async fn fetch(
         &mut self,
         sender: PeerId,
@@ -231,10 +259,13 @@ where
         if after > state.head {
             return Err(DeliveryError::InvalidBatch);
         }
-        let rows =
-            queries::read_status_events(self.scope, after.value().to_string(), limit.to_string())
-                .await
-                .map_err(sql_error)?;
+        let rows = queries::read_status_events(
+            self.scope,
+            after.max(state.floor).value().to_string(),
+            limit.to_string(),
+        )
+        .await
+        .map_err(sql_error)?;
         let mut events = Vec::with_capacity(rows.len());
         let mut through = after;
         for row in rows {

@@ -21,3 +21,26 @@ Each sender's `StatusStream` keeps its own verified owner route. Committed
 including after a target move. Retirement follows the live current target and
 returns per-item `retired`, `unknown`, and `notCurrentTarget` lists. Saved call
 receipts replay first; compacted items remain retired and never regain a target.
+
+## Status-event acknowledgement
+
+After durably applying fetched status events, call
+`StatusStream::acknowledge(through)` or send
+`DeliveryRequest::StatusAck { call, through }`. Only events at or below `through`
+are deleted. The acknowledged floor survives reopening, and equal or lower
+replays return the current floor without changing the stream. Fetch returns
+only events above that floor. Acknowledgement uses its cursor for idempotency
+and needs no receipt journal.
+
+`StatusAckResult::Acknowledged { floor }` reports the remote retirement
+watermark; it does not advance the sender's locally applied cursor.
+`Refused { head }` means the requested cursor is above the stream head and
+nothing changed. Treat `head` as diagnostic information, never as an instruction
+to clamp the acknowledgement and discard an unread prefix.
+
+A first-hop publication retried after acknowledgement can append the same
+`(item, StatusVersion)` again at a new cursor above the floor. Consumers must
+deduplicate by that pair and apply statuses forward-only by `StatusVersion`.
+`Outbox::publish_status` and `apply_status_batch` preserve that ordering.
+Retiring a `PublicationRef` does not retire status events; acknowledgement owns
+that deletion.

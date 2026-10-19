@@ -90,6 +90,7 @@ fn hop(request: &DeliveryRequest<SampleDelivery>) -> &'static str {
         DeliveryRequest::Report { .. } => "report",
         DeliveryRequest::Settle { .. } => "settle",
         DeliveryRequest::StatusFetch { .. } => "statusFetch",
+        DeliveryRequest::StatusAck { .. } => "statusAck",
         DeliveryRequest::Query { .. } => "query",
         DeliveryRequest::Retire { .. } => "retire",
     }
@@ -159,7 +160,7 @@ impl LinkActor {
                             let call=match &request {
                                 DeliveryRequest::Submit {call,..}|DeliveryRequest::Fetch {call,..}|
                                 DeliveryRequest::Received {call,..}|DeliveryRequest::Report {call,..}|
-                                DeliveryRequest::Settle {call,..}|DeliveryRequest::StatusFetch {call,..}|
+                                DeliveryRequest::Settle {call,..}|DeliveryRequest::StatusFetch {call,..}|DeliveryRequest::StatusAck {call,..}|
                                 DeliveryRequest::Query {call,..}|DeliveryRequest::Retire {call,..}=>call.clone(),
                             };
                             let item=match &request {DeliveryRequest::Submit {item,..}=>Some(item.id()),DeliveryRequest::Report {report,..}=>Some(report.item),_=>None};

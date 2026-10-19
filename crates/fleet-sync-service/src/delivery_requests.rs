@@ -43,6 +43,21 @@ impl<
                 .map(DeliveryAnswer::StatusFetch)
                 .map_err(ServiceError::rule);
         }
+        if let DeliveryRequest::StatusAck { through, .. } = request {
+            let owner = self.delivery_owner(DeliveryObject::Status(peer)).await?;
+            return owner
+                .object
+                .rule_transaction(move |scope| {
+                    Box::pin(async move {
+                        StatusStream::<_, P::Delivery>::new(scope, peer, route)
+                            .acknowledge(through)
+                            .await
+                    })
+                })
+                .await
+                .map(DeliveryAnswer::StatusAck)
+                .map_err(ServiceError::rule);
+        }
         let mailbox = match &request {
             DeliveryRequest::Submit { item, .. } => item.recipient().peer,
             DeliveryRequest::Query { mailbox, .. }
@@ -62,7 +77,7 @@ impl<
             DeliveryRequest::Query { .. } => MailboxOperation::Query,
             DeliveryRequest::Retire { .. } => MailboxOperation::Retire,
             DeliveryRequest::Settle { .. } => MailboxOperation::Settle,
-            DeliveryRequest::StatusFetch { .. } => {
+            DeliveryRequest::StatusFetch { .. } | DeliveryRequest::StatusAck { .. } => {
                 return Err(ServiceError::rule(DeliveryError::InvalidBatch));
             }
         };
@@ -115,7 +130,8 @@ impl<
                             DeliveryRequest::Settle { item, digest, .. } => {
                                 DeliveryAnswer::Settle(mailbox.settle(item, digest).await?)
                             }
-                            DeliveryRequest::StatusFetch { .. } => {
+                            DeliveryRequest::StatusFetch { .. }
+                            | DeliveryRequest::StatusAck { .. } => {
                                 return Err(DeliveryError::InvalidBatch);
                             }
                         };

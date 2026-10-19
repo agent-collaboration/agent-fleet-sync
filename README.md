@@ -8,6 +8,7 @@ The repository contains owned SQLx drivers and durable operations for Turso and 
 - `sqlx-durable-object`, `sqlx-durable-object-core`: SQLx over Durable Object SQLite, without owned unsafe code.
 - `runtime-primitives`: shared time, call identity, backoff and earlier-only wake scheduling; Tokio timer and Durable Object alarm adapters behind features.
 - `durable-steps`: a runtime-free execution core, atomic local steps and receipted calls, with volatile, Turso and Durable Object stores. See [its conformance and recovery journeys](tests/durable-steps/README.md).
+- `fleet-sync-delivery`: durable custody and status recovery. See the [status-event acknowledgement contract](crates/fleet-sync-delivery/README.md#status-event-acknowledgement).
 
 ## Checks
 
