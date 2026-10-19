@@ -1,6 +1,45 @@
 use crate::{DeliverySeq, ItemDigest, ItemId};
 use serde::{Deserialize, Serialize};
 
+pub const MAX_RECIPIENT_REFUSAL_CODE_BYTES: usize = 64;
+
+/// Consumer-owned refusal identity. Delivery carries the code without assigning
+/// meaning; local descriptive detail belongs to the consumer's projection.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct RecipientRefusalCode(String);
+
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("recipient refusal code must contain 1 to 64 ASCII letters or digits")]
+pub struct RecipientRefusalCodeError;
+
+impl RecipientRefusalCode {
+    pub fn new(value: impl Into<String>) -> Result<Self, RecipientRefusalCodeError> {
+        let value = value.into();
+        if value.is_empty()
+            || value.len() > MAX_RECIPIENT_REFUSAL_CODE_BYTES
+            || !value.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        {
+            return Err(RecipientRefusalCodeError);
+        }
+        Ok(Self(value))
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+impl TryFrom<String> for RecipientRefusalCode {
+    type Error = RecipientRefusalCodeError;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+impl From<RecipientRefusalCode> for String {
+    fn from(value: RecipientRefusalCode) -> Self {
+        value.0
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -10,6 +49,7 @@ use serde::{Deserialize, Serialize};
     deny_unknown_fields
 )]
 pub enum DeliveryRefusal {
+    RecipientRefused { code: RecipientRefusalCode },
     ProcessingFailed { kind: DeliveryFailureKind },
     TooLarge { field: DeliverySizeField },
     MailboxFull,
