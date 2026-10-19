@@ -28,6 +28,22 @@ fn conflict(field: &str) -> LeaseError {
         field: format!("{field} identity has different contents"),
     }
 }
+pub(crate) fn decode_history(
+    database: DatabaseId,
+    epoch: Epoch,
+    record: Option<String>,
+) -> Result<EpochHistory, LeaseError> {
+    let record: EpochHistory = decode(record, "epoch history")?;
+    if record.database != database
+        || record.epoch != epoch
+        || record.ended_at.is_some_and(|end| end.epoch > epoch)
+    {
+        return Err(LeaseError::Corrupt {
+            field: "epoch history".into(),
+        });
+    }
+    Ok(record)
+}
 pub(crate) struct RegistryStorage<'scope, S>(pub &'scope mut S);
 impl<S> RegistryStorage<'_, S>
 where
@@ -167,16 +183,7 @@ where
         else {
             return Ok(None);
         };
-        let record: EpochHistory = decode(row.record, "epoch history")?;
-        if record.database != database
-            || record.epoch != epoch
-            || record.ended_at.is_some_and(|end| end.epoch > epoch)
-        {
-            return Err(LeaseError::Corrupt {
-                field: "epoch history".into(),
-            });
-        }
-        Ok(Some(record))
+        decode_history(database, epoch, row.record).map(Some)
     }
     pub(crate) async fn save_history(&mut self, record: &EpochHistory) -> Result<(), LeaseError> {
         if let Some(existing) = self.history(record.database, record.epoch).await?

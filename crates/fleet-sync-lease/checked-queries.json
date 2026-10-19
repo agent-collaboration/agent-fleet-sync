@@ -494,6 +494,83 @@
           "nullable": false
         }
       ]
+    },
+    {
+      "name": "read_history_page",
+      "sql": "sql/read_history_page.sql",
+      "row": "StoredHistoryPageRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "after",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "before",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "limit",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_history_successor",
+      "sql": "sql/read_history_successor.sql",
+      "row": "StoredHistorySuccessorRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "after",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_invalid_history_epoch",
+      "sql": "sql/read_invalid_history_epoch.sql",
+      "row": "StoredInvalidHistoryEpochRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_history_transfer",
+      "sql": "sql/read_history_transfer.sql",
+      "row": "StoredHistoryTransferRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "intent",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
     }
   ]
 }

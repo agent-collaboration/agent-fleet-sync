@@ -19,7 +19,9 @@ mod lease_values;
 mod workflow_values;
 pub use fleet_sync_protocol::ActorRef;
 pub use workflow_values::*;
+mod epoch_history;
 mod registry_contract;
+pub use epoch_history::{EpochEnd, EpochHistoryEntry, EpochHistoryPage, epoch_history};
 mod registry_reads;
 mod registry_records;
 mod registry_storage;
@@ -88,6 +90,10 @@ mod settle_reservation_task;
 pub use holder_change_task::HolderChangeTask;
 pub use settle_reservation_task::SettleReservationTask;
 
+#[cfg(test)]
+mod turso_epoch_history_fixture;
+#[cfg(test)]
+mod turso_epoch_history_tests;
 #[cfg(test)]
 mod turso_registry_copy;
 #[cfg(test)]
