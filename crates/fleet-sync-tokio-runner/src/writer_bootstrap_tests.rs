@@ -283,6 +283,27 @@ async fn real_snapshot_bootstraps_without_replaying_dml_and_later_migration_foll
             && copy.start == install.position
     }));
     target.close().await;
+    drop(sender);
+    drop(owned);
+    drop(target);
+    let expected = fleet_sync_writer::RetainedFileOrigin {
+        database: install.database,
+        epoch: Epoch::new(2)?,
+        start: install.position,
+        kind: fleet_sync_writer::RetainedFileOriginKind::Bootstrap,
+    };
+    for _ in 0..2 {
+        let retained = fleet_sync_writer::RetainedFile::open_read_only(
+            &root.path().join("target.db"),
+            Schema {
+                count: 3,
+                different: false,
+            },
+        )
+        .await?;
+        assert_eq!(retained.origin(), expected);
+        drop(retained);
+    }
     source.close().await;
     objects.close().await?;
     Ok(())

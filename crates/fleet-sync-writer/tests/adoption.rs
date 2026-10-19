@@ -5,7 +5,8 @@ use fleet_sync_lease::LeasePolicy;
 use fleet_sync_protocol::PeerId;
 use fleet_sync_protocol::TableName;
 use fleet_sync_writer::{
-    AdoptionHistory, Migration, OpenError, ReplicatedDatabase, ReplicatedSchema, WriterOptions,
+    AdoptionHistory, Migration, OpenError, ReplicatedDatabase, ReplicatedSchema, RetainedFile,
+    RetainedFileOrigin, RetainedFileOriginKind, WriterOptions,
 };
 use sqlx_core::{
     connection::{ConnectOptions, Connection},
@@ -118,7 +119,31 @@ async fn adoption_preserves_prefix_data_and_captures_only_later_migrations() -> 
     );
     seed_into_real_copy(&directory.path().join("copy.db"), &mut snapshot).await?;
     snapshot.close().await?;
+    let expected = RetainedFileOrigin {
+        database: writer.database(),
+        epoch: fleet_sync_protocol::Epoch::new(1)?,
+        start: fleet_sync_protocol::ReplicationPosition::new(
+            fleet_sync_protocol::Epoch::new(1)?,
+            fleet_sync_protocol::CommitSequence::new(0),
+        ),
+        kind: RetainedFileOriginKind::Adopted,
+    };
     writer.close().await;
+    drop(writer);
+    // Real adoption starts at sequence zero; it must never pass as creation.
+    for _ in 0..2 {
+        let retained = RetainedFile::open_read_only(
+            &path,
+            Schema {
+                tables: TABLES.as_ref().map_err(|error| OpenError::Storage {
+                    message: error.to_string(),
+                })?,
+            },
+        )
+        .await?;
+        assert_eq!(retained.origin(), expected);
+        drop(retained);
+    }
     Ok(())
 }
 

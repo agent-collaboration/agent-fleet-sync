@@ -281,7 +281,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                     if epoch.is_some_and(|epoch| epoch != record.epoch) {
                         return Err(OpenError::corrupt("writer.epoch"));
                     }
-                    record.origin == crate::writer_file_record::WriterFileOrigin::Bootstrap
+                    record.origin == crate::writer_file_record::RetainedFileOriginKind::Bootstrap
                         && !record.bootstrap.as_ref().is_some_and(|state| state.ready)
                 }
                 None => {
@@ -304,10 +304,11 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                     let mut record = WriterFileRecord::new(database, holder.peer(), epoch);
                     record.retained_layout = adopted_layout;
                     if adopting {
-                        record.origin = crate::writer_file_record::WriterFileOrigin::Adopted;
+                        record.origin = crate::writer_file_record::RetainedFileOriginKind::Adopted;
                     }
                     if let Some(grant) = &bootstrap {
-                        record.origin = crate::writer_file_record::WriterFileOrigin::Bootstrap;
+                        record.origin =
+                            crate::writer_file_record::RetainedFileOriginKind::Bootstrap;
                         record.start = grant.start;
                         record.retained_after = grant.start;
                         record.registration =

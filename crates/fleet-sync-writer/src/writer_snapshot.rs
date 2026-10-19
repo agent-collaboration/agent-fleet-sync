@@ -35,7 +35,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             .await?
             .ok_or_else(|| OpenError::corrupt("writer.record"))?;
         let position = capture_head(&mut transaction, &record).await?;
-        let bootstrapped = record.origin == crate::writer_file_record::WriterFileOrigin::Bootstrap;
+        let bootstrapped =
+            record.origin == crate::writer_file_record::RetainedFileOriginKind::Bootstrap;
         let committed = crate::capture_stream::committed_layout(&mut transaction).await?;
         let names = committed
             .iter()

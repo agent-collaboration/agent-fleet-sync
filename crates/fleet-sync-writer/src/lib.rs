@@ -28,7 +28,8 @@ mod read_pool;
 mod read_transaction;
 mod retained_file;
 mod retained_file_format;
-pub use retained_file::{RetainedAuthority, RetainedFile};
+pub use retained_file::{RetainedAuthority, RetainedFile, RetainedFileOrigin};
+pub use writer_file_record::RetainedFileOriginKind;
 #[cfg(test)]
 mod read_transaction_guard_tests;
 #[cfg(test)]
@@ -51,6 +52,8 @@ mod retained_file_publication_tests;
 mod retained_file_tests;
 #[cfg(all(test, unix))]
 mod retained_file_wal_tests;
+#[cfg(all(test, unix))]
+mod retained_origin_tests;
 mod seed_copy_task;
 pub use register_database_task::RegisterDatabase;
 pub use registration_contract::{

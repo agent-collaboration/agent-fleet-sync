@@ -4,7 +4,7 @@ use crate::{
     migration_execution::inspect_present_tables,
     native_file::{PublishError, checkpoint_for_publish},
     snapshot_schema::snapshot_schema,
-    writer_file_record::{WriterFileOrigin, read_file_record, write_file_record},
+    writer_file_record::{RetainedFileOriginKind, read_file_record, write_file_record},
     writer_registration_state::{RegistrationSeed, RegistrationState},
     writer_scope::WriterScope,
 };
@@ -199,7 +199,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         {
             return Ok(());
         }
-        if record.origin != WriterFileOrigin::Bootstrap
+        if record.origin != RetainedFileOriginKind::Bootstrap
             || record.database != install.database
             || record.start != install.position
             || install.position.epoch >= record.epoch
@@ -252,7 +252,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             .ok_or_else(|| OpenError::corrupt("bootstrap.carried_record"))?;
         if record.database != install.database
             || record.start != install.position
-            || record.origin != WriterFileOrigin::Bootstrap
+            || record.origin != RetainedFileOriginKind::Bootstrap
         {
             return Err(OpenError::corrupt("bootstrap.carried_identity").into());
         }

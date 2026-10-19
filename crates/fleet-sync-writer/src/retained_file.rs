@@ -2,7 +2,7 @@ use crate::{
     OpenError, ReadPool, ReplicatedSchema, WriterRegistrationOutcome, native_pool::NativePool,
     writer_file_record::read_file_record,
 };
-use fleet_sync_protocol::{Epoch, GateReason, ReplicationPosition};
+use fleet_sync_protocol::{DatabaseId, Epoch, GateReason, ReplicationPosition};
 use sqlx_core::pool::PoolOptions;
 use sqlx_turso::{Turso, TursoConnectOptions};
 use std::path::Path;
@@ -20,9 +20,19 @@ pub enum RetainedAuthority {
     },
 }
 
+/// The stored beginning of a file, independent of its latest writer authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RetainedFileOrigin {
+    pub database: DatabaseId,
+    pub epoch: Epoch,
+    pub start: ReplicationPosition,
+    pub kind: crate::RetainedFileOriginKind,
+}
+
 /// Read access to a retained native file through the library's guarded surface.
 pub struct RetainedFile {
     reader: ReadPool,
+    origin: RetainedFileOrigin,
     registration_outcome: WriterRegistrationOutcome,
     authority: Option<RetainedAuthority>,
 }
@@ -50,13 +60,19 @@ impl RetainedFile {
             })
             .connect_with(TursoConnectOptions::new().filename(path).read_only(true))
             .await?;
-        let (registration_outcome, authority) = {
+        let (origin, registration_outcome, authority) = {
             let mut connection = pool.acquire().await?;
             crate::retained_file_format::validate(&mut connection, &schema).await?;
             let record = read_file_record(&mut connection)
                 .await?
                 .ok_or_else(|| OpenError::corrupt("writer.record"))?;
             (
+                RetainedFileOrigin {
+                    database: record.database,
+                    epoch: record.epoch,
+                    start: record.start,
+                    kind: record.origin,
+                },
                 crate::registration_bookkeeping::outcome(&record),
                 record
                     .authority
@@ -66,6 +82,7 @@ impl RetainedFile {
         };
         Ok(Self {
             reader: ReadPool::from_native_pool(NativePool::passive(pool)),
+            origin,
             registration_outcome,
             authority,
         })
@@ -73,6 +90,12 @@ impl RetainedFile {
 
     pub fn reader(&self) -> &ReadPool {
         &self.reader
+    }
+
+    /// Origin validated when the read-only file opened. Compare database, epoch
+    /// and start before using Created as a genesis root; sequence zero alone is insufficient.
+    pub fn origin(&self) -> RetainedFileOrigin {
+        self.origin
     }
 
     /// Rejected capture ranges read without opening a writable owner.

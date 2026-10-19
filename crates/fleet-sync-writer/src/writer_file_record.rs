@@ -14,7 +14,7 @@ pub(crate) const BOOKKEEPING_HISTORY_TABLE: &str = "_fleet_sync_writer_engine_hi
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct WriterFileRecord {
     pub bootstrap: Option<fleet_sync_receiver::SnapshotInstallState>,
-    pub origin: WriterFileOrigin,
+    pub origin: RetainedFileOriginKind,
     pub registration_attempt: Option<fleet_sync_protocol::RequestId>,
     pub registration_failure: Option<durable_steps::OperationFailure>,
     pub renewal_operation: Option<crate::renewal_task::RenewalOperation>,
@@ -30,9 +30,10 @@ pub(crate) struct WriterFileRecord {
     pub epoch_ended_at: Option<ReplicationPosition>,
     pub registration: crate::writer_registration_state::RegistrationState,
 }
+/// Persisted provenance, shared by writer bookkeeping and retained inspection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum WriterFileOrigin {
+pub enum RetainedFileOriginKind {
     Created,
     Adopted,
     Bootstrap,
@@ -46,7 +47,7 @@ impl WriterFileRecord {
         };
         Self {
             bootstrap: None,
-            origin: WriterFileOrigin::Created,
+            origin: RetainedFileOriginKind::Created,
             registration_attempt: None,
             registration_failure: None,
             renewal_operation: None,
