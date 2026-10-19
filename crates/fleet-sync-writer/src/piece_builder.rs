@@ -3,7 +3,8 @@ use fleet_sync_protocol::{
     ConsumerProtocol, DatabaseId, Epoch, Piece, PieceContents, PieceDigest, ReplicatedTransaction,
     ReplicationPosition, RowChange, SqlValue, TransactionKey, TransactionPart,
     unit_budget::{
-        MAX_UNIT_BYTES, MeasuredUnit, TARGET_UNIT_BYTES, UnitTooLarge, measure_piece_unit,
+        MAX_UNIT_BYTES, MeasuredUnit, TARGET_UNIT_BYTES, UnitTooLarge, encoded_json_size,
+        measure_piece_unit,
     },
 };
 use std::{num::NonZeroUsize, ops::Range};
@@ -57,9 +58,12 @@ pub(crate) fn cut_transaction<A: PieceAnnotation>(
         }
         annotation = measured.unit.annotation;
     }
-    // Check the whole annotation independently before attributing an excessive
-    // combined unit to its final row or statement. Ownership moves through each
-    // real carrier; consumer annotations need not implement Clone.
+    let base = builder
+        .probe::<A::Protocol>(count..count, None)?
+        .encoded_size;
+    let mut annotated_base = base;
+    // Measure the whole annotation once without requiring Clone. Every carrier
+    // contains the same piece JSON, so item bytes add equally to either base.
     if annotation.is_some() {
         let measured = builder.probe::<A::Protocol>(count..count, annotation)?;
         if measured.encoded_size > MAX_UNIT_BYTES {
@@ -69,8 +73,10 @@ pub(crate) fn cut_transaction<A: PieceAnnotation>(
             }
             .into());
         }
+        annotated_base = measured.encoded_size;
         annotation = measured.unit.annotation;
     }
+    let sizes = PartSizes::new(&captured.transaction, base, annotated_base)?;
     if count == 0 {
         return Err(SenderError::Invalid {
             field: "part.empty",
@@ -82,24 +88,18 @@ pub(crate) fn cut_transaction<A: PieceAnnotation>(
         let mut end = start;
         while end < count && end - start < max_items.get() {
             let candidate_end = end + 1;
-            let candidate_annotation = if candidate_end == count {
-                annotation.take()
-            } else {
-                None
-            };
-            let measured =
-                builder.probe::<A::Protocol>(start..candidate_end, candidate_annotation)?;
-            if candidate_end == count {
-                annotation = measured.unit.annotation;
-            }
-            if measured.encoded_size > TARGET_UNIT_BYTES && end > start {
+            let candidate_size = sizes.size(
+                start..candidate_end,
+                candidate_end == count && annotation.is_some(),
+            )?;
+            if candidate_size > TARGET_UNIT_BYTES && end > start {
                 break;
             }
-            if measured.encoded_size > MAX_UNIT_BYTES {
+            if candidate_size > MAX_UNIT_BYTES {
                 if candidate_end == count && annotation.is_some() {
-                    let alone = builder.probe::<A::Protocol>(start..candidate_end, None)?;
-                    if alone.encoded_size > MAX_UNIT_BYTES {
-                        return Err(builder.item_error(start, alone.encoded_size)?);
+                    let alone = sizes.size(start..candidate_end, false)?;
+                    if alone > MAX_UNIT_BYTES {
+                        return Err(builder.item_error(start, alone)?);
                     }
                     // The existing assembler accepts an empty final fragment.
                     // Use it only when these individually fitting items exceed
@@ -112,12 +112,12 @@ pub(crate) fn cut_transaction<A: PieceAnnotation>(
                         range: count..count,
                         annotation,
                     });
-                    return builder.finish::<A::Protocol>(fragments);
+                    return builder.finish::<A::Protocol>(fragments, &sizes);
                 }
-                return Err(builder.item_error(start, measured.encoded_size)?);
+                return Err(builder.item_error(start, candidate_size)?);
             }
             end = candidate_end;
-            if measured.encoded_size >= TARGET_UNIT_BYTES {
+            if candidate_size >= TARGET_UNIT_BYTES {
                 break;
             }
         }
@@ -131,7 +131,7 @@ pub(crate) fn cut_transaction<A: PieceAnnotation>(
         });
         start = end;
     }
-    builder.finish::<A::Protocol>(fragments)
+    builder.finish::<A::Protocol>(fragments, &sizes)
 }
 
 impl PartBuilder<'_> {
@@ -182,6 +182,8 @@ impl PartBuilder<'_> {
         annotation: Option<P::Annotation>,
         part: Option<TransactionPart>,
     ) -> Result<MeasuredUnit<Piece<P::Annotation>>, SenderError> {
+        #[cfg(test)]
+        FULL_MEASURES.with(|count| count.set(count.get() + 1));
         let piece = Piece::new(PieceContents {
             database: self.database,
             epoch: self.epoch,
@@ -249,6 +251,7 @@ impl PartBuilder<'_> {
     fn finish<P: ConsumerProtocol>(
         &self,
         fragments: Vec<Fragment<P::Annotation>>,
+        sizes: &PartSizes,
     ) -> Result<Vec<Piece<P::Annotation>>, SenderError> {
         let count = u32::try_from(fragments.len()).map_err(|_| SenderError::Invalid {
             field: "part.count",
@@ -267,7 +270,22 @@ impl PartBuilder<'_> {
                 } else {
                     None
                 };
+                let expected = sizes
+                    .size(fragment.range.clone(), fragment.annotation.is_some())?
+                    .checked_sub(
+                        encoded_json_size(&Some(self.descriptor(u32::MAX - 1, u32::MAX)?))
+                            .map_err(part_encoding)?,
+                    )
+                    .and_then(|size| size.checked_add(encoded_json_size(&part).ok()?))
+                    .ok_or(SenderError::Invalid {
+                        field: "part.size_changed",
+                    })?;
                 let measured = self.measure::<P>(fragment.range, fragment.annotation, part)?;
+                if measured.encoded_size != expected {
+                    return Err(SenderError::Invalid {
+                        field: "part.size_changed",
+                    });
+                }
                 if measured.encoded_size > MAX_UNIT_BYTES {
                     return Err(SenderError::Invalid {
                         field: "part.size_changed",
@@ -278,3 +296,83 @@ impl PartBuilder<'_> {
             .collect()
     }
 }
+
+fn part_encoding(_: serde_json::Error) -> SenderError {
+    SenderError::Invalid {
+        field: "part.encoding",
+    }
+}
+
+// Prefix sums count each captured row/statement once. A fragment changes only
+// this JSON array, its fixed-width digest, and (at emission) its part descriptor.
+struct PartSizes {
+    prefix: Vec<usize>,
+    base: usize,
+    annotated_base: usize,
+}
+impl PartSizes {
+    fn new(
+        transaction: &ReplicatedTransaction,
+        base: usize,
+        annotated_base: usize,
+    ) -> Result<Self, SenderError> {
+        let items = match transaction {
+            ReplicatedTransaction::Rows { rows, .. } => rows
+                .iter()
+                .map(encoded_json_size)
+                .collect::<Result<Vec<_>, _>>(),
+            ReplicatedTransaction::SchemaStep { statements, .. } => statements
+                .iter()
+                .map(encoded_json_size)
+                .collect::<Result<Vec<_>, _>>(),
+        }
+        .map_err(part_encoding)?;
+        let mut prefix = vec![0_usize];
+        for bytes in items {
+            let total = prefix
+                .last()
+                .copied()
+                .unwrap_or_default()
+                .checked_add(bytes)
+                .and_then(|size| size.checked_add(1))
+                .ok_or(SenderError::Invalid {
+                    field: "part.encoding",
+                })?;
+            prefix.push(total);
+        }
+        Ok(Self {
+            prefix,
+            base,
+            annotated_base,
+        })
+    }
+    fn size(&self, range: Range<usize>, annotated: bool) -> Result<usize, SenderError> {
+        let bytes = self
+            .prefix
+            .get(range.end)
+            .zip(self.prefix.get(range.start))
+            .and_then(|(end, start)| end.checked_sub(*start))
+            .and_then(|size| size.checked_sub(usize::from(!range.is_empty())))
+            .ok_or(SenderError::Invalid {
+                field: "part.encoding",
+            })?;
+        (if annotated {
+            self.annotated_base
+        } else {
+            self.base
+        })
+        .checked_add(bytes)
+        .ok_or(SenderError::Invalid {
+            field: "part.encoding",
+        })
+    }
+}
+
+#[cfg(test)]
+std::thread_local! { static FULL_MEASURES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+#[cfg(test)]
+#[path = "piece_sizing_oracle.rs"]
+mod sizing_oracle;
+#[cfg(test)]
+#[path = "piece_sizing_tests.rs"]
+mod sizing_tests;

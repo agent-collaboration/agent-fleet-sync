@@ -1,5 +1,5 @@
 //! Encoded library carriers and staged-row bounds, independent of any host I/O.
-use crate::encoded_size::encoded_json_size;
+pub use crate::encoded_size::encoded_json_size;
 use crate::*;
 
 /// These constants determine page and part identities. A release changing them
@@ -156,4 +156,25 @@ pub fn measure_piece_unit<P: ConsumerProtocol>(
         unit: piece,
         encoded_size,
     })
+}
+
+/// Every snapshot carrier contains the page exactly once and a fixed-width
+/// digest. Appending a row therefore changes all carrier sizes by these same
+/// JSON bytes, including the array comma and replacement of the next cursor.
+pub fn snapshot_size_after_row(
+    encoded_size: usize,
+    has_rows: bool,
+    row: &[SqlValue],
+    previous_next: &Option<SnapshotCursor>,
+    next: &Option<SnapshotCursor>,
+) -> Result<usize, UnitEncodingError> {
+    let previous_next_bytes = encoded_json_size(previous_next).map_err(encoding_error)?;
+    let row_bytes = encoded_json_size(row).map_err(encoding_error)?;
+    let next_bytes = encoded_json_size(next).map_err(encoding_error)?;
+    encoded_size
+        .checked_sub(previous_next_bytes)
+        .and_then(|size| size.checked_add(usize::from(has_rows)))
+        .and_then(|size| size.checked_add(row_bytes))
+        .and_then(|size| size.checked_add(next_bytes))
+        .ok_or_else(carrier_error)
 }

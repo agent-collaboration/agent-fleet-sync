@@ -4,7 +4,7 @@ use crate::{
 };
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::unit_budget::{
-    MAX_UNIT_BYTES, TARGET_UNIT_BYTES, UnitTooLarge, measure_snapshot_unit,
+    MAX_UNIT_BYTES, TARGET_UNIT_BYTES, UnitTooLarge, measure_snapshot_unit, snapshot_size_after_row,
 };
 use fleet_sync_protocol::{SnapshotCursor, SnapshotPage, SnapshotRead};
 use sqlx_core::{
@@ -90,7 +90,7 @@ where
         rows: Vec::new(),
         next: next_table.clone(),
     };
-    let measured = measure_snapshot_unit(page).map_err(|_| ReceiverError::InvalidInput {
+    let measured = measure_page(page).map_err(|_| ReceiverError::InvalidInput {
         field: "snapshot encoding".into(),
     })?;
     if measured.encoded_size > MAX_UNIT_BYTES {
@@ -99,9 +99,10 @@ where
         }
         .into());
     }
+    let mut encoded_size = measured.encoded_size;
     let mut page = measured.unit;
     if table.is_empty() {
-        return Ok(SnapshotRead::Page(Box::new(page)));
+        return checked_page(page, encoded_size);
     }
     let columns = SchemaReads(scope).table_columns(&table).await?;
     let keys = primary_columns(&columns);
@@ -173,19 +174,26 @@ where
         } else {
             next_table.clone()
         };
+        let candidate_size = snapshot_size_after_row(
+            encoded_size,
+            !page.rows.is_empty(),
+            &values,
+            &page.next,
+            &next,
+        )
+        .map_err(|_| ReceiverError::InvalidInput {
+            field: "snapshot encoding".into(),
+        })?;
         let previous_next = page.next.take();
         page.rows.push(values);
         page.next = next;
-        let measured = measure_snapshot_unit(page).map_err(|_| ReceiverError::InvalidInput {
-            field: "snapshot encoding".into(),
-        })?;
-        page = measured.unit;
-        if page.rows.len() > 1 && measured.encoded_size > TARGET_UNIT_BYTES {
+
+        if page.rows.len() > 1 && candidate_size > TARGET_UNIT_BYTES {
             page.rows.pop();
             page.next = previous_next;
             break;
         }
-        if measured.encoded_size > MAX_UNIT_BYTES {
+        if candidate_size > MAX_UNIT_BYTES {
             let key = key
                 .into_iter()
                 .map(|value| match value {
@@ -198,14 +206,47 @@ where
             return Err(UnitTooLarge::Row {
                 table: table.clone(),
                 key,
-                encoded_size: measured.encoded_size,
+                encoded_size: candidate_size,
             }
             .into());
         }
-        if measured.encoded_size >= TARGET_UNIT_BYTES || page.rows.len() == PAGE_SIZE {
+        encoded_size = candidate_size;
+        if candidate_size >= TARGET_UNIT_BYTES || page.rows.len() == PAGE_SIZE {
             break;
         }
         pending = following;
     }
-    Ok(SnapshotRead::Page(Box::new(page)))
+    checked_page(page, encoded_size)
 }
+
+fn checked_page(page: SnapshotPage, expected: usize) -> Result<SnapshotRead, ReceiverError> {
+    let measured = measure_page(page).map_err(|_| ReceiverError::InvalidInput {
+        field: "snapshot encoding".into(),
+    })?;
+    if measured.encoded_size != expected {
+        return Err(StoreError::Corrupt {
+            field: "snapshot size changed".into(),
+        }
+        .into());
+    }
+    Ok(SnapshotRead::Page(Box::new(measured.unit)))
+}
+
+fn measure_page(
+    page: SnapshotPage,
+) -> Result<
+    fleet_sync_protocol::unit_budget::MeasuredUnit<SnapshotPage>,
+    fleet_sync_protocol::unit_budget::UnitEncodingError,
+> {
+    #[cfg(test)]
+    FULL_MEASURES.with(|count| count.set(count.get() + 1));
+    measure_snapshot_unit(page)
+}
+#[cfg(test)]
+std::thread_local! { static FULL_MEASURES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "snapshot_sizing_oracle.rs"]
+mod sizing_oracle;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "snapshot_sizing_tests.rs"]
+mod sizing_tests;

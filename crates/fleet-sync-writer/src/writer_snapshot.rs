@@ -7,7 +7,7 @@ use crate::{
     writer_file_record::read_file_record,
 };
 use fleet_sync_protocol::unit_budget::{
-    MAX_UNIT_BYTES, TARGET_UNIT_BYTES, UnitTooLarge, measure_snapshot_unit,
+    MAX_UNIT_BYTES, TARGET_UNIT_BYTES, UnitTooLarge, measure_snapshot_unit, snapshot_size_after_row,
 };
 use fleet_sync_protocol::{
     DatabaseId, ReplicationPosition, SchemaIdentity, SnapshotCursor, SnapshotManifest,
@@ -118,17 +118,17 @@ impl WriterSnapshot {
             rows: Vec::new(),
             next: next_table.clone(),
         };
-        let measured =
-            measure_snapshot_unit(page).map_err(|_| OpenError::corrupt("snapshot.encoding"))?;
+        let measured = measure_page(page).map_err(|_| OpenError::corrupt("snapshot.encoding"))?;
         if measured.encoded_size > MAX_UNIT_BYTES {
             return Err(UnitTooLarge::SnapshotSchema {
                 encoded_size: measured.encoded_size,
             }
             .into());
         }
+        let mut encoded_size = measured.encoded_size;
         let mut page = measured.unit;
         let Some(table) = table else {
-            return Ok(page);
+            return checked_page(page, encoded_size);
         };
         let after = cursor
             .as_ref()
@@ -152,18 +152,24 @@ impl WriterSnapshot {
             } else {
                 next_table.clone()
             };
+            let candidate_size = snapshot_size_after_row(
+                encoded_size,
+                !page.rows.is_empty(),
+                &row,
+                &page.next,
+                &next,
+            )
+            .map_err(|_| OpenError::corrupt("snapshot.encoding"))?;
             let previous_next = page.next.take();
             page.rows.push(row);
             page.next = next;
-            let measured =
-                measure_snapshot_unit(page).map_err(|_| OpenError::corrupt("snapshot.encoding"))?;
-            page = measured.unit;
-            if page.rows.len() > 1 && measured.encoded_size > TARGET_UNIT_BYTES {
+
+            if page.rows.len() > 1 && candidate_size > TARGET_UNIT_BYTES {
                 page.rows.pop();
                 page.next = previous_next;
                 break;
             }
-            if measured.encoded_size > MAX_UNIT_BYTES {
+            if candidate_size > MAX_UNIT_BYTES {
                 let key = key
                     .into_iter()
                     .map(|value| match value {
@@ -174,16 +180,17 @@ impl WriterSnapshot {
                 return Err(UnitTooLarge::Row {
                     table: table.name().into(),
                     key,
-                    encoded_size: measured.encoded_size,
+                    encoded_size: candidate_size,
                 }
                 .into());
             }
-            if measured.encoded_size >= TARGET_UNIT_BYTES || page.rows.len() == PAGE_ROWS {
+            encoded_size = candidate_size;
+            if candidate_size >= TARGET_UNIT_BYTES || page.rows.len() == PAGE_ROWS {
                 break;
             }
             pending = following;
         }
-        Ok(page)
+        checked_page(page, encoded_size)
     }
 
     pub async fn manifest(&mut self) -> Result<SnapshotManifest, OpenError> {
@@ -236,3 +243,31 @@ impl WriterSnapshot {
         Ok(())
     }
 }
+
+fn measure_page(
+    page: SnapshotPage,
+) -> Result<
+    fleet_sync_protocol::unit_budget::MeasuredUnit<SnapshotPage>,
+    fleet_sync_protocol::unit_budget::UnitEncodingError,
+> {
+    #[cfg(test)]
+    FULL_MEASURES.with(|count| count.set(count.get() + 1));
+    measure_snapshot_unit(page)
+}
+
+fn checked_page(page: SnapshotPage, expected: usize) -> Result<SnapshotPage, OpenError> {
+    let measured = measure_page(page).map_err(|_| OpenError::corrupt("snapshot.encoding"))?;
+    if measured.encoded_size != expected {
+        return Err(OpenError::corrupt("snapshot.size_changed"));
+    }
+    Ok(measured.unit)
+}
+
+#[cfg(test)]
+std::thread_local! { static FULL_MEASURES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+#[cfg(test)]
+#[path = "snapshot_sizing_oracle.rs"]
+mod sizing_oracle;
+#[cfg(test)]
+#[path = "snapshot_sizing_tests.rs"]
+mod sizing_tests;

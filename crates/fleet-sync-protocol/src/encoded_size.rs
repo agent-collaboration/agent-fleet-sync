@@ -1,8 +1,7 @@
 use serde::Serialize;
 
-pub(crate) fn encoded_json_size<T: Serialize + ?Sized>(
-    value: &T,
-) -> Result<usize, serde_json::Error> {
+/// Count the exact compact JSON bytes without allocating an encoded copy.
+pub fn encoded_json_size<T: Serialize + ?Sized>(value: &T) -> Result<usize, serde_json::Error> {
     let mut counter = JsonBytes(0);
     serde_json::to_writer(&mut counter, value)?;
     Ok(counter.0)
