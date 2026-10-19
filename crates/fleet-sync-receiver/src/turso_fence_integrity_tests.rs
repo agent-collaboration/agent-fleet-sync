@@ -330,3 +330,95 @@ async fn nonadvancing_saved_transition_is_corrupt_for_fence_replay_and_stale_app
 async fn future_epoch_start_is_corrupt_even_when_the_saved_request_agrees() -> TestResult {
     reject_inconsistent_receipt(ReceiptDamage::FutureStart).await
 }
+
+#[tokio::test]
+async fn invalid_current_fence_epoch_refuses_decode_or_state_validation_without_writes()
+-> TestResult {
+    for stored_epoch in [0, 1] {
+        let mut connection = connection().await?;
+        let holder = PeerId::new(uuid::Uuid::from_u128(0x019eef00000070008000000000000a01))?;
+        let first = request(2561, 2, 1, holder)?;
+        let through = ReplicationPosition::new(Epoch::new(2)?, CommitSequence::new(1));
+        let incoming = Piece::<()>::new(PieceContents {
+            database: database()?,
+            epoch: Epoch::new(2)?,
+            continues_from: position(0)?,
+            through,
+            transactions: vec![ReplicatedTransaction::Rows {
+                commit_id: CommitSequence::new(1),
+                rows: vec![RowChange::upsert(
+                    "records",
+                    vec![uuid_key(2561)],
+                    vec![
+                        uuid_key(2561),
+                        SqlValue::Text("acknowledged in epoch two".into()),
+                    ],
+                )?],
+            }],
+            part: None,
+            annotation: None,
+        })?;
+        let mut tx = connection.begin_with("BEGIN IMMEDIATE").await?;
+        assert!(matches!(fence(&mut TursoScope(&mut tx), &first).await?,
+            FenceResult::Fenced { new_epoch, .. } if new_epoch == Epoch::new(2)?));
+        apply_piece(
+            &mut TursoScope(&mut tx),
+            &incoming,
+            &holder,
+            &Hook { refuse: false },
+            SyncTime::from_unix_millis(1),
+        )
+        .await?;
+        let status = ready_status(copy_status(&mut TursoScope(&mut tx)).await?)?;
+        assert_eq!(status.fence, Epoch::new(2)?);
+        assert_eq!(status.acked, through);
+        tx.commit().await?;
+
+        // Corrupt the current fence, not a historical fence receipt or request.
+        // Zero cannot decode as Epoch; one can decode but precedes acked.epoch.
+        let record = sqlx_core::query::query::<Turso>("SELECT record FROM _fleet_sync_copy")
+            .fetch_one(&mut connection)
+            .await?
+            .try_get::<String, _>("record")?;
+        let mut stored: serde_json::Value = serde_json::from_str(&record)?;
+        assert_eq!(stored["state"], "following");
+        assert_eq!(stored["copy"]["fence"], 2);
+        stored["copy"]["fence"] = serde_json::json!(stored_epoch);
+        assert_eq!(
+            sqlx_core::query::query::<Turso>("UPDATE _fleet_sync_copy SET record=?")
+                .bind(serde_json::to_string(&stored)?)
+                .execute(&mut connection)
+                .await?
+                .rows_affected(),
+            1
+        );
+        let before = receipt_state(&mut connection).await?;
+        let expected_field = if stored_epoch == 0 {
+            "copy record"
+        } else {
+            "copy state"
+        };
+        let next = request(2562, 3, 2, writer()?)?;
+        let mut tx = connection.begin_with("BEGIN IMMEDIATE").await?;
+        for result in [
+            copy_status(&mut TursoScope(&mut tx)).await.map(|_| ()),
+            fence(&mut TursoScope(&mut tx), &next).await.map(|_| ()),
+        ] {
+            assert!(
+                matches!(result,
+                Err(ReceiverError::Storage(StoreError::Corrupt { ref field }))
+                if field == expected_field),
+                "stored epoch {stored_epoch}: {result:?}"
+            );
+        }
+        assert!(
+            matches!(apply_piece(&mut TursoScope(&mut tx), &incoming, &holder,
+            &Hook { refuse: false }, SyncTime::from_unix_millis(2)).await,
+            Err(ApplyFailure::Storage(StoreError::Corrupt { ref field }))
+            if field == expected_field)
+        );
+        tx.commit().await?;
+        assert_eq!(receipt_state(&mut connection).await?, before);
+    }
+    Ok(())
+}
