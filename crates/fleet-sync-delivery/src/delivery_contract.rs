@@ -92,6 +92,28 @@ impl DeliveryError {
 
 pub trait DeliveryConsumer<S: TransactionScope>: Send + Sync + 'static {
     type Protocol: ConsumerProtocol;
+    /// Project a newly received item using the custody transaction. Returning an
+    /// error aborts that transaction; replays do not call this hook.
+    fn on_received(
+        &self,
+        _scope: &mut S,
+        _item: &DeliveryItem<<Self::Protocol as ConsumerProtocol>::Delivery>,
+    ) -> impl Future<Output = Result<(), DeliveryError>> + Send {
+        async { Ok(()) }
+    }
+    /// Project each recorded inbox outcome using its custody transaction,
+    /// including held attempts and cancellation controls. Returning an error
+    /// aborts that transaction. The ID remains usable for corrupt-custody failures.
+    fn on_outcome(
+        &self,
+        _scope: &mut S,
+        _item: ItemId,
+        _outcome: &RecipientOutcome<
+            <<Self::Protocol as ConsumerProtocol>::Delivery as DeliveryTypes>::Acceptance,
+        >,
+    ) -> impl Future<Output = Result<(), DeliveryError>> + Send {
+        async { Ok(()) }
+    }
     fn release_gate(
         &self,
         scope: &mut S,

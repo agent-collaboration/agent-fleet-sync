@@ -15,23 +15,40 @@ pub enum AfterAnswer {
         resume: Arc<tokio::sync::Notify>,
     },
 }
-pub struct InterleavedDeliver {
-    inner: DeliverTask,
+pub struct InterleavedDeliver<C = TestConsumer> {
+    inner: DeliverLocally<TestStore, sqlx_turso::Turso, TestTypes, C>,
     store: Arc<TestStore>,
     action: AfterAnswer,
     performed: Arc<AtomicBool>,
 }
 impl InterleavedDeliver {
     pub fn new(store: Arc<TestStore>, host: Arc<TestHost>, action: AfterAnswer) -> Self {
+        Self::with_consumer(store, host, action, Arc::new(TestConsumer))
+    }
+}
+impl<C> InterleavedDeliver<C> {
+    pub fn with_consumer(
+        store: Arc<TestStore>,
+        host: Arc<TestHost>,
+        action: AfterAnswer,
+        consumer: Arc<C>,
+    ) -> Self {
         Self {
-            inner: DeliverTask::new(config(), Arc::new(TestConsumer), host),
+            inner: DeliverLocally::new(config(), consumer, host),
             store,
             action,
             performed: Arc::new(AtomicBool::new(false)),
         }
     }
 }
-impl Task for InterleavedDeliver {
+impl<C> Task for InterleavedDeliver<C>
+where
+    C: Send + Sync + 'static,
+    for<'t> C: DeliveryConsumer<
+            durable_steps::turso_store::TursoScope<'t, TestHost>,
+            Protocol = TestProtocol,
+        >,
+{
     const KIND: &'static str = DeliverTask::KIND;
     const VERSION: u32 = DeliverTask::VERSION;
     const KEEP_RESULT: bool = DeliverTask::KEEP_RESULT;

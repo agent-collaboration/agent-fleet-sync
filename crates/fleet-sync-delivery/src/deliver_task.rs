@@ -164,7 +164,7 @@ where
             };
             let mut inbox = Inbox::<_, D>::new(scope, self.config.owner, self.config.limits);
             let mut effects = inbox
-                .record_terminal(input, outcome)
+                .record_terminal(input, outcome, self.consumer.as_ref())
                 .await
                 .map_err(store_error)?;
             let cancelled = inbox

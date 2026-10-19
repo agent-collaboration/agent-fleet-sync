@@ -100,9 +100,9 @@ where
                             }
                             if let InboxProgress::Final { outcome, .. } = &record.header.progress {
                                 let outcome = copy_wire(outcome)?;
-                                effects
-                                    .reports
-                                    .extend(self.record_outcome(&mut record, outcome).await?);
+                                effects.reports.extend(
+                                    self.record_outcome(&mut record, outcome, consumer).await?,
+                                );
                             }
                             self.save(&record).await?;
                         }
@@ -175,6 +175,9 @@ where
                         let record =
                             InboxRecord::new(item, InboxRoute::Relayed, item_progress, settlement)?;
                         self.save(&record).await?;
+                        if let Some(DeliveryEnvelope::Item(item)) = &record.payload {
+                            consumer.on_received(self.scope, item).await?;
+                        }
                     }
                     let target = self
                         .header(id)
