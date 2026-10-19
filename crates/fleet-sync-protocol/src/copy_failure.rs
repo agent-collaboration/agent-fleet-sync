@@ -65,6 +65,9 @@ impl CopyUnavailableReason {
         match self {
             Self::Uninitialized => ("copy_uninitialized".into(), String::new()),
             Self::StorageFull => ("copy_storage_full".into(), String::new()),
+            Self::MigrationPending { version } => {
+                ("copy_migration_pending".into(), version.to_string())
+            }
             Self::Damaged { detail } => ("copy_damaged".into(), detail.clone()),
         }
     }
@@ -72,6 +75,13 @@ impl CopyUnavailableReason {
         match code {
             "copy_uninitialized" if detail.is_empty() => Ok(Self::Uninitialized),
             "copy_storage_full" if detail.is_empty() => Ok(Self::StorageFull),
+            "copy_migration_pending" => {
+                let version = detail.parse::<u64>().map_err(|_| CopyRetryCodecError)?;
+                if version.to_string() != detail {
+                    return Err(CopyRetryCodecError);
+                }
+                Ok(Self::MigrationPending { version })
+            }
             "copy_damaged" => Ok(Self::Damaged {
                 detail: detail.into(),
             }),

@@ -2,7 +2,8 @@
 
 The host owns the copy's SQL transaction. Apply `RECEIVER_MIGRATOR` alongside
 application migrations in the same host-owned migration transaction before
-calling these rules. Configure the copy connection with foreign-key
+calling replication or seed rules. The read-only `inspect_copy` projection below
+also works before migration. Configure the copy connection with foreign-key
 enforcement disabled: the writer owns integrity, and the copy applies whole writer
 transactions. The receiver does not use `PRAGMA foreign_key_check`, which Turso
 0.8.1 silently ignores.
@@ -65,3 +66,17 @@ cargo run -p fleet-sync-query-gen --features native -- \
 Append `--check` to verify freshness without writing. Dynamic replicated-table
 statements quote schema-derived identifiers and bind values; integer values cross
 the driver as decimal text with explicit SQL casts.
+
+`inspect_copy(scope)` reads operations facts without migrating or writing. It
+checks the current receiver corpus before reading private rows and answers
+`Uninitialized`, `Damaged`, `Live`, or `Retired`. `Live` includes the persisted
+`Starting`, `Seeding`, or `Following` stage and status, the actual replicated
+catalog fingerprint, and staged transactions with each part's index and stored
+time. A fingerprint difference during seed/install is reported, not classified
+as damage. This diagnostic projection does not authorize serving reads.
+
+The host owns receiver-storage migration history. It can supply
+`CopyUnavailableReason::MigrationPending { version }` through the shared retry
+codec while its own migration is pending or failed; the library never infers a
+version from table structure. No transfer identity or last-piece timestamp is
+invented by inspection. Retired copies expose their recorded retirement time.

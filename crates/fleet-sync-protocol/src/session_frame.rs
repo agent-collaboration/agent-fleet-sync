@@ -34,8 +34,14 @@ impl ConsumerProtocol for NoConsumer {
 )]
 pub enum CopyUnavailableReason {
     Uninitialized,
+    /// The host owns the pending receiver-storage migration and its version.
+    MigrationPending {
+        version: u64,
+    },
     StorageFull,
-    Damaged { detail: String },
+    Damaged {
+        detail: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

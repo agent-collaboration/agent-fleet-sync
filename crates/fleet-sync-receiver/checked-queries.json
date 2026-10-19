@@ -558,6 +558,20 @@
       "sql": "sql/erase_install_pages.sql",
       "result": "execute",
       "parameters": []
+    },
+    {
+      "name": "read_inspection_corpus",
+      "sql": "sql/read_inspection_corpus.sql",
+      "row": "InspectionSchemaRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "read_inspection_parts",
+      "sql": "sql/read_inspection_parts.sql",
+      "row": "InspectionPartRow",
+      "result": "many",
+      "parameters": []
     }
   ]
 }

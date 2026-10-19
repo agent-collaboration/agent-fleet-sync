@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-queries.json": "e74c6bbd6e461cb437c4930fba570d41b4b026b7e22586740e68adf92015dc92",
+    "checked-queries.json": "48797c5d4f9117bc12771aebe2d304e988c6f2afb6872a267b6341387499b2d0",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -76,6 +76,8 @@
     "sql/read_epoch_fence.sql": "f455e28f2ecbde42be7c8cc044dd31b65b51f61efaa5bbaac28fe4dcb477325b",
     "sql/read_fence_receipt.sql": "bde95c4e455efd2ddd0b1f20468d6987067931a1bca91b6bcb76d1bd1ae13ce8",
     "sql/read_hook_migrations.sql": "48772108665c87eb58ddc8cd533860d4fa607be9fa5389ba5e6e6a95bd4b424a",
+    "sql/read_inspection_corpus.sql": "5abcee590b18f409ff4949e892e16e031ad8095976e2e51757ce4e8cceee0836",
+    "sql/read_inspection_parts.sql": "07a804466d5c6eafadb259b457fa5bbf64f924f505c3bf6a1eada5233dee078a",
     "sql/read_install.sql": "58204d10e3a2a0f9f50985f5415c92e18c4804357cf83c850e57d81dc231bac6",
     "sql/read_install_pages.sql": "1c76ee82df66ecf76bcdeb568d80d5ba1c53ff54a53a7df89f901b3bb3940c8b",
     "sql/read_parts.sql": "2fe22ce90680daad8cb3383c1b56df163c14c99dd133035f1dd5c448ed8b46ac",
@@ -102,9 +104,9 @@
     "sql/write_seed.sql": "1760686d585a282c49d7eee530ebe6bcd883d49623d339587ba861adfb372783",
     "sql/write_seed_attempt.sql": "6b7bb9dd642308388c49521b264703c0291d95870d6c172caece780aecd583eb",
     "sql/write_seed_page.sql": "2f10b3342821b1a27f8683e064f8445dd16f74c761b5d095a0c56e0f991c95d8",
-    "src/checked_queries.rs": "587e032c1ba7ef4bfe222466c95ef4a5050afd18dc33761dd7cee64f928b7bce"
+    "src/checked_queries.rs": "ce6f59af05e10383b541a1ef2a8a3d33056db691abc7966b956920d924e6dc3f"
   },
-  "queries_digest": "a3cd154a91e57ee892242f2678b594301d1d3df40f35b39d140ded1b70a70d78",
+  "queries_digest": "d66eb09547a8176bb2309237117d433b71bd3af33515f4d08e48b3dec4aa61e6",
   "queries": [
     {
       "name": "read_copy",
@@ -709,6 +711,102 @@
       "name": "erase_install_pages",
       "bind_slots": 0,
       "columns": []
+    },
+    {
+      "name": "read_inspection_corpus",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "object_name",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "name_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "object_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "kind_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "statement",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "statement_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "read_inspection_parts",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "transaction_key",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "key_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "part_index",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "index_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "staged_at",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "time_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
     }
   ]
 }

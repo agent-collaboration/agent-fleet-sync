@@ -13,7 +13,10 @@ pub use copy_failure::{
     CopyTransactionFailure, apply_rollback, classify_copy_store_error, copy_rollback,
     receiver_rollback, retryable_copy, unavailable_receiver,
 };
+mod copy_inspection;
 mod copy_lifecycle;
+mod inspection_corpus;
+pub use copy_inspection::{CopyInspection, CopyStage, StagedPart, StagedTransaction, inspect_copy};
 mod copy_storage;
 mod fence_rules;
 mod hook_migrations;
@@ -31,6 +34,8 @@ mod snapshot_hooks;
 mod snapshot_install;
 mod snapshot_install_contract;
 mod snapshot_install_fence;
+#[cfg(test)]
+mod turso_copy_inspection_tests;
 pub use snapshot_install_fence::{SNAPSHOT_REPLACED_TABLES, SnapshotFence};
 mod snapshot_install_storage;
 pub use snapshot_install::SnapshotInstallRules;
