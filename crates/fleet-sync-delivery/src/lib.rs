@@ -15,6 +15,7 @@ mod delivery_rollback;
 mod inbox_cancellation;
 mod inbox_cycles;
 mod inbox_delivery;
+mod inbox_local;
 mod inbox_receive;
 mod inbox_record;
 mod inbox_storage;
@@ -35,7 +36,9 @@ pub use delivery_rollback::{
     DeliveryTransactionFailure, classify_delivery_store_error, delivery_rollback,
 };
 pub use fleet_sync_protocol::*;
-pub use inbox_record::{DeliveryAttempt, DeliveryCheck, InboxEffects, ReceiveInput, ReportRef};
+pub use inbox_record::{
+    DeliveryAttempt, DeliveryCheck, InboxEffects, LocalCancelAdmission, ReceiveInput, ReportRef,
+};
 pub use inbox_storage::Inbox;
 pub use mailbox_failure::{
     MailboxCorruption, MailboxFailureDisposition, MailboxOperation, mailbox_failure_disposition,

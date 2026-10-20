@@ -198,6 +198,7 @@ impl ObservationFixture {
         ObservationTask::new(config(), self.host.consumer.clone(), self.host.clone())
     }
     pub async fn enqueue(&self, id: u64, expiry: Option<SyncTime>) {
+        let consumer = self.host.consumer.clone();
         self.store
             .transaction(move |scope| {
                 Box::pin(async move {
@@ -213,8 +214,9 @@ impl ObservationFixture {
                     )
                     .unwrap();
                     Inbox::<_, ObservationTypes>::new(scope, peer(2), limits())
-                        .enqueue_local_and_admit::<ObservationTask>(
+                        .enqueue_local_and_admit::<ObservationTask, _>(
                             item,
+                            consumer.as_ref(),
                             SyncTime::from_unix_millis(0),
                         )
                         .await

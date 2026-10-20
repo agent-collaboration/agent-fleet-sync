@@ -317,6 +317,13 @@ impl InboxState {
     }
 }
 
+/// A local cancel may replay another ID's canonical control for the same target.
+/// Apply its effects in the caller's custody transaction, as for remote intake.
+pub struct LocalCancelAdmission {
+    pub reference: DeliveryItemRef,
+    pub effects: InboxEffects,
+}
+
 #[derive(Default)]
 pub struct InboxEffects {
     pub attempts: Vec<DeliveryAttempt>,

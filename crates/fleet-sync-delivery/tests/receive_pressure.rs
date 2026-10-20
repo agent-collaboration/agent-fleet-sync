@@ -75,7 +75,7 @@ async fn capacity_taken_after_fetch_budget_waits_with_saved_batch_and_recovers_a
                     return Err(StoreError::backend("fixture must be a local item"));
                 };
                 Inbox::<_, TestTypes>::new(scope, peer(2), config.local.limits)
-                    .enqueue_local(local, SyncTime::from_unix_millis(0))
+                    .enqueue_local(local, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)
             })

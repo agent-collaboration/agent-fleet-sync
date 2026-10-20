@@ -44,3 +44,25 @@ deduplicate by that pair and apply statuses forward-only by `StatusVersion`.
 `Outbox::publish_status` and `apply_status_batch` preserve that ordering.
 Retiring a `PublicationRef` does not retire status events; acknowledgement owns
 that deletion.
+
+## Local cancellation
+
+Pass the delivery consumer to `Inbox::enqueue_local` or
+`enqueue_local_and_admit`. A pending local cancel is resolved in the same custody
+transaction before a new original can be offered for delivery. Relayed controls
+are left to their existing receive and completion paths. Same-digest item
+replays return `None`.
+
+`Inbox::enqueue_local_cancel(cancel, consumer, now)` returns
+`LocalCancelAdmission { reference, effects }`. Use the returned reference: a
+second cancel ID for an already linked target replays the first canonical cancel.
+Read its recorded result through `local_outcome(reference.item)`; pending controls
+return `None`. Authorization refusal is a recorded outcome. Changed digests return
+`Refused(ItemConflict)` with the stored digest; admission capacity returns
+`Refused(MailboxFull)`.
+
+Fully local custody needs no receive sequence or acknowledgement and produces no
+remote report. Local control rows and links remain stored for replay and count
+against the inbox byte cap, including terminal controls. A compact original has
+no charged settlement reserve. Control retirement and compaction need a separate
+retention policy.

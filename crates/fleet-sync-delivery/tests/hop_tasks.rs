@@ -351,7 +351,11 @@ async fn a_terminal_local_item_releases_body_custody_without_a_relay_retirement(
                     return Err(durable_steps::StoreError::backend("fixture item"));
                 };
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask>(item, SyncTime::from_unix_millis(0))
+                    .enqueue_local_and_admit::<DeliverTask, _>(
+                        item,
+                        &TestConsumer,
+                        SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?;
                 Ok(())

@@ -18,8 +18,9 @@ async fn compact_local_headers_authorize_cancels_and_preserve_identity() {
                         return Err(durable_steps::StoreError::backend("fixture item"));
                     };
                     Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                        .enqueue_local_and_admit::<DeliverTask>(
+                        .enqueue_local_and_admit::<DeliverTask, _>(
                             original,
+                            &TestConsumer,
                             SyncTime::from_unix_millis(0),
                         )
                         .await
@@ -103,7 +104,7 @@ async fn compact_local_headers_authorize_cancels_and_preserve_identity() {
                     let stored_digest = repeat.digest().clone();
                     assert!(
                         inbox
-                            .enqueue_local(repeat, SyncTime::from_unix_millis(0))
+                            .enqueue_local(repeat, &TestConsumer, SyncTime::from_unix_millis(0))
                             .await
                             .map_err(storage_error)?
                             .is_none()
@@ -113,7 +114,7 @@ async fn compact_local_headers_authorize_cancels_and_preserve_identity() {
                     };
                     assert!(matches!(
                         inbox
-                            .enqueue_local(changed, SyncTime::from_unix_millis(0))
+                            .enqueue_local(changed, &TestConsumer, SyncTime::from_unix_millis(0))
                             .await,
                         Err(DeliveryError::Refused {
                             reason: DeliveryRefusal::ItemConflict { existing }
@@ -156,7 +157,7 @@ async fn local_enqueue_conflict_returns_the_stored_digest() {
                 };
                 assert!(
                     Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                        .enqueue_local(original, SyncTime::from_unix_millis(0))
+                        .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                         .await
                         .map_err(storage_error)?
                         .is_some()
@@ -176,7 +177,7 @@ async fn local_enqueue_conflict_returns_the_stored_digest() {
                 assert_ne!(changed.digest(), &reference.digest);
                 let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
                 let conflict = inbox
-                    .enqueue_local(changed, SyncTime::from_unix_millis(0))
+                    .enqueue_local(changed, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await;
                 assert!(
                     matches!(&conflict, Err(DeliveryError::Refused {
@@ -195,7 +196,7 @@ async fn local_enqueue_conflict_returns_the_stored_digest() {
                 };
                 assert!(
                     inbox
-                        .enqueue_local(repeat, SyncTime::from_unix_millis(0))
+                        .enqueue_local(repeat, &TestConsumer, SyncTime::from_unix_millis(0))
                         .await
                         .map_err(storage_error)?
                         .is_none()
@@ -227,7 +228,7 @@ async fn local_enqueue_capacity_returns_mailbox_full_without_losing_custody() {
                 };
                 assert!(
                     Inbox::<_, TestTypes>::new(scope, peer(2), configured)
-                        .enqueue_local(original, SyncTime::from_unix_millis(0))
+                        .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                         .await
                         .map_err(storage_error)?
                         .is_some()
@@ -246,7 +247,7 @@ async fn local_enqueue_capacity_returns_mailbox_full_without_losing_custody() {
                 };
                 let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), configured);
                 let full = inbox
-                    .enqueue_local(blocked, SyncTime::from_unix_millis(0))
+                    .enqueue_local(blocked, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await;
                 assert!(
                     matches!(
@@ -268,7 +269,7 @@ async fn local_enqueue_capacity_returns_mailbox_full_without_losing_custody() {
                 };
                 assert!(
                     inbox
-                        .enqueue_local(repeat, SyncTime::from_unix_millis(0))
+                        .enqueue_local(repeat, &TestConsumer, SyncTime::from_unix_millis(0))
                         .await
                         .map_err(storage_error)?
                         .is_none(),
@@ -279,7 +280,7 @@ async fn local_enqueue_capacity_returns_mailbox_full_without_losing_custody() {
                 };
                 assert!(matches!(
                     Inbox::<_, TestTypes>::new(scope, peer(3), configured)
-                        .enqueue_local(mismatched, SyncTime::from_unix_millis(0))
+                        .enqueue_local(mismatched, &TestConsumer, SyncTime::from_unix_millis(0))
                         .await,
                     Err(DeliveryError::InvalidBatch)
                 ));

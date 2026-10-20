@@ -90,9 +90,16 @@ where
             {
                 Ok(Some(RecipientOutcome::Held))
             }
-            InboxProgress::Pending { .. }
-            | InboxProgress::Attempting { .. }
-            | InboxProgress::Control { .. } => Ok(None),
+            InboxProgress::Control { outcome } => Ok(match outcome {
+                ControlOutcome::Pending => None,
+                ControlOutcome::Prevented => Some(RecipientOutcome::Prevented { cancel: item }),
+                ControlOutcome::TooLate { at } => {
+                    Some(RecipientOutcome::TooLate { cancel: item, at })
+                }
+                ControlOutcome::Refused { reason } => Some(RecipientOutcome::Refused { reason }),
+                ControlOutcome::Expired => Some(RecipientOutcome::Expired),
+            }),
+            InboxProgress::Pending { .. } | InboxProgress::Attempting { .. } => Ok(None),
         }
     }
     pub async fn check_delivery(

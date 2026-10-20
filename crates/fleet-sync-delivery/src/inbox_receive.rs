@@ -18,26 +18,6 @@ where
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    pub async fn enqueue_local_and_admit<T: durable_steps::Task<Input = DeliveryAttempt>>(
-        &mut self,
-        item: DeliveryItem<D>,
-        now: SyncTime,
-    ) -> Result<Option<durable_steps::Admitted>, DeliveryError>
-    where
-        S: durable_steps::JournalScope,
-    {
-        let Some(input) = self.enqueue_local(item, now).await? else {
-            return Ok(None);
-        };
-        self.scope
-            .admit::<T>(
-                &crate::delivery_request_key(&(input.item, input.attempt))?,
-                &input,
-            )
-            .await
-            .map(Some)
-            .map_err(|error| DeliveryError::Storage(error.to_string()))
-    }
     pub async fn store_batch<C>(
         &mut self,
         input: ReceiveInput,
@@ -214,74 +194,5 @@ where
         }
         effects.attempts = admitted;
         Ok(effects)
-    }
-
-    pub async fn enqueue_local(
-        &mut self,
-        item: DeliveryItem<D>,
-        now: SyncTime,
-    ) -> Result<Option<DeliveryAttempt>, DeliveryError> {
-        self.limits.validate::<D>()?;
-        crate::delivery_sizes::check_item(&item)?;
-        if item.recipient().peer != self.owner {
-            return Err(DeliveryError::InvalidBatch);
-        }
-        if let Some(existing) = self.load(item.id()).await? {
-            if existing.header.digest != item.digest().as_str() {
-                let existing = ItemDigest::try_from(existing.header.digest).map_err(|_| {
-                    DeliveryError::Corrupt {
-                        field: "inbox header digest",
-                    }
-                })?;
-                return Err(DeliveryError::Refused {
-                    reason: DeliveryRefusal::ItemConflict { existing },
-                });
-            }
-            return Ok(None);
-        }
-        let input = DeliveryAttempt {
-            item: item.id(),
-            attempt: 0,
-            not_before: now,
-        };
-        let record = InboxRecord::new(
-            DeliveryEnvelope::Item(item),
-            InboxRoute::Local,
-            InboxProgress::Pending {
-                attempt: 0,
-                not_before: now,
-            },
-            self.limits.settlement_allowance,
-        )?;
-        let accounting = queries::read_inbox_accounting(self.scope)
-            .await
-            .map_err(sql_error)?;
-        let used = accounting
-            .bytes
-            .and_then(|value| value.parse::<u64>().ok())
-            .ok_or(DeliveryError::Corrupt {
-                field: "local inbox accounting",
-            })?;
-        if used
-            .checked_add(
-                u64::try_from(
-                    record
-                        .payload
-                        .as_ref()
-                        .map(encode)
-                        .transpose()?
-                        .map_or(0, |raw| raw.len()),
-                )
-                .map_err(|_| DeliveryError::SequenceExhausted)?,
-            )
-            .and_then(|bytes| bytes.checked_add(u64::from(record.header.settlement_bytes)))
-            .is_none_or(|bytes| bytes > self.limits.inbox_bytes)
-        {
-            return Err(DeliveryError::Refused {
-                reason: DeliveryRefusal::MailboxFull,
-            });
-        }
-        self.save(&record).await?;
-        Ok(Some(input))
     }
 }

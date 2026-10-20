@@ -228,7 +228,7 @@ pub(crate) async fn enqueue_projection_attempt(
                 .unwrap();
                 let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
                 let attempt = inbox
-                    .enqueue_local(original, SyncTime::from_unix_millis(0))
+                    .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)?
                     .unwrap();

@@ -348,7 +348,7 @@ async fn receive_time_refusal_projects_once_when_local_custody_becomes_relayed()
                 };
                 let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
                 let attempt = inbox
-                    .enqueue_local(original, SyncTime::from_unix_millis(0))
+                    .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)?
                     .unwrap();

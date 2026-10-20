@@ -262,7 +262,7 @@ async fn a_full_inbox_still_stores_a_reserved_cancel_from_controls() {
         let configured=configured_limits(100_000,20,serde_json::to_vec(&original).unwrap().len() as u64+u64::from(limits().settlement_allowance()));
         let DeliveryEnvelope::Item(original)=original else {return Err(durable_steps::StoreError::backend("fixture is not an item"));};
         let mut inbox=Inbox::<_,TestTypes>::new(scope,peer(2),configured);
-        inbox.enqueue_local(original,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
+        inbox.enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         let items=inbox.begin_receive(DeliveryStream::Items).await.map_err(storage_error)?.unwrap();
         let controls=inbox.begin_receive(DeliveryStream::Controls).await.map_err(storage_error)?.unwrap();
         assert_eq!(inbox.receive_budget(items,10,100_000).await.map_err(storage_error)?.0,0);
@@ -285,7 +285,7 @@ async fn failure_outcome_survives_corrupted_recipient_custody() {
                     return Err(durable_steps::StoreError::backend("fixture is not an item"));
                 };
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local(original, SyncTime::from_unix_millis(0))
+                    .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)?
                     .ok_or_else(|| durable_steps::StoreError::backend("fixture did not admit"))
