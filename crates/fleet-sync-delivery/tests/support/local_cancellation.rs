@@ -36,7 +36,7 @@ pub async fn enqueue_original(
     fixture: &Fixture,
     id: u64,
     limits: DeliveryLimits,
-) -> Option<DeliveryAttempt> {
+) -> LocalItemAdmission {
     fixture
         .store
         .transaction(move |scope| {

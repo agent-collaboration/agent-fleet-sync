@@ -33,7 +33,7 @@ async fn local_cancel_before_original_survives_reopen_and_prevents_admission() {
                     .await
                     .map_err(storage_error)?;
                 assert!(
-                    admitted.is_none(),
+                    matches!(admitted, LocalItemAdmission::SettledOnAdmission),
                     "a cancelled original must not enter the journal"
                 );
                 Ok(())
@@ -48,7 +48,10 @@ async fn local_cancel_before_original_survives_reopen_and_prevents_admission() {
     assert!(
         matches!(outcome(&fixture,2).await,Some(RecipientOutcome::Prevented{cancel}) if cancel==item_id(2))
     );
-    assert!(enqueue_original(&fixture, 1, limits()).await.is_none());
+    assert!(matches!(
+        enqueue_original(&fixture, 1, limits()).await,
+        LocalItemAdmission::Replayed
+    ));
     let state = snapshot(&fixture).await;
     assert_eq!(state.custody.len(), 2);
     assert_eq!(state.links.len(), 1);
@@ -58,9 +61,8 @@ async fn local_cancel_before_original_survives_reopen_and_prevents_admission() {
 #[tokio::test]
 async fn local_cancel_after_original_finishes_a_stale_attempt_without_dispatch() {
     let network = NetworkFixture::new().await;
-    let input = enqueue_original(&network.recipient, 1, limits())
-        .await
-        .unwrap();
+    let input =
+        require_local_attempt(enqueue_original(&network.recipient, 1, limits()).await).unwrap();
     enqueue_cancel(&network.recipient, 2, 1).await;
     network
         .recipient
@@ -86,7 +88,7 @@ async fn local_cancel_after_original_finishes_a_stale_attempt_without_dispatch()
 async fn local_cancel_replay_preserves_canonical_identity_and_projects_once() {
     let fixture = Fixture::new().await;
     prepare_projection_table(&fixture).await;
-    enqueue_original(&fixture, 1, limits()).await.unwrap();
+    require_local_attempt(enqueue_original(&fixture, 1, limits()).await).unwrap();
     let first = fixture
         .store
         .transaction(|scope| {
@@ -149,7 +151,7 @@ async fn local_cancel_replay_preserves_canonical_identity_and_projects_once() {
 #[tokio::test]
 async fn local_cancel_authority_refusal_is_committed_as_an_outcome() {
     let fixture = Fixture::new().await;
-    enqueue_original(&fixture, 1, limits()).await.unwrap();
+    require_local_attempt(enqueue_original(&fixture, 1, limits()).await).unwrap();
     let admission = fixture
         .store
         .transaction(|scope| {
@@ -188,7 +190,7 @@ async fn local_cancel_authority_refusal_is_committed_as_an_outcome() {
 async fn local_cancel_projection_error_rolls_back_custody_link_and_original() {
     let fixture = Fixture::new().await;
     prepare_projection_table(&fixture).await;
-    enqueue_original(&fixture, 1, limits()).await.unwrap();
+    require_local_attempt(enqueue_original(&fixture, 1, limits()).await).unwrap();
     let before = snapshot(&fixture).await;
     let consumer = Arc::new(ProjectionConsumer::default());
     consumer.refuse_outcome.store(true, Ordering::SeqCst);
@@ -376,7 +378,7 @@ async fn local_cancel_prevents_a_previously_held_original() {
 #[tokio::test]
 async fn expired_local_cancel_records_expired_and_preserves_the_original() {
     let fixture = Fixture::new().await;
-    enqueue_original(&fixture, 1, limits()).await.unwrap();
+    require_local_attempt(enqueue_original(&fixture, 1, limits()).await).unwrap();
     fixture
         .store
         .transaction(|scope| {
@@ -437,7 +439,10 @@ async fn local_original_admission_rolls_back_when_pending_cancel_projection_fail
     assert_eq!(snapshot(&fixture).await, before);
     assert!(read_committed_state(&fixture).await.projections.is_empty());
     assert_no_pending_operations(&fixture).await;
-    assert!(enqueue_original(&fixture, 1, limits()).await.is_none());
+    assert!(matches!(
+        enqueue_original(&fixture, 1, limits()).await,
+        LocalItemAdmission::SettledOnAdmission
+    ));
     assert!(matches!(
         outcome(&fixture, 1).await,
         Some(RecipientOutcome::Prevented { .. })
@@ -469,7 +474,7 @@ async fn cancel_before_original_produces_zero_real_local_dispatches() {
     // admission-time resolution must visibly dispatch this original once.
     drain(&network.engine(&network.recipient)).await;
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 0);
-    assert!(offered.is_none());
+    assert!(matches!(offered, LocalItemAdmission::SettledOnAdmission));
     assert!(matches!(
         outcome(&network.recipient, 1).await,
         Some(RecipientOutcome::Prevented { .. })

@@ -82,13 +82,13 @@ async fn later_local_original_does_not_double_charge_pending_cancel_bytes() {
                     .await
                     .map_err(storage_error)?;
                 // Without the pending-cancel debit this exact cap rejects the original.
-                assert!(
+                assert!(matches!(
                     inbox
                         .enqueue_local(local_item(1), &TestConsumer, SyncTime::from_unix_millis(0))
                         .await
-                        .map_err(storage_error)?
-                        .is_none()
-                );
+                        .map_err(storage_error)?,
+                    LocalItemAdmission::SettledOnAdmission
+                ));
                 Ok(())
             })
         })
@@ -108,7 +108,7 @@ async fn local_cancel_can_use_a_live_originals_reserved_capacity() {
         20,
         encoded_original_bytes(1) + u64::from(limits().settlement_allowance()),
     );
-    enqueue_original(&fixture, 1, cap).await.unwrap();
+    require_local_attempt(enqueue_original(&fixture, 1, cap).await).unwrap();
     let full = snapshot(&fixture).await;
     assert_eq!(full.live_bytes, i64::try_from(cap.inbox_bytes()).unwrap());
     fixture
@@ -143,7 +143,7 @@ async fn local_cancel_can_use_a_live_originals_reserved_capacity() {
 #[tokio::test]
 async fn compact_local_originals_cannot_spend_an_uncharged_reserve() {
     let fixture = Fixture::new().await;
-    let input = enqueue_original(&fixture, 1, limits()).await.unwrap();
+    let input = require_local_attempt(enqueue_original(&fixture, 1, limits()).await).unwrap();
     fixture
         .store
         .transaction(move |scope| {
@@ -230,7 +230,7 @@ async fn local_cancel_rejects_wrong_recipient_and_fails_closed_on_corrupt_accoun
         })
         .await
         .unwrap();
-    enqueue_original(&fixture, 1, limits()).await.unwrap();
+    require_local_attempt(enqueue_original(&fixture, 1, limits()).await).unwrap();
     fixture
         .store
         .transaction(|scope| {

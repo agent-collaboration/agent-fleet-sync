@@ -1,6 +1,7 @@
 use crate::{
     DeliveryAttempt, DeliveryConsumer, DeliveryError, InboxEffects, LocalCancelAdmission,
-    checked_queries as queries, custody_record::*, inbox_record::*, inbox_storage::Inbox,
+    LocalItemAdmission, checked_queries as queries, custody_record::*, inbox_record::*,
+    inbox_storage::Inbox,
 };
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::*;
@@ -20,20 +21,22 @@ where
 {
     /// Admit an original only after resolving any pending Local control.
     /// Relayed controls keep their existing receive and completion paths.
+    /// An Attempt payload has already been admitted as T before this returns.
     pub async fn enqueue_local_and_admit<T, C>(
         &mut self,
         item: DeliveryItem<D>,
         consumer: &C,
         now: SyncTime,
-    ) -> Result<Option<durable_steps::Admitted>, DeliveryError>
+    ) -> Result<LocalItemAdmission, DeliveryError>
     where
         S: durable_steps::JournalScope,
         T: durable_steps::Task<Input = DeliveryAttempt>,
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
-        let Some(input) = self.enqueue_local(item, consumer, now).await? else {
-            return Ok(None);
+        let admission = self.enqueue_local(item, consumer, now).await?;
+        let LocalItemAdmission::Attempt(input) = admission else {
+            return Ok(admission);
         };
         self.scope
             .admit::<T>(
@@ -41,7 +44,7 @@ where
                 &input,
             )
             .await
-            .map(Some)
+            .map(|_| LocalItemAdmission::Attempt(input))
             .map_err(|error| DeliveryError::Storage(error.to_string()))
     }
     /// Take local item custody and resolve pending Local controls before delivery.
@@ -51,7 +54,7 @@ where
         item: DeliveryItem<D>,
         consumer: &C,
         now: SyncTime,
-    ) -> Result<Option<DeliveryAttempt>, DeliveryError>
+    ) -> Result<LocalItemAdmission, DeliveryError>
     where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
@@ -72,7 +75,7 @@ where
                     reason: DeliveryRefusal::ItemConflict { existing },
                 });
             }
-            return Ok(None);
+            return Ok(LocalItemAdmission::Replayed);
         }
         let input = DeliveryAttempt {
             item: item.id(),
@@ -147,16 +150,19 @@ where
             self.apply_pending_cancel(input.item, consumer, now, false)
                 .await?;
         }
-        Ok(self
-            .load(input.item)
-            .await?
-            .filter(|record| {
-                matches!(
-                    record.header.progress,
-                    InboxProgress::Pending { attempt: 0, .. }
-                )
-            })
-            .map(|_| input))
+        let stored = self.load(input.item).await?.ok_or(DeliveryError::Corrupt {
+            field: "local item admission missing",
+        })?;
+        match stored.header.progress {
+            InboxProgress::Pending { attempt: 0, .. } => Ok(LocalItemAdmission::Attempt(input)),
+            InboxProgress::Final { .. } => Ok(LocalItemAdmission::SettledOnAdmission),
+            InboxProgress::Pending { .. }
+            | InboxProgress::Attempting { .. }
+            | InboxProgress::Held { .. }
+            | InboxProgress::Control { .. } => Err(DeliveryError::Corrupt {
+                field: "local item admission state",
+            }),
+        }
     }
 
     /// Admit local cancellation custody and return the first cancel for its target.

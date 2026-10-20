@@ -239,6 +239,20 @@ pub struct DeliveryAttempt {
     pub attempt: u64,
     pub not_before: SyncTime,
 }
+/// Distinguishes fresh custody from replay, including fresh terminal admission.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "camelCase",
+    deny_unknown_fields
+)]
+pub enum LocalItemAdmission {
+    Attempt(DeliveryAttempt),
+    Replayed,
+    SettledOnAdmission,
+}
+
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReportRef {

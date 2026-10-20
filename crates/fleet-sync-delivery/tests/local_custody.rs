@@ -102,13 +102,13 @@ async fn compact_local_headers_authorize_cancels_and_preserve_identity() {
                         return Err(durable_steps::StoreError::backend("fixture item"));
                     };
                     let stored_digest = repeat.digest().clone();
-                    assert!(
+                    assert!(matches!(
                         inbox
                             .enqueue_local(repeat, &TestConsumer, SyncTime::from_unix_millis(0))
                             .await
-                            .map_err(storage_error)?
-                            .is_none()
-                    );
+                            .map_err(storage_error)?,
+                        LocalItemAdmission::Replayed
+                    ));
                     let DeliveryEnvelope::Item(changed) = item(1, "other local body") else {
                         return Err(durable_steps::StoreError::backend("fixture item"));
                     };
@@ -155,13 +155,13 @@ async fn local_enqueue_conflict_returns_the_stored_digest() {
                     item: original.id(),
                     digest: original.digest().clone(),
                 };
-                assert!(
+                assert!(matches!(
                     Inbox::<_, TestTypes>::new(scope, peer(2), limits())
                         .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                         .await
-                        .map_err(storage_error)?
-                        .is_some()
-                );
+                        .map_err(storage_error)?,
+                    LocalItemAdmission::Attempt(_)
+                ));
                 Ok(reference)
             })
         })
@@ -194,13 +194,13 @@ async fn local_enqueue_conflict_returns_the_stored_digest() {
                 let DeliveryEnvelope::Item(repeat) = item(1, "original local body") else {
                     return Err(durable_steps::StoreError::backend("fixture item"));
                 };
-                assert!(
+                assert!(matches!(
                     inbox
                         .enqueue_local(repeat, &TestConsumer, SyncTime::from_unix_millis(0))
                         .await
-                        .map_err(storage_error)?
-                        .is_none()
-                );
+                        .map_err(storage_error)?,
+                    LocalItemAdmission::Replayed
+                ));
                 Ok(())
             })
         })
@@ -226,13 +226,13 @@ async fn local_enqueue_capacity_returns_mailbox_full_without_losing_custody() {
                     item: original.id(),
                     digest: original.digest().clone(),
                 };
-                assert!(
+                assert!(matches!(
                     Inbox::<_, TestTypes>::new(scope, peer(2), configured)
                         .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                         .await
-                        .map_err(storage_error)?
-                        .is_some()
-                );
+                        .map_err(storage_error)?,
+                    LocalItemAdmission::Attempt(_)
+                ));
                 Ok(reference)
             })
         })
@@ -268,11 +268,13 @@ async fn local_enqueue_capacity_returns_mailbox_full_without_losing_custody() {
                     return Err(durable_steps::StoreError::backend("fixture item"));
                 };
                 assert!(
-                    inbox
-                        .enqueue_local(repeat, &TestConsumer, SyncTime::from_unix_millis(0))
-                        .await
-                        .map_err(storage_error)?
-                        .is_none(),
+                    matches!(
+                        inbox
+                            .enqueue_local(repeat, &TestConsumer, SyncTime::from_unix_millis(0))
+                            .await
+                            .map_err(storage_error)?,
+                        LocalItemAdmission::Replayed
+                    ),
                     "same-digest replay still succeeds when the inbox is full"
                 );
                 let DeliveryEnvelope::Item(mismatched) = item(3, "local body") else {

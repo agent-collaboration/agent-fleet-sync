@@ -230,8 +230,8 @@ pub(crate) async fn enqueue_projection_attempt(
                 let attempt = inbox
                     .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
-                    .map_err(storage_error)?
-                    .unwrap();
+                    .map_err(storage_error)
+                    .and_then(require_local_attempt)?;
                 scope
                     .admit::<ProjectionTask>(
                         &delivery_request_key(&(attempt.item, attempt.attempt)).unwrap(),

@@ -61,7 +61,7 @@ async fn local_admission_leaves_relayed_cancel_pending_until_normal_completion()
                     .await
                     .map_err(storage_error)?;
                 assert!(
-                    admitted.is_some(),
+                    matches!(admitted, LocalItemAdmission::Attempt(_)),
                     "a Relayed control must not block local admission"
                 );
                 Ok(())

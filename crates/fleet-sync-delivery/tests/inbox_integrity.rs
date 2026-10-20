@@ -287,8 +287,8 @@ async fn failure_outcome_survives_corrupted_recipient_custody() {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
                     .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
-                    .map_err(storage_error)?
-                    .ok_or_else(|| durable_steps::StoreError::backend("fixture did not admit"))
+                    .map_err(storage_error)
+                    .and_then(require_local_attempt)
             })
         })
         .await

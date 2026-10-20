@@ -240,3 +240,17 @@ pub fn call(step: &str) -> CallId {
 pub fn storage_error(error: DeliveryError) -> durable_steps::StoreError {
     durable_steps::StoreError::backend(error)
 }
+
+pub fn require_local_attempt(
+    admission: LocalItemAdmission,
+) -> Result<DeliveryAttempt, durable_steps::StoreError> {
+    match admission {
+        LocalItemAdmission::Attempt(input) => Ok(input),
+        LocalItemAdmission::Replayed => Err(durable_steps::StoreError::backend(
+            "fixture unexpectedly replayed local custody",
+        )),
+        LocalItemAdmission::SettledOnAdmission => Err(durable_steps::StoreError::backend(
+            "fixture unexpectedly settled local custody",
+        )),
+    }
+}

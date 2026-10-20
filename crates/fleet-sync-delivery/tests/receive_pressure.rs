@@ -78,10 +78,10 @@ async fn capacity_taken_after_fetch_budget_waits_with_saved_batch_and_recovers_a
                     .enqueue_local(local, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)
+                    .and_then(require_local_attempt)
             })
         })
         .await
-        .unwrap()
         .unwrap();
     release.notify_one();
     let report = tokio::time::timeout(Duration::from_secs(5), drive)

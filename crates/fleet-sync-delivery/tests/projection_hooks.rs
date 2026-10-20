@@ -350,8 +350,8 @@ async fn receive_time_refusal_projects_once_when_local_custody_becomes_relayed()
                 let attempt = inbox
                     .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
-                    .map_err(storage_error)?
-                    .unwrap();
+                    .map_err(storage_error)
+                    .and_then(require_local_attempt)?;
                 inbox
                     .record_failure(
                         attempt,

@@ -50,8 +50,15 @@ that deletion.
 Pass the delivery consumer to `Inbox::enqueue_local` or
 `enqueue_local_and_admit`. A pending local cancel is resolved in the same custody
 transaction before a new original can be offered for delivery. Relayed controls
-are left to their existing receive and completion paths. Same-digest item
-replays return `None`.
+are left to their existing receive and completion paths.
+
+Both methods return `LocalItemAdmission`: `Attempt(DeliveryAttempt)` is a fresh
+pending item, `Replayed` is existing same-digest custody with no new hooks or rows,
+and `SettledOnAdmission` is a fresh item made terminal by a pending local cancel.
+Its outcome hook has already run in the same transaction. Consumers can build
+fresh-admission projections for both fresh variants without repeating them on
+replay. The wrapper has already admitted an `Attempt` to the journal before
+returning its delivery payload.
 
 `Inbox::enqueue_local_cancel(cancel, consumer, now)` returns
 `LocalCancelAdmission { reference, effects }`. Use the returned reference: a
