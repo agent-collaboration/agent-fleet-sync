@@ -108,6 +108,7 @@ pub enum SeedPageAnswer {
     NotSeedable,
     Retired,
     StaleSeed,
+    UnitTooLarge,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

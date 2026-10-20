@@ -4,8 +4,10 @@ use crate::{
     sender_test_fixture::{SenderFixture, TestResult},
     writer_scope::WriterScope,
 };
-use fleet_sync_protocol::{CopyOrigin, CreateCopy, PageDigest, SeedAttemptId, SeedPage, SqlValue};
-use fleet_sync_receiver::{ReceiverError, SeedAuthority};
+use fleet_sync_protocol::{
+    CopyOrigin, CreateCopy, PageDigest, SeedAttemptId, SeedPage, SeedPageAnswer, SqlValue,
+};
+use fleet_sync_receiver::SeedAuthority;
 use sqlx_core::{
     connection::{ConnectOptions, Connection},
     query::query,
@@ -85,20 +87,8 @@ async fn a_misestimated_writer_page_cannot_be_staged_by_the_receiver() -> TestRe
         &page,
         &SeedAuthority::Admin,
     )
-    .await;
-    let error = match result {
-        Err(error @ ReceiverError::InvalidInput { .. }) => error,
-        other => return Err(format!("misestimated real page was not refused: {other:?}").into()),
-    };
-    assert!(fleet_sync_receiver::unavailable_receiver(&error).is_none());
-    let failure = fleet_sync_receiver::classify_copy_store_error(
-        fleet_sync_receiver::receiver_rollback(error),
-    )
-    .call_failure();
-    assert!(
-        matches!(failure, durable_steps::CallFailure::AnswerLost),
-        "not a transient retry: {failure:?}"
-    );
+    .await?;
+    assert_eq!(result, SeedPageAnswer::UnitTooLarge);
     let row = query::<Turso>("SELECT COUNT(*) AS count FROM _fleet_sync_seed_pages")
         .fetch_one(&mut *transaction)
         .await?;

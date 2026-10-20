@@ -42,19 +42,7 @@ async fn actual_encoded_seed_units_accept_the_cap_and_refuse_overflow_before_sta
         if offset == 0 {
             assert_eq!(result?, SeedPageAnswer::Staged);
         } else {
-            let error = match result {
-                Err(error @ ReceiverError::InvalidInput { .. }) => error,
-                other => return Err(format!("oversize seed was not refused: {other:?}").into()),
-            };
-            assert!(
-                unavailable_receiver(&error).is_none(),
-                "oversize is not transient"
-            );
-            let classified = classify_copy_store_error(receiver_rollback(error));
-            assert!(!matches!(
-                classified,
-                CopyTransactionFailure::Unavailable(_)
-            ));
+            assert_eq!(result?, SeedPageAnswer::UnitTooLarge);
         }
         let row = query::<Turso>("SELECT COUNT(*) AS count FROM _fleet_sync_seed_pages")
             .fetch_one(&mut *transaction)

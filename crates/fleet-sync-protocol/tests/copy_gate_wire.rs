@@ -32,6 +32,26 @@ fn copy_call_refusals_are_typed_answers() {
 }
 
 #[test]
+fn oversized_seed_answer_has_a_closed_payload_free_wire_shape() {
+    let encoded = r#"{"kind":"unitTooLarge"}"#;
+    assert_eq!(
+        serde_json::to_string(&SeedPageAnswer::UnitTooLarge).unwrap(),
+        encoded
+    );
+    assert_eq!(
+        serde_json::from_str::<SeedPageAnswer>(encoded).unwrap(),
+        SeedPageAnswer::UnitTooLarge
+    );
+    let answer = ReplicationAnswer::SeedPage(SeedPageAnswer::UnitTooLarge);
+    assert_eq!(
+        serde_json::from_value::<ReplicationAnswer>(serde_json::to_value(&answer).unwrap())
+            .unwrap(),
+        answer
+    );
+    assert!(serde_json::from_str::<SeedPageAnswer>(r#"{"kind":"unknownLimit"}"#).is_err());
+}
+
+#[test]
 fn gate_requests_and_settlement_keep_the_consumers_typed_payloads() {
     let database = DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000001)).unwrap();
     let writer = PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002)).unwrap();

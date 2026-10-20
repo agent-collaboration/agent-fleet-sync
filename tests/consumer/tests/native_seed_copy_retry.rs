@@ -165,3 +165,99 @@ async fn observe_seed_retries(
     assert_eq!(copy.hooks.len(), 1);
     Ok(())
 }
+
+#[tokio::test]
+async fn oversized_seed_page_fails_the_deduplicated_seed_operation_without_a_retry() -> TestResult {
+    use durable_steps::{AtomicStore, OperationFailure, OperationState, storage::JournalStorage};
+    use fleet_sync_tokio_runner::NativeWriterRuntime;
+    use sqlx_core::{
+        connection::{ConnectOptions, Connection},
+        migrate::Migrator,
+    };
+    use sqlx_turso::TursoConnectOptions;
+    use std::time::Duration;
+
+    assert!(
+        SeedFile::DEDUPLICATES,
+        "this regression must exercise the actual deduplicated call"
+    );
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("writer.db");
+    let mut connection = TursoConnectOptions::new()
+        .filename(&path)
+        .create_if_missing(true)
+        .connect()
+        .await?;
+    Migrator::with_migrations(SampleSchema::new()?.migrations().to_vec())
+        .run_direct(None, &mut connection, false)
+        .await?;
+    connection.close().await?;
+    let writer = Arc::new(
+        ReplicatedDatabase::adopt(
+            &path,
+            SampleSchema::new()?,
+            writer_peer()?,
+            lease_policy(),
+            WriterOptions {
+                allow_provisional_writes: true,
+            },
+        )
+        .await?,
+    );
+    write_sample(&writer, "one real source row").await?;
+    let service =
+        CopyService::start(&root.path().join("service"), &root.path().join("client.db")).await?;
+    service.session.inject_oversized_seed_page();
+    let runtime = NativeWriterRuntime::new(
+        writer.clone(),
+        local_receiver()?,
+        service.session.requests.clone(),
+    )
+    .await?;
+    let observed: TestResult = async {
+        let registration = runtime.start_registration().await?;
+        let engine = runtime.engine();
+        let mut failures = Vec::new();
+        for _ in 0..8 {
+            let report = tokio::time::timeout(Duration::from_secs(15), engine.drive_due()).await??;
+            let replies = service.session.seed_page_answers().await?;
+            assert!(!report.retried.contains(&registration), "oversize seed scheduled a retry: {report:?}; oversized pages={}; actual receiver replies={replies:?}", service.session.oversized_seed_pages());
+            failures.extend(report.failed.into_iter().filter(|(operation, _)| *operation == registration));
+            if !failures.is_empty() { break; }
+        }
+        let [(operation, OperationFailure::Refused { code, detail })] = failures.as_slice() else {
+            return Err(format!("expected one terminal seed refusal: {failures:?}").into());
+        };
+        assert_eq!(code, "seed_page_refused");
+        assert!(detail.contains("UnitTooLarge"));
+        let replies = service.session.seed_page_answers().await?;
+        let Some(ReplicationAnswer::SeedPage(answer)) = replies.last() else {
+            return Err(format!("missing actual seed refusal: {replies:?}").into());
+        };
+        assert_eq!(serde_json::to_value(answer)?, serde_json::json!({"kind":"unitTooLarge"}));
+        let status = engine.status(operation).await?;
+        assert!(matches!(status.state, OperationState::Failed {
+            reason: OperationFailure::Refused { code: stored_code, detail: stored_detail },
+        } if stored_code == *code && stored_detail == *detail));
+        let operation = *operation;
+        let due = runtime.store().transaction(move |scope| Box::pin(async move {
+            scope.due(durable_steps::SyncTime::from_unix_millis(i64::MAX)).await
+        })).await?;
+        assert!(!due.contains(&operation), "failed seed remains scheduled");
+        assert_eq!(service.session.oversized_seed_pages(), 1);
+        let sent_before = service.session.outgoing_replication().await.len();
+        let repeated = tokio::time::timeout(Duration::from_secs(15), engine.drive_due()).await??;
+        assert!(!repeated.retried.contains(&operation));
+        assert!(repeated.failed.is_empty(), "terminal failure was repeated");
+        assert_eq!(service.session.oversized_seed_pages(), 1, "failed seed was dispatched again");
+        let sent = service.session.outgoing_replication().await;
+        assert_eq!(sent.len(), sent_before, "terminal operation sent another replication request");
+        assert!(sent.iter().any(|value| value["kind"] == "seedPage"));
+        println!("actual deduplicated SeedFile refused once with UnitTooLarge; operation={operation:?}; no due retry or later dispatch");
+        Ok(())
+    }.await;
+    runtime.transport().close_seed().await;
+    service.stop().await?;
+    writer.close().await;
+    observed
+}

@@ -3,7 +3,7 @@ use crate::{
     copy_contract::CopyRecord,
     copy_storage::CopyStorage,
     seed_publication::publish_seed,
-    seed_storage::{SeedRecord, SeedStorage},
+    seed_storage::{SeedPageWrite, SeedRecord, SeedStorage},
 };
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::SeedAttemptId;
@@ -121,8 +121,10 @@ where
                 SeedPageAnswer::SeedConflict
             });
         }
-        SeedStorage(scope).save_page(page).await?;
-        Ok(SeedPageAnswer::Staged)
+        Ok(match SeedStorage(scope).save_page(page).await? {
+            SeedPageWrite::Staged => SeedPageAnswer::Staged,
+            SeedPageWrite::UnitTooLarge => SeedPageAnswer::UnitTooLarge,
+        })
     }
 }
 

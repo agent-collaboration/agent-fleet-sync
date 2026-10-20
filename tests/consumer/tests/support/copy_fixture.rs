@@ -54,6 +54,8 @@ struct Wire {
     welcomes: AtomicUsize,
     ready: tokio::sync::Notify,
     unknown_reason: AtomicBool,
+    oversized_seed: AtomicBool,
+    oversized_pages: AtomicUsize,
 }
 struct RecordingTransport(Arc<Wire>);
 struct RecordingConnection {
@@ -79,6 +81,32 @@ impl SessionTransport for RecordingTransport {
 }
 impl TransportConnection for RecordingConnection {
     async fn send(&mut self, frame: Bytes) -> Result<(), ConnectionClosed> {
+        let mut frame = frame;
+        if self.wire.oversized_seed.load(Ordering::SeqCst)
+            && let Ok(mut typed) = serde_json::from_slice::<ClientFrame<SampleProtocol>>(&frame)
+        {
+            let mut changed = false;
+            if let ClientFrame::Request {
+                body: OperationRequest::Replication(ReplicationRequest::SeedPage(page)),
+                ..
+            } = &mut typed
+                && let Some(body) = page
+                    .contents
+                    .rows
+                    .first_mut()
+                    .and_then(|row| row.last_mut())
+            {
+                *body = SqlValue::Text("\\".repeat(800 * 1024));
+                if let Ok(digest) = PageDigest::of(&page.contents) {
+                    page.digest = digest;
+                    changed = true;
+                }
+            }
+            if changed && let Ok(encoded) = serde_json::to_vec(&typed) {
+                frame = encoded.into();
+                self.wire.oversized_pages.fetch_add(1, Ordering::SeqCst);
+            }
+        }
         if let Ok(value) = serde_json::from_slice(&frame) {
             self.wire.frames.lock().await.push((true, value));
         }
@@ -119,6 +147,12 @@ pub struct CopySession {
     store: ConsumerStore,
 }
 impl CopySession {
+    pub fn inject_oversized_seed_page(&self) {
+        self.wire.oversized_seed.store(true, Ordering::SeqCst);
+    }
+    pub fn oversized_seed_pages(&self) -> usize {
+        self.wire.oversized_pages.load(Ordering::SeqCst)
+    }
     pub fn inject_unknown_reason(&self) {
         self.wire.unknown_reason.store(true, Ordering::SeqCst);
     }
@@ -208,6 +242,33 @@ impl CopySession {
             .filter_map(|(outgoing, frame)| {
                 let body = &frame["value"]["body"];
                 (*outgoing && body["kind"] == "replication").then(|| body["value"].clone())
+            })
+            .collect()
+    }
+    pub async fn seed_page_answers(&self) -> TestResult<Vec<ReplicationAnswer>> {
+        let frames = self.wire.frames.lock().await;
+        frames
+            .iter()
+            .filter_map(|(outgoing, offered)| {
+                let body = &offered["value"]["body"];
+                if !*outgoing
+                    || body["kind"] != "replication"
+                    || body["value"]["kind"] != "seedPage"
+                {
+                    return None;
+                }
+                frames
+                    .iter()
+                    .find(|(outgoing, reply)| {
+                        !*outgoing
+                            && reply["kind"] == "answer"
+                            && reply["value"]["frame"] == offered["value"]["frame"]
+                            && reply["value"]["body"]["kind"] == "replication"
+                    })
+                    .map(|(_, reply)| {
+                        serde_json::from_value(reply["value"]["body"]["value"].clone())
+                            .map_err(Into::into)
+                    })
             })
             .collect()
     }
