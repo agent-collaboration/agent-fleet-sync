@@ -150,6 +150,7 @@ pub trait JournalStorage: Send {
         &mut self,
         now: SyncTime,
     ) -> impl Future<Output = Result<Vec<OperationId>, StoreError>> + Send;
+    /// Missing or ineligible operations yield no claim, including IDs from a stale due snapshot.
     fn claim(
         &mut self,
         id: OperationId,

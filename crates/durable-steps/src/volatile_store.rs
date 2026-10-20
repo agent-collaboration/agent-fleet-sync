@@ -188,11 +188,9 @@ impl<H: Host> JournalStorage for VolatileScope<'_, H> {
         now: SyncTime,
         lease: DriveLease,
     ) -> Result<Option<OperationRecord>, StoreError> {
-        let record = self
-            .state
-            .operations
-            .get_mut(&id)
-            .ok_or(StoreError::MissingOperation { id })?;
+        let Some(record) = self.state.operations.get_mut(&id) else {
+            return Ok(None);
+        };
         match &mut record.execution {
             OperationExecution::Running {
                 next_attempt_at,

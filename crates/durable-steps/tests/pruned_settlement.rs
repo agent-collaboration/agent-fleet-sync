@@ -179,6 +179,90 @@ async fn resume_case<S: AtomicStore>(store: Arc<S>, host: Arc<SettlementHost>) -
     ));
     Ok(())
 }
+
+async fn stale_due_snapshot_case<S: AtomicStore>(
+    store: Arc<S>,
+    host: Arc<SettlementHost>,
+) -> TestResult {
+    let request = key("stale-due-snapshot")?;
+    let operation = store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                Ok(scope
+                    .admit::<PrunedDecision<S>>(&request, &17)
+                    .await
+                    .map_err(StoreError::backend)?
+                    .id())
+            })
+        })
+        .await?;
+    let engine = engine(store, host.clone())?;
+    let barrier = WakeBarrier::new();
+    let held = barrier.hold.lock().await;
+    *host.wake.lock().map_err(StoreError::backend)? = Some(barrier.clone());
+
+    // drive_due has read its real due snapshot before rearm reaches this hold.
+    let mut stale = Box::pin(engine.drive_due());
+    poll_fn(|context| {
+        let result = stale.as_mut().poll(context);
+        if barrier.entered.load(Ordering::SeqCst) {
+            Poll::Ready(Ok(()))
+        } else if result.is_ready() {
+            Poll::Ready(Err("first drive finished before the snapshot barrier"))
+        } else {
+            Poll::Pending
+        }
+    })
+    .await?;
+
+    // The other drive commits completion and removes KEEP_RESULT=false state.
+    assert_eq!(engine.drive_due().await?.completed, [operation]);
+    assert!(matches!(engine.status(&operation).await,
+        Err(StoreError::MissingOperation { id }) if id == operation));
+    drop(held);
+
+    let report = stale.await;
+    assert!(
+        report.is_ok(),
+        "stale due snapshot escaped drive_due: {report:?}"
+    );
+    let report = report?;
+    assert_eq!(report.yielded, [operation]);
+    assert!(report.completed.is_empty());
+    assert!(report.failed.is_empty());
+    assert!(report.retried.is_empty());
+    assert!(engine.drive_due().await?.completed.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_due_snapshot_yields_after_an_overlapping_drive_prunes_its_operation() -> TestResult {
+    futures_executor::block_on(async {
+        let (store, host) = memory();
+        stale_due_snapshot_case(store, host).await
+    })
+}
+
+#[cfg(feature = "turso")]
+#[tokio::test]
+async fn native_due_snapshot_yields_after_an_overlapping_drive_prunes_its_operation() -> TestResult
+{
+    let directory = tempfile::tempdir()?;
+    let host = SettlementHost::new();
+    let store = Arc::new(
+        durable_steps::turso_store::TursoStore::open_and_migrate(
+            directory.path().join("stale-due.db"),
+            host.clone(),
+        )
+        .await?,
+    );
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        stale_due_snapshot_case(store, host),
+    )
+    .await?
+}
+
 #[test]
 fn own_pruned_completion_is_confirmed_without_retaining_a_row() -> TestResult {
     futures_executor::block_on(async {

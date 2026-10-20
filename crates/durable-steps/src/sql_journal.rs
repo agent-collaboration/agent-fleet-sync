@@ -130,10 +130,9 @@ impl<S: JournalQueries> JournalStorage for S {
         now: SyncTime,
         lease: DriveLease,
     ) -> Result<Option<OperationRecord>, StoreError> {
-        let mut record = self
-            .operation(id)
-            .await?
-            .ok_or(StoreError::MissingOperation { id })?;
+        let Some(mut record) = self.operation(id).await? else {
+            return Ok(None);
+        };
         let previous_token = match &mut record.execution {
             OperationExecution::Running {
                 next_attempt_at,
