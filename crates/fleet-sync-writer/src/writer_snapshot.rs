@@ -288,6 +288,9 @@ std::thread_local! { static FULL_MEASURES: std::cell::Cell<usize> = const { std:
 #[cfg(test)]
 std::thread_local! { static CHECKED_SIZE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) }; }
 #[cfg(test)]
+#[path = "snapshot_seed_limit_tests.rs"]
+mod seed_limit_tests;
+#[cfg(test)]
 #[path = "snapshot_sizing_oracle.rs"]
 mod sizing_oracle;
 #[cfg(test)]

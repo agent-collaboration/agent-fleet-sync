@@ -1,5 +1,5 @@
 use crate::{
-    StoreError, checked_queries,
+    ReceiverError, StoreError, checked_queries,
     copy_storage::{decode_record, encode_record},
 };
 use durable_steps::storage::TransactionScope;
@@ -133,16 +133,23 @@ where
             })
             .collect()
     }
-    pub(crate) async fn save_page(&mut self, page: &SeedPage) -> Result<(), StoreError> {
+    pub(crate) async fn save_page(&mut self, page: &SeedPage) -> Result<(), ReceiverError> {
+        let payload = encode_record(page)?;
+        if !fleet_sync_protocol::unit_budget::encoded_seed_page_fits_unit_limit(page, &payload) {
+            return Err(ReceiverError::InvalidInput {
+                field: "seed page exceeds encoded unit limit".into(),
+            });
+        }
         checked_queries::write_seed_page(
             self.0,
             page.seed.generation.to_string(),
             page.page.to_string(),
             page.digest.as_str().to_owned(),
-            encode_record(page)?,
+            payload,
         )
         .await
-        .map_err(crate::sql_transport::sql_error)
+        .map_err(crate::sql_transport::sql_error)?;
+        Ok(())
     }
     pub(crate) async fn drop_pages(&mut self) -> Result<(), StoreError> {
         checked_queries::drop_seed_pages(self.0)

@@ -121,6 +121,41 @@ pub fn measure_snapshot_unit(
     })
 }
 
+/// Check an already serialized SeedPage independently of writer row estimates.
+/// `encoded` must be the compact serialization of `page` that will be stored.
+/// Normalize its two counters to the original maximum-width budget and retain
+/// the original staged-row metadata allowance. That staged representation
+/// bounds the current request/answer carriers, as the typed differential tests
+/// verify. No payload serialization or digest computation occurs here.
+#[doc(hidden)]
+pub fn encoded_seed_page_fits_unit_limit(page: &SeedPage, encoded: &str) -> bool {
+    let generation_width = u64::MAX.to_string().len();
+    let Some(counter_padding) = generation_width
+        .checked_sub(page.seed.generation.to_string().len())
+        .and_then(|padding| {
+            u32::MAX
+                .to_string()
+                .len()
+                .checked_sub(page.page.to_string().len())
+                .and_then(|page_padding| padding.checked_add(page_padding))
+        })
+    else {
+        return false;
+    };
+    encoded
+        .len()
+        .checked_add(counter_padding)
+        .and_then(|size| size.checked_add(generation_width))
+        .and_then(|size| size.checked_add(SQLITE_INTEGER_BYTES))
+        .and_then(|size| size.checked_add(page.digest.as_str().len()))
+        .and_then(|size| size.checked_add(STAGED_ROW_FRAMING_BYTES))
+        .is_some_and(|size| size <= MAX_UNIT_BYTES)
+}
+
+#[cfg(test)]
+#[path = "encoded_seed_unit_tests.rs"]
+mod encoded_seed_unit_tests;
+
 /// Move the actual annotation through the real typed frame without requiring
 /// Clone. Staging counts its existing key, integer index, decimal TEXT timestamp
 /// and record framing.

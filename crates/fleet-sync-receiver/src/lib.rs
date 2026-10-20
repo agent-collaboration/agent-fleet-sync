@@ -94,6 +94,8 @@ mod turso_receiver_rollback_tests;
 mod turso_seed_authority_tests;
 #[cfg(test)]
 mod turso_seed_tests;
+#[cfg(test)]
+mod turso_seed_unit_limit_tests;
 
 #[cfg(test)]
 mod turso_follow_up_fixture;
