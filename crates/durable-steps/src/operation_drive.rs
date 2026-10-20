@@ -4,8 +4,8 @@ use futures_util::future::select_all;
 impl<S: AtomicStore, H: Host> Engine<S, H> {
     pub(super) async fn drive_operation(&self, id: OperationId) -> Result<DriveReport, StoreError> {
         let mut report = DriveReport::default();
-        let activity = self.operation_drive_lock(id).await;
-        let Some(_active_drive) = activity.try_lock() else {
+        let activity = self.operation_drives.attach(id).await;
+        let Some(mut active_drive) = activity.try_lock() else {
             report.yielded.push(id);
             return Ok(report);
         };
@@ -46,6 +46,7 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
             failure: None,
             wake_failure: None,
         };
+        let kind = record.kind.clone();
         let task = self.tasks.get(record.kind.as_str()).cloned();
         let (input, attempt) = match record.execution {
             OperationExecution::Running { input, attempt, .. } => (input, attempt),
@@ -61,10 +62,18 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
                 let resumed = self
                     .before_resume(Arc::clone(task), id, token, record.request_key.clone())
                     .await;
+                if let Ok(Resume::Finish(result)) = &resumed {
+                    *active_drive = Some(OperationReceipt::new(
+                        kind.clone(),
+                        OperationOutcome::Completed {
+                            result: result.clone(),
+                        },
+                    ));
+                }
                 report.wake_failure = self.rearm().await?.or(report.wake_failure);
                 match resumed {
                     Ok(Resume::Continue) => task.execute(&mut context, input).await,
-                    Ok(Resume::Finish(())) => {
+                    Ok(Resume::Finish(_)) => {
                         report.completed.push(id);
                         return Ok(report);
                     }
@@ -173,6 +182,20 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
                 })
             })
             .await;
+        // Publish only a committed terminal outcome, before any later await.
+        // The driving caller still observes a post-commit rearm storage error.
+        let outcome = match &finished {
+            Ok(OperationState::Completed { result }) => Some(OperationOutcome::Completed {
+                result: result.clone(),
+            }),
+            Ok(OperationState::Failed { reason }) => Some(OperationOutcome::Failed {
+                reason: reason.clone(),
+            }),
+            _ => None,
+        };
+        if let Some(outcome) = outcome {
+            *active_drive = Some(OperationReceipt::new(kind, outcome));
+        }
         report.wake_failure = self.rearm().await?.or(report.wake_failure);
         match finished {
             Err(StoreError::StaleDriveToken { .. }) => report.yielded.push(id),

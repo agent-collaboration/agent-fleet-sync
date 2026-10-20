@@ -8,6 +8,10 @@ use crate::{
 use futures_util::{StreamExt, lock::Mutex};
 use runtime_primitives::Backoff;
 
+#[path = "operation_activity.rs"]
+mod operation_activity;
+use operation_activity::{OperationActivities, OperationActivity, OperationReceipt};
+
 #[path = "operation_drive.rs"]
 mod operation_drive;
 #[path = "operation_settlement.rs"]
@@ -17,12 +21,7 @@ mod operation_settlement;
 // bounding suspended task contexts, encoded inputs and host dispatches.
 // The permits are shared across overlapping drive_due/start calls on this Engine.
 const MAX_CONCURRENT_OPERATIONS: usize = 8;
-use std::{
-    collections::BTreeMap,
-    future::Future,
-    sync::{Arc, Weak},
-    time::Duration,
-};
+use std::{collections::BTreeMap, future::Future, sync::Arc, time::Duration};
 
 trait RegisteredTask<S: AtomicStore, H: Host>: Send + Sync {
     fn version(&self) -> u32;
@@ -109,7 +108,7 @@ pub struct Engine<S: AtomicStore, H: Host> {
     initial_backoff: Duration,
     maximum_backoff: Duration,
     drive_capacity: [Arc<Mutex<()>>; MAX_CONCURRENT_OPERATIONS],
-    operation_drives: Mutex<BTreeMap<OperationId, Weak<Mutex<()>>>>,
+    operation_drives: Arc<OperationActivities>,
 }
 
 /// A test-only hold on existing execution capacity; dropping it permits claims.
@@ -128,7 +127,7 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
             initial_backoff: Duration::from_millis(10),
             maximum_backoff: Duration::from_secs(60),
             drive_capacity: std::array::from_fn(|_| Arc::new(Mutex::new(()))),
-            operation_drives: Mutex::new(BTreeMap::new()),
+            operation_drives: Arc::new(OperationActivities::default()),
         }
     }
 
@@ -162,7 +161,7 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
         input: T::Input,
     ) -> impl Future<Output = Result<OperationId, StartRefusal>> + Send {
         async move {
-            let operation = self.admit::<T>(request_key, input).await?;
+            let (operation, _) = self.admit::<T>(request_key, input).await?;
             self.drive_due().await?;
             Ok(operation)
         }
@@ -234,7 +233,7 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
         id: OperationId,
         token: uuid::Uuid,
         key: RequestKey,
-    ) -> Result<Resume<()>, StoreError> {
+    ) -> Result<Resume<Vec<u8>>, StoreError> {
         let finished_at = self.host.now();
         self.store
             .transaction(move |scope| {
@@ -247,12 +246,14 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
                                 .finish(
                                     id,
                                     token,
-                                    OperationOutcome::Completed { result },
+                                    OperationOutcome::Completed {
+                                        result: result.clone(),
+                                    },
                                     finished_at,
                                     task.keep_result(),
                                 )
                                 .await?;
-                            Resume::Finish(())
+                            Resume::Finish(result)
                         }
                     };
                     if let Some(earliest) = scope.earliest().await? {
