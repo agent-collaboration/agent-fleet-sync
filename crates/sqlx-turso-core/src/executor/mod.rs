@@ -220,7 +220,13 @@ impl<'c> Executor<'c> for &'c mut TursoConnection {
     where
         'c: 'e,
     {
-        async move { self.prepare_sql(sql).await }.boxed()
+        async move {
+            // Returned statements may outlive this connection and its pool.
+            // Keep SDK ownership in the private connection-local cache; query
+            // execution prepares by SQL on the connection it actually pins.
+            Ok(self.prepare_sql(sql).await?.into_metadata())
+        }
+        .boxed()
     }
 
     fn describe<'e>(

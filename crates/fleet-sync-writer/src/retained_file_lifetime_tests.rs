@@ -4,8 +4,10 @@ use crate::{
     retained_file_fixture::*,
     *,
 };
+use durable_steps::{AtomicStore, StoreError, storage::TransactionScope};
+use futures_util::TryStreamExt;
 use sqlx_core::{executor::Executor, row::Row};
-use std::{path::Path, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 
 async fn eventually_reopen(
     identity: WriterIdentity,
@@ -23,6 +25,52 @@ async fn eventually_reopen(
         }
     })
     .await??)
+}
+
+async fn assert_retained_native_read_only(
+    path: &Path,
+    directory: &Path,
+    context: &str,
+) -> TestResult {
+    let before = snapshot(directory)?;
+    let retained = RetainedFile::open_read_only(path, ReadSchema).await;
+    assert!(
+        retained.is_ok(),
+        "post-drain retained open with closed pool metadata: {:?}",
+        retained.as_ref().err()
+    );
+    let retained = retained?;
+    assert_eq!(mark_count(retained.reader()).await?, 1);
+    let pool = retained.reader().pool.current()?;
+    let mutation = {
+        // Test the actual retained connection below the reader's SQL guard.
+        // This is private fixture access, not a public connection capability.
+        let mut connection = pool.acquire().await?;
+        (&mut *connection)
+            .execute("INSERT INTO local_marks VALUES('must remain read-only')")
+            .await
+    };
+    let after = snapshot(directory)?;
+    println!(
+        "{context}: retained admitted; native mutation={mutation:?}; file set changed={}",
+        after != before
+    );
+    assert!(
+        mutation
+            .as_ref()
+            .err()
+            .and_then(sqlx_core::Error::as_database_error)
+            .is_some_and(|error| error.code().as_deref() == Some("SQLITE_READONLY")),
+        "retained native connection reused a writable instance: {mutation:?}"
+    );
+    assert_eq!(
+        after, before,
+        "retained access must preserve every file and directory entry"
+    );
+    drop(retained);
+    pool.close().await;
+    assert_eq!(snapshot(directory)?, before);
+    Ok(())
 }
 
 #[tokio::test]
@@ -170,6 +218,17 @@ async fn closed_pool_metadata_does_not_keep_a_drained_writer_claim() -> TestResu
     let path = directory.path().join("closed-writer.db");
     let database = writer(&path).await?;
     add_mark(&database, "before close").await?;
+    let prepared = database
+        .reader()
+        .prepare(sqlx_core::sql_str::SqlStr::from_static(
+            "SELECT COUNT(*) AS count FROM local_marks",
+        ))
+        .await?;
+    let committed_wal_bytes = std::fs::metadata(path.with_extension("db-wal"))?.len();
+    assert!(
+        committed_wal_bytes > 0,
+        "fixture must contain a committed WAL"
+    );
     // These are real SQLx pool handles. They retain only metadata after close,
     // just as SQLx's queued return task can retain its extra PoolInner Arc.
     let closed_pools = [
@@ -199,25 +258,18 @@ async fn closed_pool_metadata_does_not_keep_a_drained_writer_claim() -> TestResu
     );
     connection.close().await?;
     closing.await;
-    drop(database);
     for pool in &closed_pools {
         assert!(pool.is_closed());
         assert_eq!(pool.size(), 0);
     }
 
-    // No SDK connection remains, although every closed pool handle still lives.
-    let retained = RetainedFile::open_read_only(&path, ReadSchema).await;
-    assert!(
-        retained.is_ok(),
-        "post-drain retained open with closed pool metadata: {:?}",
-        retained.as_ref().err()
-    );
-    let retained = retained?;
-    assert_eq!(mark_count(retained.reader()).await?, 1);
+    // The database, closed pools and prepared result all stay alive. Metadata
+    // must not keep an SDK connection alive or delay real post-drain admission.
+    println!("initial committed WAL={committed_wal_bytes}");
+    assert_retained_native_read_only(&path, directory.path(), "held pool prepared result").await?;
+    drop(prepared);
+    drop(database);
     drop(closed_pools);
-    let pool = retained.reader().pool.current()?;
-    drop(retained);
-    pool.close().await;
     Ok(())
 }
 
@@ -245,5 +297,116 @@ async fn dropping_old_closed_pool_metadata_cannot_release_a_new_writer_claim() -
     add_mark(&reopened, "new writer remains live").await?;
     assert_eq!(mark_count(reopened.reader()).await?, 1);
     reopened.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn prepared_transaction_results_do_not_outlive_native_admission() -> TestResult {
+    for from_write in [false, true] {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("transaction-prepared.db");
+        let database = writer(&path).await?;
+        add_mark(&database, "before close").await?;
+        let sql =
+            sqlx_core::sql_str::SqlStr::from_static("SELECT COUNT(*) AS count FROM local_marks");
+        let prepared = if from_write {
+            let mut write = database.begin_write().await?;
+            let prepared = (&mut write).prepare(sql.clone()).await?;
+            write.rollback().await?;
+            prepared
+        } else {
+            let mut read = database.reader().begin_read().await?;
+            let prepared = (&mut read).prepare(sql.clone()).await?;
+            read.close().await?;
+            prepared
+        };
+        let clone = prepared.clone();
+        let description = database.reader().describe(sql).await?;
+        let row = database
+            .reader()
+            .fetch_one("SELECT COUNT(*) AS count FROM local_marks")
+            .await?;
+        database.close().await;
+        assert_eq!(row.try_get::<i64, _>("count")?, 1);
+        assert_eq!(description.columns().len(), 1);
+        assert_retained_native_read_only(
+            &path,
+            directory.path(),
+            if from_write {
+                "held write-transaction prepared result"
+            } else {
+                "held read-transaction prepared result"
+            },
+        )
+        .await?;
+        drop(clone);
+        drop(prepared);
+        drop(database);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn prepared_journal_results_do_not_outlive_native_admission() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("journal-prepared.db");
+    let database = Arc::new(writer(&path).await?);
+    add_mark(&database, "before close").await?;
+    let journal = database
+        .journal_store(Arc::new(crate::writer_journal_tests::LocalHost))
+        .await?;
+    let prepared = journal
+        .transaction(|scope| {
+            Box::pin(async move {
+                scope
+                    .executor()
+                    .prepare(sqlx_core::sql_str::SqlStr::from_static(
+                        "SELECT COUNT(*) AS count FROM local_marks",
+                    ))
+                    .await
+                    .map_err(StoreError::backend)
+            })
+        })
+        .await?;
+    database.close().await;
+    assert_retained_native_read_only(
+        &path,
+        directory.path(),
+        "held journal maintenance prepared result",
+    )
+    .await?;
+    drop(prepared);
+    drop(journal);
+    drop(database);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_public_row_stream_pins_close_but_its_materialized_row_does_not() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("stream-close.db");
+    let database = writer(&path).await?;
+    add_mark(&database, "before close").await?;
+    let mut rows = database.reader().fetch("SELECT id FROM local_marks");
+    let row = rows
+        .try_next()
+        .await?
+        .ok_or("stream did not yield its row")?;
+    let cloned_row = row.clone();
+    let mut closing = Box::pin(database.close());
+    {
+        let mut context = std::task::Context::from_waker(futures_util::task::noop_waker_ref());
+        assert!(std::future::Future::poll(closing.as_mut(), &mut context).is_pending());
+    }
+    assert!(matches!(
+        RetainedFile::open_read_only(&path, ReadSchema).await,
+        Err(OpenError::FileInUse)
+    ));
+    drop(rows);
+    tokio::time::timeout(Duration::from_secs(5), closing).await?;
+    assert_eq!(row.try_get::<String, _>("id")?, "before close");
+    assert_eq!(cloned_row.try_get::<String, _>("id")?, "before close");
+    assert_retained_native_read_only(&path, directory.path(), "held materialized row").await?;
+    drop(database);
     Ok(())
 }
