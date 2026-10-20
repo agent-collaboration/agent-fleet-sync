@@ -17,6 +17,10 @@ use sqlx_core::transaction::Transaction;
 use sqlx_turso::Turso;
 
 const PAGE_ROWS: usize = 256;
+// Eight consumed rows plus one lookahead: the native 20k-row probe took 10.96s
+// versus 9.23s at sixteen, keeping half the prefetch for that modest extra gain.
+// Admission's separate 256-row scan dominates whole-writer RSS; see W-C41 proof.
+const SNAPSHOT_READ_BATCH_ROWS: usize = 8;
 
 /// One read transaction pins rows, schema and capture position for every page.
 pub struct WriterSnapshot {
@@ -133,17 +137,27 @@ impl WriterSnapshot {
         let after = cursor
             .as_ref()
             .map_or(&[][..], |cursor| cursor.after_key.as_slice());
-        // One bounded query per row also works for SQLx backends which collect
-        // a query's entire result before yielding its first Rust stream item.
-        let mut pending = read_rows(&mut self.transaction, table, after, 1)
+        let mut batch = read_snapshot_batch(&mut self.transaction, table, after)
             .await?
-            .pop();
-        while let Some(row) = pending {
+            .into_iter();
+        let mut batch_rows = 0;
+        let mut after = after.to_vec();
+        loop {
+            if batch_rows == SNAPSHOT_READ_BATCH_ROWS {
+                if batch.len() == 0 {
+                    break;
+                }
+                drop(batch);
+                batch = read_snapshot_batch(&mut self.transaction, table, &after)
+                    .await?
+                    .into_iter();
+                batch_rows = 0;
+            }
+            let Some(row) = batch.next() else {
+                break;
+            };
             let key = row_key(table, &row)?;
-            let following = read_rows(&mut self.transaction, table, &key, 1)
-                .await?
-                .pop();
-            let next = if following.is_some() {
+            let next = if batch.len() > 0 {
                 Some(SnapshotCursor {
                     position: self.position,
                     table: table.name().into(),
@@ -188,7 +202,8 @@ impl WriterSnapshot {
             if candidate_size >= TARGET_UNIT_BYTES || page.rows.len() == PAGE_ROWS {
                 break;
             }
-            pending = following;
+            after = key;
+            batch_rows += 1;
         }
         checked_page(page, encoded_size)
     }
@@ -271,3 +286,15 @@ mod sizing_oracle;
 #[cfg(test)]
 #[path = "snapshot_sizing_tests.rs"]
 mod sizing_tests;
+
+async fn read_snapshot_batch(
+    connection: &mut sqlx_turso::TursoConnection,
+    table: &TableLayout,
+    after: &[fleet_sync_protocol::SqlValue],
+) -> Result<Vec<Vec<fleet_sync_protocol::SqlValue>>, OpenError> {
+    #[cfg(test)]
+    READ_QUERIES.with(|count| count.set(count.get() + 1));
+    read_rows(connection, table, after, SNAPSHOT_READ_BATCH_ROWS + 1).await
+}
+#[cfg(test)]
+std::thread_local! { static READ_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }

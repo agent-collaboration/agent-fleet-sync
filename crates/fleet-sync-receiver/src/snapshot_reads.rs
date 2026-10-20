@@ -13,6 +13,12 @@ use sqlx_core::{
 };
 
 pub(crate) const PAGE_SIZE: usize = 256;
+// Four consumed rows plus one lookahead: near-cap native incremental RSS was
+// 55.25 MiB above empty, versus 68.81 MiB at eight (64 MiB proxy ceiling).
+// The Durable Object total peak remains unmeasured; this is a native proxy,
+// measured with ~1.5 MiB rows, not a bound for arbitrary oversized stored rows.
+// See docs/wip/2026-10-19-consumer-fit-w-c41-proof.md.
+const SNAPSHOT_READ_BATCH_ROWS: usize = 4;
 
 /// Read one primary-key ordered page at a fixed acknowledged position.
 // Explicit Send is required by borrowed-scope host dispatch.
@@ -145,17 +151,33 @@ where
         };
         BoundStatement::query(
             format!(
-                "SELECT {column_sql} FROM {}{predicate} ORDER BY {key_sql} LIMIT 1",
-                quoted_identifier(&table)
+                "SELECT {column_sql} FROM {}{predicate} ORDER BY {key_sql} LIMIT {}",
+                quoted_identifier(&table),
+                SNAPSHOT_READ_BATCH_ROWS + 1,
             ),
             after.to_vec(),
             column_names.clone(),
         )
     };
-    // The DO SQLx executor eagerly drains each SQL query. LIMIT 1 bounds that
-    // backend buffer while every keyset read stays in the host-owned transaction.
-    let mut pending = read_next(after).fetch_rows(scope).await?.pop();
-    while let Some(row) = pending {
+    #[cfg(test)]
+    READ_QUERIES.with(|count| count.set(count.get() + 1));
+    let mut batch = read_next(after).fetch_rows(scope).await?.into_iter();
+    let mut batch_rows = 0;
+    let mut after = after.to_vec();
+    loop {
+        if batch_rows == SNAPSHOT_READ_BATCH_ROWS {
+            if batch.len() == 0 {
+                break;
+            }
+            drop(batch);
+            #[cfg(test)]
+            READ_QUERIES.with(|count| count.set(count.get() + 1));
+            batch = read_next(&after).fetch_rows(scope).await?.into_iter();
+            batch_rows = 0;
+        }
+        let Some(row) = batch.next() else {
+            break;
+        };
         let key = keys
             .iter()
             .map(|column| row.value(&column.name).cloned())
@@ -164,8 +186,7 @@ where
             .iter()
             .map(|column| row.value(&column.name).cloned())
             .collect::<Result<Vec<_>, StoreError>>()?;
-        let following = read_next(&key).fetch_rows(scope).await?.pop();
-        let next = if following.is_some() {
+        let next = if batch.len() > 0 {
             Some(SnapshotCursor {
                 position: status.acked,
                 table: table.clone(),
@@ -214,7 +235,8 @@ where
         if candidate_size >= TARGET_UNIT_BYTES || page.rows.len() == PAGE_SIZE {
             break;
         }
-        pending = following;
+        after = key;
+        batch_rows += 1;
     }
     checked_page(page, encoded_size)
 }
@@ -250,3 +272,6 @@ mod sizing_oracle;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "snapshot_sizing_tests.rs"]
 mod sizing_tests;
+
+#[cfg(test)]
+std::thread_local! { static READ_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }

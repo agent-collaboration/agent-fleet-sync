@@ -17,10 +17,19 @@ async fn compare_page(
     )
     .await;
     FULL_MEASURES.with(|count| count.set(0));
+    READ_QUERIES.with(|count| count.set(0));
     let actual = snapshot_page_at(&mut TursoScope(connection), cursor, status).await;
     let calls = FULL_MEASURES.with(std::cell::Cell::get);
     match (expected, actual) {
         (Ok(SnapshotRead::Page(expected)), Ok(SnapshotRead::Page(actual))) => {
+            // Fixed independently of the production batch constant: a one-row
+            // query loop must fail even when it preserves every output byte.
+            let queries = READ_QUERIES.with(std::cell::Cell::get);
+            assert!(
+                queries <= actual.rows.len() / 4 + 1,
+                "page with {} rows used {queries} row queries",
+                actual.rows.len()
+            );
             assert!(
                 calls <= 2,
                 "growing copy page was fully measured {calls} times"

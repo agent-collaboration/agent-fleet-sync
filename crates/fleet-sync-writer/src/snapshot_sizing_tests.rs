@@ -10,10 +10,19 @@ async fn compare_page(
 ) -> TestResult<Option<SnapshotCursor>> {
     let expected = snapshot.page_oracle(cursor.clone()).await;
     FULL_MEASURES.with(|count| count.set(0));
+    READ_QUERIES.with(|count| count.set(0));
     let actual = snapshot.page(cursor).await;
     let calls = FULL_MEASURES.with(std::cell::Cell::get);
     match (expected, actual) {
         (Ok(expected), Ok(actual)) => {
+            // Eight is the adopted I/O contract, independent of the production
+            // constant so a regression to one query per row cannot agree with itself.
+            let queries = READ_QUERIES.with(std::cell::Cell::get);
+            assert!(
+                queries <= actual.rows.len() / 8 + 1,
+                "page with {} rows used {queries} row queries",
+                actual.rows.len()
+            );
             assert!(calls <= 2, "growing page was fully measured {calls} times");
             assert_eq!(serde_json::to_vec(&actual)?, serde_json::to_vec(&expected)?);
             assert_eq!(
