@@ -79,7 +79,7 @@
     "sql/read_fence_receipt.sql": "bde95c4e455efd2ddd0b1f20468d6987067931a1bca91b6bcb76d1bd1ae13ce8",
     "sql/read_hook_migrations.sql": "48772108665c87eb58ddc8cd533860d4fa607be9fa5389ba5e6e6a95bd4b424a",
     "sql/read_inspection_corpus.sql": "5abcee590b18f409ff4949e892e16e031ad8095976e2e51757ce4e8cceee0836",
-    "sql/read_inspection_parts.sql": "07a804466d5c6eafadb259b457fa5bbf64f924f505c3bf6a1eada5233dee078a",
+    "sql/read_inspection_parts.sql": "63a88de452402a8e0fcdcc6efabf3010de27ff074b40f6e4ae26fe70eecfb6b2",
     "sql/read_install.sql": "58204d10e3a2a0f9f50985f5415c92e18c4804357cf83c850e57d81dc231bac6",
     "sql/read_install_pages.sql": "1c76ee82df66ecf76bcdeb568d80d5ba1c53ff54a53a7df89f901b3bb3940c8b",
     "sql/read_parts.sql": "2fe22ce90680daad8cb3383c1b56df163c14c99dd133035f1dd5c448ed8b46ac",
