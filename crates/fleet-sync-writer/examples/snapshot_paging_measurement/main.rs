@@ -4,7 +4,7 @@
 mod fixture;
 
 use fixture::{MeasurementResult, TursoScope};
-use fleet_sync_protocol::{SnapshotPage, SnapshotRead, TableDigestBuilder};
+use fleet_sync_protocol::{SnapshotCursor, SnapshotPage, SnapshotRead, TableDigestBuilder};
 use sqlx_core::connection::Connection;
 use std::{
     path::Path,
@@ -18,6 +18,7 @@ struct Measurements {
     pages: usize,
     bytes: usize,
     digest: TableDigestBuilder,
+    boundaries: Vec<(usize, Option<SnapshotCursor>)>,
 }
 impl Measurements {
     fn record(&mut self, page: &SnapshotPage, elapsed: Duration) -> MeasurementResult {
@@ -25,6 +26,8 @@ impl Measurements {
         self.rows += page.rows.len();
         self.pages += 1;
         self.bytes += serde_json::to_vec(page)?.len();
+        // Outside the page timer, retain exact borders for before/after equality.
+        self.boundaries.push((page.rows.len(), page.next.clone()));
         for row in &page.rows {
             self.digest.push_row(row)?;
         }
@@ -37,6 +40,7 @@ impl Measurements {
                 "page_seconds":self.elapsed.as_secs_f64(), "rows":self.rows,
                 "pages":self.pages, "encoded_bytes":self.bytes,
                 "row_digest":self.digest.finish(),
+                "boundaries":self.boundaries,
             })
         );
         Ok(())

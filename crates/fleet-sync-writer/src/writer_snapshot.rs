@@ -7,7 +7,7 @@ use crate::{
     writer_file_record::read_file_record,
 };
 use fleet_sync_protocol::unit_budget::{
-    MAX_UNIT_BYTES, TARGET_UNIT_BYTES, UnitTooLarge, measure_snapshot_unit, snapshot_size_after_row,
+    MAX_UNIT_BYTES, TARGET_UNIT_BYTES, UnitTooLarge, measure_snapshot_unit,
 };
 use fleet_sync_protocol::{
     DatabaseId, ReplicationPosition, SchemaIdentity, SnapshotCursor, SnapshotManifest,
@@ -21,6 +21,10 @@ const PAGE_ROWS: usize = 256;
 // versus 9.23s at sixteen, keeping half the prefetch for that modest extra gain.
 // Admission's separate 256-row scan dominates whole-writer RSS; see W-C41 proof.
 const SNAPSHOT_READ_BATCH_ROWS: usize = 8;
+
+#[path = "snapshot_page_size.rs"]
+mod page_size;
+use page_size::SnapshotPageSize;
 
 /// One read transaction pins rows, schema and capture position for every page.
 pub struct WriterSnapshot {
@@ -131,8 +135,9 @@ impl WriterSnapshot {
         }
         let mut encoded_size = measured.encoded_size;
         let mut page = measured.unit;
+        let mut sizes = SnapshotPageSize::new(&page, encoded_size)?;
         let Some(table) = table else {
-            return checked_page(page, encoded_size);
+            return checked_page(page, encoded_size, &sizes);
         };
         let after = cursor
             .as_ref()
@@ -166,14 +171,8 @@ impl WriterSnapshot {
             } else {
                 next_table.clone()
             };
-            let candidate_size = snapshot_size_after_row(
-                encoded_size,
-                !page.rows.is_empty(),
-                &row,
-                &page.next,
-                &next,
-            )
-            .map_err(|_| OpenError::corrupt("snapshot.encoding"))?;
+            let row_bytes = sizes.row_bytes(&row)?;
+            let candidate_size = sizes.after_row(encoded_size, row_bytes, &page.next, &next)?;
             let previous_next = page.next.take();
             page.rows.push(row);
             page.next = next;
@@ -199,13 +198,14 @@ impl WriterSnapshot {
                 .into());
             }
             encoded_size = candidate_size;
+            sizes.record_row(row_bytes);
             if candidate_size >= TARGET_UNIT_BYTES || page.rows.len() == PAGE_ROWS {
                 break;
             }
             after = key;
             batch_rows += 1;
         }
-        checked_page(page, encoded_size)
+        checked_page(page, encoded_size, &sizes)
     }
 
     pub async fn manifest(&mut self) -> Result<SnapshotManifest, OpenError> {
@@ -270,16 +270,23 @@ fn measure_page(
     measure_snapshot_unit(page)
 }
 
-fn checked_page(page: SnapshotPage, expected: usize) -> Result<SnapshotPage, OpenError> {
-    let measured = measure_page(page).map_err(|_| OpenError::corrupt("snapshot.encoding"))?;
-    if measured.encoded_size != expected {
+fn checked_page(
+    page: SnapshotPage,
+    expected: usize,
+    sizes: &SnapshotPageSize,
+) -> Result<SnapshotPage, OpenError> {
+    if sizes.final_size(&page)? != expected {
         return Err(OpenError::corrupt("snapshot.size_changed"));
     }
-    Ok(measured.unit)
+    #[cfg(test)]
+    CHECKED_SIZE.with(|size| size.set(Some(expected)));
+    Ok(page)
 }
 
 #[cfg(test)]
 std::thread_local! { static FULL_MEASURES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+#[cfg(test)]
+std::thread_local! { static CHECKED_SIZE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) }; }
 #[cfg(test)]
 #[path = "snapshot_sizing_oracle.rs"]
 mod sizing_oracle;

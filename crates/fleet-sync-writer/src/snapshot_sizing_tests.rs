@@ -11,6 +11,7 @@ async fn compare_page(
     let expected = snapshot.page_oracle(cursor.clone()).await;
     FULL_MEASURES.with(|count| count.set(0));
     READ_QUERIES.with(|count| count.set(0));
+    CHECKED_SIZE.with(|size| size.set(None));
     let actual = snapshot.page(cursor).await;
     let calls = FULL_MEASURES.with(std::cell::Cell::get);
     match (expected, actual) {
@@ -23,7 +24,12 @@ async fn compare_page(
                 "page with {} rows used {queries} row queries",
                 actual.rows.len()
             );
-            assert!(calls <= 2, "growing page was fully measured {calls} times");
+            assert!(calls <= 1, "page body was fully re-encoded {calls} times");
+            let checked = CHECKED_SIZE.with(std::cell::Cell::get);
+            assert_eq!(
+                checked,
+                Some(measure_snapshot_unit(actual.clone())?.encoded_size)
+            );
             assert_eq!(serde_json::to_vec(&actual)?, serde_json::to_vec(&expected)?);
             assert_eq!(
                 fleet_sync_protocol::PageDigest::of(&actual)?,
@@ -161,8 +167,15 @@ async fn final_writer_size_mismatch_is_corrupt() -> TestResult {
     let fixture = SenderFixture::open().await?;
     let mut snapshot = fixture.database.snapshot().await?;
     let page = snapshot.page(None).await?;
+    let mut empty = page.clone();
+    empty.rows.clear();
+    let initial_size = measure_snapshot_unit(empty.clone())?.encoded_size;
+    let mut sizes = SnapshotPageSize::new(&empty, initial_size)?;
+    for row in &page.rows {
+        sizes.record_row(sizes.row_bytes(row)?);
+    }
     assert!(matches!(
-        checked_page(page, 0),
+        checked_page(page, 0, &sizes),
         Err(OpenError::Corrupt { .. })
     ));
     snapshot.close().await?;

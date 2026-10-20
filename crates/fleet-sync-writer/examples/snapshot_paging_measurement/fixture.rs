@@ -125,7 +125,7 @@ async fn insert_rows(
 ) -> MeasurementResult {
     if rows > 0 {
         query::<Turso>("WITH RECURSIVE numbers(value) AS(VALUES(0) UNION ALL SELECT value+1 FROM numbers WHERE value+1<?) INSERT INTO records SELECT printf('019eef00-0000-7000-8000-%012x',value),? FROM numbers")
-            .bind(i64::try_from(rows)?).bind("x".repeat(body_bytes)).execute(connection).await?;
+            .bind(i64::try_from(rows)?).bind(r"\u0001".repeat(body_bytes / 6) + &"x".repeat(body_bytes % 6)).execute(connection).await?;
     }
     Ok(())
 }
@@ -135,7 +135,7 @@ pub async fn prepare_writer(path: &Path, rows: usize, body_bytes: usize) -> Meas
     if rows > 0 {
         // One captured SQL statement; setup runs outside the measured process.
         query::<Turso>("WITH RECURSIVE numbers(value) AS(VALUES(0) UNION ALL SELECT value+1 FROM numbers WHERE value+1<?) INSERT INTO records SELECT printf('019eef00-0000-7000-8000-%012x',value),? FROM numbers")
-            .bind(i64::try_from(rows)?).bind("x".repeat(body_bytes)).execute(&mut transaction).await?;
+            .bind(i64::try_from(rows)?).bind(r"\u0001".repeat(body_bytes / 6) + &"x".repeat(body_bytes % 6)).execute(&mut transaction).await?;
     }
     transaction.commit().await?;
     database.close().await;
