@@ -177,10 +177,12 @@ async fn oversized_seed_page_fails_the_deduplicated_seed_operation_without_a_ret
     use sqlx_turso::TursoConnectOptions;
     use std::time::Duration;
 
-    assert!(
-        SeedFile::DEDUPLICATES,
-        "this regression must exercise the actual deduplicated call"
-    );
+    const {
+        assert!(
+            SeedFile::DEDUPLICATES,
+            "this regression must exercise the actual deduplicated call"
+        );
+    }
     let root = tempfile::tempdir()?;
     let path = root.path().join("writer.db");
     let mut connection = TursoConnectOptions::new()
