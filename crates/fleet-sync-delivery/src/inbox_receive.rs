@@ -228,8 +228,13 @@ where
         }
         if let Some(existing) = self.load(item.id()).await? {
             if existing.header.digest != item.digest().as_str() {
-                return Err(DeliveryError::Corrupt {
-                    field: "local item conflict",
+                let existing = ItemDigest::try_from(existing.header.digest).map_err(|_| {
+                    DeliveryError::Corrupt {
+                        field: "inbox header digest",
+                    }
+                })?;
+                return Err(DeliveryError::Refused {
+                    reason: DeliveryRefusal::ItemConflict { existing },
                 });
             }
             return Ok(None);
@@ -272,7 +277,9 @@ where
             .and_then(|bytes| bytes.checked_add(u64::from(record.header.settlement_bytes)))
             .is_none_or(|bytes| bytes > self.limits.inbox_bytes)
         {
-            return Err(DeliveryError::InvalidBatch);
+            return Err(DeliveryError::Refused {
+                reason: DeliveryRefusal::MailboxFull,
+            });
         }
         self.save(&record).await?;
         Ok(Some(input))
