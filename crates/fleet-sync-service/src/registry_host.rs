@@ -2,7 +2,8 @@ use crate::{
     ServiceConsumer, ServiceError, ServiceHost, ServiceObject, service_state::ServiceState,
 };
 use durable_steps::{
-    AtomicStore, Engine, OperationState, RequestKey, StoreError, Task, storage::TransactionScope,
+    AtomicStore, Engine, OperationState, RequestKey, SettleError, StoreError, Task,
+    storage::TransactionScope,
 };
 use fleet_sync_lease::*;
 use fleet_sync_protocol::*;
@@ -131,18 +132,22 @@ impl<
         key: RequestKey,
         input: T::Input,
     ) -> Result<T::Output, ServiceError> {
-        let operation = self
+        let status = self
             .registry_engine
-            .start::<T>(&key, input)
+            .start_and_settle::<T>(&key, input)
             .await
-            .map_err(ServiceError::rule)?;
-        self.registry_engine.drive_due().await?;
-        match self.registry_engine.status(&operation).await?.state {
+            .map_err(|error| match error {
+                SettleError::Admission(refusal) => ServiceError::rule(refusal),
+                SettleError::Execution(error) => ServiceError::Storage(error),
+            })?;
+        match status.state {
             OperationState::Completed { result } => {
                 serde_json::from_slice(&result).map_err(ServiceError::rule)
             }
             OperationState::Failed { reason } => Err(ServiceError::Operation { failure: reason }),
-            OperationState::Running { .. } => Err(ServiceError::Pending { operation }),
+            OperationState::Running { .. } => Err(ServiceError::Pending {
+                operation: status.id,
+            }),
         }
     }
 

@@ -45,8 +45,8 @@ pub async fn import_backup(
         digest: ImportDigest::of_canonical(&manifest)?,
     };
     assert!(matches!(
-        control_request(control, ControlRequest::Import(import.clone())).await?,
-        ControlAnswer::Import(ImportAnswer::Imported)
+        import_answer(control, import.clone(), "initial backup import").await?,
+        ImportAnswer::Imported
     ));
     let seed = match control_request(
         control,
@@ -104,6 +104,7 @@ pub async fn import_backup(
 pub async fn assert_post_claim_imports(
     control: &mut WebSocketConnection,
     original: &Import,
+    phase: &str,
 ) -> TestResult {
     let before = serde_json::to_value(
         control_request(
@@ -117,7 +118,12 @@ pub async fn assert_post_claim_imports(
     let mut repeated = original.clone();
     repeated.attempt = RequestId::new(durable_steps::Uuid::now_v7())?;
     assert_eq!(
-        import_answer(control, repeated).await?,
+        import_answer(
+            control,
+            repeated,
+            &format!("{phase}: fresh matching import")
+        )
+        .await?,
         ImportAnswer::AlreadyImported
     );
     let offered = ImportDigest::of_canonical(&"different post-claim backup")?;
@@ -125,14 +131,24 @@ pub async fn assert_post_claim_imports(
     conflicting.attempt = RequestId::new(durable_steps::Uuid::now_v7())?;
     conflicting.digest = offered.clone();
     assert_eq!(
-        import_answer(control, conflicting).await?,
+        import_answer(
+            control,
+            conflicting,
+            &format!("{phase}: fresh conflicting import")
+        )
+        .await?,
         ImportAnswer::ImportConflict {
             existing: Some(original.digest.clone()),
             offered
         }
     );
     assert_eq!(
-        import_answer(control, original.clone()).await?,
+        import_answer(
+            control,
+            original.clone(),
+            &format!("{phase}: original import replay")
+        )
+        .await?,
         ImportAnswer::Imported
     );
     assert_eq!(
@@ -153,9 +169,13 @@ pub async fn assert_post_claim_imports(
 async fn import_answer(
     control: &mut WebSocketConnection,
     request: Import,
+    context: &str,
 ) -> TestResult<ImportAnswer> {
-    match control_request(control, ControlRequest::Import(request)).await? {
+    let answer = control_request(control, ControlRequest::Import(request))
+        .await
+        .map_err(|error| format!("{context}: {error}"))?;
+    match answer {
         ControlAnswer::Import(answer) => Ok(answer),
-        _ => Err("import answer missing".into()),
+        _ => Err(format!("{context}: import answer missing").into()),
     }
 }

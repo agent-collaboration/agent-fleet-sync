@@ -160,6 +160,10 @@ impl<
                 self.local_receiver(target.copy)?;
                 let request: CreateCopy = decode(request)?;
                 let copy = self.copy(request.database).await.map_err(lost)?;
+                #[cfg(feature = "test-fault")]
+                copy.call_probe
+                    .before_call(crate::CopyCallKind::Create, call.clone())
+                    .await;
                 let answer = copy
                     .object
                     .transaction(move |scope| {

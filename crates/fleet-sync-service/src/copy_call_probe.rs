@@ -8,6 +8,7 @@ use tokio::sync::{Mutex, watch};
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CopyCallKind {
+    Create,
     Acknowledged,
     Fence,
 }

@@ -3,11 +3,17 @@ use futures_util::future::select_all;
 
 impl<S: AtomicStore, H: Host> Engine<S, H> {
     pub(super) async fn drive_operation(&self, id: OperationId) -> Result<DriveReport, StoreError> {
+        let mut report = DriveReport::default();
+        let activity = self.operation_drive_lock(id).await;
+        let Some(_active_drive) = activity.try_lock() else {
+            report.yielded.push(id);
+            return Ok(report);
+        };
+        // A competing drive yields before waiting for unrelated capacity.
         // Capacity is shared by every drive of this Engine. A permit is not the
         // storage owner: each journal transaction acquires/releases its own lock.
         let (_capacity, _, _) =
             select_all(self.drive_capacity.iter().map(|slot| Box::pin(slot.lock()))).await;
-        let mut report = DriveReport::default();
         let now = self.host.now();
         let lease = DriveLease {
             token: self.host.new_id(),

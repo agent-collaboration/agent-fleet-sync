@@ -40,14 +40,14 @@ async fn claimed_import_origin_survives_fresh_attempts_and_registry_restart() ->
         control_request(&mut control, ControlRequest::WaitHolderChange(change)).await?,
         ControlAnswer::HolderChange(HolderChangeAnswer::Granted { .. })
     ));
-    assert_post_claim_imports(&mut control, &import).await?;
+    assert_post_claim_imports(&mut control, &import, "before registry restart").await?;
     service.kill().await?;
     drop(control);
     service = ServiceProcess::start(&service_path).await?;
     control = service
         .connect("control", "Bearer consumer-control")
         .await?;
-    assert_post_claim_imports(&mut control, &import).await?;
+    assert_post_claim_imports(&mut control, &import, "after registry restart").await?;
     service.stop(&mut control).await?;
     Ok(())
 }

@@ -134,6 +134,15 @@ pub enum StartRefusal {
     Storage(#[from] StoreError),
 }
 
+/// Admission refusals are distinct from storage failures while settling a request.
+#[derive(Debug, Error)]
+pub enum SettleError {
+    #[error(transparent)]
+    Admission(#[from] StartRefusal),
+    #[error(transparent)]
+    Execution(#[from] StoreError),
+}
+
 impl From<StartRefusal> for StepError {
     fn from(error: StartRefusal) -> Self {
         match error {

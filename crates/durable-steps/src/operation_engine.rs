@@ -1,7 +1,7 @@
 use crate::{
     AtomicStore, BoxFuture, DriveLease, DriveReport, Host, JournalScope, OperationFailure,
-    OperationId, OperationState, OperationStatus, RequestKey, Resume, StartRefusal, StoreError,
-    Task,
+    OperationId, OperationState, OperationStatus, RequestKey, Resume, SettleError, StartRefusal,
+    StoreError, Task,
     operation_context::EngineContext,
     storage::{JournalStorage, OperationExecution, OperationOutcome},
 };
@@ -10,12 +10,19 @@ use runtime_primitives::Backoff;
 
 #[path = "operation_drive.rs"]
 mod operation_drive;
+#[path = "operation_settlement.rs"]
+mod operation_settlement;
 
 // Eight slots leave seven peers able to progress beside one held call, while
 // bounding suspended task contexts, encoded inputs and host dispatches.
 // The permits are shared across overlapping drive_due/start calls on this Engine.
 const MAX_CONCURRENT_OPERATIONS: usize = 8;
-use std::{collections::BTreeMap, future::Future, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    future::Future,
+    sync::{Arc, Weak},
+    time::Duration,
+};
 
 trait RegisteredTask<S: AtomicStore, H: Host>: Send + Sync {
     fn version(&self) -> u32;
@@ -102,6 +109,7 @@ pub struct Engine<S: AtomicStore, H: Host> {
     initial_backoff: Duration,
     maximum_backoff: Duration,
     drive_capacity: [Arc<Mutex<()>>; MAX_CONCURRENT_OPERATIONS],
+    operation_drives: Mutex<BTreeMap<OperationId, Weak<Mutex<()>>>>,
 }
 
 /// A test-only hold on existing execution capacity; dropping it permits claims.
@@ -120,6 +128,7 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
             initial_backoff: Duration::from_millis(10),
             maximum_backoff: Duration::from_secs(60),
             drive_capacity: std::array::from_fn(|_| Arc::new(Mutex::new(()))),
+            operation_drives: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -153,24 +162,9 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
         input: T::Input,
     ) -> impl Future<Output = Result<OperationId, StartRefusal>> + Send {
         async move {
-            if !self.tasks.contains_key(T::KIND) {
-                return Err(StartRefusal::UnknownKind);
-            }
-            let key = request_key.clone();
-            let admitted = self
-                .store
-                .transaction(move |scope| {
-                    Box::pin(async move {
-                        match scope.admit::<T>(&key, &input).await {
-                            Err(StartRefusal::Storage(error)) => Err(error),
-                            result => Ok(result),
-                        }
-                    })
-                })
-                .await??;
-            self.rearm().await?;
+            let operation = self.admit::<T>(request_key, input).await?;
             self.drive_due().await?;
-            Ok(admitted.id())
+            Ok(operation)
         }
     }
 
