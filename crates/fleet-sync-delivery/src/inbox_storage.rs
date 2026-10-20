@@ -282,6 +282,11 @@ where
         consumer
             .on_outcome(self.scope, header.id, &report.outcome, observation)
             .await?;
+        if let Some(target) = header.cancel_target {
+            consumer
+                .on_cancel_outcome(self.scope, header.id, target, &report.outcome)
+                .await?;
+        }
         if matches!(header.route, InboxRoute::Local) {
             return Ok(None);
         }

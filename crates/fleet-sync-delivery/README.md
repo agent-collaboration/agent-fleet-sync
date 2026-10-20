@@ -60,6 +60,13 @@ fresh-admission projections for both fresh variants without repeating them on
 replay. The wrapper has already admitted an `Attempt` to the journal before
 returning its delivery payload.
 
+`DeliveryConsumer::on_cancel_outcome(scope, cancel, target, outcome)` projects a
+control's outcome with its target, immediately after `on_outcome` in the same
+custody transaction. It runs once when the control settles on Local and remote
+routes, including `TooLate`, `Prevented`, `Refused` and `Expired`; replays do not
+repeat it. The default does nothing. An error aborts custody and both hooks'
+projections. Local controls still create no remote report.
+
 `Inbox::enqueue_local_cancel(cancel, consumer, now)` returns
 `LocalCancelAdmission { reference, effects }`. Use the returned reference: a
 second cancel ID for an already linked target replays the first canonical cancel.

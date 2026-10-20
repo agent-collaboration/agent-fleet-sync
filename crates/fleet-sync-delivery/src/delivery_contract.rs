@@ -144,6 +144,21 @@ pub trait DeliveryConsumer<S: TransactionScope>: Send + Sync + 'static {
     ) -> impl Future<Output = Result<(), DeliveryError>> + Send {
         async { Ok(()) }
     }
+    /// Project a control's outcome with its target in the custody transaction,
+    /// immediately after on_outcome. Called once when the control settles, on
+    /// Local and remote routes; replays do not call it. An error aborts the
+    /// transaction, including both outcome projections.
+    fn on_cancel_outcome(
+        &self,
+        _scope: &mut S,
+        _cancel: ItemId,
+        _target: ItemId,
+        _outcome: &RecipientOutcome<
+            <<Self::Protocol as ConsumerProtocol>::Delivery as DeliveryTypes>::Acceptance,
+        >,
+    ) -> impl Future<Output = Result<(), DeliveryError>> + Send {
+        async { Ok(()) }
+    }
     fn release_gate(
         &self,
         scope: &mut S,
