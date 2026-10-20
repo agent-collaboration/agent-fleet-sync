@@ -23,6 +23,8 @@ pub mod volatile_store;
 pub use operation_contract::{
     AtomicStore, BoxFuture, CallTarget, Host, JournalScope, OperationContext, ReborrowScope, Task,
 };
+#[cfg(feature = "test-support")]
+pub use operation_engine::DriveHold;
 pub use operation_engine::Engine;
 pub use operation_model::*;
 pub use uuid::Uuid;

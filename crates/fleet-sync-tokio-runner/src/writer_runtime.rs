@@ -210,17 +210,9 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> NativeWriterRuntime<S, P> {
     }
     pub async fn run(&self, shutdown: watch::Receiver<bool>) -> Result<(), StoreError> {
         self.store.ensure_renewal(self.receiver).await?;
-        let runner = TokioRunner::new(
-            self.engine.clone(),
-            self.host.clone(),
-            self.database.engine_lock(),
-        );
+        let runner = TokioRunner::new(self.engine.clone(), self.host.clone());
         let result = if let Some(installer) = &self.installer {
-            let installing = TokioRunner::new(
-                installer.engine.clone(),
-                installer.host.clone(),
-                installer.control.engine_lock(),
-            );
+            let installing = TokioRunner::new(installer.engine.clone(), installer.host.clone());
             let result = tokio::try_join!(runner.run(shutdown.clone()), installing.run(shutdown))
                 .map(|_| ());
             let closed = installer.objects.close().await;

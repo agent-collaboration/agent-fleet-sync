@@ -366,6 +366,17 @@ async fn killing_a_process_at_every_committed_hop_recovers_without_duplicate_eff
             .await?;
         if !sender_fault {
             recipient.command(NodeCommand::WaitBarrier).await?;
+            if hop == "received" {
+                // Received is a different operation from local delivery. With
+                // concurrent drives its held acknowledgment does not order the
+                // local checkpoint. This success-recovery case selects a saved
+                // Delivered outcome; the unanswered local-call overlap has its
+                // own Uncertain/one-effect crash case.
+                let committed = recipient
+                    .wait(item, CustodySide::Inbox, "delivered")
+                    .await?;
+                assert_eq!(effect_count(&committed, item), 1);
+            }
             inspect_live_hop(&mut control, &mut sender, &mut recipient, item, hop)
                 .await
                 .map_err(|error| format!("kill {hop} live snapshot: {error}"))?;
@@ -381,7 +392,20 @@ async fn killing_a_process_at_every_committed_hop_recovers_without_duplicate_eff
         } else {
             "delivered"
         };
-        let snapshot = recipient.wait(item, CustodySide::Inbox, expected).await?;
+        let snapshot = match recipient.wait(item, CustodySide::Inbox, expected).await {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                eprintln!(
+                    "OBS kill {hop} recovery failed; actual recipient={}",
+                    recipient.command(NodeCommand::Inspect { item }).await?
+                );
+                eprintln!(
+                    "OBS kill {hop} actual recipient custody={}",
+                    recipient.command(NodeCommand::Snapshot).await?
+                );
+                return Err(error);
+            }
+        };
         assert_eq!(effect_count(&snapshot, item), 1, "kill {hop}");
         sender.wait(item, CustodySide::Outbox, expected).await?;
         recipient
@@ -511,6 +535,8 @@ async fn inspect_live_hop(
         return Err("missing delivery inspection".into());
     };
     let sender = sender.command(NodeCommand::Snapshot).await?;
+    let recipient_item = recipient.command(NodeCommand::Inspect { item }).await?;
+    eprintln!("OBS live {hop} item before kill={recipient_item}");
     let recipient = recipient.command(NodeCommand::Snapshot).await?;
     let mailbox = relay
         .mailbox

@@ -50,6 +50,8 @@ mod native_publish;
 mod object_key;
 mod object_runner;
 #[cfg(test)]
+mod object_runner_tests;
+#[cfg(test)]
 mod object_store_tests;
 #[cfg(feature = "test-support")]
 mod schema_finalize_probe;

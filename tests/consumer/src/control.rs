@@ -218,10 +218,9 @@ pub(crate) struct ControlState {
     pub consumer: Arc<Consumer>,
     pub authenticator: Arc<FixtureAuthenticator>,
     pub service: ConsumerHandle,
-    pub schema_drive: tokio::sync::Mutex<Option<tokio::sync::OwnedMutexGuard<()>>>,
-    pub copy_drives: tokio::sync::Mutex<
-        std::collections::BTreeMap<DatabaseId, tokio::sync::OwnedMutexGuard<()>>,
-    >,
+    pub schema_drive: tokio::sync::Mutex<Option<durable_steps::DriveHold>>,
+    pub copy_drives:
+        tokio::sync::Mutex<std::collections::BTreeMap<DatabaseId, durable_steps::DriveHold>>,
     pub shutdown: watch::Sender<bool>,
     pub source_events:
         tokio::sync::mpsc::Sender<fleet_sync_service::AttachedSource<SampleProtocol>>,

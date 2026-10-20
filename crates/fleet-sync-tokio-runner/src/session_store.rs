@@ -215,13 +215,9 @@ where
             .owner
             .set(Arc::downgrade(&self))
             .map_err(|_| SessionHostError::rule("session runner already owned"))?;
-        crate::TokioRunner::new(
-            self.engine.clone(),
-            self.object.host(),
-            self.object.engine_lock(),
-        )
-        .run(shutdown)
-        .await
-        .map_err(Into::into)
+        crate::TokioRunner::new(self.engine.clone(), self.object.host())
+            .run(shutdown)
+            .await
+            .map_err(Into::into)
     }
 }

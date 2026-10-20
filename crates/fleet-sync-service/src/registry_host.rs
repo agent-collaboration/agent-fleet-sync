@@ -136,11 +136,7 @@ impl<
             .start::<T>(&key, input)
             .await
             .map_err(ServiceError::rule)?;
-        {
-            let lock = self.registry.engine_lock();
-            let _work = lock.lock().await;
-            self.registry_engine.drive_due().await?;
-        }
+        self.registry_engine.drive_due().await?;
         match self.registry_engine.status(&operation).await?.state {
             OperationState::Completed { result } => {
                 serde_json::from_slice(&result).map_err(ServiceError::rule)

@@ -12,6 +12,10 @@ use sqlx_turso::Turso;
 use std::sync::Arc;
 use tokio::sync::{OnceCell, watch};
 
+#[cfg(test)]
+#[path = "delivery_deadline_tests.rs"]
+mod deadline_tests;
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum DeliveryObject {
     Mailbox(PeerId),

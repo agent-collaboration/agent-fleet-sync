@@ -11,7 +11,7 @@ workspace = true
 
 [features]
 test-fault = ["fleet-sync-tokio-runner/test-fault"]
-test-support = ["fleet-sync-tokio-runner/test-support", "fleet-sync-delivery/test-support"]
+test-support = ["durable-steps/test-support", "fleet-sync-tokio-runner/test-support", "fleet-sync-delivery/test-support"]
 
 [dependencies]
 fleet-sync-delivery = {path="../fleet-sync-delivery"}

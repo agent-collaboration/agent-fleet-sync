@@ -17,7 +17,6 @@ type WriterInstallEngine<S, P> = Engine<TokioObject<WriterHost<S, P>>, WriterHos
 
 pub(crate) struct WriterInstaller<S: ReplicatedSchema, P: ConsumerProtocol> {
     pub objects: ObjectStore<WriterHost<S, P>>,
-    pub control: Arc<TokioObject<WriterHost<S, P>>>,
     pub host: Arc<WriterHost<S, P>>,
     pub engine: Arc<WriterInstallEngine<S, P>>,
     coordinator: Arc<InstallCoordinator<WriterHost<S, P>>>,
@@ -56,7 +55,6 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterInstaller<S, P> {
         engine.register(InstallSnapshot::new(host.clone()))?;
         Ok(Arc::new(Self {
             objects,
-            control,
             host,
             engine: Arc::new(engine),
             coordinator,

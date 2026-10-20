@@ -6,7 +6,7 @@ use fleet_sync_session::PeerAuthenticator;
 use sqlx_core::{query::query, row::Row};
 use sqlx_turso::Turso;
 use std::sync::Arc;
-use tokio::sync::{Mutex, OwnedMutexGuard, watch};
+use tokio::sync::{Mutex, watch};
 
 struct Hold {
     peer: PeerId,
@@ -108,8 +108,8 @@ impl<
             .await
             .map_err(Into::into)
     }
-    pub async fn hold_registry_drive(&self) -> OwnedMutexGuard<()> {
-        self.state.registry.engine_lock().lock_owned().await
+    pub async fn hold_registry_drive(&self) -> durable_steps::DriveHold {
+        self.state.registry_engine.hold_drives_for_test().await
     }
     pub fn fail_next_schema_finalize(&self, peer: PeerId) -> Result<(), ServiceError> {
         self.sessions

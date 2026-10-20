@@ -47,17 +47,17 @@ impl<
             .wait_for_waiter()
             .await
     }
+    #[cfg(feature = "test-support")]
     pub async fn hold_copy_drive_for_test(
         &self,
         database: DatabaseId,
-    ) -> Result<tokio::sync::OwnedMutexGuard<()>, ServiceError> {
+    ) -> Result<durable_steps::DriveHold, ServiceError> {
         Ok(self
             .state
             .copy(database)
             .await?
-            .object
-            .engine_lock()
-            .lock_owned()
+            .engine
+            .hold_drives_for_test()
             .await)
     }
     pub async fn replace_copy_marker_for_test(

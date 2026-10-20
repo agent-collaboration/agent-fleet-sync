@@ -526,7 +526,7 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
     ))?;
     engine.register(observer::ObservedTask::new(ReportTask::new(config), &state))?;
     let (shutdown, stopped) = watch::channel(false);
-    let runner = TokioRunner::new(Arc::new(engine), host, object.engine_lock());
+    let runner = TokioRunner::new(Arc::new(engine), host);
     let runner_task = tokio::spawn(async move { runner.run(stopped).await });
     let socket_task = tokio::spawn(actor.run(Arc::downgrade(&state), shutdown.subscribe()));
     let mut input = BufReader::new(tokio::io::stdin()).lines();

@@ -5,7 +5,16 @@ use crate::{
     operation_context::EngineContext,
     storage::{JournalStorage, OperationExecution, OperationOutcome},
 };
+use futures_util::{StreamExt, lock::Mutex};
 use runtime_primitives::Backoff;
+
+#[path = "operation_drive.rs"]
+mod operation_drive;
+
+// Eight slots leave seven peers able to progress beside one held call, while
+// bounding suspended task contexts, encoded inputs and host dispatches.
+// The permits are shared across overlapping drive_due/start calls on this Engine.
+const MAX_CONCURRENT_OPERATIONS: usize = 8;
 use std::{collections::BTreeMap, future::Future, sync::Arc, time::Duration};
 
 trait RegisteredTask<S: AtomicStore, H: Host>: Send + Sync {
@@ -92,6 +101,13 @@ pub struct Engine<S: AtomicStore, H: Host> {
     drive_lease: Duration,
     initial_backoff: Duration,
     maximum_backoff: Duration,
+    drive_capacity: [Arc<Mutex<()>>; MAX_CONCURRENT_OPERATIONS],
+}
+
+/// A test-only hold on existing execution capacity; dropping it permits claims.
+#[cfg(feature = "test-support")]
+pub struct DriveHold {
+    _permits: Vec<futures_util::lock::OwnedMutexGuard<()>>,
 }
 
 impl<S: AtomicStore, H: Host> Engine<S, H> {
@@ -103,7 +119,18 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
             drive_lease: Duration::from_secs(30),
             initial_backoff: Duration::from_millis(10),
             maximum_backoff: Duration::from_secs(60),
+            drive_capacity: std::array::from_fn(|_| Arc::new(Mutex::new(()))),
         }
+    }
+
+    /// Hold every execution slot before journal claims, while domain writes remain live.
+    #[cfg(feature = "test-support")]
+    pub async fn hold_drives_for_test(&self) -> DriveHold {
+        let mut permits = Vec::with_capacity(MAX_CONCURRENT_OPERATIONS);
+        for slot in &self.drive_capacity {
+            permits.push(Arc::clone(slot).lock_owned().await);
+        }
+        DriveHold { _permits: permits }
     }
 
     pub fn register<T: Task<Store = S>>(&mut self, task: T) -> Result<(), StoreError> {
@@ -186,174 +213,22 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
                 wake_failure: self.rearm().await?,
                 ..DriveReport::default()
             };
-            for id in due {
-                let now = self.host.now();
-                let lease = DriveLease {
-                    token: self.host.new_id(),
-                    until: now.after(self.drive_lease),
-                };
-                let token = lease.token;
-                let claimed = self
-                    .store
-                    .transaction(move |scope| {
-                        Box::pin(async move {
-                            let claimed = scope.claim(id, now, lease).await?;
-                            if let Some(earliest) = scope.earliest().await? {
-                                scope.ensure_wake(earliest).await?;
-                            }
-                            Ok(claimed)
-                        })
-                    })
-                    .await?;
-                report.wake_failure = self.rearm().await?.or(report.wake_failure);
-                let Some(record) = claimed else {
-                    report.yielded.push(id);
-                    continue;
-                };
-                let mut context = EngineContext {
-                    store: &*self.store,
-                    host: Arc::clone(&self.host),
-                    operation: id,
-                    token,
-                    position: 0,
-                    failure: None,
-                    wake_failure: None,
-                };
-                let task = self.tasks.get(record.kind.as_str()).cloned();
-                let (input, attempt) = match record.execution {
-                    OperationExecution::Running { input, attempt, .. } => (input, attempt),
-                    _ => {
-                        return Err(StoreError::Corrupt {
-                            field: "claim".into(),
-                            message: "claimed a finished operation".into(),
-                        });
-                    }
-                };
-                let execution = match &task {
-                    Some(task) if task.version() == record.version => {
-                        let resumed = self
-                            .before_resume(Arc::clone(task), id, token, record.request_key.clone())
-                            .await;
-                        report.wake_failure = self.rearm().await?.or(report.wake_failure);
-                        match resumed {
-                            Ok(Resume::Continue) => task.execute(&mut context, input).await,
-                            Ok(Resume::Finish(())) => {
-                                report.completed.push(id);
-                                continue;
-                            }
-                            Err(StoreError::StepRollback { failure }) => Err(*failure),
-                            Err(error) => Err(OperationFailure::Storage { error }),
-                        }
-                    }
-                    Some(task) => Err(OperationFailure::VersionMismatch {
-                        recorded: record.version,
-                        registered: task.version(),
-                    }),
-                    None => Err(OperationFailure::Refused {
-                        code: "unknown_kind".into(),
-                        detail: record.kind,
-                    }),
-                };
-                let execution = match context.failure.take() {
-                    Some(failure) => Err(failure),
-                    None => execution,
-                };
-                let position = context.position;
-                report.wake_failure = context.wake_failure.or(report.wake_failure);
-                let mut state = match execution {
-                    Ok(result) => OperationState::Completed { result },
-                    Err(OperationFailure::Retry { after_ms }) => OperationState::Running {
-                        next_attempt_at: self
-                            .host
-                            .now()
-                            .after(self.retry_after(attempt, Duration::from_millis(after_ms))),
-                        attempt: attempt.saturating_add(1),
-                        drive: None,
-                    },
-                    Err(OperationFailure::Storage {
-                        error: StoreError::StaleDriveToken { .. },
-                    }) => {
-                        report.yielded.push(id);
-                        continue;
-                    }
-                    Err(OperationFailure::Storage { .. }) => OperationState::Running {
-                        next_attempt_at: self
-                            .host
-                            .now()
-                            .after(self.retry_after(attempt, Duration::ZERO)),
-                        attempt: attempt.saturating_add(1),
-                        drive: None,
-                    },
-                    Err(reason) => OperationState::Failed { reason },
-                };
-                let finished_at = self.host.now();
-                let finished = self
-                    .store
-                    .transaction(move |scope| {
-                        Box::pin(async move {
-                            scope.check_token(id, token).await?;
-                            if matches!(state, OperationState::Completed { .. })
-                                && scope.step_count(id).await? != position
-                            {
-                                state = OperationState::Failed {
-                                    reason: OperationFailure::Nondeterministic {
-                                        position,
-                                        expected: "another recorded step".into(),
-                                        found: "end of task".into(),
-                                    },
-                                };
-                            }
-                            match &state {
-                                OperationState::Running {
-                                    next_attempt_at,
-                                    attempt,
-                                    ..
-                                } => scope.retry(id, token, *next_attempt_at, *attempt).await?,
-                                OperationState::Completed { result } => {
-                                    scope
-                                        .finish(
-                                            id,
-                                            token,
-                                            OperationOutcome::Completed {
-                                                result: result.clone(),
-                                            },
-                                            finished_at,
-                                            task.as_ref().is_none_or(|task| task.keep_result()),
-                                        )
-                                        .await?
-                                }
-                                OperationState::Failed { reason } => {
-                                    if let Some(task) = &task {
-                                        task.on_failed(scope, &record.request_key, reason).await?;
-                                    }
-                                    scope
-                                        .finish(
-                                            id,
-                                            token,
-                                            OperationOutcome::Failed {
-                                                reason: reason.clone(),
-                                            },
-                                            finished_at,
-                                            task.as_ref().is_none_or(|task| task.keep_result()),
-                                        )
-                                        .await?;
-                                }
-                            }
-                            if let Some(earliest) = scope.earliest().await? {
-                                scope.ensure_wake(earliest).await?;
-                            }
-                            Ok(state)
-                        })
-                    })
-                    .await;
-                report.wake_failure = self.rearm().await?.or(report.wake_failure);
-                match finished {
-                    Err(StoreError::StaleDriveToken { .. }) => report.yielded.push(id),
-                    Err(error) => return Err(error),
-                    Ok(OperationState::Completed { .. }) => report.completed.push(id),
-                    Ok(OperationState::Failed { reason }) => report.failed.push((id, reason)),
-                    Ok(OperationState::Running { .. }) => report.retried.push(id),
-                }
+            // Execute independently, then fold reports in the original due order.
+            // Collect before propagating errors so another in-flight call is not
+            // abandoned merely because a sibling's storage transaction failed.
+            let mut outcomes = futures_util::stream::iter(due.into_iter().enumerate())
+                .map(|(index, id)| async move { (index, self.drive_operation(id).await) })
+                .buffer_unordered(MAX_CONCURRENT_OPERATIONS)
+                .collect::<Vec<_>>()
+                .await;
+            outcomes.sort_by_key(|(index, _)| *index);
+            for (_, outcome) in outcomes {
+                let operation = outcome?;
+                report.completed.extend(operation.completed);
+                report.failed.extend(operation.failed);
+                report.retried.extend(operation.retried);
+                report.yielded.extend(operation.yielded);
+                report.wake_failure = operation.wake_failure.or(report.wake_failure);
             }
             Ok(report)
         }

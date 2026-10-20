@@ -248,7 +248,6 @@ impl<
         let registry_runner = TokioRunner::new(
             self.state.registry_engine.clone(),
             self.state.registry.host(),
-            self.state.registry.engine_lock(),
         );
         let registry_stop = stopped.clone();
         tasks.spawn(async move {
@@ -257,11 +256,8 @@ impl<
                 .await
                 .map_err(ServiceError::from)
         });
-        let control_runner = TokioRunner::new(
-            self.state.control_engine.clone(),
-            self.state.control.host(),
-            self.state.control.engine_lock(),
-        );
+        let control_runner =
+            TokioRunner::new(self.state.control_engine.clone(), self.state.control.host());
         let control_stop = stopped.clone();
         tasks.spawn(async move {
             control_runner
@@ -380,11 +376,7 @@ impl<
                 continue;
             };
             started.insert(key);
-            let runner = TokioRunner::new(
-                owner.engine.clone(),
-                owner.object.host(),
-                owner.object.engine_lock(),
-            );
+            let runner = TokioRunner::new(owner.engine.clone(), owner.object.host());
             let shutdown = shutdown.clone();
             tasks.spawn(async move { runner.run(shutdown).await.map_err(ServiceError::from) });
         }
@@ -407,11 +399,7 @@ impl<
             if !started.insert(database) {
                 continue;
             }
-            let runner = TokioRunner::new(
-                owner.engine.clone(),
-                owner.object.host(),
-                owner.object.engine_lock(),
-            );
+            let runner = TokioRunner::new(owner.engine.clone(), owner.object.host());
             let shutdown = shutdown.clone();
             tasks.spawn(async move {
                 if let Err(error) = runner.run(shutdown).await {
