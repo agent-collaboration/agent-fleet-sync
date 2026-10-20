@@ -362,7 +362,11 @@ impl NetworkFixture {
             .register(ReceiveTask::new(config, consumer.clone()))
             .unwrap();
         engine
-            .register(DeliverTask::new(config, consumer, fixture.host.clone()))
+            .register(DeliverTask::new(
+                config.local,
+                consumer,
+                fixture.host.clone(),
+            ))
             .unwrap();
         engine.register(ReportTask::new(config)).unwrap();
         engine.register(PublishTask::new()).unwrap();
@@ -410,9 +414,11 @@ impl NetworkFixture {
 }
 pub fn config() -> DeliveryTaskConfig {
     DeliveryTaskConfig {
-        owner: peer(2),
+        local: LocalDeliveryConfig {
+            owner: peer(2),
+            limits: limits(),
+        },
         relay: peer(3),
-        limits: limits(),
         fetch_items: 10,
         fetch_bytes: 100_000,
     }

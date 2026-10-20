@@ -11,14 +11,14 @@ use sqlx_core::{
 use std::{marker::PhantomData, sync::Arc};
 
 pub struct DeliverLocally<S, Db, D, C> {
-    config: DeliveryTaskConfig,
+    config: LocalDeliveryConfig,
     consumer: Arc<C>,
     clock: Arc<dyn runtime_primitives::Clock>,
     store: TaskTypes<S, Db, D>,
 }
 impl<S, Db, D, C> DeliverLocally<S, Db, D, C> {
     pub fn new(
-        config: DeliveryTaskConfig,
+        config: LocalDeliveryConfig,
         consumer: Arc<C>,
         clock: Arc<dyn runtime_primitives::Clock>,
     ) -> Self {

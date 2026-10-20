@@ -49,7 +49,7 @@ where
         let report = ctx
             .local(step("read_report")?, move |scope| {
                 Box::pin(async move {
-                    Inbox::<_, D>::new(scope, config.owner, config.limits)
+                    Inbox::<_, D>::new(scope, config.local.owner, config.local.limits)
                         .resolve_report(input)
                         .await
                         .map_err(step_error)
@@ -59,7 +59,7 @@ where
         let answer = ctx
             .call(
                 step("report")?,
-                ReportCall::<D>::new(config.relay, config.owner),
+                ReportCall::<D>::new(config.relay, config.local.owner),
                 report,
             )
             .await?;
@@ -78,7 +78,7 @@ where
         }
         ctx.local(step("retire_report")?, move |scope| {
             Box::pin(async move {
-                Inbox::<_, D>::new(scope, config.owner, config.limits)
+                Inbox::<_, D>::new(scope, config.local.owner, config.local.limits)
                     .retire_report(input)
                     .await
                     .map_err(step_error)
@@ -96,7 +96,7 @@ where
             let (item, report_seq): (ItemId, ReportSeq) =
                 serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
             let reference = ReportRef { item, report_seq };
-            if Inbox::<_, D>::new(scope, self.config.owner, self.config.limits)
+            if Inbox::<_, D>::new(scope, self.config.local.owner, self.config.local.limits)
                 .report_superseded(reference)
                 .await
                 .map_err(store_error)?

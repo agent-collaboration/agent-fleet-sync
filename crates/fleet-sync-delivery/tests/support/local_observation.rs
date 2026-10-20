@@ -232,13 +232,10 @@ impl ObservationFixture {
         })).await.unwrap()
     }
 }
-pub fn config() -> DeliveryTaskConfig {
-    DeliveryTaskConfig {
+pub fn config() -> LocalDeliveryConfig {
+    LocalDeliveryConfig {
         owner: peer(2),
-        relay: peer(3),
         limits: limits(),
-        fetch_items: 10,
-        fetch_bytes: 100_000,
     }
 }
 

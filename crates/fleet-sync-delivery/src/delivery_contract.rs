@@ -161,11 +161,18 @@ pub trait DeliveryConsumer<S: TransactionScope>: Send + Sync + 'static {
     ) -> bool;
 }
 
+/// Recipient custody and local execution do not depend on relay enrollment.
+#[derive(Clone, Copy)]
+pub struct LocalDeliveryConfig {
+    pub owner: PeerId,
+    pub limits: DeliveryLimits,
+}
+
+/// Relay-facing tasks add transport settings to the recipient's local settings.
 #[derive(Clone, Copy)]
 pub struct DeliveryTaskConfig {
-    pub owner: PeerId,
+    pub local: LocalDeliveryConfig,
     pub relay: PeerId,
-    pub limits: DeliveryLimits,
     pub fetch_items: u32,
     pub fetch_bytes: u64,
 }

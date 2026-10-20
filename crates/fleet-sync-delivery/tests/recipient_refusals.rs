@@ -116,7 +116,7 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
             .unwrap();
         recipient
             .register(ProjectedDeliver::new(
-                config(),
+                config().local,
                 Arc::new(ProjectionConsumer),
                 network.recipient.host.clone(),
             ))

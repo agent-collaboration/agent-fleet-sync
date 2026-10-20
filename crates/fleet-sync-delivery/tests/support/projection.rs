@@ -253,7 +253,7 @@ pub(crate) fn projection_engine(
     let mut engine = Engine::new(fixture.store.clone(), fixture.host.clone());
     engine
         .register(ProjectionTask::new(
-            config(),
+            config().local,
             consumer,
             fixture.host.clone(),
         ))

@@ -34,7 +34,7 @@ impl<C> InterleavedDeliver<C> {
         consumer: Arc<C>,
     ) -> Self {
         Self {
-            inner: DeliverLocally::new(config(), consumer, host),
+            inner: DeliverLocally::new(config().local, consumer, host),
             store,
             action,
             performed: Arc::new(AtomicBool::new(false)),

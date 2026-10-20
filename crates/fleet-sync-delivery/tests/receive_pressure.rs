@@ -46,7 +46,10 @@ async fn capacity_taken_after_fetch_budget_waits_with_saved_batch_and_recovers_a
         + u64::from(limits().settlement_allowance())
         + 128; // FetchEntry framing also fits its byte budget.
     let config = DeliveryTaskConfig {
-        limits: configured_limits(100_000, 20, capacity),
+        local: LocalDeliveryConfig {
+            limits: configured_limits(100_000, 20, capacity),
+            ..config().local
+        },
         ..config()
     };
     network.enqueue(1, "remote A").await;
@@ -71,7 +74,7 @@ async fn capacity_taken_after_fetch_budget_waits_with_saved_batch_and_recovers_a
                 let DeliveryEnvelope::Item(local) = item(9, "local A!") else {
                     return Err(StoreError::backend("fixture must be a local item"));
                 };
-                Inbox::<_, TestTypes>::new(scope, peer(2), config.limits)
+                Inbox::<_, TestTypes>::new(scope, peer(2), config.local.limits)
                     .enqueue_local(local, SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)

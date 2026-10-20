@@ -13,6 +13,61 @@ use std::{
 };
 use support::{item_id, limits, peer};
 
+#[tokio::test]
+async fn local_delivery_constructs_and_replays_without_relay_configuration() {
+    // The fixture has only native recipient custody and a local call adapter;
+    // any remote call is rejected. No relay, receive or report task is installed.
+    let fixture = ObservationFixture::new().await;
+    fixture
+        .host
+        .consumer
+        .answers
+        .lock()
+        .unwrap()
+        .push_back(LocalDelivery {
+            outcome: LocalOutcome::Delivered {
+                acceptance: support::Acceptance {
+                    receipt: "local receipt".into(),
+                },
+            },
+            observation: "local consumer accepted".into(),
+        });
+    let config = LocalDeliveryConfig {
+        owner: peer(2),
+        limits: limits(),
+    };
+    let mut engine = Engine::new(fixture.store.clone(), fixture.host.clone());
+    engine
+        .register(ObservationTask::new(
+            config,
+            fixture.host.consumer.clone(),
+            fixture.host.clone(),
+        ))
+        .unwrap();
+
+    fixture.enqueue(1, None).await;
+    let completed = engine.drive_due().await.unwrap();
+    assert_eq!(completed.completed.len(), 1);
+    assert!(completed.failed.is_empty(), "{completed:?}");
+    assert!(completed.retried.is_empty(), "{completed:?}");
+    assert_eq!(fixture.host.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        fixture.projections().await,
+        vec![(
+            item_id(1).as_uuid().to_string(),
+            serde_json::json!({"kind":"delivered","value":{"acceptance":{"receipt":"local receipt"}}}),
+            Some("local consumer accepted".into()),
+        )]
+    );
+
+    fixture.enqueue(1, None).await;
+    let repeated = engine.drive_due().await.unwrap();
+    assert!(repeated.completed.is_empty());
+    assert!(repeated.failed.is_empty(), "{repeated:?}");
+    assert_eq!(fixture.host.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(fixture.projections().await.len(), 1);
+}
+
 #[test]
 fn observation_bound_counts_canonical_json_bytes_including_quotes() {
     let valid = DeliverCall::<ObservationTypes>::validated_answer(LocalDelivery {
