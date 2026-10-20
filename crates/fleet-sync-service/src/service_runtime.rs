@@ -1,6 +1,6 @@
 use crate::{
     ServiceConsumer, ServiceError, ServiceHost, ServiceOptions,
-    call_router::{RoutedCall, ServiceCalls},
+    call_router::{RoutedCall, ServiceCalls, unreachable},
     registry_host::registry_engine,
     service_state::{ServiceSessions, ServiceState},
     session_handler::ServiceSessionHandler,
@@ -22,6 +22,10 @@ use tokio::{
     sync::{Mutex, Notify, mpsc, watch},
     task::JoinSet,
 };
+
+#[cfg(test)]
+#[path = "service_shutdown_tests.rs"]
+mod shutdown_tests;
 
 /// The service owns every spawned task. The consumer supplies its authenticated
 /// admin surface separately from the peer session router.
@@ -325,6 +329,11 @@ impl<
             let _ = accepted.done.send(());
         }
         self.calls.close();
+        // These calls never entered routing. Release their waiting runners
+        // before joining them; closing the carrier alone retains the replies.
+        while let Ok(call) = self.calls.try_recv() {
+            let _ = call.answer.send(Err(unreachable()));
+        }
         // Calls have deadlines and shutdown is delivered to every object runner.
         // The owner joins them before it closes native connections.
         while let Some(task) = tasks.join_next().await {
