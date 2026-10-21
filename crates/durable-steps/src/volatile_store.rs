@@ -105,10 +105,8 @@ impl<H: Host> JournalScope for VolatileScope<'_, H> {
             .state
             .operations
             .values()
-            .filter(|record| {
-                record.kind == kind
-                    && matches!(record.execution, OperationExecution::Running { .. })
-            })
+            .filter(|record| matches!(record.execution, OperationExecution::Running { .. }))
+            .filter(|record| record.kind == kind)
             .map(|record| record.request_key.clone())
             .collect())
     }

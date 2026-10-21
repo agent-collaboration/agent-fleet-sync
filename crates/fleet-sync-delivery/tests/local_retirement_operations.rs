@@ -2,9 +2,11 @@
 #[path = "support/local_cancellation.rs"]
 mod local_cancellation;
 mod support;
-use durable_steps::{AtomicStore, Engine, JournalScope, Task};
+use durable_steps::{AtomicStore, Engine, JournalScope, Task, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use local_cancellation::*;
+use sqlx_core::query::query;
+use sqlx_turso::Turso;
 use std::{sync::Arc, time::Duration};
 use support::{
     interleaving::{AfterAnswer, InterleavedDeliver},
@@ -344,5 +346,115 @@ async fn malformed_running_delivery_key_is_corruption_before_any_deletion() {
             field: "delivery operation request key"
         })
     ));
+    assert_eq!(snapshot(&fixture).await, before);
+}
+
+#[tokio::test]
+async fn empty_stored_running_key_is_corruption_without_deleting_custody() {
+    let fixture = Fixture::new().await;
+    let input = require_local_attempt(enqueue_original(&fixture, 1, limits()).await).unwrap();
+    fixture
+        .store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    .record_failure(
+                        input,
+                        DeliveryFailureKind::ExecutionFailed,
+                        &TestConsumer,
+                        SyncTime::from_unix_millis(0),
+                    )
+                    .await
+                    .map_err(storage_error)?;
+                let operation = scope
+                    .admit::<DeliverTask>(
+                        &delivery_request_key(&(input.item, input.attempt))
+                            .map_err(storage_error)?,
+                        &input,
+                    )
+                    .await
+                    .map_err(durable_steps::StoreError::backend)?
+                    .id();
+                let changed = query::<Turso>(
+                    "UPDATE _fleet_sync_operations SET request_key='' WHERE operation_id=?1",
+                )
+                .bind(operation.as_uuid().to_string())
+                .execute(scope.executor())
+                .await?;
+                assert_eq!(changed.rows_affected(), 1);
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+    let before = snapshot(&fixture).await;
+
+    let result = fixture
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                Ok(Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    .retire_local(&reference(1))
+                    .await)
+            })
+        })
+        .await
+        .unwrap();
+
+    assert!(
+        matches!(
+            result,
+            Err(DeliveryError::Corrupt {
+                field: "delivery operation request key"
+            })
+        ),
+        "empty stored journal key lost its corruption classification: {result:?}"
+    );
+    assert_eq!(snapshot(&fixture).await, before);
+}
+
+#[tokio::test]
+async fn running_key_backend_failure_stays_storage_without_deleting_custody() {
+    let fixture = Fixture::new().await;
+    let input = require_local_attempt(enqueue_original(&fixture, 1, limits()).await).unwrap();
+    fixture
+        .store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    .record_failure(
+                        input,
+                        DeliveryFailureKind::ExecutionFailed,
+                        &TestConsumer,
+                        SyncTime::from_unix_millis(0),
+                    )
+                    .await
+                    .map_err(storage_error)?;
+                query::<Turso>("DROP TABLE _fleet_sync_operations")
+                    .execute(scope.executor())
+                    .await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+    let before = snapshot(&fixture).await;
+
+    let result = fixture
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                Ok(Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    .retire_local(&reference(1))
+                    .await)
+            })
+        })
+        .await
+        .unwrap();
+
+    assert!(
+        matches!(result, Err(DeliveryError::Storage(_))),
+        "{result:?}"
+    );
     assert_eq!(snapshot(&fixture).await, before);
 }

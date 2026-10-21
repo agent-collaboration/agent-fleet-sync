@@ -138,21 +138,11 @@ impl<H: Host> AtomicStore for TursoStore<H> {
 }
 
 impl<H: Host> JournalQueries for TursoScope<'_, H> {
-    async fn fetch_running_request_keys(
-        &mut self,
-        kind: String,
-    ) -> Result<Vec<String>, StoreError> {
-        Ok(sqlx_turso::query_file_as!(
-            StoredRequestKeyRow,
-            "queries/running_request_keys.sql",
-            kind
-        )
-        .fetch_all(&mut *self.connection)
-        .await
-        .map_err(StoreError::backend)?
-        .into_iter()
-        .map(|row| row.request_key)
-        .collect())
+    async fn fetch_running_request_keys(&mut self) -> Result<Vec<StoredRequestKeyRow>, StoreError> {
+        sqlx_turso::query_file_as!(StoredRequestKeyRow, "queries/running_request_keys.sql")
+            .fetch_all(&mut *self.connection)
+            .await
+            .map_err(StoreError::backend)
     }
     async fn delete_steps(&mut self, id: String) -> Result<(), StoreError> {
         sqlx_turso::query_file!("queries/delete_steps.sql", id)

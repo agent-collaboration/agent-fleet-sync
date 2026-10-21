@@ -86,7 +86,17 @@ where
             crate::deliver_task::DELIVER_LOCALLY_KIND,
             crate::report_task::REPORT_OUTCOME_KIND,
         ] {
-            for key in self.scope.running_request_keys(kind).await? {
+            let running_keys = self
+                .scope
+                .running_request_keys(kind)
+                .await
+                .map_err(|error| match error {
+                    durable_steps::StoreError::Corrupt { .. } => DeliveryError::Corrupt {
+                        field: "delivery operation request key",
+                    },
+                    error => error.into(),
+                })?;
+            for key in running_keys {
                 let (item, _sequence): (ItemId, u64) =
                     serde_json::from_str(key.as_str()).map_err(|_| DeliveryError::Corrupt {
                         field: "delivery operation request key",

@@ -3,7 +3,7 @@
 use crate::{
     Admitted, DriveLease, JournalScope, OperationId, RequestKey, StartRefusal, StoreError,
     SyncTime, Task,
-    sql_rows::{StoredOperationRow, StoredStepRow, corrupt},
+    sql_rows::{StoredOperationRow, StoredRequestKeyRow, StoredStepRow, corrupt},
     storage::{JournalStorage, OperationExecution, OperationOutcome, OperationRecord, StepRecord},
 };
 use sha2::{Digest, Sha256};
@@ -19,8 +19,7 @@ impl From<sqlx_core::error::Error> for StoreError {
 pub(crate) trait JournalQueries: Send {
     fn fetch_running_request_keys(
         &mut self,
-        kind: String,
-    ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send;
+    ) -> impl Future<Output = Result<Vec<StoredRequestKeyRow>, StoreError>> + Send;
     fn delete_steps(&mut self, id: String) -> impl Future<Output = Result<(), StoreError>> + Send;
     fn delete_operation(
         &mut self,
@@ -69,10 +68,13 @@ pub(crate) trait JournalQueries: Send {
 
 impl<S: JournalQueries> JournalScope for S {
     async fn running_request_keys(&mut self, kind: &str) -> Result<Vec<RequestKey>, StoreError> {
-        self.fetch_running_request_keys(kind.into())
+        self.fetch_running_request_keys()
             .await?
             .into_iter()
-            .map(|key| RequestKey::new(key).map_err(|error| corrupt("request_key", error)))
+            .filter(|row| row.kind == kind)
+            .map(|row| {
+                RequestKey::new(row.request_key).map_err(|error| corrupt("request_key", error))
+            })
             .collect()
     }
     async fn admit<T: Task>(
