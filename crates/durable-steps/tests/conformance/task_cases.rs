@@ -2,9 +2,141 @@ use super::{BusinessScope, check, key, task_fixtures::*};
 use crate::support::TestHost;
 use durable_steps::{
     AtomicStore, DriveLease, Engine, JournalScope, OperationFailure, OperationState, StartRefusal,
-    StoreError,
+    StoreError, Task,
     storage::{JournalStorage, OperationExecution, OperationOutcome},
 };
+
+pub async fn running_keys<S>(store: Arc<S>, host: Arc<TestHost>) -> Result<(), StoreError>
+where
+    S: AtomicStore,
+    for<'t> S::Scope<'t>: BusinessScope,
+{
+    let now = host.now();
+    let live = store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                let live = scope
+                    .admit::<Child<S>>(&key("live-key"), &1)
+                    .await
+                    .map_err(StoreError::backend)?
+                    .id();
+                let other = scope
+                    .admit::<OldVersion<S>>(&key("other-kind"), &"other".into())
+                    .await
+                    .map_err(StoreError::backend)?
+                    .id();
+                for (name, outcome) in [
+                    (
+                        "completed-key",
+                        OperationOutcome::Completed {
+                            result: b"1".to_vec(),
+                        },
+                    ),
+                    (
+                        "failed-key",
+                        OperationOutcome::Failed {
+                            reason: OperationFailure::InvalidPayload {
+                                message: "fixture failure".into(),
+                            },
+                        },
+                    ),
+                ] {
+                    let id = scope
+                        .admit::<Child<S>>(&key(name), &1)
+                        .await
+                        .map_err(StoreError::backend)?
+                        .id();
+                    let token = durable_steps::Uuid::from_u128(0x019eef000000700080000000000186a3);
+                    check(
+                        scope
+                            .claim(id, now, DriveLease { token, until: now })
+                            .await?
+                            .is_some(),
+                        "fixture claim",
+                    )?;
+                    scope.finish(id, token, outcome, now, true).await?;
+                }
+                check(
+                    scope.running_request_keys(Child::<S>::KIND).await? == vec![key("live-key")],
+                    "running keys exclude completed/failed and other kinds",
+                )?;
+                check(
+                    scope.running_request_keys(OldVersion::<S>::KIND).await?
+                        == vec![key("other-kind")],
+                    "running keys preserve kind",
+                )?;
+                check(
+                    scope.running_request_keys("absent-kind").await?.is_empty(),
+                    "unknown kind has no work",
+                )?;
+                Ok((live, other))
+            })
+        })
+        .await?;
+    let aborted = store
+        .transaction(|scope| {
+            Box::pin(async move {
+                scope
+                    .admit::<Child<S>>(&key("aborted-live"), &1)
+                    .await
+                    .map_err(StoreError::backend)?;
+                let mut keys = scope.running_request_keys(Child::<S>::KIND).await?;
+                keys.sort();
+                let mut expected = vec![key("live-key"), key("aborted-live")];
+                expected.sort();
+                check(
+                    keys == expected,
+                    "running read sees uncommitted admission in its transaction",
+                )?;
+                Err::<(), _>(StoreError::Aborted {
+                    reason: "rollback read fixture".into(),
+                })
+            })
+        })
+        .await;
+    check(
+        matches!(aborted, Err(StoreError::Aborted { .. })),
+        "rollback fixture aborts",
+    )?;
+    store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                check(
+                    scope.running_request_keys(Child::<S>::KIND).await? == vec![key("live-key")],
+                    "rolled back admission is excluded",
+                )?;
+                for id in [live.0, live.1] {
+                    let token = durable_steps::Uuid::from_u128(0x019eef000000700080000000000186a4);
+                    check(
+                        scope
+                            .claim(id, now, DriveLease { token, until: now })
+                            .await?
+                            .is_some(),
+                        "live fixture claim",
+                    )?;
+                    scope
+                        .finish(
+                            id,
+                            token,
+                            OperationOutcome::Completed {
+                                result: b"1".to_vec(),
+                            },
+                            now,
+                            true,
+                        )
+                        .await?;
+                }
+                check(
+                    scope
+                        .running_request_keys(Child::<S>::KIND)
+                        .await?
+                        .is_empty(),
+                    "no running keys after finish",
+                )
+            })
+        })
+        .await
+}
 use runtime_primitives::Clock;
 use std::{
     marker::PhantomData,

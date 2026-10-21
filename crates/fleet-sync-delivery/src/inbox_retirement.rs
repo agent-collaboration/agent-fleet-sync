@@ -4,7 +4,7 @@ use crate::{
     inbox_record::{InboxProgress, InboxRoute},
     inbox_storage::Inbox,
 };
-use durable_steps::storage::TransactionScope;
+use durable_steps::{JournalScope, storage::TransactionScope};
 use fleet_sync_protocol::*;
 use serde::{Deserialize, Serialize};
 use sqlx_core::{
@@ -36,6 +36,7 @@ pub enum LocalRetirementRefusal {
     Attempting,
     Held,
     ControlItem,
+    DeliveryInFlight,
 }
 
 impl<S, D> Inbox<'_, S, D>
@@ -50,12 +51,16 @@ where
     /// Retire a terminal Local original inside the caller's custody transaction.
     /// The caller owns eligibility, including any acknowledged frontier. Propagate
     /// storage errors to roll back the transaction. Refusals perform no writes.
+    /// Running delivery/report work keeps the header until that work finishes.
     /// Distinct cancel rows remain; only links involving this item are removed.
     /// No history remains to deduplicate later admission under the same item ID.
     pub async fn retire_local(
         &mut self,
         reference: &DeliveryItemRef,
-    ) -> Result<LocalRetirement, DeliveryError> {
+    ) -> Result<LocalRetirement, DeliveryError>
+    where
+        S: JournalScope,
+    {
         let Some(record) = self.load(reference.item).await? else {
             return Ok(LocalRetirement::Absent);
         };
@@ -76,6 +81,22 @@ where
         };
         if let Some(reason) = refusal {
             return Ok(LocalRetirement::Refused(reason));
+        }
+        for kind in [
+            crate::deliver_task::DELIVER_LOCALLY_KIND,
+            crate::report_task::REPORT_OUTCOME_KIND,
+        ] {
+            for key in self.scope.running_request_keys(kind).await? {
+                let (item, _sequence): (ItemId, u64) =
+                    serde_json::from_str(key.as_str()).map_err(|_| DeliveryError::Corrupt {
+                        field: "delivery operation request key",
+                    })?;
+                if item == reference.item {
+                    return Ok(LocalRetirement::Refused(
+                        LocalRetirementRefusal::DeliveryInFlight,
+                    ));
+                }
+            }
         }
         // Inbox charges are derived from these rows, so deletion also removes
         // this item's accounting without changing another item's reservation.

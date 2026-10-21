@@ -14,6 +14,10 @@ pub enum AfterAnswer {
         reached: Arc<tokio::sync::Notify>,
         resume: Arc<tokio::sync::Notify>,
     },
+    OutcomeCheckpoint {
+        reached: Arc<tokio::sync::Notify>,
+        resume: Arc<tokio::sync::Notify>,
+    },
 }
 pub struct InterleavedDeliver<C = TestConsumer> {
     inner: DeliverLocally<TestStore, sqlx_turso::Turso, TestTypes, C>,
@@ -92,10 +96,14 @@ struct InterceptContext<'a, O> {
 }
 impl<O: OperationContext<Store = TestStore>> InterceptContext<'_, O> {
     async fn after_answer(&mut self) -> Result<(), StepError> {
+        if matches!(self.action, AfterAnswer::OutcomeCheckpoint { .. }) {
+            return Ok(());
+        }
         if self.performed.swap(true, Ordering::SeqCst) {
             return Ok(());
         }
         match &self.action {
+            AfterAnswer::OutcomeCheckpoint { .. } => {}
             AfterAnswer::Checkpoint { reached, resume } => {
                 reached.notify_one();
                 resume.notified().await;
@@ -173,7 +181,19 @@ impl<O: OperationContext<Store = TestStore>> OperationContext for InterceptConte
             + Send
             + 'static,
     {
-        self.inner.local(step, run).await
+        let is_outcome = step.as_str() == "outcome";
+        let result = self.inner.local(step, run).await;
+        if result.is_ok()
+            && is_outcome
+            && let AfterAnswer::OutcomeCheckpoint { reached, resume } = &self.action
+            && !self.performed.swap(true, Ordering::SeqCst)
+        {
+            // The real outcome transaction committed, but Engine::finish has
+            // not run. A later item attempt can now be admitted independently.
+            reached.notify_one();
+            resume.notified().await;
+        }
+        result
     }
     async fn call<C: CallTarget>(
         &mut self,

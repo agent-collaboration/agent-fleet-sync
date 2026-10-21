@@ -17,6 +17,10 @@ impl From<sqlx_core::error::Error> for StoreError {
 }
 
 pub(crate) trait JournalQueries: Send {
+    fn fetch_running_request_keys(
+        &mut self,
+        kind: String,
+    ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send;
     fn delete_steps(&mut self, id: String) -> impl Future<Output = Result<(), StoreError>> + Send;
     fn delete_operation(
         &mut self,
@@ -64,6 +68,13 @@ pub(crate) trait JournalQueries: Send {
 }
 
 impl<S: JournalQueries> JournalScope for S {
+    async fn running_request_keys(&mut self, kind: &str) -> Result<Vec<RequestKey>, StoreError> {
+        self.fetch_running_request_keys(kind.into())
+            .await?
+            .into_iter()
+            .map(|key| RequestKey::new(key).map_err(|error| corrupt("request_key", error)))
+            .collect()
+    }
     async fn admit<T: Task>(
         &mut self,
         request_key: &RequestKey,

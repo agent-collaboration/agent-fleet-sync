@@ -90,6 +90,12 @@ pub trait ReborrowScope: AtomicStore {
 }
 
 pub trait JournalScope: Send {
+    /// Read live work of this kind in the caller's transaction. Finished
+    /// request keys are excluded; absence does not establish past completion.
+    fn running_request_keys(
+        &mut self,
+        kind: &str,
+    ) -> impl Future<Output = Result<Vec<RequestKey>, StoreError>> + Send;
     fn admit<T: Task>(
         &mut self,
         request_key: &RequestKey,

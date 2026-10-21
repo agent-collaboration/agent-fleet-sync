@@ -3,7 +3,10 @@
 use crate::{
     AtomicStore, BoxFuture, Host, ReborrowScope, StoreError, SyncTime,
     sql_journal::JournalQueries,
-    sql_rows::{StoredCountRow, StoredIdRow, StoredOperationRow, StoredStepRow, StoredTimeRow},
+    sql_rows::{
+        StoredCountRow, StoredIdRow, StoredOperationRow, StoredRequestKeyRow, StoredStepRow,
+        StoredTimeRow,
+    },
     storage::TransactionScope,
 };
 use runtime_primitives::{AlarmOwner, WakeScheduler};
@@ -123,6 +126,22 @@ impl<H: Host> AtomicStore for DurableObjectStore<H> {
 // files checked through native Turso metadata; FromRow maps their named fields
 // into private storage rows, then the shared decoder validates domain states.
 impl<H: Host> JournalQueries for DurableObjectScope<'_, H> {
+    async fn fetch_running_request_keys(
+        &mut self,
+        kind: String,
+    ) -> Result<Vec<String>, StoreError> {
+        Ok(
+            query_as::<Do, StoredRequestKeyRow>(include_str!(
+                "../queries/running_request_keys.sql"
+            ))
+            .bind(kind)
+            .fetch_all(self.transaction)
+            .await?
+            .into_iter()
+            .map(|row| row.request_key)
+            .collect(),
+        )
+    }
     async fn delete_steps(&mut self, id: String) -> Result<(), StoreError> {
         query::<Do>(include_str!("../queries/delete_steps.sql"))
             .bind(id)

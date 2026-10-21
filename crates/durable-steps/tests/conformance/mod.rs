@@ -48,6 +48,8 @@ where
     for<'t> S::Scope<'t>: BusinessScope,
 {
     let mut passed = Vec::new();
+    task_cases::running_keys(Arc::clone(&store), Arc::clone(&host)).await?;
+    passed.push("running request keys are kind-scoped and share journal commit/rollback");
     task_cases::admission_and_rollback(Arc::clone(&store), Arc::clone(&host)).await?;
     passed.push("mixed rollback, exact input, duplicate and conflict");
     task_cases::stale_token(Arc::clone(&store), Arc::clone(&host)).await?;

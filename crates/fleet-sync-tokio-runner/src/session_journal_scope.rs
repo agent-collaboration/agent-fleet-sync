@@ -15,6 +15,9 @@ impl<
     H: Host,
 > JournalScope for SessionTransaction<'_, P, A, D, H>
 {
+    async fn running_request_keys(&mut self, kind: &str) -> Result<Vec<RequestKey>, StoreError> {
+        self.inner.running_request_keys(kind).await
+    }
     async fn admit<T: Task>(
         &mut self,
         key: &RequestKey,

@@ -16,6 +16,7 @@ pub struct DeliverLocally<S, Db, D, C> {
     clock: Arc<dyn runtime_primitives::Clock>,
     store: TaskTypes<S, Db, D>,
 }
+pub(crate) const DELIVER_LOCALLY_KIND: &str = "fleet-sync.delivery.deliver-locally";
 impl<S, Db, D, C> DeliverLocally<S, Db, D, C> {
     pub fn new(
         config: LocalDeliveryConfig,
@@ -44,7 +45,7 @@ where
     for<'t> C: DeliveryConsumer<S::Scope<'t>>,
     for<'t> <C as DeliveryConsumer<S::Scope<'t>>>::Protocol: ConsumerProtocol<Delivery = D>,
 {
-    const KIND: &'static str = "fleet-sync.delivery.deliver-locally";
+    const KIND: &'static str = DELIVER_LOCALLY_KIND;
     const VERSION: u32 = 2;
     const KEEP_RESULT: bool = false;
     type Store = S;

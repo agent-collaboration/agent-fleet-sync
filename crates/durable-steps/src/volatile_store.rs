@@ -100,6 +100,18 @@ impl<H: Host> AtomicStore for VolatileStore<H> {
 }
 
 impl<H: Host> JournalScope for VolatileScope<'_, H> {
+    async fn running_request_keys(&mut self, kind: &str) -> Result<Vec<RequestKey>, StoreError> {
+        Ok(self
+            .state
+            .operations
+            .values()
+            .filter(|record| {
+                record.kind == kind
+                    && matches!(record.execution, OperationExecution::Running { .. })
+            })
+            .map(|record| record.request_key.clone())
+            .collect())
+    }
     async fn admit<T: Task>(
         &mut self,
         request_key: &RequestKey,

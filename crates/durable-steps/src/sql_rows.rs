@@ -17,6 +17,12 @@ pub(crate) fn corrupt(field: &str, error: impl std::fmt::Display) -> StoreError 
 }
 
 #[derive(sqlx::FromRow)]
+pub(crate) struct StoredRequestKeyRow {
+    #[sqlx(rename = "request_key!")]
+    pub request_key: String,
+}
+
+#[derive(sqlx::FromRow)]
 pub(crate) struct StoredOperationRow {
     #[sqlx(rename = "operation_id!")]
     pub operation_id: String,

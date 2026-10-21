@@ -3,7 +3,10 @@
 use crate::{
     AtomicStore, BoxFuture, Host, ReborrowScope, StoreError, SyncTime,
     sql_journal::JournalQueries,
-    sql_rows::{StoredCountRow, StoredIdRow, StoredOperationRow, StoredStepRow, StoredTimeRow},
+    sql_rows::{
+        StoredCountRow, StoredIdRow, StoredOperationRow, StoredRequestKeyRow, StoredStepRow,
+        StoredTimeRow,
+    },
     storage::TransactionScope,
 };
 use sqlx_turso::{
@@ -135,6 +138,22 @@ impl<H: Host> AtomicStore for TursoStore<H> {
 }
 
 impl<H: Host> JournalQueries for TursoScope<'_, H> {
+    async fn fetch_running_request_keys(
+        &mut self,
+        kind: String,
+    ) -> Result<Vec<String>, StoreError> {
+        Ok(sqlx_turso::query_file_as!(
+            StoredRequestKeyRow,
+            "queries/running_request_keys.sql",
+            kind
+        )
+        .fetch_all(&mut *self.connection)
+        .await
+        .map_err(StoreError::backend)?
+        .into_iter()
+        .map(|row| row.request_key)
+        .collect())
+    }
     async fn delete_steps(&mut self, id: String) -> Result<(), StoreError> {
         sqlx_turso::query_file!("queries/delete_steps.sql", id)
             .execute(&mut *self.connection)
