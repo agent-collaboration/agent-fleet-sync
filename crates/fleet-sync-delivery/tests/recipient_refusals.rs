@@ -253,23 +253,59 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
 
 #[tokio::test]
 async fn maximum_coded_settlement_fits_the_exact_minimum_and_lower_configuration_refuses() {
-    let minimum = minimum_settlement_allowance::<TestTypes>().unwrap();
+    assert_settlement_fits_minimum::<TestTypes>(refusal(&"R".repeat(64))).await;
+}
+
+struct UnitAcceptanceTypes;
+impl DeliveryTypes for UnitAcceptanceTypes {
+    const MAX_SENDER_BYTES: u32 = 64;
+    const MAX_ADDRESS_BYTES: u32 = 64;
+    const MAX_ACCEPTANCE_BYTES: u32 = 4;
+    const MAX_STATUS_ROUTE_BYTES: u32 = 64;
+    const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
+    type Body = String;
+    type Sender = String;
+    type Address = String;
+    type Acceptance = ();
+    type StatusRoute = String;
+    type LocalObservation = ();
+}
+
+#[tokio::test]
+async fn canonical_cancel_refusal_fits_the_exact_minimum() {
+    assert_settlement_fits_minimum::<UnitAcceptanceTypes>(
+        DeliveryRefusal::CancelAlreadyRequested {
+            existing: DeliveryItemRef {
+                item: item_id(2),
+                digest: cancel(2, 1).digest().clone(),
+            },
+        },
+    )
+    .await;
+}
+
+async fn assert_settlement_fits_minimum<D: DeliveryTypes<StatusRoute = String>>(
+    terminal_refusal: DeliveryRefusal,
+) {
+    let minimum = minimum_settlement_allowance::<D>().unwrap();
     assert!(
-        matches!(DeliveryLimits::new::<TestTypes>(100_000,20,100_000,20,100_000,minimum-1),
+        matches!(DeliveryLimits::new::<D>(100_000,20,100_000,20,100_000,minimum-1),
         Err(DeliveryConfigError::SettlementAllowanceTooSmall { supplied, minimum:required })
         if supplied==minimum-1 && required==minimum)
     );
     let fixture = Fixture::new().await;
     fixture.store.transaction(move |scope| Box::pin(async move {
-        let configured=DeliveryLimits::new::<TestTypes>(100_000,20,100_000,20,100_000,minimum).unwrap();
-        let mut mailbox=Mailbox::<_,TestTypes>::new(scope,peer(2),configured);
+        let configured=DeliveryLimits::new::<D>(100_000,20,100_000,20,100_000,minimum).unwrap();
+        let mut mailbox=Mailbox::<_,D>::new(scope,peer(2),configured);
         for identity in [1,2] {
             let envelope=if identity==1 { item(1,"body") } else { cancel(2,1) };
+            let envelope=serde_json::from_value(serde_json::to_value(envelope).unwrap()).unwrap();
             mailbox.submit(peer(1),envelope,SyncTime::from_unix_millis(0),"a".repeat(62),Some(0)).await.map_err(storage_error)?;
         }
         for (rank,marker) in [(1,'b'),(2,'c'),(3,'d')] {
             for identity in [1,2] {
                 let envelope=if identity==1 { item(1,"body") } else { cancel(2,1) };
+                let envelope=serde_json::from_value(serde_json::to_value(envelope).unwrap()).unwrap();
                 mailbox.submit(peer(u128::from(rank)+2),envelope,SyncTime::from_unix_millis(0),
                     marker.to_string().repeat(62),Some(rank)).await.map_err(storage_error)?;
                 if rank==1 {
@@ -278,7 +314,7 @@ async fn maximum_coded_settlement_fits_the_exact_minimum_and_lower_configuration
                     mailbox.received(peer(2),stream,batch.through,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
                 } else {
                     let outcome=if rank==2 { RecipientOutcome::Held } else {
-                        RecipientOutcome::Refused { reason:refusal(&"R".repeat(64)) }
+                        RecipientOutcome::Refused { reason:terminal_refusal.clone() }
                     };
                     mailbox.report(peer(2),RecipientReport { item:item_id(identity),report_seq:ReportSeq::new(rank),outcome }).await.map_err(storage_error)?;
                 }
@@ -286,28 +322,42 @@ async fn maximum_coded_settlement_fits_the_exact_minimum_and_lower_configuration
         }
         let publications=query::<Turso>("SELECT target,record FROM _fleet_sync_status_owed").fetch_all(scope.executor()).await?;
         assert_eq!(publications.len(),8,"four retained routes for each item");
-        let expected=json!({"kind":"refused","value":{"reason":refusal_wire(&"R".repeat(64))}});
+        let expected=json!({"kind":"refused","value":{"reason":terminal_refusal}});
         let mut bytes=serde_json::to_vec(&cancel(2,1)).unwrap().len();
-        let mut coded_publications=0;
+        let mut maximum_publication_bytes=0;
+        let mut terminal_publications=0;
         for row in publications {
             let target:String=row.try_get("target")?; let record:String=row.try_get("record")?;
-            let publication:Value=serde_json::from_str(&record).unwrap();
-            if publication["status"]["kind"]=="refused" {
-                assert_eq!(publication["status"],expected);
-                coded_publications+=1;
+            let mut publication:Value=serde_json::from_str(&record).unwrap();
+            if publication.pointer("/status/kind").unwrap()=="refused" {
+                assert_eq!(*publication.get("status").unwrap(),expected);
+                terminal_publications+=1;
             }
-            bytes+=target.len()+record.len()+3;
+            let publication_bytes=target.len()+record.len()+3;
+            *publication.get_mut("version").unwrap()=json!(i64::MAX);
+            maximum_publication_bytes=maximum_publication_bytes.max(target.len()+serde_json::to_vec(&publication).unwrap().len()+3);
+            bytes+=publication_bytes;
         }
-        assert_eq!(coded_publications,2,"both final item/control statuses keep the maximum code");
+        assert_eq!(terminal_publications,2,"both final item/control statuses keep the terminal refusal");
         let mut reserved=0;
+        let mut header_bytes=0;
         for row in query::<Turso>("SELECT record,settlement_bytes FROM _fleet_sync_mail_items").fetch_all(scope.executor()).await? {
             let record:String=row.try_get("record")?;
-            assert_eq!(serde_json::from_str::<Value>(&record).unwrap()["value"]["status"],expected);
+            let mut header:Value=serde_json::from_str(&record).unwrap();
+            assert_eq!(*header.pointer("/value/status").unwrap(),expected);
             reserved+=row.try_get::<i64,_>("settlement_bytes")?;
             bytes+=record.len();
+            *header.pointer_mut("/value/version").unwrap()=json!(i64::MAX);
+            header_bytes+=serde_json::to_vec(&header).unwrap().len();
         }
         assert_eq!(reserved+i64::try_from(serde_json::to_vec(&cancel(2,1)).unwrap().len()).unwrap(),i64::from(minimum));
-        assert!(bytes<=usize::try_from(minimum).unwrap(),"actual maximum coded settlement {bytes} exceeds exact configured minimum {minimum}");
+        assert!(bytes<=usize::try_from(minimum).unwrap(),"actual retained refusal settlement {bytes} exceeds exact configured minimum {minimum}");
+        // The allowance promises four maximum publications for both headers,
+        // even though this history retains smaller earlier statuses as well.
+        // Bound the reference snapshots' versions at the supported maximum;
+        // the actual stored history and its measured bytes remain unchanged.
+        let required=header_bytes+8*maximum_publication_bytes+serde_json::to_vec(&cancel(2,1)).unwrap().len();
+        assert!(required<=usize::try_from(minimum).unwrap(),"four maximum publications require {required} bytes, exceeding exact configured minimum {minimum}");
         Ok(())
     })).await.unwrap();
 }

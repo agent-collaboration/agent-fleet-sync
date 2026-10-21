@@ -126,6 +126,13 @@ pub enum SubmitResult<A> {
         version: StatusVersion,
         cancel: Option<CancelResult>,
     },
+    /// A different cancel is canonical; this submission took no relay custody.
+    CancelAlreadyRequested {
+        existing: DeliveryItemRef,
+        status: DeliveryStatus<A>,
+        version: StatusVersion,
+        cancel: Option<CancelResult>,
+    },
     Refused {
         reason: DeliveryRefusal,
     },

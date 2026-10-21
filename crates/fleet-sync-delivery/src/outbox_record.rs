@@ -115,6 +115,12 @@ pub enum OutboxAdmission<A> {
         status: DeliveryStatus<A>,
         version: StatusVersion,
     },
+    /// A different cancel is canonical; the requested ID was not admitted.
+    CancelAlreadyRequested {
+        existing: DeliveryItemRef,
+        status: DeliveryStatus<A>,
+        version: StatusVersion,
+    },
     Refused {
         reason: DeliveryRefusal,
     },

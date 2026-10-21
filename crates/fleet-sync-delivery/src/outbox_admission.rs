@@ -209,14 +209,36 @@ where
                     link.cancel_item.map(|id| format!("\"{id}\"")),
                     "outbox cancel link",
                 )?;
-                return match self.status(cancel_id).await?.state {
-                    OutboxStatusState::Known {
-                        status, version, ..
-                    } => Ok(OutboxAdmission::Replayed { status, version }),
-                    OutboxStatusState::Unknown => Err(DeliveryError::Corrupt {
-                        field: "outbox cancel link missing item",
-                    }),
+                let (digest, status, version) = match self.header_state(cancel_id).await? {
+                    Some(OutboxHeaderState::Item(header)) => (
+                        ItemDigest::try_from(header.digest).map_err(|_| {
+                            DeliveryError::Corrupt {
+                                field: "outbox cancel digest",
+                            }
+                        })?,
+                        header.status,
+                        header.version,
+                    ),
+                    Some(OutboxHeaderState::Recovered(record)) => {
+                        (record.digest, record.status, record.version)
+                    }
+                    Some(OutboxHeaderState::Unresolvable { kind, .. }) => {
+                        return Err(DeliveryError::ProcessingFailed { kind });
+                    }
+                    None => {
+                        return Err(DeliveryError::Corrupt {
+                            field: "outbox cancel link missing item",
+                        });
+                    }
                 };
+                return Ok(OutboxAdmission::CancelAlreadyRequested {
+                    existing: DeliveryItemRef {
+                        item: cancel_id,
+                        digest,
+                    },
+                    status,
+                    version,
+                });
             }
             if let Some(OutboxHeaderState::Item(mut original)) = self.header_state(target).await? {
                 if original.recipient != envelope.recipient().peer

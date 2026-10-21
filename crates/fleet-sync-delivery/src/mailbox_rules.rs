@@ -153,7 +153,11 @@ where
                         .ok_or(DeliveryError::Corrupt {
                             field: "cancel link item missing",
                         })?;
-                return Ok(SubmitResult::Replayed {
+                return Ok(SubmitResult::CancelAlreadyRequested {
+                    existing: DeliveryItemRef {
+                        item: cancel.id(),
+                        digest: cancel.digest().clone(),
+                    },
                     status: copy_wire(cancel.status())?,
                     version: cancel.version(),
                     cancel: cancel.cancel(),

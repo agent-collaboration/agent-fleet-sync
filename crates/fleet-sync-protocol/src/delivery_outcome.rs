@@ -1,4 +1,4 @@
-use crate::{DeliverySeq, ItemDigest, ItemId};
+use crate::{DeliveryItemRef, DeliverySeq, ItemDigest, ItemId};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_RECIPIENT_REFUSAL_CODE_BYTES: usize = 64;
@@ -54,6 +54,7 @@ pub enum DeliveryRefusal {
     TooLarge { field: DeliverySizeField },
     MailboxFull,
     ItemConflict { existing: ItemDigest },
+    CancelAlreadyRequested { existing: DeliveryItemRef },
     RecipientUnknown,
     RecipientRevoked,
     DroppedByPolicy,

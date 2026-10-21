@@ -46,14 +46,18 @@ pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryC
     let digest = ItemDigest::try_from("f".repeat(64)).map_err(|error| invalid(Box::new(error)))?;
     let time = SyncTime::from_unix_millis(i64::MIN);
     let mut refusals = vec![
-        // At the 64-byte code bound this is 111 canonical JSON bytes, tied
-        // with ItemConflict's 64-hex digest below. The minimum does not grow.
         DeliveryRefusal::RecipientRefused {
             code: RecipientRefusalCode::new("R".repeat(MAX_RECIPIENT_REFUSAL_CODE_BYTES))
                 .map_err(|error| invalid(Box::new(error)))?,
         },
         DeliveryRefusal::ItemConflict {
             existing: digest.clone(),
+        },
+        DeliveryRefusal::CancelAlreadyRequested {
+            existing: DeliveryItemRef {
+                item,
+                digest: digest.clone(),
+            },
         },
         DeliveryRefusal::TooLarge {
             field: DeliverySizeField::Acceptance,

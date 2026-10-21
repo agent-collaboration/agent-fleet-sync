@@ -149,6 +149,11 @@ where
                     header.cancel = cancel;
                 }
             }
+            SubmitResult::CancelAlreadyRequested { existing, .. } => {
+                header.status = DeliveryStatus::Refused {
+                    reason: DeliveryRefusal::CancelAlreadyRequested { existing },
+                };
+            }
             SubmitResult::Refused { reason } => header.status = DeliveryStatus::Refused { reason },
         }
         header.submit_attempted = true;
@@ -258,6 +263,13 @@ where
                 version,
                 cancel,
             } => (status, version, cancel),
+            SubmitResult::CancelAlreadyRequested { existing, .. } => (
+                DeliveryStatus::Refused {
+                    reason: DeliveryRefusal::CancelAlreadyRequested { existing },
+                },
+                StatusVersion::new(0),
+                None,
+            ),
             SubmitResult::Refused { reason } => (
                 DeliveryStatus::Refused { reason },
                 StatusVersion::new(0),

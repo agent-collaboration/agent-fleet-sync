@@ -155,7 +155,7 @@ async fn only_the_current_target_retires_and_compacted_identity_replays() {
 }
 
 #[tokio::test]
-async fn a_full_mailbox_uses_the_originals_reserved_cancel_and_replays_a_second_cancel() {
+async fn a_full_mailbox_uses_the_reserved_cancel_and_names_it_for_another_cancel() {
     let fixture = Fixture::new().await;
     fixture
         .store
@@ -182,10 +182,11 @@ async fn a_full_mailbox_uses_the_originals_reserved_cancel_and_replays_a_second_
                     .map_err(storage_error)?;
                 assert!(matches!(
                     second,
-                    SubmitResult::Replayed {
+                    SubmitResult::CancelAlreadyRequested {
+                        existing,
                         cancel: Some(CancelResult::Pending),
                         ..
-                    }
+                    } if existing.item == item_id(2) && existing.digest == *cancel(2, 1).digest()
                 ));
                 let controls = mailbox
                     .fetch(
