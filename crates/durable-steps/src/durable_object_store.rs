@@ -276,6 +276,8 @@ impl<H: Host> JournalQueries for DurableObjectScope<'_, H> {
         )
     }
     async fn ensure_alarm(&mut self, at: SyncTime) -> Result<(), StoreError> {
+        let at = crate::operation_engine::future_wake_deadline(at, self.host.now())
+            .map_err(StoreError::backend)?;
         self.alarm.wake_at(at).await.map_err(StoreError::backend)
     }
 }

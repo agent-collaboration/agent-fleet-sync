@@ -23,6 +23,18 @@ mod operation_settlement;
 const MAX_CONCURRENT_OPERATIONS: usize = 8;
 use std::{collections::BTreeMap, future::Future, sync::Arc, time::Duration};
 
+pub(crate) fn future_wake_deadline(
+    at: crate::SyncTime,
+    now: crate::SyncTime,
+) -> Result<crate::SyncTime, crate::WakeFailure> {
+    let next_millisecond = now
+        .unix_millis()
+        .checked_add(1)
+        .map(crate::SyncTime::from_unix_millis)
+        .ok_or(crate::WakeFailure::InvalidDeadline { at: now })?;
+    Ok(at.max(next_millisecond))
+}
+
 trait RegisteredTask<S: AtomicStore, H: Host>: Send + Sync {
     fn version(&self) -> u32;
     fn keep_result(&self) -> bool;
@@ -271,7 +283,10 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
             .transaction(|scope| Box::pin(async move { scope.earliest().await }))
             .await?;
         Ok(match earliest {
-            Some(at) => self.host.wake_at(at).await.err(),
+            Some(at) => match future_wake_deadline(at, self.host.now()) {
+                Ok(at) => self.host.wake_at(at).await.err(),
+                Err(error) => Some(error),
+            },
             None => None,
         })
     }
