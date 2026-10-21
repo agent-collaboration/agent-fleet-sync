@@ -570,6 +570,18 @@
       ]
     },
     {
+      "name": "drop_inbox_reports",
+      "sql": "sql/drop_inbox_reports.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
       "name": "read_outbox_accounting",
       "sql": "sql/read_outbox_accounting.sql",
       "result": "one",

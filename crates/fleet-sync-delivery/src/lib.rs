@@ -18,6 +18,7 @@ mod inbox_delivery;
 mod inbox_local;
 mod inbox_receive;
 mod inbox_record;
+mod inbox_retirement;
 mod inbox_storage;
 mod mail_storage;
 mod mailbox_custody;
@@ -40,6 +41,7 @@ pub use inbox_record::{
     DeliveryAttempt, DeliveryCheck, InboxEffects, LocalCancelAdmission, LocalItemAdmission,
     ReceiveInput, ReportRef,
 };
+pub use inbox_retirement::{LocalRetirement, LocalRetirementRefusal};
 pub use inbox_storage::Inbox;
 pub use mailbox_failure::{
     MailboxCorruption, MailboxFailureDisposition, MailboxOperation, mailbox_failure_disposition,

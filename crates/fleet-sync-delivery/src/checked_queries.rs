@@ -978,6 +978,25 @@ where
         Ok(())
     }
 }
+pub(crate) fn drop_inbox_reports<S>(
+    scope: &mut S,
+    item_id: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/drop_inbox_reports.sql"
+        )))
+        .bind(item_id);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
 pub(crate) fn read_outbox_accounting<S>(
     scope: &mut S,
 ) -> impl std::future::Future<Output = Result<StoredAccountingRow, sqlx_core::Error>> + Send

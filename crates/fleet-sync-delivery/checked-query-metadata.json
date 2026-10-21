@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-queries.json": "ba49f4f7382148bea66947c86ee6454561c03e66689f24f1c2318c93f05692d9",
+    "checked-queries.json": "069f331e146b64061bc558ed09b5cd9877f385957b75c6fd03473ab999656481",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -59,6 +59,7 @@
     "sql/drop_controls.sql": "37e074f9a266324cd8eef8b207bc8e8bb6ac7b0faa6d5fcf79c5d186b9aae07b",
     "sql/drop_inbox_cancel_link.sql": "4377a26c27c954d92d5e38c1e63c55b57956745206ca0bd0509b83fcb83e794b",
     "sql/drop_inbox_item.sql": "058ff3f7aa917adc1b5a4f49df608b4eff4ea4ee0c0d6ac24cba3fe0c6bcc8f1",
+    "sql/drop_inbox_reports.sql": "57f217b5b04fd4a37a6a2b3e31d62e9f4f6ec0ede68df13d97193398a55ca1b9",
     "sql/drop_status_events.sql": "67368fc80d890f924620c11fc2f37034aae4e2ae6f3fdb96da3a53309b1b787f",
     "sql/list_mail_items.sql": "de89ac4abdbd3b49171534d051a5daee465ae6a3e4ccb5806389920f9d9945e5",
     "sql/list_publications.sql": "04cd43b6ca532ff467ef144b6595551bd47b4354f8bc8548c8d1441dceb8b6ef",
@@ -101,9 +102,9 @@
     "sql/write_report.sql": "21eaec3d63aa3c09645a2fe3503797a84f969f152809a0e80b9998e9ecfcde62",
     "sql/write_status_event.sql": "37e7153541748530abb38d98a4563e1a9c0fc9987976ae39160b7b858d76777a",
     "sql/write_status_state.sql": "006017160514f16c0d1474ea57fa358214d56479e1294cb08d98d7af4d3267e9",
-    "src/checked_queries.rs": "f944167218025e6e6204734b4b23c650a81b656e54bf45bdea839abd099e42e5"
+    "src/checked_queries.rs": "c3cc328d078b4119aec00356e3b1b1d396487acb53a72e35a5819c50095b0ac0"
   },
-  "queries_digest": "350597346feca10e32800ce45214fa423bba5f8d8b85a5b8a45ec91e3402362a",
+  "queries_digest": "e259b97c26dce6e2dbac63062e11003451c3b18ec70262f3e8bbe5c8be05119f",
   "queries": [
     {
       "name": "read_mail_item",
@@ -1014,6 +1015,11 @@
     {
       "name": "retire_report",
       "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "drop_inbox_reports",
+      "bind_slots": 1,
       "columns": []
     },
     {
