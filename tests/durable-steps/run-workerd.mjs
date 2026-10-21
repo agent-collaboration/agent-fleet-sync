@@ -27,7 +27,7 @@ try {
       const body = await response.text();
       console.log(JSON.stringify({ path, status: response.status, body }));
       assert.equal(response.status, 200);
-      if (path === "/suite") assert.equal(JSON.parse(body).length, 19);
+      if (path === "/suite") assert.equal(JSON.parse(body).length, 20);
       else if (path === "/reborrow") assert.deepEqual(JSON.parse(body), [
         "SQL and journal share parent commit and rollback",
         "parent and view share the observed arbitration owner",

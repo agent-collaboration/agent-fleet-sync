@@ -537,7 +537,7 @@ The `/reborrow` response must contain all eight asserted observations:
 - Both legal view/external wake polling orders use that same observed owner
   and commit the earlier deadline. Do not alias the exclusively borrowed parent.
 
-The controller also checks the existing 19 shared scenarios, eight alarm race
+The controller also checks the existing 20 shared scenarios, eight alarm race
 orders, alarm atomicity, NoEffect actual-runtime reopen and platform-alarm
 restart. Report these as endpoint/runtime observations, separately from native
 Rust test counts. The controller awaits readiness and disposes its runtimes;
