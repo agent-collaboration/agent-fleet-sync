@@ -383,7 +383,7 @@ impl LeaseHolder {
         transfer: TransferId,
         final_position: Option<ReplicationPosition>,
     ) -> Result<(), HolderError> {
-        if final_position.is_some_and(|position| position.epoch != epoch) {
+        if final_position.is_some_and(|position| position.epoch > epoch) {
             return Err(HolderError::LeaseMismatch);
         }
         if self.known_epoch().is_some_and(|known| known > epoch)
@@ -468,7 +468,7 @@ impl LeaseHolder {
     ) -> Result<(), HolderError> {
         match &mut self.authority {
             HolderAuthority::Lease { cached, activity }
-                if cached.epoch == final_position.epoch
+                if final_position.epoch <= cached.epoch
                     && matches!(&*activity, WriteActivity::Draining { transfer: existing } if *existing == transfer) =>
             {
                 *activity = WriteActivity::Released {

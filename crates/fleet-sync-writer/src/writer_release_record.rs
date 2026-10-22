@@ -67,6 +67,9 @@ pub(crate) async fn read_releases(
     connection: &mut TursoConnection,
     database: DatabaseId,
 ) -> Result<Vec<WriterReleaseRecord>, OpenError> {
+    let file = crate::writer_file_record::read_file_record(connection)
+        .await?
+        .ok_or_else(|| OpenError::corrupt("writer.record"))?;
     let mut records = Vec::new();
     for row in crate::checked_queries::read_releases(&mut WriterScope(connection)).await? {
         let stored_database = text(row.database_id, row.database_class, "release.database")?;
@@ -79,7 +82,9 @@ pub(crate) async fn read_releases(
             || serde_json::to_string(&record.call)
                 .map_err(|_| OpenError::corrupt("release.call"))?
                 != call
-            || matches!(&record.state, ReleaseState::Answered {answer:ReleaseAnswer::Released {final_position}} if final_position.epoch != record.request.epoch)
+            || matches!(&record.state, ReleaseState::Answered {answer:ReleaseAnswer::Released {final_position}}
+                if final_position.epoch > record.request.epoch
+                    || (record.request.epoch == file.epoch && *final_position < file.start))
         {
             return Err(OpenError::corrupt("release.identity"));
         }

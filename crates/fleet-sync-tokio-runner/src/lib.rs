@@ -72,6 +72,8 @@ mod writer_transport_probe;
 pub use writer_transport_probe::WriterTransportObservation;
 mod staging_store;
 pub use staging_store::{StagedPage, StagedVerification, StagingError, StagingStore};
+#[cfg(test)]
+mod idle_writer_release_tests;
 #[cfg(all(test, unix))]
 mod native_file_inspection_tests;
 #[cfg(test)]
