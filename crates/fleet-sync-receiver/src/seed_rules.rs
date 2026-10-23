@@ -3,9 +3,10 @@ use crate::{
     copy_contract::CopyRecord,
     copy_storage::CopyStorage,
     seed_publication::publish_seed,
-    seed_storage::{SeedRecord, SeedStorage},
+    seed_storage::{SeedPageWrite, SeedRecord, SeedStorage},
 };
 use durable_steps::storage::TransactionScope;
+use fleet_sync_protocol::SeedAttemptId;
 use fleet_sync_protocol::{
     DatabaseId, PageDigest, SeedAnswer, SeedComplete, SeedId, SeedPage, SeedPageAnswer,
 };
@@ -13,7 +14,6 @@ use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
 };
-use uuid::Uuid;
 
 /// Allocate a copy-owned generation. A repeated attempt returns its original generation.
 // Explicit Send is required by borrowed-scope host dispatch.
@@ -21,7 +21,7 @@ use uuid::Uuid;
 pub fn seed_begin<'scope, S>(
     scope: &'scope mut S,
     database: DatabaseId,
-    attempt: Uuid,
+    attempt: SeedAttemptId,
     authority: &'scope crate::SeedAuthority,
 ) -> impl std::future::Future<Output = Result<SeedId, ReceiverError>> + Send + 'scope
 where
@@ -45,11 +45,6 @@ where
             return Err(ReceiverError::NotInitialized);
         }
         authorize_seed(scope, &copy, authority).await?;
-        if attempt.is_nil() {
-            return Err(ReceiverError::InvalidInput {
-                field: "seed attempt must be non-nil".into(),
-            });
-        }
         let previous = SeedStorage(scope).load(database).await?;
         if let Some(seed) = SeedStorage(scope).attempt(attempt).await? {
             return Ok(seed);
@@ -126,8 +121,10 @@ where
                 SeedPageAnswer::SeedConflict
             });
         }
-        SeedStorage(scope).save_page(page).await?;
-        Ok(SeedPageAnswer::Staged)
+        Ok(match SeedStorage(scope).save_page(page).await? {
+            SeedPageWrite::Staged => SeedPageAnswer::Staged,
+            SeedPageWrite::UnitTooLarge => SeedPageAnswer::UnitTooLarge,
+        })
     }
 }
 
@@ -144,7 +141,7 @@ pub fn seed_complete<'scope, S, H>(
 + 'scope
 where
     S: TransactionScope + 'scope,
-    H: crate::ReceiverHook<S>,
+    H: crate::ReceiverRules<S>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'value> String:
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
@@ -238,8 +235,11 @@ where
         };
         let follow_ups = crate::run_snapshot_hook(scope, hook, &installed)
             .await
-            .map_err(|refusal| ReceiverError::SeedRefused {
-                answer: SeedAnswer::Hook(refusal),
+            .map_err(|error| match error {
+                crate::HookError::Refused(refusal) => ReceiverError::SeedRefused {
+                    answer: SeedAnswer::Hook(refusal),
+                },
+                crate::HookError::Storage(error) => ReceiverError::Storage(error),
             })?;
         seed.published = Some(done.clone());
         SeedStorage(scope).save(&seed).await?;

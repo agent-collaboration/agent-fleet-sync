@@ -299,6 +299,12 @@ where
             })?;
         let mut events = Vec::new();
         let done = match answer {
+            ReplicationAnswer::CopyUnavailable { reason } => {
+                return Err(SenderError::CopyUnavailable { copy, reason });
+            }
+            ReplicationAnswer::OutcomeUnknown { .. } => {
+                return Err(crate::SendFailure::AnswerLost.into());
+            }
             ReplicationAnswer::Applied { through }
             | ReplicationAnswer::AlreadyApplied { through } => {
                 if through != sent.through {

@@ -150,3 +150,204 @@ async fn hook_table_exists_but_never_enters_snapshot_pages_or_fingerprint() -> T
     transaction.commit().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn copy_snapshot_header_uses_small_current_catalog_after_large_schema_history() -> TestResult
+{
+    let mut connection = connection().await?;
+    // Each piece commits a real schema edit whose transient table is gone again.
+    // Its retained history is deliberately larger than the current-catalog cap.
+    for version in 2_u64..=13 {
+        let incoming = Piece::<()>::new(PieceContents {
+            database: database()?,
+            epoch: Epoch::new(1)?,
+            continues_from: position(version - 2)?,
+            through: position(version - 1)?,
+            transactions: vec![ReplicatedTransaction::SchemaStep {
+                commit_id: CommitSequence::new(version),
+                migration_version: version,
+                statements: vec![
+                    format!(
+                        "CREATE TABLE discarded_{version}(id TEXT NOT NULL PRIMARY KEY,payload TEXT DEFAULT '{}')",
+                        "x".repeat(32 * 1024)
+                    ),
+                    format!("DROP TABLE discarded_{version}"),
+                ],
+            }],
+            part: None,
+            annotation: None,
+        })?;
+        let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+        apply_piece(
+            &mut TursoScope(&mut transaction),
+            &incoming,
+            &writer()?,
+            &Hook { refuse: false },
+            SyncTime::from_unix_millis(1),
+        )
+        .await?;
+        transaction.commit().await?;
+    }
+    let index = "CREATE INDEX records_body ON records(body)";
+    let view = "CREATE VIEW records_view AS SELECT id,body FROM records";
+    let incoming = Piece::<()>::new(PieceContents {
+        database: database()?,
+        epoch: Epoch::new(1)?,
+        continues_from: position(12)?,
+        through: position(13)?,
+        transactions: vec![ReplicatedTransaction::SchemaStep {
+            commit_id: CommitSequence::new(14),
+            migration_version: 14,
+            statements: vec![index.into(), view.into()],
+        }],
+        part: None,
+        annotation: None,
+    })?;
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    apply_piece(
+        &mut TursoScope(&mut transaction),
+        &incoming,
+        &writer()?,
+        &Hook { refuse: false },
+        SyncTime::from_unix_millis(2),
+    )
+    .await?;
+    sqlx_core::query::query::<Turso>("CREATE INDEX hook_private ON hook_records(value)")
+        .execute(&mut *transaction)
+        .await?;
+    transaction.commit().await?;
+
+    // Act through the public copy-page producer in a fresh real transaction.
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    let history: i64 = sqlx_core::query::query::<Turso>(
+        "SELECT SUM(length(record)) AS encoded FROM _fleet_sync_schema_steps",
+    )
+    .fetch_one(&mut *transaction)
+    .await?
+    .try_get("encoded")?;
+    assert!(history > 256 * 1024);
+    let SnapshotRead::Page(page) = snapshot_page(&mut TursoScope(&mut transaction), None).await?
+    else {
+        return Err("snapshot moved without a source write".into());
+    };
+
+    assert_eq!(
+        page.schema_steps.len(),
+        3,
+        "snapshot header replayed retired schema history"
+    );
+    assert!(serde_json::to_vec(&page.schema_steps)?.len() < 1024);
+    let entries = page
+        .schema_steps
+        .iter()
+        .map(|sql| snapshot_catalog_entry(sql))
+        .collect::<TestResult<Vec<_>>>()?;
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| (entry.kind, entry.name.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            (SchemaObjectKind::Table, "records"),
+            (SchemaObjectKind::Index, "records_body"),
+            (SchemaObjectKind::View, "records_view"),
+        ]
+    );
+    let expected = schema_fingerprint(&[
+        SchemaEntry {
+            kind: SchemaObjectKind::Table,
+            name: "records".into(),
+            sql: "CREATE TABLE records(id TEXT NOT NULL PRIMARY KEY, body TEXT)".into(),
+        },
+        SchemaEntry {
+            kind: SchemaObjectKind::Index,
+            name: "records_body".into(),
+            sql: index.into(),
+        },
+        SchemaEntry {
+            kind: SchemaObjectKind::View,
+            name: "records_view".into(),
+            sql: view.into(),
+        },
+    ])?;
+    assert_eq!(schema_fingerprint(&entries)?, expected);
+    assert_eq!(page.schema.fingerprint, expected);
+    assert_eq!(
+        page.table, "records",
+        "view was treated as a row-bearing table"
+    );
+    assert!(page.next.is_none());
+    transaction.commit().await?;
+    Ok(())
+}
+
+fn snapshot_catalog_entry(sql: &str) -> TestResult<SchemaEntry> {
+    use turso_parser::ast::{Cmd, Stmt};
+    let command = turso_parser::parser::Parser::new(sql.as_bytes())
+        .next_cmd()?
+        .ok_or("empty snapshot catalog statement")?;
+    let (kind, name) = match command {
+        Cmd::Stmt(Stmt::CreateTable { tbl_name, .. }) => (SchemaObjectKind::Table, tbl_name.name),
+        Cmd::Stmt(Stmt::CreateIndex { idx_name, .. }) => (SchemaObjectKind::Index, idx_name.name),
+        Cmd::Stmt(Stmt::CreateView { view_name, .. }) => (SchemaObjectKind::View, view_name.name),
+        _ => return Err("snapshot header contains a historical or unsupported statement".into()),
+    };
+    Ok(SchemaEntry {
+        kind,
+        name: name.as_str().into(),
+        sql: sql.into(),
+    })
+}
+
+#[tokio::test]
+async fn imported_over_bound_catalog_has_a_typed_snapshot_schema_refusal() -> TestResult {
+    let mut connection = connection().await?;
+    let incoming = Piece::<()>::new(PieceContents {
+        database: database()?,
+        epoch: Epoch::new(1)?,
+        continues_from: position(0)?,
+        through: position(1)?,
+        transactions: vec![ReplicatedTransaction::SchemaStep {
+            commit_id: CommitSequence::new(2),
+            migration_version: 2,
+            statements: vec![format!(
+                "ALTER TABLE records ADD COLUMN escaped_default TEXT DEFAULT '{}'",
+                "\"".repeat(150 * 1024)
+            )],
+        }],
+        part: None,
+        annotation: None,
+    })?;
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    apply_piece(
+        &mut TursoScope(&mut transaction),
+        &incoming,
+        &writer()?,
+        &Hook { refuse: false },
+        SyncTime::from_unix_millis(1),
+    )
+    .await?;
+    transaction.commit().await?;
+    let actual: String =
+        sqlx_core::query::query::<Turso>("SELECT sql FROM sqlite_schema WHERE name='records'")
+            .fetch_one(&mut connection)
+            .await?
+            .try_get("sql")?;
+    assert!(
+        actual.len() < 256 * 1024,
+        "fixture must require encoded-byte accounting"
+    );
+    let expected_size = serde_json::to_vec(&vec![actual])?.len();
+    assert!(expected_size > 256 * 1024);
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    assert!(
+        matches!(snapshot_page(&mut TursoScope(&mut transaction), None).await,
+        Err(ReceiverError::SnapshotSchema { encoded_size }) if encoded_size == expected_size)
+    );
+    assert!(
+        matches!(snapshot_manifest(&mut TursoScope(&mut transaction), position(1)?).await,
+        Err(ReceiverError::SnapshotSchema { encoded_size }) if encoded_size == expected_size)
+    );
+    transaction.rollback().await?;
+    Ok(())
+}

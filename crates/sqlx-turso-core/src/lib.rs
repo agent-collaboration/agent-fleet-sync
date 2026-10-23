@@ -20,6 +20,8 @@ mod macro_type_checking;
 #[cfg(feature = "migrate")]
 mod migrate;
 mod query_result;
+#[cfg(test)]
+mod read_only_tests;
 mod row;
 mod statement;
 mod transaction;

@@ -43,6 +43,10 @@ pub enum DeliveryRequest<D: DeliveryTypes = NoDelivery> {
         after: StatusCursor,
         limit: u32,
     },
+    StatusAck {
+        call: CallId,
+        through: StatusCursor,
+    },
     Query {
         call: CallId,
         mailbox: PeerId,
@@ -68,6 +72,7 @@ impl<D: DeliveryTypes> DeliveryRequest<D> {
             | Self::Received { call, .. }
             | Self::Report { call, .. }
             | Self::StatusFetch { call, .. }
+            | Self::StatusAck { call, .. }
             | Self::Query { call, .. }
             | Self::Retire { call, .. }
             | Self::Settle { call, .. } => call,
@@ -94,6 +99,7 @@ pub enum DeliveryAnswer<D: DeliveryTypes = NoDelivery> {
     Received(ReceivedResult),
     Report(ReportResult<D::Acceptance>),
     StatusFetch(StatusFetchResult<D::Acceptance>),
+    StatusAck(StatusAckResult),
     Query(QueryResult<D::Acceptance>),
     Retire(RetireResult),
     Settle(SettleResult<D::Acceptance>),
@@ -116,6 +122,13 @@ pub enum SubmitResult<A> {
         cancel: Option<CancelResult>,
     },
     Replayed {
+        status: DeliveryStatus<A>,
+        version: StatusVersion,
+        cancel: Option<CancelResult>,
+    },
+    /// A different cancel is canonical; this submission took no relay custody.
+    CancelAlreadyRequested {
+        existing: DeliveryItemRef,
         status: DeliveryStatus<A>,
         version: StatusVersion,
         cancel: Option<CancelResult>,
@@ -211,6 +224,25 @@ pub struct StatusFetchResult<A> {
     pub through: StatusCursor,
 }
 
+/// The remote retirement floor never advances a consumer's applied cursor.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum StatusAckResult {
+    Acknowledged {
+        floor: StatusCursor,
+    },
+    /// Diagnostic only: unread events and the acknowledged floor are unchanged.
+    Refused {
+        head: StatusCursor,
+    },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -244,6 +276,7 @@ pub struct QueryResult<A> {
 pub struct RetireResult {
     pub retired: Vec<ItemId>,
     pub unknown: Vec<ItemId>,
+    pub not_current_target: Vec<ItemId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

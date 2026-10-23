@@ -196,11 +196,16 @@ pub(crate) struct NodeState {
     unavailable: Mutex<Vec<(String, CallId)>>,
 }
 impl NodeState {
-    fn config(&self) -> Result<DeliveryTaskConfig, DeliveryError> {
-        Ok(DeliveryTaskConfig {
+    fn local_config(&self) -> Result<LocalDeliveryConfig, DeliveryError> {
+        Ok(LocalDeliveryConfig {
             owner: self.owner,
-            relay: peer(3)?,
             limits: delivery_limits()?,
+        })
+    }
+    fn remote_config(&self) -> Result<DeliveryTaskConfig, DeliveryError> {
+        Ok(DeliveryTaskConfig {
+            local: self.local_config()?,
+            relay: peer(3)?,
             fetch_items: 100,
             fetch_bytes: 1_000_000,
         })
@@ -214,7 +219,7 @@ impl NodeState {
         Ok(())
     }
     async fn inspect(&self, item: ItemId) -> TestResult<Value> {
-        let config = self.config()?;
+        let config = self.local_config()?;
         let (outbox, inbox) = self
             .object
             .rule_transaction::<_, DeliveryError, _>(move |scope| {
@@ -256,7 +261,7 @@ impl NodeState {
         }
     }
     async fn dispatch(&self, command: NodeCommand) -> TestResult<Value> {
-        let config = self.config()?;
+        let config = self.local_config()?;
         match command {
             NodeCommand::Snapshot => {
                 return Ok(serde_json::to_value(
@@ -275,6 +280,7 @@ impl NodeState {
                 body,
                 valid_until,
             } => {
+                let relay = self.remote_config()?.relay;
                 let item = DeliveryItem::<SampleDelivery>::new(
                     item,
                     "authorized sender".into(),
@@ -290,7 +296,7 @@ impl NodeState {
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
                             Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                                .enqueue_and_admit::<SubmitTask>(item, config.relay)
+                                .enqueue_and_admit::<SubmitTask>(item, relay)
                                 .await
                         })
                     })
@@ -303,6 +309,7 @@ impl NodeState {
                 target,
                 recipient,
             } => {
+                let relay = self.remote_config()?.relay;
                 let cancel = DeliveryCancel::<SampleDelivery>::new(
                     item,
                     "authorized sender".into(),
@@ -320,7 +327,7 @@ impl NodeState {
                             Outbox::<_, SampleDelivery>::new(scope, config.limits)
                                 .enqueue_cancel_and_admit::<SubmitTask, _>(
                                     cancel,
-                                    config.relay,
+                                    relay,
                                     &consumer::NodeConsumer(Weak::new()),
                                 )
                                 .await
@@ -448,12 +455,14 @@ impl NodeState {
 }
 
 pub fn peer(number: u128) -> Result<PeerId, DeliveryError> {
-    PeerId::new(durable_steps::Uuid::from_u128(number))
-        .map_err(|error| DeliveryError::Encoding(error.to_string()))
+    PeerId::new(durable_steps::Uuid::from_u128(
+        (number) | 0x019eef00000070008000000000000000,
+    ))
+    .map_err(|error| DeliveryError::Encoding(error.to_string()))
 }
 fn new_call() -> TestResult<CallId> {
     Ok(CallId {
-        operation: OperationId(durable_steps::Uuid::now_v7()),
+        operation: OperationId::new(durable_steps::Uuid::now_v7())?,
         step: StepName::new("delivery-node-control")?,
     })
 }
@@ -501,10 +510,10 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
         .set(Arc::downgrade(&state))
         .map_err(|_| "node router initialized twice")?;
     let consumer = Arc::new(consumer::NodeConsumer(Arc::downgrade(&state)));
-    let config = state.config()?;
+    let config = state.remote_config()?;
     let mut engine = Engine::new(object.clone(), host.clone());
     engine.register(observer::ObservedTask::new(
-        SubmitTask::new(config.limits, consumer.clone()),
+        SubmitTask::new(config.local.limits, consumer.clone()),
         &state,
     ))?;
     engine.register(observer::ObservedTask::new(
@@ -512,12 +521,12 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
         &state,
     ))?;
     engine.register(observer::ObservedTask::new(
-        DeliverTask::new(config, consumer, host.clone()),
+        DeliverTask::new(config.local, consumer, host.clone()),
         &state,
     ))?;
     engine.register(observer::ObservedTask::new(ReportTask::new(config), &state))?;
     let (shutdown, stopped) = watch::channel(false);
-    let runner = TokioRunner::new(Arc::new(engine), host, object.engine_lock());
+    let runner = TokioRunner::new(Arc::new(engine), host);
     let runner_task = tokio::spawn(async move { runner.run(stopped).await });
     let socket_task = tokio::spawn(actor.run(Arc::downgrade(&state), shutdown.subscribe()));
     let mut input = BufReader::new(tokio::io::stdin()).lines();

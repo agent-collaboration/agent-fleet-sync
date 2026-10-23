@@ -16,6 +16,8 @@ async fn lost_body() -> Fixture {
                         peer(1),
                         item(1, "required custody"),
                         SyncTime::from_unix_millis(0),
+                        "fixture-route".to_owned(),
+                        None,
                     )
                     .await
                     .map_err(storage_error)?;
@@ -43,6 +45,8 @@ async fn lost_body() -> Fixture {
                         peer(1),
                         item(2, "later healthy"),
                         SyncTime::from_unix_millis(0),
+                        "fixture-route".to_owned(),
+                        None,
                     )
                     .await
                     .map_err(storage_error)?;
@@ -86,7 +90,9 @@ async fn replay_rejects_unreleased_nonterminal_custody_without_its_body() {
                         .submit(
                             peer(1),
                             item(1, "required custody"),
-                            SyncTime::from_unix_millis(1)
+                            SyncTime::from_unix_millis(1),
+                            "fixture-route".to_owned(),
+                            None
                         )
                         .await,
                     Err(DeliveryError::Corrupt { .. })
@@ -159,7 +165,13 @@ async fn received_terminal_and_compacted_rows_without_bodies_remain_valid_and_fe
             Box::pin(async move {
                 let mut mailbox = Mailbox::<_, TestTypes>::new(scope, peer(2), limits());
                 mailbox
-                    .submit(peer(1), item(1, "received"), SyncTime::from_unix_millis(0))
+                    .submit(
+                        peer(1),
+                        item(1, "received"),
+                        SyncTime::from_unix_millis(0),
+                        "fixture-route".to_owned(),
+                        None,
+                    )
                     .await
                     .map_err(storage_error)?;
                 mailbox
@@ -197,7 +209,13 @@ async fn received_terminal_and_compacted_rows_without_bodies_remain_valid_and_fe
                         .unwrap(),
                     );
                     mailbox
-                        .submit(peer(1), expired, SyncTime::from_unix_millis(2))
+                        .submit(
+                            peer(1),
+                            expired,
+                            SyncTime::from_unix_millis(2),
+                            "fixture-route".to_owned(),
+                            None,
+                        )
                         .await
                         .map_err(storage_error)?;
                 }

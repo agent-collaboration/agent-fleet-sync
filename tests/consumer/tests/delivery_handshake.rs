@@ -100,7 +100,7 @@ async fn publish_before_welcome(socket: WebSocket, item: ItemId) -> TestResult {
         frame,
         body: ServerRequest::Crate(ServerCall::PublishStatus {
             call: CallId {
-                operation: OperationId(durable_steps::Uuid::now_v7()),
+                operation: OperationId::new(durable_steps::Uuid::now_v7())?,
                 step: StepName::new("publish-before-welcome")?,
             },
             publication: StatusPublication {

@@ -34,8 +34,14 @@ impl ConsumerProtocol for NoConsumer {
 )]
 pub enum CopyUnavailableReason {
     Uninitialized,
+    /// The host owns the pending receiver-storage migration and its version.
+    MigrationPending {
+        version: u64,
+    },
     StorageFull,
-    Damaged { detail: String },
+    Damaged {
+        detail: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -79,7 +85,7 @@ pub enum ReplicationRequest<A = ()> {
     Piece(Piece<A>),
     SeedBegin {
         database: DatabaseId,
-        attempt: uuid::Uuid,
+        attempt: SeedAttemptId,
     },
     SeedPage(Box<SeedPage>),
     SeedComplete(SeedComplete),
@@ -144,6 +150,12 @@ pub enum PieceRefusal {
     deny_unknown_fields
 )]
 pub enum ReplicationAnswer {
+    CopyUnavailable {
+        reason: CopyUnavailableReason,
+    },
+    OutcomeUnknown {
+        reason: OutcomeUnknownReason,
+    },
     Applied {
         through: ReplicationPosition,
     },
@@ -192,6 +204,7 @@ pub enum OperationRequest<P: ConsumerProtocol = NoConsumer> {
     bound = ""
 )]
 pub enum OperationAnswer<P: ConsumerProtocol = NoConsumer> {
+    InvalidShape { field: String },
     Replication(ReplicationAnswer),
     Lease(LeaseAnswer),
     Delivery(DeliveryAnswer<P::Delivery>),

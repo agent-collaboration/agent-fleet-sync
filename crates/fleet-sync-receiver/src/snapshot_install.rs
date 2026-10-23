@@ -1,5 +1,5 @@
 use crate::{
-    CopyStatus, InstallPageReceipt, ReceiverError, ReceiverHook, SnapshotInstall,
+    CopyStatus, InstallPageReceipt, ReceiverError, ReceiverRules, SnapshotInstall,
     SnapshotInstallError, SnapshotInstallState, SnapshotReady, StoreError, checked_queries,
     copy_contract::{CopyRecord, validate_copy_status},
     copy_storage::{CopyStorage, encode_record},
@@ -34,8 +34,7 @@ where
         source: &CopyStatus,
     ) -> Result<(), SnapshotInstallError> {
         validate_copy_status(source)?;
-        if install.install_id.is_nil()
-            || install.database != source.database
+        if install.database != source.database
             || install.position != source.acked
             || install.schema != source.schema
         {
@@ -233,7 +232,7 @@ where
             InstallStorage(self.0).save(&marker).await
         }
     }
-    pub async fn mark_ready<H: ReceiverHook<S>>(
+    pub async fn mark_ready<H: ReceiverRules<S>>(
         &mut self,
         install: &SnapshotInstall,
         hook: &H,
@@ -261,7 +260,10 @@ where
             .await?;
         let follow_ups = crate::run_snapshot_hook(self.0, hook, &installed)
             .await
-            .map_err(|refusal| SnapshotInstallError::Hook { refusal })?;
+            .map_err(|error| match error {
+                crate::HookError::Refused(refusal) => SnapshotInstallError::Hook { refusal },
+                crate::HookError::Storage(error) => SnapshotInstallError::Storage(error),
+            })?;
         marker.ready = true;
         InstallStorage(self.0).save(&marker).await?;
         Ok(SnapshotReady::Ready {

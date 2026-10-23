@@ -34,11 +34,17 @@ async fn new_writer_publishes_v1_prefix_then_renames_writes_and_replicates() -> 
     let mut control = service
         .connect("control", "Bearer consumer-control")
         .await?;
+    let _capability_change = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let change = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         from_epoch: through.epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(change.clone())).await?;
     assert!(
@@ -56,7 +62,7 @@ async fn new_writer_publishes_v1_prefix_then_renames_writes_and_replicates() -> 
         Some(database),
     )
     .await?;
-    let attempt = durable_steps::Uuid::now_v7();
+    let attempt = InstallAttemptId::new(durable_steps::Uuid::now_v7())?;
     writer
         .command(WriterCommand::InstallSnapshot { attempt })
         .await?;

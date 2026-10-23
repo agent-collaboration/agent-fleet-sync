@@ -155,16 +155,19 @@ impl TransactionScope for CapacityScope<'_> {
     }
 }
 struct NoHook;
-impl ReceiverHook<CapacityScope<'_>> for NoHook {
+impl ReceiverRules<CapacityScope<'_>> for NoHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     async fn on_applied(
         &self,
         _: &mut CapacityScope<'_>,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, HookRefusal> {
+    ) -> Result<Vec<()>, HookError> {
         Ok(Vec::new())
     }
+}
+impl FollowUpHandler for NoHook {
+    type Item = ();
     async fn follow_up(
         &self,
         _: &(),

@@ -53,8 +53,12 @@ struct ManualWriter {
 }
 impl ManualWriter {
     async fn open(path: &Path, service: &ServiceProcess) -> TestResult<Self> {
-        let peer = PeerId::new(durable_steps::Uuid::from_u128(2))?;
-        let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
+        let peer = PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000002,
+        ))?;
+        let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000003,
+        ))?;
         let database = Arc::new(
             ReplicatedDatabase::create(
                 path,
@@ -146,11 +150,17 @@ async fn withdrawal_keeps_original_real_clock_deadline_then_fresh_renewal_resume
         .connect("control", "Bearer consumer-control")
         .await?;
     let attempt = TransferId::new(durable_steps::Uuid::now_v7())?;
+    let _capability_change = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let change = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database,
         from_epoch: writer.lease.epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(change.clone())).await?;
     {
@@ -287,11 +297,17 @@ async fn stale_holder_move_refuses_then_a_recently_renewed_holder_moves_over_its
     let mut control = service
         .connect("control", "Bearer consumer-control")
         .await?;
+    let _capability_stale = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let stale = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         from_epoch: writer.lease.epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(stale.clone())).await?;
     assert!(
@@ -324,11 +340,17 @@ async fn stale_holder_move_refuses_then_a_recently_renewed_holder_moves_over_its
     };
     writer.database.observe_renewal(renewal, started).await?;
     let attempt = TransferId::new(durable_steps::Uuid::now_v7())?;
+    let _capability_fresh = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let fresh = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database,
         from_epoch: writer.lease.epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(fresh.clone())).await?;
     let (frame, call, release) = match server_frame(socket).await? {
@@ -384,6 +406,18 @@ async fn authoritative_copy_refuses_the_takeover_tail_while_old_writer_keeps_it_
     let writer = ManualWriter::open(&root.path().join("writer.db"), &service).await?;
     let database = writer.database.database();
     let before = writer.database.snapshot().await?.position();
+    let mut admitted = writer.database.begin_write().await?;
+    assert_eq!(admitted.admitted_epoch(), writer.lease.epoch);
+    insert_sample(
+        &mut admitted,
+        durable_steps::Uuid::now_v7().to_string(),
+        "kept rejected tail".into(),
+        9_007_199_254_740_993,
+        vec![0, 255, 128],
+    )
+    .await?;
+    // Hold the actual session transport so the writer cannot learn the takeover.
+    let held_session = writer.transport.0.lock().await;
     let mut control = service
         .connect("control", "Bearer consumer-control")
         .await?;
@@ -399,11 +433,17 @@ async fn authoritative_copy_refuses_the_takeover_tail_while_old_writer_keeps_it_
         ControlAnswer::TakeoverPreview(preview) => preview,
         _ => return Err("takeover preview missing".into()),
     };
+    let _capability_takeover = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let takeover = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         preview,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(takeover.clone())).await?;
     assert!(
@@ -411,7 +451,10 @@ async fn authoritative_copy_refuses_the_takeover_tail_while_old_writer_keeps_it_
     );
     // The isolated holder has not learned the new authority yet. Its cached
     // lease still permits this write; only the copy can reject its epoch.
-    let tail = writer.insert("kept rejected tail").await?;
+    assert_eq!(admitted.admitted_epoch(), writer.lease.epoch);
+    admitted.commit().await?;
+    drop(held_session);
+    let tail = writer.database.snapshot().await?.position();
     let events = writer.sender.replicate_once(writer.receiver).await?;
     assert!(events.iter().any(|event| matches!(event, ReplicationEvents::RejectedTail(rejected) if rejected.ended_at==before && rejected.last_commit==tail)));
     let rejected = writer.sender.rejected_tails().await?;

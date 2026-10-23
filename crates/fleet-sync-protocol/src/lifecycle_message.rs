@@ -26,13 +26,38 @@ macro_rules! validated_text {
 pub struct TextValueError {
     kind: &'static str,
 }
-validated_text!(
-    TableName,
-    PreviewToken,
-    GateReasonCode,
-    HookRefusalCode,
-    FailureCode
-);
+validated_text!(TableName, GateReasonCode, HookRefusalCode, FailureCode);
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct PreviewToken(String);
+
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("preview token must be a canonical UUIDv7")]
+pub struct PreviewTokenError;
+
+impl PreviewToken {
+    pub fn new(value: impl Into<String>) -> Result<Self, PreviewTokenError> {
+        let value = value.into();
+        canonical_uuid_v7(&value)
+            .then_some(Self(value))
+            .ok_or(PreviewTokenError)
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+impl TryFrom<String> for PreviewToken {
+    type Error = PreviewTokenError;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+impl From<PreviewToken> for String {
+    fn from(value: PreviewToken) -> Self {
+        value.0
+    }
+}
 
 impl From<crate::DeliveryFailureKind> for FailureCode {
     fn from(value: crate::DeliveryFailureKind) -> Self {
@@ -83,6 +108,7 @@ pub enum SeedPageAnswer {
     NotSeedable,
     Retired,
     StaleSeed,
+    UnitTooLarge,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

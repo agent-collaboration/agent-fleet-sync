@@ -64,6 +64,16 @@ where
             result: b"41".to_vec()
         }
     );
+    let key = RequestKey::new("generic-settlement-send").map_err(StoreError::backend)?;
+    let status = require_send(engine.start_and_settle::<GenericTask<S>>(&key, 43))
+        .await
+        .map_err(StoreError::backend)?;
+    assert_eq!(
+        status.state,
+        OperationState::Completed {
+            result: b"43".to_vec()
+        }
+    );
     Ok(())
 }
 

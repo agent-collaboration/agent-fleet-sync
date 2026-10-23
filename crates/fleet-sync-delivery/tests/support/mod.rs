@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, dead_code)]
 pub mod interleaving;
 pub mod network;
+pub mod publication_network;
 use durable_steps::{
     AtomicStore, CallFailure, CallId, CallTarget, Host, NotSentReason, SyncTime,
     turso_store::TursoStore,
@@ -39,11 +40,14 @@ impl<S: durable_steps::storage::TransactionScope> DeliveryConsumer<S> for TestCo
         &self,
         item: &DeliveryItem<TestTypes>,
         _call: CallId,
-    ) -> LocalOutcome<Acceptance> {
-        LocalOutcome::Delivered {
-            acceptance: Acceptance {
-                receipt: format!("accepted {}", item.id().as_uuid()),
+    ) -> LocalDelivery<TestTypes> {
+        LocalDelivery {
+            outcome: LocalOutcome::Delivered {
+                acceptance: Acceptance {
+                    receipt: format!("accepted {}", item.id().as_uuid()),
+                },
             },
+            observation: (),
         }
     }
     fn may_cancel(&self, requester: &String, item: &DeliveryHeader<TestTypes>) -> bool {
@@ -54,10 +58,14 @@ impl DeliveryTypes for TestTypes {
     const MAX_SENDER_BYTES: u32 = 64;
     const MAX_ADDRESS_BYTES: u32 = 64;
     const MAX_ACCEPTANCE_BYTES: u32 = 128;
+    const MAX_STATUS_ROUTE_BYTES: u32 = 64;
     type Body = String;
     type Sender = String;
     type Address = String;
     type Acceptance = Acceptance;
+    type LocalObservation = ();
+    const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
+    type StatusRoute = String;
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -131,10 +139,7 @@ impl Fixture {
                 Box::pin(async move {
                     use durable_steps::storage::TransactionScope;
                     let mut migrations = sqlx_core::migrate::Migrator::with_migrations(
-                        sqlx::migrate!("./migrations")
-                            .iter()
-                            .cloned()
-                            .collect::<Vec<_>>(),
+                        DELIVERY_MIGRATOR.iter().cloned().collect::<Vec<_>>(),
                     );
                     migrations.dangerous_set_table_name("_fleet_sync_delivery_migrations");
                     migrations
@@ -180,7 +185,10 @@ pub fn configured_limits(
     .unwrap()
 }
 pub fn peer(value: u128) -> PeerId {
-    PeerId::new(durable_steps::Uuid::from_u128(value)).unwrap()
+    PeerId::new(durable_steps::Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))
+    .unwrap()
 }
 pub fn item_id(value: u64) -> ItemId {
     ItemId::new(durable_steps::Uuid::from_u128(
@@ -222,10 +230,27 @@ pub fn cancel(value: u64, target: u64) -> DeliveryEnvelope<TestTypes> {
 }
 pub fn call(step: &str) -> CallId {
     CallId {
-        operation: OperationId(durable_steps::Uuid::from_u128(99)),
+        operation: OperationId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000063,
+        ))
+        .unwrap(),
         step: StepName::new(step).unwrap(),
     }
 }
 pub fn storage_error(error: DeliveryError) -> durable_steps::StoreError {
     durable_steps::StoreError::backend(error)
+}
+
+pub fn require_local_attempt(
+    admission: LocalItemAdmission,
+) -> Result<DeliveryAttempt, durable_steps::StoreError> {
+    match admission {
+        LocalItemAdmission::Attempt(input) => Ok(input),
+        LocalItemAdmission::Replayed => Err(durable_steps::StoreError::backend(
+            "fixture unexpectedly replayed local custody",
+        )),
+        LocalItemAdmission::SettledOnAdmission => Err(durable_steps::StoreError::backend(
+            "fixture unexpectedly settled local custody",
+        )),
+    }
 }

@@ -3,7 +3,7 @@
 use crate::{
     Admitted, DriveLease, JournalScope, OperationId, RequestKey, StartRefusal, StoreError,
     SyncTime, Task,
-    sql_rows::{StoredOperationRow, StoredStepRow, corrupt},
+    sql_rows::{StoredOperationRow, StoredRequestKeyRow, StoredStepRow, corrupt},
     storage::{JournalStorage, OperationExecution, OperationOutcome, OperationRecord, StepRecord},
 };
 use sha2::{Digest, Sha256};
@@ -17,6 +17,9 @@ impl From<sqlx_core::error::Error> for StoreError {
 }
 
 pub(crate) trait JournalQueries: Send {
+    fn fetch_running_request_keys(
+        &mut self,
+    ) -> impl Future<Output = Result<Vec<StoredRequestKeyRow>, StoreError>> + Send;
     fn delete_steps(&mut self, id: String) -> impl Future<Output = Result<(), StoreError>> + Send;
     fn delete_operation(
         &mut self,
@@ -64,6 +67,16 @@ pub(crate) trait JournalQueries: Send {
 }
 
 impl<S: JournalQueries> JournalScope for S {
+    async fn running_request_keys(&mut self, kind: &str) -> Result<Vec<RequestKey>, StoreError> {
+        self.fetch_running_request_keys()
+            .await?
+            .into_iter()
+            .filter(|row| row.kind == kind)
+            .map(|row| {
+                RequestKey::new(row.request_key).map_err(|error| corrupt("request_key", error))
+            })
+            .collect()
+    }
     async fn admit<T: Task>(
         &mut self,
         request_key: &RequestKey,
@@ -84,7 +97,7 @@ impl<S: JournalQueries> JournalScope for S {
                 })
             };
         }
-        let id = OperationId(self.new_id());
+        let id = OperationId::new(self.new_id()).map_err(StoreError::backend)?;
         let now = self.now();
         self.insert_operation(StoredOperationRow::encode(OperationRecord {
             id,
@@ -112,7 +125,7 @@ impl<S: JournalQueries> JournalScope for S {
 
 impl<S: JournalQueries> JournalStorage for S {
     async fn operation(&mut self, id: OperationId) -> Result<Option<OperationRecord>, StoreError> {
-        self.fetch_operation(id.0.to_string())
+        self.fetch_operation(id.as_uuid().to_string())
             .await?
             .map(OperationRecord::try_from)
             .transpose()
@@ -121,11 +134,7 @@ impl<S: JournalQueries> JournalStorage for S {
         self.fetch_due(now.unix_millis())
             .await?
             .into_iter()
-            .map(|id| {
-                Uuid::parse_str(&id)
-                    .map(OperationId)
-                    .map_err(|error| corrupt("operation_id", error))
-            })
+            .map(|id| OperationId::try_from(id).map_err(|error| corrupt("operation_id", error)))
             .collect()
     }
     async fn claim(
@@ -134,10 +143,9 @@ impl<S: JournalQueries> JournalStorage for S {
         now: SyncTime,
         lease: DriveLease,
     ) -> Result<Option<OperationRecord>, StoreError> {
-        let mut record = self
-            .operation(id)
-            .await?
-            .ok_or(StoreError::MissingOperation { id })?;
+        let Some(mut record) = self.operation(id).await? else {
+            return Ok(None);
+        };
         let previous_token = match &mut record.execution {
             OperationExecution::Running {
                 next_attempt_at,
@@ -209,7 +217,7 @@ impl<S: JournalQueries> JournalStorage for S {
         keep_result: bool,
     ) -> Result<(), StoreError> {
         self.check_token(id, token).await?;
-        self.delete_steps(id.0.to_string()).await?;
+        self.delete_steps(id.as_uuid().to_string()).await?;
         if keep_result {
             let mut record = self
                 .operation(id)
@@ -232,7 +240,7 @@ impl<S: JournalQueries> JournalStorage for S {
                 return Err(StoreError::StaleDriveToken { id });
             }
         } else if !self
-            .delete_operation(id.0.to_string(), token.to_string())
+            .delete_operation(id.as_uuid().to_string(), token.to_string())
             .await?
         {
             return Err(StoreError::StaleDriveToken { id });
@@ -246,7 +254,7 @@ impl<S: JournalQueries> JournalStorage for S {
         position: u64,
     ) -> Result<Option<StepRecord>, StoreError> {
         self.fetch_step(
-            id.0.to_string(),
+            id.as_uuid().to_string(),
             i64::try_from(position).map_err(StoreError::backend)?,
         )
         .await?
@@ -258,7 +266,7 @@ impl<S: JournalQueries> JournalStorage for S {
         self.upsert_step(StoredStepRow::encode(step)?).await
     }
     async fn step_count(&mut self, id: OperationId) -> Result<u64, StoreError> {
-        u64::try_from(self.count_steps(id.0.to_string()).await?)
+        u64::try_from(self.count_steps(id.as_uuid().to_string()).await?)
             .map_err(|error| corrupt("step_count", error))
     }
     async fn earliest(&mut self) -> Result<Option<SyncTime>, StoreError> {

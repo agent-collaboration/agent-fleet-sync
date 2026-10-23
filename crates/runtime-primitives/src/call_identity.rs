@@ -37,9 +37,48 @@ impl From<StepName> for String {
     }
 }
 
+/// Semantic validation for identities minted inside an owning host.
+pub fn uuid_v7(value: Uuid) -> bool {
+    value.get_version_num() == 7 && value.get_variant() == uuid::Variant::RFC4122
+}
+
+/// Text must be checked before parsing can normalize its spelling.
+pub fn canonical_uuid_v7(value: &str) -> bool {
+    Uuid::parse_str(value).is_ok_and(|id| uuid_v7(id) && id.hyphenated().to_string() == value)
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[error("operation identity must be a canonical UUIDv7")]
+pub struct InvalidOperationId;
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct OperationId(pub Uuid);
+#[serde(try_from = "String", into = "String")]
+pub struct OperationId(Uuid);
+
+impl OperationId {
+    pub fn new(value: Uuid) -> Result<Self, InvalidOperationId> {
+        uuid_v7(value)
+            .then_some(Self(value))
+            .ok_or(InvalidOperationId)
+    }
+    pub const fn as_uuid(self) -> Uuid {
+        self.0
+    }
+}
+impl TryFrom<String> for OperationId {
+    type Error = InvalidOperationId;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if !canonical_uuid_v7(&value) {
+            return Err(InvalidOperationId);
+        }
+        Self::new(Uuid::parse_str(&value).map_err(|_| InvalidOperationId)?)
+    }
+}
+impl From<OperationId> for String {
+    fn from(value: OperationId) -> Self {
+        value.0.to_string()
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CallId {

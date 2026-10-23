@@ -239,6 +239,20 @@ pub struct DeliveryAttempt {
     pub attempt: u64,
     pub not_before: SyncTime,
 }
+/// Distinguishes fresh custody from replay, including fresh terminal admission.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "camelCase",
+    deny_unknown_fields
+)]
+pub enum LocalItemAdmission {
+    Attempt(DeliveryAttempt),
+    Replayed,
+    SettledOnAdmission,
+}
+
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReportRef {
@@ -315,6 +329,13 @@ impl InboxState {
         }
         Ok(())
     }
+}
+
+/// A local cancel may replay another ID's canonical control for the same target.
+/// Apply its effects in the caller's custody transaction, as for remote intake.
+pub struct LocalCancelAdmission {
+    pub reference: DeliveryItemRef,
+    pub effects: InboxEffects,
 }
 
 #[derive(Default)]

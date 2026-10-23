@@ -47,13 +47,47 @@ fn schema() -> TestResult<TestSchema> {
     })
 }
 fn peer() -> TestResult<PeerId> {
-    Ok(PeerId::new(Uuid::from_u128(2))?)
+    Ok(PeerId::new(Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?)
 }
 fn policy() -> LeasePolicy {
     LeasePolicy {
         lease_duration: Duration::from_secs(10),
         renew_interval: Duration::from_secs(1),
     }
+}
+
+#[tokio::test]
+async fn schema_step_readback_keeps_the_bound_version_instead_of_an_assigned_rowid() -> TestResult {
+    static GAP: Migrator = sqlx::migrate!("./tests/fixtures/version-gap");
+    static GAP_TABLES: LazyLock<Result<Vec<TableName>, fleet_sync_protocol::TextValueError>> =
+        LazyLock::new(|| Ok(vec![TableName::new("records")?]));
+    let directory = tempfile::tempdir()?;
+    let database = ReplicatedDatabase::create(
+        &directory.path().join("writer.db"),
+        TestSchema {
+            migrations: GAP.iter().as_slice(),
+            local: &[],
+            tables: GAP_TABLES.as_ref().map_err(Clone::clone)?,
+        },
+        peer()?,
+        policy(),
+        WriterOptions {
+            allow_provisional_writes: true,
+        },
+    )
+    .await?;
+    let rows = query::<Turso>("SELECT version FROM _fleet_sync_schema_steps")
+        .fetch_all(database.reader())
+        .await?;
+    let versions = rows
+        .iter()
+        .map(|row| row.try_get::<i64, _>("version"))
+        .collect::<Result<Vec<_>, _>>()?;
+    assert_eq!(versions, vec![17]);
+    database.close().await;
+    Ok(())
 }
 
 #[tokio::test]
@@ -184,7 +218,7 @@ async fn nondeterministic_migration_is_refused_before_it_changes_schema_or_histo
 async fn refusing_a_later_undeclared_reference_prevents_earlier_statements() -> TestResult {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("writer.db");
-    let id = DatabaseId::new(Uuid::from_u128(1))?;
+    let id = DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000001))?;
     let mut offered = schema()?;
     static BAD: Migrator = sqlx::migrate!("./tests/fixtures/failed");
     offered.migrations = BAD.iter().as_slice();

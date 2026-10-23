@@ -1,7 +1,8 @@
-use crate::migration_ownership::{MigrationKind, validate_ownership};
-use crate::{OpenError, SchemaForm, TableLayout};
+use crate::migration_ownership::{MigrationKind, writer_error};
+use crate::{OpenError, TableLayout};
+use fleet_sync_protocol::schema_catalog::MigrationClassifier;
 use fleet_sync_protocol::{SchemaEntry, TableName};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use turso_parser::{
     ast::{Cmd, Stmt},
     parser::Parser,
@@ -42,6 +43,7 @@ pub struct StatementRefusal {
 pub struct StatementGuard {
     tables: Vec<TableLayout>,
     checked: HashMap<String, CheckedProfiles>,
+    migrations: MigrationClassifier,
 }
 
 #[derive(Clone, Debug)]
@@ -49,26 +51,16 @@ struct CheckedProfiles {
     read: Result<(), StatementRefusal>,
     write: Result<(), StatementRefusal>,
     maintenance: Result<(), StatementRefusal>,
-    migration: Result<Vec<MigrationStatement>, OpenError>,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct MigrationStatement {
-    pub sql: String,
-    pub command: Cmd,
-    pub inspection: crate::migration_inspection::MigrationInspection,
-}
-
-pub(crate) struct MigrationPlan {
-    pub statements: Vec<String>,
-    pub tables: Vec<TableName>,
-}
+pub(crate) use fleet_sync_protocol::schema_catalog::MigrationPlan;
 
 impl StatementGuard {
     pub fn new(tables: Vec<TableLayout>) -> Self {
         Self {
             tables,
             checked: HashMap::new(),
+            migrations: MigrationClassifier::default(),
         }
     }
 
@@ -114,36 +106,9 @@ impl StatementGuard {
                 TableName::new(table.name()).map_err(|_| OpenError::corrupt("migration.membership"))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let mut views = BTreeMap::new();
-        for (entry, _) in catalog
-            .iter()
-            .filter(|(entry, _)| entry.kind == fleet_sync_protocol::SchemaObjectKind::View)
-        {
-            let parsed = self
-                .checked_profiles(&entry.sql)
-                .migration
-                .as_ref()
-                .map_err(Clone::clone)?;
-            if let Some(statement) = parsed.first() {
-                views.insert(
-                    entry.name.to_ascii_lowercase(),
-                    statement.inspection.clone(),
-                );
-            }
-        }
-        let statements = self
-            .checked_profiles(sql)
-            .migration
-            .as_ref()
-            .map_err(Clone::clone)?;
-        let tables = validate_ownership(statements, &current, declared, catalog, views, kind)?;
-        Ok(MigrationPlan {
-            statements: statements
-                .iter()
-                .map(|statement| statement.sql.clone())
-                .collect(),
-            tables,
-        })
+        self.migrations
+            .plan(sql, &current, declared, catalog, kind)
+            .map_err(writer_error)
     }
 
     fn checked_profiles(&mut self, sql: &str) -> &CheckedProfiles {
@@ -153,13 +118,7 @@ impl StatementGuard {
                 Err(error) => CheckedProfiles {
                     read: Err(error.clone()),
                     write: Err(error.clone()),
-                    maintenance: Err(error.clone()),
-                    migration: Err(OpenError::SchemaUnsupported {
-                        form: SchemaForm::InvalidMigration {
-                            statement: sql.into(),
-                            detail: error.to_string(),
-                        },
-                    }),
+                    maintenance: Err(error),
                 },
             }
         })
@@ -179,37 +138,12 @@ fn check_statements(
         read: Ok(()),
         write: Ok(()),
         maintenance: Ok(()),
-        migration: Ok(Vec::new()),
     };
-    let mut statement_start = 0;
     while let Some(command) = parser.next_cmd().map_err(|error| StatementRefusal {
         form: StatementForm::InvalidSql {
             message: error.to_string(),
         },
     })? {
-        let statement_end = parser.offset();
-        let statement_sql = sql.get(statement_start..statement_end).ok_or_else(|| {
-            refuse(StatementForm::InvalidSql {
-                message: "invalid parser offset".into(),
-            })
-        })?;
-        statement_start = statement_end;
-        if profiles.migration.is_ok() {
-            if let Err(error) = fleet_sync_protocol::admit_schema_command(&command) {
-                profiles.migration = Err(OpenError::SchemaUnsupported {
-                    form: SchemaForm::InvalidMigration {
-                        statement: statement_sql.into(),
-                        detail: error.to_string(),
-                    },
-                });
-            } else if let Ok(statements) = &mut profiles.migration {
-                statements.push(MigrationStatement {
-                    sql: statement_sql.to_owned(),
-                    inspection: crate::migration_inspection::inspect(&command),
-                    command: command.clone(),
-                });
-            }
-        }
         let Cmd::Stmt(statement) = &command else {
             profiles.read = Err(refuse(StatementForm::WriteOnReader));
             profiles.write = Err(refuse(StatementForm::UnsupportedStatement));

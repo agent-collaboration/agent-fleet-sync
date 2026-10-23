@@ -45,7 +45,32 @@ pub enum DispatchOutcome<A> {
     Unresolvable { reason: DeliveryFailureKind },
 }
 pub type SubmitOutcome<A> = DispatchOutcome<SubmitResult<A>>;
-pub type LocalDeliveryOutcome<A> = DispatchOutcome<LocalOutcome<A>>;
+/// The consumer's result, before the local call adapter enforces receipt bounds.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
+pub struct LocalDelivery<D: DeliveryTypes> {
+    pub outcome: LocalOutcome<D::Acceptance>,
+    pub observation: D::LocalObservation,
+}
+
+/// A validated local answer journals either the complete observation or an
+/// uncertain outcome when an invalid receipt cannot establish what happened.
+#[derive(Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "camelCase",
+    deny_unknown_fields,
+    bound = ""
+)]
+pub enum LocalDeliveryAnswer<D: DeliveryTypes> {
+    Observed {
+        outcome: LocalOutcome<D::Acceptance>,
+        observation: D::LocalObservation,
+    },
+    Uncertain,
+}
+pub type LocalDeliveryOutcome<D> = DispatchOutcome<LocalDeliveryAnswer<D>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeliveryError {
@@ -92,6 +117,48 @@ impl DeliveryError {
 
 pub trait DeliveryConsumer<S: TransactionScope>: Send + Sync + 'static {
     type Protocol: ConsumerProtocol;
+    /// Project a newly received item using the custody transaction. Returning an
+    /// error aborts that transaction; replays do not call this hook.
+    fn on_received(
+        &self,
+        _scope: &mut S,
+        _item: &DeliveryItem<<Self::Protocol as ConsumerProtocol>::Delivery>,
+    ) -> impl Future<Output = Result<(), DeliveryError>> + Send {
+        async { Ok(()) }
+    }
+    /// Project each recorded inbox outcome using its custody transaction,
+    /// including held attempts and cancellation controls. Returning an error
+    /// aborts that transaction. The ID remains usable for corrupt-custody failures.
+    /// The observation is present only for a validated local-attempt answer;
+    /// receive-time outcomes, expiry checks, failures and cancellations carry none.
+    fn on_outcome(
+        &self,
+        _scope: &mut S,
+        _item: ItemId,
+        _outcome: &RecipientOutcome<
+            <<Self::Protocol as ConsumerProtocol>::Delivery as DeliveryTypes>::Acceptance,
+        >,
+        _observation: Option<
+            &<<Self::Protocol as ConsumerProtocol>::Delivery as DeliveryTypes>::LocalObservation,
+        >,
+    ) -> impl Future<Output = Result<(), DeliveryError>> + Send {
+        async { Ok(()) }
+    }
+    /// Project a control's outcome with its target in the custody transaction,
+    /// immediately after on_outcome. Called once when the control settles, on
+    /// Local and remote routes; replays do not call it. An error aborts the
+    /// transaction, including both outcome projections.
+    fn on_cancel_outcome(
+        &self,
+        _scope: &mut S,
+        _cancel: ItemId,
+        _target: ItemId,
+        _outcome: &RecipientOutcome<
+            <<Self::Protocol as ConsumerProtocol>::Delivery as DeliveryTypes>::Acceptance,
+        >,
+    ) -> impl Future<Output = Result<(), DeliveryError>> + Send {
+        async { Ok(()) }
+    }
     fn release_gate(
         &self,
         scope: &mut S,
@@ -101,11 +168,7 @@ pub trait DeliveryConsumer<S: TransactionScope>: Send + Sync + 'static {
         &self,
         item: &DeliveryItem<<Self::Protocol as ConsumerProtocol>::Delivery>,
         call: CallId,
-    ) -> impl Future<
-        Output = LocalOutcome<
-            <<Self::Protocol as ConsumerProtocol>::Delivery as DeliveryTypes>::Acceptance,
-        >,
-    > + Send;
+    ) -> impl Future<Output = LocalDelivery<<Self::Protocol as ConsumerProtocol>::Delivery>> + Send;
     fn may_cancel(
         &self,
         requester: &<<Self::Protocol as ConsumerProtocol>::Delivery as DeliveryTypes>::Sender,
@@ -113,11 +176,18 @@ pub trait DeliveryConsumer<S: TransactionScope>: Send + Sync + 'static {
     ) -> bool;
 }
 
+/// Recipient custody and local execution do not depend on relay enrollment.
+#[derive(Clone, Copy)]
+pub struct LocalDeliveryConfig {
+    pub owner: PeerId,
+    pub limits: DeliveryLimits,
+}
+
+/// Relay-facing tasks add transport settings to the recipient's local settings.
 #[derive(Clone, Copy)]
 pub struct DeliveryTaskConfig {
-    pub owner: PeerId,
+    pub local: LocalDeliveryConfig,
     pub relay: PeerId,
-    pub limits: DeliveryLimits,
     pub fetch_items: u32,
     pub fetch_bytes: u64,
 }

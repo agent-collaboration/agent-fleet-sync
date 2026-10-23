@@ -39,8 +39,7 @@ where
         };
         let marker: InstallMarker = decode_record(row.record, "snapshot install marker")?;
         crate::copy_contract::validate_copy_status(&marker.source)?;
-        if marker.install.install_id.is_nil()
-            || marker.install.database != marker.source.database
+        if marker.install.database != marker.source.database
             || marker.install.position != marker.source.acked
             || marker.install.schema != marker.source.schema
             || (marker.ready && marker.verified.is_none())
@@ -63,12 +62,13 @@ where
     }
     pub async fn pages(
         &mut self,
-        id: uuid::Uuid,
+        id: fleet_sync_protocol::InstallId,
     ) -> Result<Vec<InstallPageReceipt>, SnapshotInstallError> {
         let mut receipts = Vec::new();
-        for row in checked_queries::read_install_pages(self.0, id.to_string()).await? {
+        for row in checked_queries::read_install_pages(self.0).await? {
             let receipt: InstallPageReceipt = decode_record(row.record, "snapshot page receipt")?;
-            if receipt.install_id != id
+            if row.install_id.as_deref() != Some(id.to_string().as_str())
+                || receipt.install_id != id
                 || usize::try_from(receipt.page).ok() != Some(receipts.len())
             {
                 return Err(StoreError::Corrupt {

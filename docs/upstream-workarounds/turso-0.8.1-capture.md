@@ -61,6 +61,39 @@ Remove the explicit check only after a real-file test shows that the upstream
 PRAGMA finds persisted orphans and the migration proof still rejects an orphan
 before committing. An empty PRAGMA result alone is never that evidence.
 
+## Keep the orphan statement shallow
+
+The explicit orphan check uses a keyed `LEFT JOIN`. Its `ON` contains only
+`parent.key = child.key` comparisons, with the parent operand first to retain
+its collation. Every child key's non-null guard and the first mapped parent
+key's `IS NULL` anti-match stay in `WHERE`. A checked child has no null key
+column, so a matched parent's first key cannot be null. Implicit references
+use the metadata-resolved parent key; every identifier is quoted.
+
+This replaces correlated `NOT EXISTS`, whose nested shape exhausted Turso
+0.8.1's recursive parser stack in a consumer's debug open → migrate path.
+Historical parser/native-prepare measurements used the pinned engine,
+standalone default dev profile, 16 KiB brackets and 1,214 bounded trials with
+no timeouts. Native prepare needed 560 KiB for the old single-column shape
+and 624 KiB at widths 2–98; the keyed join needed 288 and 352 KiB respectively.
+These are measured brackets, not a guarantee about every host's stack.
+There is no new width cap or stack setting.
+
+The seven-case, before/after-reopen comparison with a partial child index
+retained the old meaning for the keyed join. `EXCEPT` and row `NOT IN` each
+changed both NOCASE/BINARY cross-collation outcomes and were rejected.
+Keeping left-only predicates out of `ON` also avoids the separate Turso 0.8.1
+partial-index/reopen outer-row defect. Permanent writer tests repeat the
+meaning cases at widths 1, 2 and 98 through the production generator, and
+exercise real public open and migration refusal with rollback.
+
+Reassess this statement on an engine upgrade. Restore a correlated query only
+when the consumer's formerly aborting test completes at its real open → migrate
+depth on the normal default thread, and the production-generator null,
+collation, composite-key, partial-index and reopen cases all retain their
+literal outcomes. Successful preparation alone is insufficient. The consumer
+depth check remains separate from the library's meaning tests.
+
 ## Keep the acknowledged commit marker when pruning
 
 Turso 0.8.1's WAL CDC allocator uses `NewRowid` without an AUTOINCREMENT floor. Deleting the final CDC row allows later capture IDs to restart, including after closing and reopening the file. The capture table's AUTOINCREMENT declaration does not prevent this path.

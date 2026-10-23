@@ -3,7 +3,7 @@ use crate::{
 };
 use durable_steps::{AtomicStore, Engine, StoreError, storage::TransactionScope};
 use fleet_sync_protocol::{ConsumerProtocol, CopyStatusAnswer, CopyUnavailableReason, DatabaseId};
-use fleet_sync_receiver::{ApplyFollowUp, initialize_hook};
+use fleet_sync_receiver::{ApplyFollowUp, RECEIVER_MIGRATOR, initialize_hook};
 use fleet_sync_session::PeerAuthenticator;
 use fleet_sync_tokio_runner::{ObjectKey, ObjectOptions};
 use runtime_primitives::SystemClock;
@@ -12,15 +12,24 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, watch};
 
 pub(crate) struct CopyOwner {
+    #[cfg(feature = "test-fault")]
+    pub call_probe: crate::copy_call_probe::CopyCallProbe,
+    #[cfg(feature = "test-fault")]
+    pub apply_wake: crate::copy_apply_wake::CopyApplyWake,
     pub object: Arc<ServiceObject>,
     pub engine: Arc<Engine<ServiceObject, ServiceHost>>,
     pub changed: watch::Sender<()>,
     pub health: Mutex<Option<CopyUnavailableReason>>,
 }
-static MIGRATIONS: Migrator = sqlx::migrate!("../fleet-sync-receiver/migrations");
 
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceState<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceState<P, C, A>
 {
     pub(crate) async fn copy(&self, database: DatabaseId) -> Result<Arc<CopyOwner>, ServiceError> {
         let slot = self
@@ -57,7 +66,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                     .transaction(move |scope| {
                         Box::pin(async move {
                             let mut migrator = Migrator::with_migrations(
-                                MIGRATIONS.iter().cloned().collect::<Vec<_>>(),
+                                RECEIVER_MIGRATOR.iter().cloned().collect::<Vec<_>>(),
                             );
                             migrator.dangerous_set_table_name("_fleet_sync_copy_migrations");
                             migrator
@@ -75,6 +84,10 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 engine.register(ApplyFollowUp::<ServiceObject, C::HookItem>::new())?;
                 let (changed, _) = watch::channel(());
                 let owner = Arc::new(CopyOwner {
+                    #[cfg(feature = "test-fault")]
+                    call_probe: Default::default(),
+                    #[cfg(feature = "test-fault")]
+                    apply_wake: crate::copy_apply_wake::CopyApplyWake::new(object.host()),
                     object,
                     engine: Arc::new(engine),
                     changed,
@@ -99,7 +112,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 Box::pin(async move {
                     fleet_sync_receiver::copy_status(scope)
                         .await
-                        .map_err(StoreError::backend)
+                        .map_err(fleet_sync_receiver::receiver_rollback)
                 })
             })
             .await

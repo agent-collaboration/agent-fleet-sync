@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize};
 pub enum HolderChangePhase {
     Requested,
     Releasing,
-    Released { final_position: ReplicationPosition },
+    /// The holder stopped at this position; the copy can still be behind it.
+    Released {
+        final_position: ReplicationPosition,
+    },
     Reserved,
     Fencing,
     Cancelling,
@@ -124,6 +127,7 @@ pub struct Waiting {
     pub since: SyncTime,
     pub last_seen: Option<SyncTime>,
     pub reach: CallReach,
+    pub copy_unavailable: Option<fleet_sync_protocol::CopyUnavailableReason>,
     pub attempt: u32,
     pub next_attempt_at: SyncTime,
 }

@@ -1,4 +1,4 @@
-use crate::{ReplicatedDatabase, ReplicatedSchema};
+use crate::{OpenError, ReplicatedDatabase, ReplicatedSchema};
 use durable_steps::{BoxFuture, StoreError};
 use sqlx_core::{
     column::Column,
@@ -13,6 +13,8 @@ use std::path::Path;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PublishError {
+    #[error("a retained reader owns the replacement file; retry after it closes")]
+    FileInUse,
     #[error("writer file is closed")]
     Closed,
     #[error("live writer receipt differs from the old or expected publication")]
@@ -40,6 +42,14 @@ impl PublishError {
     pub fn io(error: impl std::fmt::Display) -> Self {
         Self::Io {
             message: error.to_string(),
+        }
+    }
+}
+impl From<OpenError> for PublishError {
+    fn from(error: OpenError) -> Self {
+        match error {
+            OpenError::FileInUse => Self::FileInUse,
+            error => Self::Storage(StoreError::backend(error)),
         }
     }
 }

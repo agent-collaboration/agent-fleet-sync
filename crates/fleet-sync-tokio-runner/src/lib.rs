@@ -23,6 +23,9 @@ mod install_failure_tests;
 mod install_records;
 mod install_staging_calls;
 mod install_task;
+mod read_copy;
+#[cfg(all(test, unix))]
+mod read_copy_tests;
 pub use install_calls::{
     InstallFile, InstallFileRequest, InstallFileResult, InstallRefusal, InstallSource,
 };
@@ -41,14 +44,26 @@ mod install_target;
 #[cfg(test)]
 mod native_carry_tests;
 mod native_object;
+#[cfg(feature = "test-fault")]
+pub use native_object::TransactionReplyFault;
 mod native_publish;
 mod object_key;
 mod object_runner;
 #[cfg(test)]
+mod object_runner_tests;
+#[cfg(test)]
 mod object_store_tests;
+#[cfg(feature = "test-support")]
+mod schema_finalize_probe;
 mod session_host;
+mod session_journal_scope;
 mod session_peer_call;
+#[cfg(feature = "test-support")]
+mod session_publication_inspection;
 mod session_socket;
+mod session_store;
+#[cfg(feature = "test-support")]
+pub use session_publication_inspection::SchemaPublicationSnapshot;
 mod staging_publish;
 pub use install_target::{SnapshotTarget, WriterInstallTarget};
 #[cfg(feature = "test-support")]
@@ -57,6 +72,12 @@ mod writer_transport_probe;
 pub use writer_transport_probe::WriterTransportObservation;
 mod staging_store;
 pub use staging_store::{StagedPage, StagedVerification, StagingError, StagingStore};
+#[cfg(test)]
+mod idle_writer_release_tests;
+#[cfg(all(test, unix))]
+mod native_file_inspection_tests;
+#[cfg(test)]
+mod schema_catalog_tests;
 #[cfg(test)]
 mod staging_store_tests;
 #[cfg(test)]

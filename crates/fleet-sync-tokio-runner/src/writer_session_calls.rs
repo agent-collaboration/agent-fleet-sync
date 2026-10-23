@@ -13,9 +13,13 @@ use std::{
 };
 use tokio::sync::Mutex;
 
+enum SeedStart {
+    AwaitingBegin,
+    Started(SeedId),
+}
 struct SeedSession {
     generation: Uuid,
-    seed: SeedId,
+    start: SeedStart,
     snapshot: WriterSnapshot,
     page: u32,
     receipts: BTreeMap<u32, (Option<SnapshotCursor>, SeedFileAnswer)>,
@@ -152,6 +156,9 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterSessionCalls<S, P> {
             .request(OperationRequest::Replication(request))
             .await?
         {
+            OperationAnswer::Replication(ReplicationAnswer::OutcomeUnknown { .. }) => {
+                Err(CallFailure::AnswerLost)
+            }
             OperationAnswer::Replication(answer) => Ok(answer),
             _ => Err(CallFailure::AnswerLost),
         }
@@ -163,50 +170,63 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterSessionCalls<S, P> {
                 position,
             } => {
                 let mut owner = self.seed.lock().await;
-                if let Some(current) = owner.as_ref()
-                    && current.generation == generation
+                if owner
+                    .as_ref()
+                    .is_none_or(|current| current.generation != generation)
                 {
+                    let snapshot = self.database.snapshot().await?;
+                    if snapshot.position() != position {
+                        return Err(refused(
+                            "seed_position_moved",
+                            "writer changed after its registration seed was pinned",
+                        ));
+                    }
+                    *owner = Some(SeedSession {
+                        generation,
+                        start: SeedStart::AwaitingBegin,
+                        snapshot,
+                        page: 0,
+                        receipts: BTreeMap::new(),
+                        table: None,
+                    });
+                }
+                let current = owner
+                    .as_mut()
+                    .ok_or_else(|| refused("seed_owner", "pinned read disappeared"))?;
+                if let SeedStart::Started(seed) = current.start {
                     return Ok(SeedFileAnswer::Opened {
-                        seed: current.seed,
+                        seed,
                         database: self.database.database(),
                         position: current.snapshot.position(),
                         schema: current.snapshot.schema().clone(),
                     });
                 }
-                let snapshot = self.database.snapshot().await?;
-                if snapshot.position() != position {
-                    return Err(refused(
-                        "seed_position_moved",
-                        "writer changed after its registration seed was pinned",
-                    ));
-                }
                 let seed = match self
                     .replicate(ReplicationRequest::SeedBegin {
                         database: self.database.database(),
-                        attempt: generation,
+                        attempt: SeedAttemptId::new(generation)
+                            .map_err(|error| refused("seed_attempt", error))?,
                     })
                     .await?
                 {
                     ReplicationAnswer::SeedStarted { seed } => seed,
+                    ReplicationAnswer::CopyUnavailable { reason } => {
+                        return Err(SeedHostError::Call(fleet_sync_receiver::retryable_copy(
+                            reason,
+                        )));
+                    }
                     ReplicationAnswer::Refused(reason) => {
                         return Err(refused("seed_begin_refused", format!("{reason:?}")));
                     }
                     _ => return Err(SeedHostError::Call(CallFailure::AnswerLost)),
                 };
+                current.start = SeedStart::Started(seed);
                 let answer = SeedFileAnswer::Opened {
                     seed,
                     database: self.database.database(),
                     position,
-                    schema: snapshot.schema().clone(),
+                    schema: current.snapshot.schema().clone(),
                 };
-                *owner = Some(SeedSession {
-                    generation,
-                    seed,
-                    snapshot,
-                    page: 0,
-                    receipts: BTreeMap::new(),
-                    table: None,
-                });
                 Ok(answer)
             }
             SeedFileRequest::Page {
@@ -219,7 +239,9 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterSessionCalls<S, P> {
                 let Some(current) = owner.as_mut() else {
                     return Ok(SeedFileAnswer::SourceLost);
                 };
-                if current.generation != generation || current.seed != seed {
+                if current.generation != generation
+                    || !matches!(current.start, SeedStart::Started(current_seed) if current_seed == seed)
+                {
                     return Err(refused(
                         "seed_superseded",
                         "another seed owns the pinned read",
@@ -253,6 +275,11 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterSessionCalls<S, P> {
                     ReplicationAnswer::SeedPage(
                         SeedPageAnswer::Staged | SeedPageAnswer::AlreadyStaged,
                     ) => {}
+                    ReplicationAnswer::CopyUnavailable { reason } => {
+                        return Err(SeedHostError::Call(fleet_sync_receiver::retryable_copy(
+                            reason,
+                        )));
+                    }
                     ReplicationAnswer::SeedPage(reason) => {
                         return Err(refused("seed_page_refused", format!("{reason:?}")));
                     }
@@ -347,6 +374,9 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterSessionCalls<S, P> {
                         }
                         Ok(SeedFileAnswer::Published { position })
                     }
+                    ReplicationAnswer::CopyUnavailable { reason } => Err(SeedHostError::Call(
+                        fleet_sync_receiver::retryable_copy(reason),
+                    )),
                     ReplicationAnswer::SeedComplete(reason) => {
                         Err(refused("seed_complete_refused", format!("{reason:?}")))
                     }

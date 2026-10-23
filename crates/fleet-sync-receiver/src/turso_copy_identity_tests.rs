@@ -54,7 +54,7 @@ async fn changed_creation_identity_is_refused_and_original_retry_never_restores_
             epoch: Epoch::new(1)?,
             acked: position(0)?,
         },
-        target_schema_max: 1,
+        target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 1 }),
         holder: next_writer,
     };
     assert!(matches!(

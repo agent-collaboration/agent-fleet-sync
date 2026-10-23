@@ -38,6 +38,8 @@ pub trait PieceAnnotation: Send + Sync + 'static {
     type Protocol: ConsumerProtocol;
     /// Only captured input is available. For a split transaction the final
     /// part's annotation is computed from that complete captured transaction.
+    /// Identical captured input must reproduce identical serialized annotation
+    /// bytes, so retries retain the same part boundaries and digests.
     fn annotate(
         &self,
         transactions: &[CapturedTransaction<'_>],
@@ -116,6 +118,13 @@ pub enum ReplicationEvents {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SenderError {
+    #[error(transparent)]
+    UnitTooLarge(#[from] fleet_sync_protocol::unit_budget::UnitTooLarge),
+    #[error("copy {copy:?} is unavailable: {reason:?}")]
+    CopyUnavailable {
+        copy: ReceiverId,
+        reason: fleet_sync_protocol::CopyUnavailableReason,
+    },
     #[error("copy {copy:?} refused replication: {reason:?}")]
     Refused {
         copy: ReceiverId,

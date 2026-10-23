@@ -43,10 +43,14 @@ impl ReplicationTransport<SampleProtocol> for SocketTransport {
     }
 }
 fn peer() -> TestResult<PeerId> {
-    Ok(PeerId::new(durable_steps::Uuid::from_u128(2))?)
+    Ok(PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?)
 }
 fn receiver() -> TestResult<ReceiverId> {
-    Ok(ReceiverId::new(durable_steps::Uuid::from_u128(3))?)
+    Ok(ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000003,
+    ))?)
 }
 async fn register(
     socket: &mut WebSocketConnection,
@@ -352,7 +356,7 @@ async fn opening_revocation_blocks_late_hello_and_nonholder_cannot_start_seed() 
             &mut stranger,
             OperationRequest::Replication(ReplicationRequest::SeedBegin {
                 database,
-                attempt: durable_steps::Uuid::now_v7()
+                attempt: SeedAttemptId::new(durable_steps::Uuid::now_v7())?
             })
         )
         .await?,
@@ -364,11 +368,11 @@ async fn opening_revocation_blocks_late_hello_and_nonholder_cannot_start_seed() 
             OperationRequest::Replication(ReplicationRequest::CopyStatus { database })
         )
         .await?,
-        OperationAnswer::Replication(ReplicationAnswer::CopyStatus(
-            CopyStatusAnswer::NotInitialized
-        ))
+        OperationAnswer::Replication(ReplicationAnswer::CopyUnavailable {
+            reason: CopyUnavailableReason::Uninitialized
+        })
     ));
-    let owned_attempt = durable_steps::Uuid::now_v7();
+    let owned_attempt = SeedAttemptId::new(durable_steps::Uuid::now_v7())?;
     assert!(
         matches!(request(&mut owner,OperationRequest::Replication(ReplicationRequest::SeedBegin { database, attempt: owned_attempt })).await?,OperationAnswer::Replication(ReplicationAnswer::SeedStarted { seed }) if seed.generation == 1),
         "unauthorized begin changed the seed generation"
@@ -393,7 +397,9 @@ async fn opening_revocation_blocks_late_hello_and_nonholder_cannot_start_seed() 
         "OBS nonholder SeedBegin refused before mutation and receipt replay; legitimate holder receives first seed generation"
     );
 
-    let opening_peer = PeerId::new(durable_steps::Uuid::from_u128(5))?;
+    let opening_peer = PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000005,
+    ))?;
     let mut opening = process.connect("session", "Bearer peer-5").await?;
     assert!(matches!(
         control_request(

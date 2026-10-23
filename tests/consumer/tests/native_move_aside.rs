@@ -1,8 +1,10 @@
 #![cfg(unix)]
 #[allow(dead_code, unused_imports)]
 mod support;
-use fleet_sync_test_consumer::{ControlRequest, TestResult, WriterCommand, WriterReply};
-use fleet_sync_writer::{MoveAsidePhase, RejectedTail, WriterRegistrationOutcome};
+use fleet_sync_test_consumer::{
+    ControlRequest, SampleSchema, TestResult, WriterCommand, WriterReply,
+};
+use fleet_sync_writer::{MoveAsidePhase, RejectedTail, RetainedFile, WriterRegistrationOutcome};
 use sqlx_core::{
     connection::{ConnectOptions, Connection},
     query::query,
@@ -54,6 +56,14 @@ async fn rejected_registration_moves_aside_after_kills_before_link_between_names
         ControlRequest::SetRegistrationFailure { enabled: true },
     )
     .await?;
+    let expected_refusal = WriterRegistrationOutcome::Refused {
+        reason: fleet_sync_protocol::RegistrationRefusal::DatabaseRejected {
+            reason: fleet_sync_protocol::GateReason {
+                code: fleet_sync_protocol::GateReasonCode::new("registration_denied")?,
+                detail: "consumer refused registration".into(),
+            },
+        },
+    };
     for (index, phase) in [
         MoveAsidePhase::BeforeLink,
         MoveAsidePhase::AfterLink,
@@ -68,10 +78,10 @@ async fn rejected_registration_moves_aside_after_kills_before_link_between_names
         let mut writer = WriterProcess::start(&directory, &endpoint, "create", None).await?;
         let database = writer.database;
         writer.command(WriterCommand::Register).await?;
-        assert!(matches!(
-            writer.command(WriterCommand::WaitReady).await?,
-            WriterReply::Registration(WriterRegistrationOutcome::Refused { .. })
-        ));
+        match writer.command(WriterCommand::WaitReady).await? {
+            WriterReply::Registration(outcome) => assert_eq!(outcome, expected_refusal),
+            _ => return Err("rejected registration outcome missing".into()),
+        }
         assert!(matches!(
             writer
                 .command(WriterCommand::TryWrite {
@@ -166,6 +176,21 @@ async fn rejected_registration_moves_aside_after_kills_before_link_between_names
         assert_eq!(tail.last_commit, position);
         assert!(tail.ended_at < tail.last_commit);
         connection.close().await?;
+        // All writer and mover processes have ended. Import the public retained
+        // API as a consumer, preserving the real registry gate's exact refusal.
+        let retained = RetainedFile::open_read_only(&destination, SampleSchema::new()?).await?;
+        assert_eq!(retained.registration_outcome(), &expected_refusal);
+        let mut read = retained.reader().begin_read().await?;
+        let row = query::<sqlx_turso::Turso>(
+            "SELECT exact_value,typeof(exact_value) AS class,payload FROM samples",
+        )
+        .fetch_one(&mut read)
+        .await?;
+        assert_eq!(row.try_get::<i64, _>("exact_value")?, 9_007_199_254_740_993);
+        assert_eq!(row.try_get::<String, _>("class")?, "integer");
+        assert_eq!(row.try_get::<Vec<u8>, _>("payload")?, [0, 255, 128]);
+        read.close().await?;
+        drop(retained);
     }
     service.stop(&mut control).await?;
     Ok(())

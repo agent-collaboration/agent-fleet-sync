@@ -14,6 +14,7 @@ pub struct ReportOutcome<S, Db, D> {
     config: DeliveryTaskConfig,
     store: TaskTypes<S, Db, D>,
 }
+pub(crate) const REPORT_OUTCOME_KIND: &str = "fleet-sync.delivery.report-outcome";
 impl<S, Db, D> ReportOutcome<S, Db, D> {
     pub const fn new(config: DeliveryTaskConfig) -> Self {
         Self {
@@ -33,7 +34,7 @@ where
     for<'v> Option<String>: Type<Db> + Decode<'v, Db> + Encode<'v, Db>,
     for<'r> &'r str: ColumnIndex<Db::Row>,
 {
-    const KIND: &'static str = "fleet-sync.delivery.report-outcome";
+    const KIND: &'static str = REPORT_OUTCOME_KIND;
     const VERSION: u32 = 1;
     const KEEP_RESULT: bool = false;
     type Store = S;
@@ -49,7 +50,7 @@ where
         let report = ctx
             .local(step("read_report")?, move |scope| {
                 Box::pin(async move {
-                    Inbox::<_, D>::new(scope, config.owner, config.limits)
+                    Inbox::<_, D>::new(scope, config.local.owner, config.local.limits)
                         .resolve_report(input)
                         .await
                         .map_err(step_error)
@@ -59,7 +60,7 @@ where
         let answer = ctx
             .call(
                 step("report")?,
-                ReportCall::<D>::new(config.relay, config.owner),
+                ReportCall::<D>::new(config.relay, config.local.owner),
                 report,
             )
             .await?;
@@ -78,7 +79,7 @@ where
         }
         ctx.local(step("retire_report")?, move |scope| {
             Box::pin(async move {
-                Inbox::<_, D>::new(scope, config.owner, config.limits)
+                Inbox::<_, D>::new(scope, config.local.owner, config.local.limits)
                     .retire_report(input)
                     .await
                     .map_err(step_error)
@@ -96,7 +97,7 @@ where
             let (item, report_seq): (ItemId, ReportSeq) =
                 serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
             let reference = ReportRef { item, report_seq };
-            if Inbox::<_, D>::new(scope, self.config.owner, self.config.limits)
+            if Inbox::<_, D>::new(scope, self.config.local.owner, self.config.local.limits)
                 .report_superseded(reference)
                 .await
                 .map_err(store_error)?

@@ -18,20 +18,27 @@ where
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    pub async fn state(&mut self) -> Result<MailState, DeliveryError> {
-        let state: MailState = match queries::read_mail_state(self.scope)
-            .await
-            .map_err(sql_error)?
-        {
-            Some(row) => decode(row.record, "mail state")?,
-            None => MailState::new(self.owner),
+    pub async fn stored_state(scope: &mut S) -> Result<Option<MailState>, DeliveryError> {
+        let Some(row) = queries::read_mail_state(scope).await.map_err(sql_error)? else {
+            return Ok(None);
         };
-        if state.peer != self.owner
-            || state.items.value() > i64::MAX as u64
+        let state: MailState = decode(row.record, "mail state")?;
+        if state.items.value() > i64::MAX as u64
             || state.controls.value() > i64::MAX as u64
             || state.received_items > state.items
             || state.received_controls > state.controls
         {
+            return Err(DeliveryError::Corrupt {
+                field: "mail state owner or sequence",
+            });
+        }
+        Ok(Some(state))
+    }
+    pub async fn state(&mut self) -> Result<MailState, DeliveryError> {
+        let state = Self::stored_state(self.scope)
+            .await?
+            .unwrap_or_else(|| MailState::new(self.owner));
+        if state.peer != self.owner {
             return Err(DeliveryError::Corrupt {
                 field: "mail state owner or sequence",
             });
@@ -71,6 +78,13 @@ where
             crate::delivery_sizes::check_envelope(payload).map_err(|_| DeliveryError::Corrupt {
                 field: "stored mail envelope bounds",
             })?;
+        }
+        if let MailRecord::Live(record) = &record {
+            crate::delivery_sizes::check_status_route::<D>(&record.status_target.route).map_err(
+                |_| DeliveryError::Corrupt {
+                    field: "stored status route bounds",
+                },
+            )?;
         }
         if row.item_id.as_deref() != Some(item_key(record.id()).as_str())
             || expected.is_some_and(|expected| expected != record.id())
@@ -181,15 +195,18 @@ where
         .await
         .map_err(sql_error)
     }
-    pub async fn publication<A: serde::Serialize>(
+    pub async fn publication<R: serde::Serialize + Sync, A: serde::Serialize + Sync>(
         &mut self,
-        target: PeerId,
+        target: &CurrentStatusTarget<R>,
         publication: &StatusPublication<A>,
     ) -> Result<(), DeliveryError> {
         queries::write_publication(
             self.scope,
             item_key(publication.item),
-            encode(&crate::PublicationTarget::StatusStream { sender: target })?,
+            crate::status_stream::canonical_encode(&crate::PublicationTarget::StatusStream {
+                sender: target.peer,
+                route: &target.route,
+            })?,
             publication.version.value().to_string(),
             encode(publication)?,
         )

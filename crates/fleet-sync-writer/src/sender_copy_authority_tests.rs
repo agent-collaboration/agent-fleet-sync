@@ -26,7 +26,7 @@ async fn persist_live_lease(fixture: &SenderFixture) -> TestResult {
                 current: LeaseStatus {
                     database: fixture.database.database(),
                     epoch: Epoch::new(1)?,
-                    holder: PeerId::new(Uuid::from_u128(2))?,
+                    holder: PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002))?,
                     state: LeaseState::Held,
                     expires_at,
                     remaining_ms: 600_000,
@@ -65,8 +65,8 @@ async fn fence_copy(fixture: &SenderFixture, copy: ReceiverId) -> TestResult<Rep
                 epoch: Epoch::new(1)?,
                 acked: status.acked,
             },
-            target_schema_max: 2,
-            holder: PeerId::new(Uuid::from_u128(8))?,
+            target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 2 }),
+            holder: PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000008))?,
         },
     )
     .await?;

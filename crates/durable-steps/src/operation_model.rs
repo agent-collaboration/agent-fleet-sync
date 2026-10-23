@@ -134,13 +134,22 @@ pub enum StartRefusal {
     Storage(#[from] StoreError),
 }
 
+/// Admission refusals are distinct from storage failures while settling a request.
+#[derive(Debug, Error)]
+pub enum SettleError {
+    #[error(transparent)]
+    Admission(#[from] StartRefusal),
+    #[error(transparent)]
+    Execution(#[from] StoreError),
+}
+
 impl From<StartRefusal> for StepError {
     fn from(error: StartRefusal) -> Self {
         match error {
             StartRefusal::Storage(error) => Self::Storage(error),
             StartRefusal::RequestConflict { existing } => Self::Failed(OperationFailure::Refused {
                 code: "request_conflict".into(),
-                detail: format!("existing operation {}", existing.0),
+                detail: format!("existing operation {}", existing.as_uuid()),
             }),
             StartRefusal::UnknownKind => Self::Failed(OperationFailure::Refused {
                 code: "unknown_kind".into(),
@@ -193,6 +202,18 @@ pub enum CallFailure {
     NotSent { reason: NotSentReason },
     #[error("call answer was lost")]
     AnswerLost,
+    /// The receiver explicitly proved that this attempt made no new effect.
+    #[error("call can be retried without a new effect: {reason:?}")]
+    Retryable { reason: CallRetryReason },
+}
+
+/// Latest-attempt diagnostics, separate from the call's accumulated reach.
+/// The caller's domain owns the code and decodes it through its closed codec.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CallRetryReason {
+    pub code: String,
+    pub detail: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

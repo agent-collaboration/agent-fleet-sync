@@ -2,7 +2,8 @@ use crate::{
     ServiceConsumer, ServiceError, ServiceHost, ServiceObject, service_state::ServiceState,
 };
 use durable_steps::{
-    AtomicStore, Engine, OperationState, RequestKey, StoreError, Task, storage::TransactionScope,
+    AtomicStore, Engine, OperationState, RequestKey, SettleError, StoreError, Task,
+    storage::TransactionScope,
 };
 use fleet_sync_lease::*;
 use fleet_sync_protocol::*;
@@ -12,7 +13,6 @@ use sqlx_core::migrate::Migrator;
 use sqlx_turso::Turso;
 use std::sync::Arc;
 
-static MIGRATIONS: Migrator = sqlx::migrate!("../fleet-sync-lease/migrations");
 pub(crate) async fn registry_engine(
     object: Arc<ServiceObject>,
     config: RegistryConfig,
@@ -21,7 +21,7 @@ pub(crate) async fn registry_engine(
         .transaction(|scope| {
             Box::pin(async move {
                 let mut migrator =
-                    Migrator::with_migrations(MIGRATIONS.iter().cloned().collect::<Vec<_>>());
+                    Migrator::with_migrations(LEASE_MIGRATOR.iter().cloned().collect::<Vec<_>>());
                 migrator.dangerous_set_table_name("_fleet_sync_registry_migrations");
                 migrator
                     .run_direct(None, scope.executor(), false)
@@ -47,8 +47,14 @@ pub(crate) async fn registry_engine(
     Ok(engine)
 }
 
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceState<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceState<P, C, A>
 {
     pub(crate) async fn lifecycle(
         &self,
@@ -126,22 +132,22 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
         key: RequestKey,
         input: T::Input,
     ) -> Result<T::Output, ServiceError> {
-        let operation = self
+        let status = self
             .registry_engine
-            .start::<T>(&key, input)
+            .start_and_settle::<T>(&key, input)
             .await
-            .map_err(ServiceError::rule)?;
-        {
-            let lock = self.registry.engine_lock();
-            let _work = lock.lock().await;
-            self.registry_engine.drive_due().await?;
-        }
-        match self.registry_engine.status(&operation).await?.state {
+            .map_err(|error| match error {
+                SettleError::Admission(refusal) => ServiceError::rule(refusal),
+                SettleError::Execution(error) => ServiceError::Storage(error),
+            })?;
+        match status.state {
             OperationState::Completed { result } => {
                 serde_json::from_slice(&result).map_err(ServiceError::rule)
             }
             OperationState::Failed { reason } => Err(ServiceError::Operation { failure: reason }),
-            OperationState::Running { .. } => Err(ServiceError::Pending { operation }),
+            OperationState::Running { .. } => Err(ServiceError::Pending {
+                operation: status.id,
+            }),
         }
     }
 

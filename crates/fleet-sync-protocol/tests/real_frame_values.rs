@@ -5,10 +5,11 @@ use uuid::Uuid;
 
 fn snapshot_frame(real_bits: &[u64]) -> ServerFrame {
     ServerFrame::Answer {
-        frame: FrameId::new(Uuid::from_u128(1)).unwrap(),
+        frame: FrameId::new(Uuid::from_u128(0x019eef00000070008000000000000001)).unwrap(),
         body: OperationAnswer::Replication(ReplicationAnswer::SnapshotPage(SnapshotRead::Page(
             Box::new(SnapshotPage {
-                database: DatabaseId::new(Uuid::from_u128(2)).unwrap(),
+                database: DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000002))
+                    .unwrap(),
                 position: ReplicationPosition::new(Epoch::new(1).unwrap(), CommitSequence::new(0)),
                 schema: SchemaIdentity::new(1, "real-codec".into()).unwrap(),
                 schema_steps: vec![],

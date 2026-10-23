@@ -5,8 +5,12 @@ use fleet_sync_session::*;
 use std::time::Duration;
 use tokio::sync::oneshot;
 
-impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
-    SessionHost<P, A, D, H>
+impl<
+    P: ConsumerProtocol,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
+    D: SessionHandler<P>,
+    H: Host,
+> SessionHost<P, A, D, H>
 {
     /// The envelope carries the operation's CallId. A frame ID correlates only
     /// this attachment; a lost answer is retried by the operation owner.

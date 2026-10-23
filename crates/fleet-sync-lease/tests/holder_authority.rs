@@ -14,8 +14,8 @@ fn sync_time(value: i64) -> SyncTime {
 }
 fn identities() -> TestResult<(DatabaseId, PeerId)> {
     Ok((
-        DatabaseId::new(Uuid::from_u128(1))?,
-        PeerId::new(Uuid::from_u128(2))?,
+        DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000001))?,
+        PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002))?,
     ))
 }
 fn policy() -> LeasePolicy {
@@ -89,7 +89,7 @@ fn replay_after_takeover_supersedes_and_late_old_answers_cannot_restore_writes()
     let (database, peer) = identities()?;
     let mut holder = LeaseHolder::provisional(database, peer, policy());
     holder.observe_registration(lease(database, peer, 1, 100)?, sync_time(0))?;
-    let new_peer = PeerId::new(Uuid::from_u128(3))?;
+    let new_peer = PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000003))?;
     holder.observe_renewal(
         answer(lease(database, new_peer, 2, 100)?, 1)?,
         sync_time(10),
@@ -119,7 +119,7 @@ fn seeding_draining_and_released_keep_the_gate_closed_across_same_epoch_renewals
         WriterState::Seeding { epoch }
     );
     holder.complete_seed(epoch)?;
-    let transfer = TransferId::new(Uuid::from_u128(4))?;
+    let transfer = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000004))?;
     holder.begin_draining(transfer)?;
     holder.observe_renewal(answer(lease(database, peer, 2, 100)?, 2)?, sync_time(10))?;
     assert_eq!(
@@ -167,6 +167,76 @@ fn retirement_and_registration_refusal_never_look_like_writing() -> TestResult {
     assert_eq!(
         retired.writer_state(sync_time(20)),
         Err(HolderError::Refused(LeaseRefusal::Retired))
+    );
+    Ok(())
+}
+
+fn idle_successor() -> TestResult<(LeaseHolder, TransferId, ReplicationPosition)> {
+    let (database, peer) = identities()?;
+    let epoch = Epoch::new(2)?;
+    let mut holder = LeaseHolder::seeding(database, peer, epoch, policy());
+    holder.observe_renewal(answer(lease(database, peer, 2, 100)?, 2)?, sync_time(0))?;
+    holder.complete_seed(epoch)?;
+    let transfer = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000006))?;
+    let inherited = ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(7));
+    Ok((holder, transfer, inherited))
+}
+
+#[test]
+fn idle_holder_completes_release_at_its_inherited_position() -> TestResult {
+    let (mut holder, transfer, inherited) = idle_successor()?;
+    holder.begin_draining(transfer)?;
+    holder.complete_release(transfer, inherited)?;
+    assert_eq!(
+        holder.writer_state(sync_time(1))?,
+        WriterState::Released {
+            epoch: Epoch::new(2)?,
+            final_position: inherited,
+        }
+    );
+    holder.complete_release(transfer, inherited)?;
+    Ok(())
+}
+
+#[test]
+fn idle_holder_restores_release_at_its_inherited_position() -> TestResult {
+    let (mut holder, transfer, inherited) = idle_successor()?;
+    holder.restore_release(Epoch::new(2)?, transfer, Some(inherited))?;
+    assert_eq!(
+        holder.writer_state(sync_time(1))?,
+        WriterState::Released {
+            epoch: Epoch::new(2)?,
+            final_position: inherited,
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn holder_rejects_future_release_positions_without_changing_its_gate() -> TestResult {
+    let (mut holder, transfer, _) = idle_successor()?;
+    let future = ReplicationPosition::new(Epoch::new(3)?, CommitSequence::new(0));
+    assert_eq!(
+        holder.restore_release(Epoch::new(2)?, transfer, Some(future)),
+        Err(HolderError::LeaseMismatch)
+    );
+    assert_eq!(
+        holder.writer_state(sync_time(1))?,
+        WriterState::Writing {
+            epoch: Epoch::new(2)?
+        }
+    );
+    holder.begin_draining(transfer)?;
+    assert_eq!(
+        holder.complete_release(transfer, future),
+        Err(HolderError::InvalidTransition)
+    );
+    assert_eq!(
+        holder.writer_state(sync_time(1))?,
+        WriterState::Draining {
+            epoch: Epoch::new(2)?,
+            transfer
+        }
     );
     Ok(())
 }

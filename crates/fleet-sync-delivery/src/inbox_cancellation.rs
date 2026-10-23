@@ -36,10 +36,7 @@ where
         let id = link.cancel_item.ok_or(DeliveryError::Corrupt {
             field: "inbox cancel link identity",
         })?;
-        let id = ItemId::new(id.parse().map_err(|_| DeliveryError::Corrupt {
-            field: "inbox cancel identity",
-        })?)
-        .map_err(|_| DeliveryError::Corrupt {
+        let id = ItemId::try_from(id).map_err(|_| DeliveryError::Corrupt {
             field: "inbox cancel identity",
         })?;
         let cancel = self.load(id).await?.ok_or(DeliveryError::Corrupt {
@@ -151,7 +148,7 @@ where
                     };
                     original.release_requested = false;
                     effects.reports.extend(
-                        self.record_header_outcome(&mut original, original_outcome)
+                        self.record_header_outcome(&mut original, original_outcome, consumer, None)
                             .await?,
                     );
                     self.update_header(&original).await?;
@@ -173,9 +170,10 @@ where
             ControlOutcome::Expired => RecipientOutcome::Expired,
         };
         cancel.header.progress = InboxProgress::Control { outcome };
-        effects
-            .reports
-            .extend(self.record_outcome(&mut cancel, report_outcome).await?);
+        effects.reports.extend(
+            self.record_outcome(&mut cancel, report_outcome, consumer, None)
+                .await?,
+        );
         self.save(&cancel).await?;
         Ok(effects)
     }

@@ -1,22 +1,18 @@
 use crate::{ServiceConsumer, ServiceError, ServiceObject, service_state::ServiceState};
 use durable_steps::{AtomicStore, StoreError};
 use fleet_sync_protocol::*;
-use fleet_sync_receiver::{ApplyDecision, ApplyFailure, ReceiverError, admit_follow_ups};
+use fleet_sync_receiver::{ApplyDecision, CopyTransactionFailure, admit_follow_ups};
 use fleet_sync_session::PeerAuthenticator;
 use runtime_primitives::Clock;
 
-enum CopyRuleError {
-    Storage(StoreError),
-    Apply(ApplyFailure),
-    Receiver(ReceiverError),
-}
-impl From<StoreError> for CopyRuleError {
-    fn from(error: StoreError) -> Self {
-        Self::Storage(error)
-    }
-}
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceState<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceState<P, C, A>
 {
     pub(crate) async fn replicate(
         &self,
@@ -41,7 +37,16 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             | ReplicationRequest::SnapshotPage { database, .. }
             | ReplicationRequest::CopyStatus { database } => *database,
         };
-        let copy = self.copy(database).await?;
+        let copy = match self.copy(database).await {
+            Ok(copy) => copy,
+            Err(error) => {
+                return Ok(ReplicationAnswer::OutcomeUnknown {
+                    reason: OutcomeUnknownReason::StoreBoundary {
+                        detail: DiagnosticText::from_error(error),
+                    },
+                });
+            }
+        };
         let consumer = self.consumer.clone();
         let now = copy.object.host().now();
         let result = copy
@@ -64,7 +69,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                                 now,
                             )
                             .await
-                            .map_err(CopyRuleError::Apply)?
+                            .map_err(fleet_sync_receiver::apply_rollback)?
                             {
                                 ApplyDecision::Applied {
                                     through,
@@ -78,9 +83,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                                         follow_ups,
                                     )
                                     .await
-                                    .map_err(|error| {
-                                        CopyRuleError::Storage(StoreError::backend(error))
-                                    })?;
+                                    .map_err(StoreError::backend)?;
                                     ReplicationAnswer::Applied { through }
                                 }
                                 ApplyDecision::AlreadyApplied { through } => {
@@ -103,13 +106,13 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                                     scope, database, attempt, &authority,
                                 )
                                 .await
-                                .map_err(CopyRuleError::Receiver)?,
+                                .map_err(fleet_sync_receiver::receiver_rollback)?,
                             }
                         }
                         ReplicationRequest::SeedPage(page) => ReplicationAnswer::SeedPage(
                             fleet_sync_receiver::seed_page(scope, &page, &authority)
                                 .await
-                                .map_err(CopyRuleError::Receiver)?,
+                                .map_err(fleet_sync_receiver::receiver_rollback)?,
                         ),
                         ReplicationRequest::SeedComplete(done) => {
                             match fleet_sync_receiver::seed_complete(
@@ -119,7 +122,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                                 &authority,
                             )
                             .await
-                            .map_err(CopyRuleError::Receiver)?
+                            .map_err(fleet_sync_receiver::receiver_rollback)?
                             {
                                 fleet_sync_receiver::SeedDecision::Published {
                                     position,
@@ -137,9 +140,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                                         scope, &installed, follow_ups
                                     )
                                     .await
-                                    .map_err(|error| {
-                                        CopyRuleError::Storage(StoreError::backend(error))
-                                    })?;
+                                    .map_err(StoreError::backend)?;
                                     ReplicationAnswer::SeedComplete(SeedAnswer::Published {
                                         position,
                                     })
@@ -153,73 +154,75 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                             ReplicationAnswer::SnapshotPage(
                                 fleet_sync_receiver::snapshot_page(scope, cursor)
                                     .await
-                                    .map_err(CopyRuleError::Receiver)?,
+                                    .map_err(fleet_sync_receiver::receiver_rollback)?,
                             )
                         }
                         ReplicationRequest::SnapshotManifest { position, .. } => {
                             ReplicationAnswer::SnapshotManifest(
                                 fleet_sync_receiver::snapshot_manifest(scope, position)
                                     .await
-                                    .map_err(CopyRuleError::Receiver)?,
+                                    .map_err(fleet_sync_receiver::receiver_rollback)?,
                             )
                         }
                         ReplicationRequest::CopyStatus { .. } => ReplicationAnswer::CopyStatus(
                             fleet_sync_receiver::copy_status(scope)
                                 .await
-                                .map_err(CopyRuleError::Receiver)?,
+                                .map_err(fleet_sync_receiver::receiver_rollback)?,
                         ),
                     })
                 })
             })
             .await;
+        // Callback errors arrive only after successful rollback. A failed
+        // storage boundary replaces them with Backend, losing refusal certainty.
         let answer = match result {
             Ok(answer) => answer,
-            Err(CopyRuleError::Apply(ApplyFailure::Refused(reason))) => {
-                ReplicationAnswer::Refused(reason)
-            }
-            Err(CopyRuleError::Apply(ApplyFailure::RefusedDiscardingParts {
-                refusal,
-                transaction,
-            })) => {
-                copy.object
-                    .transaction(move |scope| {
-                        Box::pin(async move {
-                            fleet_sync_receiver::discard_staged_parts(scope, &transaction)
-                                .await
-                                .map_err(StoreError::backend)
+            Err(error) => match fleet_sync_receiver::classify_copy_store_error(error) {
+                CopyTransactionFailure::RefusedDiscardingParts {
+                    refusal,
+                    transaction,
+                } => {
+                    if let Err(error) = copy
+                        .object
+                        .transaction(move |scope| {
+                            Box::pin(async move {
+                                fleet_sync_receiver::discard_staged_parts(scope, &transaction)
+                                    .await
+                                    .map_err(StoreError::backend)
+                            })
                         })
-                    })
-                    .await?;
-                ReplicationAnswer::Refused(refusal)
+                        .await
+                    {
+                        return Ok(fleet_sync_receiver::classify_copy_store_error(error).answer());
+                    }
+                    ReplicationAnswer::Refused(refusal)
+                }
+                failure => failure.answer(),
+            },
+        };
+        let answer = match answer {
+            ReplicationAnswer::CopyStatus(CopyStatusAnswer::NotInitialized) => {
+                ReplicationAnswer::CopyUnavailable {
+                    reason: CopyUnavailableReason::Uninitialized,
+                }
             }
-            Err(CopyRuleError::Receiver(ReceiverError::SeedRefused { answer })) => {
-                ReplicationAnswer::SeedComplete(answer)
-            }
-            Err(CopyRuleError::Receiver(ReceiverError::Retired)) => {
-                ReplicationAnswer::Refused(PieceRefusal::Retired)
-            }
-            Err(CopyRuleError::Receiver(ReceiverError::NotInitialized)) => {
-                ReplicationAnswer::Refused(PieceRefusal::NotInitialized)
-            }
-            Err(CopyRuleError::Receiver(ReceiverError::NotWriter { current })) => {
-                ReplicationAnswer::Refused(PieceRefusal::NotWriter { current })
-            }
-            Err(CopyRuleError::Receiver(ReceiverError::SchemaUnsupported { form })) => {
-                ReplicationAnswer::Refused(PieceRefusal::SchemaUnsupported { form })
-            }
-            Err(CopyRuleError::Storage(error)) => return Err(error.into()),
-            Err(CopyRuleError::Apply(error)) => return Err(ServiceError::rule(error)),
-            Err(CopyRuleError::Receiver(error)) => return Err(ServiceError::rule(error)),
+            answer => answer,
         };
         copy.changed.send_replace(());
         // New follow-ups were admitted in the apply transaction; wake their
         // actual object owner after the commit, independently from the socket.
-        runtime_primitives::WakeScheduler::wake_at(
+        #[cfg(not(feature = "test-fault"))]
+        let _ = runtime_primitives::WakeScheduler::wake_at(
             copy.object.host().as_ref(),
             copy.object.host().now(),
         )
-        .await
-        .map_err(ServiceError::rule)?;
+        .await;
+        #[cfg(feature = "test-fault")]
+        let _ =
+            runtime_primitives::WakeScheduler::wake_at(&copy.apply_wake, copy.object.host().now())
+                .await;
+        // A timer hint cannot undo the committed answer. The admitted work is
+        // durable and the next wake or startup drives the same identity.
         Ok(answer)
     }
 }

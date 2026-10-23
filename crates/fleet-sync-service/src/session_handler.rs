@@ -9,12 +9,21 @@ use std::sync::Weak;
 pub(crate) struct ServiceSessionHandler<
     P: ConsumerProtocol,
     C: ServiceConsumer<P>,
-    A: PeerAuthenticator<Material = String>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
 > {
     pub state: Weak<ServiceState<P, C, A>>,
 }
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    SessionHandler<P> for ServiceSessionHandler<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> SessionHandler<P> for ServiceSessionHandler<P, C, A>
 {
     async fn gather(&self, peer: PeerId) -> Result<Vec<DatabaseStatus>, SessionHostError> {
         self.state
@@ -27,6 +36,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
     async fn request(
         &self,
         session: SessionKey,
+        route: <P::Delivery as DeliveryTypes>::StatusRoute,
         operation: OperationRequest<P>,
     ) -> Result<OperationAnswer<P>, SessionHostError> {
         let state = self
@@ -92,7 +102,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             ),
             OperationRequest::Delivery(request) => OperationAnswer::Delivery(
                 state
-                    .delivery_request(session.peer, request)
+                    .delivery_request(session.peer, route, request)
                     .await
                     .map_err(unavailable)?,
             ),
@@ -106,8 +116,14 @@ fn unavailable(error: impl std::fmt::Display) -> SessionHostError {
     }
 }
 
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceState<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceState<P, C, A>
 {
     pub(crate) async fn gather(&self, peer: PeerId) -> Result<Vec<DatabaseStatus>, ServiceError> {
         let databases = self

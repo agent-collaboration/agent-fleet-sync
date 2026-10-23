@@ -31,6 +31,138 @@ fn key(value: &str) -> RequestKey {
     RequestKey::new(value).unwrap_or_else(|error| panic!("{error}"))
 }
 
+#[cfg(feature = "turso")]
+#[tokio::test]
+async fn engine_schema_records_its_explicit_integer_version()
+-> Result<(), Box<dyn std::error::Error>> {
+    use sqlx_turso::{
+        TursoConnectOptions,
+        sqlx::{ConnectOptions, Connection},
+    };
+    let directory = tempfile::tempdir()?;
+    let mut connection = TursoConnectOptions::new()
+        .filename(directory.path().join("journal.db"))
+        .create_if_missing(true)
+        .connect()
+        .await?;
+    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    durable_steps::turso_store::migrate_journal(&mut transaction).await?;
+    transaction.commit().await?;
+    use sqlx_core::row::Row;
+    let rows = sqlx::query::<sqlx_turso::Turso>("SELECT version FROM _fleet_sync_schema")
+        .fetch_all(&mut connection)
+        .await?;
+    let versions = rows
+        .iter()
+        .map(|row| row.try_get::<i64, _>("version"))
+        .collect::<Result<Vec<_>, _>>()?;
+    assert_eq!(versions, vec![1]);
+    Ok(())
+}
+
+#[cfg(feature = "turso")]
+#[tokio::test]
+async fn admission_refuses_a_non_v7_host_mint_without_writing_an_operation()
+-> Result<(), Box<dyn std::error::Error>> {
+    use durable_steps::{storage::TransactionScope, turso_store::TursoStore};
+    use sqlx_core::row::Row;
+    use std::sync::atomic::Ordering;
+    let directory = tempfile::tempdir()?;
+    let host = TestHost::new();
+    host.invalid_ids.store(true, Ordering::SeqCst);
+    let store =
+        TursoStore::open_and_migrate(directory.path().join("journal.db"), host.clone()).await?;
+    let refused = store
+        .transaction(|scope| {
+            Box::pin(async move {
+                scope
+                    .admit::<EmptyTask>(&key("bad-mint"), &7)
+                    .await
+                    .map_err(StoreError::backend)
+            })
+        })
+        .await;
+    assert!(matches!(refused, Err(StoreError::Backend { .. })));
+    store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let row = sqlx::query::<sqlx_turso::Turso>(
+                    "SELECT count(*) AS count FROM _fleet_sync_operations",
+                )
+                .fetch_one(scope.executor())
+                .await?;
+                assert_eq!(row.try_get::<i64, _>("count")?, 0);
+                Ok(())
+            })
+        })
+        .await?;
+    host.invalid_ids.store(false, Ordering::SeqCst);
+    let admitted = store
+        .transaction(|scope| {
+            Box::pin(async move {
+                scope
+                    .admit::<EmptyTask>(&key("good-mint"), &7)
+                    .await
+                    .map_err(StoreError::backend)
+            })
+        })
+        .await?;
+    assert!(runtime_primitives::uuid_v7(admitted.id().as_uuid()));
+    Ok(())
+}
+
+#[cfg(feature = "turso")]
+#[tokio::test]
+async fn reopened_operation_rows_refuse_noncanonical_keys_without_normalizing()
+-> Result<(), Box<dyn std::error::Error>> {
+    use durable_steps::{storage::TransactionScope, turso_store::TursoStore};
+    let canonical = "0197abc0-def0-7123-8123-abcdef012345";
+    for offered in [
+        canonical.replace("7123", "4123"),
+        canonical.to_uppercase(),
+        canonical.replace('-', ""),
+    ] {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("journal.db");
+        let host = TestHost::new();
+        let store = TursoStore::open_and_migrate(&path, host.clone()).await?;
+        store
+            .transaction(|scope| {
+                Box::pin(async move {
+                    scope
+                        .admit::<EmptyTask>(&key("stored-id"), &7)
+                        .await
+                        .map_err(StoreError::backend)?;
+                    sqlx::query::<sqlx_turso::Turso>(
+                        "UPDATE _fleet_sync_operations SET operation_id=?",
+                    )
+                    .bind(offered)
+                    .execute(scope.executor())
+                    .await?;
+                    Ok(())
+                })
+            })
+            .await?;
+        drop(store);
+        let store = TursoStore::open_and_migrate(&path, host).await?;
+        let result = store
+            .transaction(|scope| {
+                Box::pin(async move { Ok(scope.admit::<EmptyTask>(&key("stored-id"), &7).await) })
+            })
+            .await?;
+        assert!(
+            matches!(result, Err(StartRefusal::Storage(StoreError::Corrupt { field, .. })) if field == "operation_id")
+        );
+        let due = store
+            .transaction(|scope| {
+                Box::pin(async move { scope.due(SyncTime::from_unix_millis(1_000)).await })
+            })
+            .await;
+        assert!(matches!(due, Err(StoreError::Corrupt { field, .. }) if field == "operation_id"));
+    }
+    Ok(())
+}
+
 #[test]
 fn admission_keeps_exact_integer_input_and_distinguishes_adjacent_large_values()
 -> Result<(), Box<dyn std::error::Error>> {

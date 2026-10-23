@@ -1,13 +1,56 @@
 #[allow(dead_code, unused_imports)]
 mod support;
-use fleet_sync_lease::LeasePolicy;
 use fleet_sync_protocol::*;
 use fleet_sync_session::TransportConnection;
 use fleet_sync_test_consumer::*;
-use fleet_sync_transport_websocket::WebSocketConnection;
-use fleet_sync_writer::{ReplicatedDatabase, WriterOptions};
-use std::{path::Path, time::Duration};
+use std::time::Duration;
+use support::lifecycle_import::{assert_post_claim_imports, import_backup};
 use support::*;
+
+#[tokio::test]
+async fn claimed_import_origin_survives_fresh_attempts_and_registry_restart() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let service_path = root.path().join("service");
+    let mut service = ServiceProcess::start(&service_path).await?;
+    let mut control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let (import, _) = import_backup(&service, &mut control, &root.path().join("backup.db")).await?;
+    let mut target = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
+    let attempt = RequestId::new(durable_steps::Uuid::now_v7())?;
+    let transfer = TransferId::new(attempt.as_uuid())?;
+    request(
+        &mut target,
+        OperationRequest::Lease(LeaseRequest::Claim {
+            attempt,
+            database: import.database,
+        }),
+    )
+    .await?;
+    let change = HolderChangeRequest::Claim {
+        attempt: transfer,
+        database: import.database,
+        claimant: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
+    };
+    assert!(matches!(
+        control_request(&mut control, ControlRequest::WaitHolderChange(change)).await?,
+        ControlAnswer::HolderChange(HolderChangeAnswer::Granted { .. })
+    ));
+    assert_post_claim_imports(&mut control, &import, "before registry restart").await?;
+    service.kill().await?;
+    drop(control);
+    service = ServiceProcess::start(&service_path).await?;
+    control = service
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    assert_post_claim_imports(&mut control, &import, "after registry restart").await?;
+    service.stop(&mut control).await?;
+    Ok(())
+}
 
 #[tokio::test]
 async fn cancelled_claim_dispatches_terminal_settlement_before_the_reservation_answers()
@@ -81,7 +124,7 @@ async fn cancelled_claim_dispatches_terminal_settlement_before_the_reservation_a
     assert!(receipt.reserved_by.is_none());
     assert_eq!(receipt.reserve_attempts, 0);
     assert!(
-        matches!(receipt.request, HolderChangeRequest::Claim { attempt: current, database: current_database, claimant } if current==transfer && current_database==database && claimant==PeerId::new(durable_steps::Uuid::from_u128(4))?)
+        matches!(receipt.request, HolderChangeRequest::Claim { attempt: current, database: current_database, claimant } if current==transfer && current_database==database && claimant==PeerId::new(durable_steps::Uuid::from_u128(0x019eef00000070008000000000000004))?)
     );
     let ended = match control_request(
         &mut control,
@@ -138,7 +181,9 @@ async fn cancelled_claim_dispatches_terminal_settlement_before_the_reservation_a
     let change = HolderChangeRequest::Claim {
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
-        claimant: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        claimant: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(change.clone())).await?;
     let answer =
@@ -154,98 +199,6 @@ async fn cancelled_claim_dispatches_terminal_settlement_before_the_reservation_a
     );
     service.stop(&mut control).await?;
     Ok(())
-}
-
-async fn import_backup(
-    service: &ServiceProcess,
-    control: &mut WebSocketConnection,
-    path: &Path,
-) -> TestResult<(Import, ReplicationPosition)> {
-    let writer = ReplicatedDatabase::create(
-        path,
-        SampleSchema::new()?,
-        PeerId::new(durable_steps::Uuid::from_u128(2))?,
-        LeasePolicy {
-            lease_duration: Duration::from_secs(600),
-            renew_interval: Duration::from_secs(30),
-        },
-        WriterOptions {
-            allow_provisional_writes: true,
-        },
-    )
-    .await?;
-    let mut write = writer.begin_write().await?;
-    insert_sample(
-        &mut write,
-        "019eef00-0000-7000-8000-000000000001".into(),
-        "imported backup".into(),
-        9_007_199_254_740_993,
-        vec![0, 255, 128],
-    )
-    .await?;
-    write.commit().await?;
-    let mut snapshot = writer.snapshot().await?;
-    let manifest = snapshot.manifest().await?;
-    let import = Import {
-        attempt: RequestId::new(durable_steps::Uuid::now_v7())?,
-        database: writer.database(),
-        digest: ImportDigest::of_canonical(&manifest)?,
-    };
-    assert!(matches!(
-        control_request(control, ControlRequest::Import(import.clone())).await?,
-        ControlAnswer::Import(ImportAnswer::Imported)
-    ));
-    let seed = match control_request(
-        control,
-        ControlRequest::SeedBegin {
-            database: writer.database(),
-            attempt: durable_steps::Uuid::now_v7(),
-        },
-    )
-    .await?
-    {
-        ControlAnswer::Replication(answer) => match *answer {
-            ReplicationAnswer::SeedStarted { seed } => seed,
-            _ => return Err("import seed did not begin".into()),
-        },
-        _ => return Err("import seed answer missing".into()),
-    };
-    let mut cursor = None;
-    let mut pages = 0;
-    loop {
-        let contents = snapshot.page(cursor).await?;
-        let next = contents.next.clone();
-        let page = SeedPage {
-            seed,
-            page: pages,
-            digest: PageDigest::of(&contents)?,
-            contents,
-        };
-        assert!(
-            matches!(control_request(control, ControlRequest::SeedPage(Box::new(page))).await?, ControlAnswer::Replication(answer) if matches!(*answer, ReplicationAnswer::SeedPage(SeedPageAnswer::Staged)))
-        );
-        pages += 1;
-        cursor = next;
-        if cursor.is_none() {
-            break;
-        }
-    }
-    assert!(
-        matches!(control_request(control, ControlRequest::SeedComplete(SeedComplete {
-        database: writer.database(), seed, position: manifest.position, pages, schema: manifest.schema,
-        table_digests: manifest.tables.into_iter().map(|table| (table.table, table.digest)).collect(),
-    })).await?, ControlAnswer::Replication(answer) if matches!(*answer, ReplicationAnswer::SeedComplete(SeedAnswer::Published { position }) if position==manifest.position))
-    );
-    let mut reader = service
-        .peer(5, SessionId::new(durable_steps::Uuid::now_v7())?)
-        .await?;
-    let rows = copy_rows(&mut reader, writer.database()).await?;
-    assert_eq!(rows.get("samples").map(Vec::len), Some(1));
-    assert!(rows.get("samples").ok_or("samples missing")?.iter().all(|row| matches!(row.as_slice(),[SqlValue::Text(_),SqlValue::Text(label),SqlValue::Integer(9_007_199_254_740_993),SqlValue::Blob(bytes)] if label=="imported backup" && bytes==&[0,255,128])));
-    reader.close(CloseReason::ClientClosed).await;
-    snapshot.close().await?;
-    writer.close().await;
-    Ok((import, manifest.position))
 }
 
 #[tokio::test]
@@ -396,11 +349,17 @@ async fn import_claim_settlement_and_renewal_replay_survive_registry_restart_and
         ControlAnswer::TakeoverPreview(preview) => preview,
         _ => return Err("takeover preview missing".into()),
     };
+    let _capability_takeover = service
+        .peer(6, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let takeover = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         preview,
-        to: PeerId::new(durable_steps::Uuid::from_u128(6))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000006,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(takeover.clone())).await?;
     let (next_epoch, grant_deadline) =
@@ -424,7 +383,9 @@ async fn import_claim_settlement_and_renewal_replay_survive_registry_restart_and
     control_request(
         &mut control,
         ControlRequest::Revoke {
-            peer: PeerId::new(durable_steps::Uuid::from_u128(6))?,
+            peer: PeerId::new(durable_steps::Uuid::from_u128(
+                0x019eef00000070008000000000000006,
+            ))?,
         },
     )
     .await?;
@@ -439,7 +400,7 @@ async fn import_claim_settlement_and_renewal_replay_survive_registry_restart_and
     }
     assert!(service.connect("session", "Bearer peer-6").await.is_err());
     assert!(
-        matches!(control_request(&mut control, ControlRequest::Renew { request: RenewRequest { attempt: RequestId::new(durable_steps::Uuid::now_v7())?, database, epoch: next_epoch }, holder: PeerId::new(durable_steps::Uuid::from_u128(6))? }).await?, ControlAnswer::Renewal(RenewAnswer::Renewed { current, .. }) if current.epoch==next_epoch)
+        matches!(control_request(&mut control, ControlRequest::Renew { request: RenewRequest { attempt: RequestId::new(durable_steps::Uuid::now_v7())?, database, epoch: next_epoch }, holder: PeerId::new(durable_steps::Uuid::from_u128(0x019eef00000070008000000000000006))? }).await?, ControlAnswer::Renewal(RenewAnswer::Renewed { current, .. }) if current.epoch==next_epoch)
     );
     service.kill().await?;
     drop(control);
@@ -459,11 +420,17 @@ async fn import_claim_settlement_and_renewal_replay_survive_registry_restart_and
         ControlAnswer::TakeoverPreview(preview) => preview,
         _ => return Err("restarted registry preview missing".into()),
     };
+    let _capability_takeover = service
+        .peer(8, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let takeover = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         preview,
-        to: PeerId::new(durable_steps::Uuid::from_u128(8))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000008,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(takeover.clone())).await?;
     assert!(
@@ -548,7 +515,9 @@ async fn retirement_of_an_imported_unheld_database_refuses_new_requests_and_repl
             OperationRequest::Lease(LeaseRequest::Register(Registration {
                 attempt: RequestId::new(durable_steps::Uuid::now_v7())?,
                 database,
-                writer: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+                writer: PeerId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000004
+                ))?,
                 origin: Origin::Empty
             }))
         )
@@ -570,7 +539,7 @@ async fn retirement_of_an_imported_unheld_database_refuses_new_requests_and_repl
             &mut peer,
             OperationRequest::Replication(ReplicationRequest::SeedBegin {
                 database,
-                attempt: durable_steps::Uuid::now_v7()
+                attempt: SeedAttemptId::new(durable_steps::Uuid::now_v7())?
             })
         )
         .await?,

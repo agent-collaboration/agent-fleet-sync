@@ -2,9 +2,11 @@
 #![allow(clippy::panic, clippy::panic_in_result_fn, clippy::expect_used)]
 
 mod call_cases;
+pub mod reborrow_cases;
 mod resume_cases;
 mod resume_rollback_case;
 mod resume_token_case;
+pub mod retryable_cases;
 mod task_cases;
 mod task_fixtures;
 
@@ -46,6 +48,8 @@ where
     for<'t> S::Scope<'t>: BusinessScope,
 {
     let mut passed = Vec::new();
+    task_cases::running_keys(Arc::clone(&store), Arc::clone(&host)).await?;
+    passed.push("running request keys are kind-scoped and share journal commit/rollback");
     task_cases::admission_and_rollback(Arc::clone(&store), Arc::clone(&host)).await?;
     passed.push("mixed rollback, exact input, duplicate and conflict");
     task_cases::stale_token(Arc::clone(&store), Arc::clone(&host)).await?;
@@ -75,7 +79,15 @@ where
     resume_rollback_case::finish_rolls_back_with_hook_writes(Arc::clone(&store), Arc::clone(&host))
         .await?;
     passed.push("resume hook writes and Finish roll back together before retry");
-    resume_token_case::stale_hook_is_not_invoked(store, host).await?;
+    resume_token_case::stale_hook_is_not_invoked(store.clone(), host.clone()).await?;
     passed.push("stale drive cannot invoke the resume hook");
+    retryable_cases::safe_retry_after_engine_restart(store.clone(), host.clone()).await?;
+    passed.push("non-deduplicating NoEffect retries safely after engine restart");
+    retryable_cases::not_sent_after_no_effect_stays_pending(store.clone(), host.clone()).await?;
+    passed.push("NotSent after NoEffect cannot use the unsent timeout");
+    retryable_cases::crash_during_no_effect_retry_is_uncertain(store.clone(), host.clone()).await?;
+    passed.push("interrupted NoEffect retry is Uncertain without another send");
+    retryable_cases::retryable_preserves_earlier_possible_effect(store, host).await?;
+    passed.push("Retryable preserves earlier possible effect and original deduplication identity");
     Ok(passed)
 }

@@ -42,11 +42,17 @@ async fn cancel_unanswered_release_restores_same_epoch_after_pruning_and_writer_
     writer.command(WriterCommand::HoldReleaseAnswer).await?;
     println!("OBS cancellation capture acknowledged and pruned");
     let attempt = TransferId::new(durable_steps::Uuid::now_v7())?;
+    let _capability_change = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let change = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database,
         from_epoch: before.epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     let mut starting = service
         .connect("control", "Bearer consumer-control")
@@ -79,7 +85,7 @@ async fn cancel_unanswered_release_restores_same_epoch_after_pruning_and_writer_
     assert_eq!(view.phase, HolderChangePhase::Releasing);
     assert_eq!(view.requested_by, ActorRef::new("consumer-control")?);
     assert!(
-        matches!(view.waiting, Some(waiting) if waiting.on==WaitingOn::Holder(PeerId::new(durable_steps::Uuid::from_u128(2))?))
+        matches!(view.waiting, Some(waiting) if waiting.on==WaitingOn::Holder(PeerId::new(durable_steps::Uuid::from_u128(0x019eef00000070008000000000000002))?))
     );
     let by = ActorRef::new("test-admin")?;
     let cancel = CancelHolderChange {
@@ -114,7 +120,9 @@ async fn cancel_unanswered_release_restores_same_epoch_after_pruning_and_writer_
         control_request(
             &mut control,
             ControlRequest::ReplayHolderRelease {
-                holder: PeerId::new(durable_steps::Uuid::from_u128(2))?,
+                holder: PeerId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000002
+                ))?,
                 request: release_request,
                 call: release_call
             }
@@ -197,11 +205,17 @@ async fn cancel_answered_release_while_copy_is_behind_prevents_fencing_and_resum
         matches!(writer.command(WriterCommand::WaitTransportCall).await?, WriterReply::TransportCall(WriterTransportObservation::SendingPiece { through, .. }) if through==position)
     );
     let attempt = TransferId::new(durable_steps::Uuid::now_v7())?;
+    let _capability_change = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let change = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database,
         from_epoch: position.epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     let mut control = service
         .connect("control", "Bearer consumer-control")
@@ -291,17 +305,41 @@ async fn takeover_supersedes_a_cancelling_move_with_an_unanswered_withdrawal() -
     let database = writer.database;
     writer.command(WriterCommand::Register).await?;
     writer.command(WriterCommand::WaitReady).await?;
-    writer.command(WriterCommand::HoldReleaseAnswer).await?;
     let mut control = service
         .connect("control", "Bearer consumer-control")
         .await?;
+    // Prepare registry work before holding withdrawal. Preview drives the
+    // registry engine; doing it during the hold can let an unheld retry finish
+    // cancellation before the takeover is even admitted.
+    let _capability_takeover = service
+        .peer(6, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
+    let preview = match control_request(
+        &mut control,
+        ControlRequest::PreviewTakeover {
+            database,
+            attempt: durable_steps::Uuid::now_v7(),
+        },
+    )
+    .await?
+    {
+        ControlAnswer::TakeoverPreview(preview) => preview,
+        _ => return Err("takeover preview missing".into()),
+    };
+    writer.command(WriterCommand::HoldReleaseAnswer).await?;
     let epoch = Epoch::new(1)?;
     let attempt = TransferId::new(durable_steps::Uuid::now_v7())?;
+    let _capability_change = service
+        .peer(4, SessionId::new(durable_steps::Uuid::now_v7())?)
+        .await?;
     let change = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database,
         from_epoch: epoch,
-        to: PeerId::new(durable_steps::Uuid::from_u128(4))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000004,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(change.clone())).await?;
     assert!(matches!(
@@ -333,23 +371,14 @@ async fn takeover_supersedes_a_cancelling_move_with_an_unanswered_withdrawal() -
         };
     assert_eq!(view.phase, HolderChangePhase::Cancelling);
     assert!(view.outcome.is_none());
-    let preview = match control_request(
-        &mut control,
-        ControlRequest::PreviewTakeover {
-            database,
-            attempt: durable_steps::Uuid::now_v7(),
-        },
-    )
-    .await?
-    {
-        ControlAnswer::TakeoverPreview(preview) => preview,
-        _ => return Err("takeover preview missing".into()),
-    };
     let takeover = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: TransferId::new(durable_steps::Uuid::now_v7())?,
         database,
         preview,
-        to: PeerId::new(durable_steps::Uuid::from_u128(6))?,
+        to: PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000006,
+        ))?,
     };
     control_request(&mut control, ControlRequest::HolderChange(takeover.clone())).await?;
     let granted =
@@ -358,12 +387,17 @@ async fn takeover_supersedes_a_cancelling_move_with_an_unanswered_withdrawal() -
             _ => return Err("takeover did not grant".into()),
         };
     assert!(granted > Epoch::new(2)?);
-    assert!(matches!(
-        control_request(&mut control, ControlRequest::WaitHolderChange(change)).await?,
-        ControlAnswer::HolderChange(HolderChangeAnswer::Refused(
-            HolderChangeRefusal::Superseded { .. }
-        ))
-    ));
+    let old_move = control_request(&mut control, ControlRequest::WaitHolderChange(change)).await?;
+    assert!(
+        matches!(
+            old_move,
+            ControlAnswer::HolderChange(HolderChangeAnswer::Refused(
+                HolderChangeRefusal::Superseded { .. }
+            ))
+        ),
+        "old move after takeover: {}",
+        serde_json::to_string(&old_move)?
+    );
     writer.command(WriterCommand::ReleaseTransportCall).await?;
     writer
         .command(WriterCommand::WaitSuperseded { current: granted })

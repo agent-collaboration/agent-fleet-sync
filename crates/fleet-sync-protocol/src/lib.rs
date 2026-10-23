@@ -4,15 +4,19 @@
 //! Operation identities belong to their owners; frame IDs only correlate replies.
 
 mod actor_reference;
+mod copy_failure;
 mod crate_call_frame;
 mod delivery_identity;
 mod delivery_item;
 mod delivery_message;
 mod delivery_outcome;
+mod encoded_size;
 mod gate_message;
 mod holder_change_message;
 mod lease_message;
 mod lifecycle_message;
+mod migration_inspection;
+mod migration_ownership;
 mod piece_digest;
 mod replicated_key;
 mod replication_ids;
@@ -20,14 +24,18 @@ mod replication_piece;
 mod replication_position;
 mod reserved_namespace;
 mod schema_admission;
+pub mod schema_catalog;
 mod schema_fingerprint;
 mod schema_sql;
+mod schema_support_report;
 mod session_frame;
 mod snapshot_manifest;
 mod snapshot_page;
 mod transaction_part;
+pub mod unit_budget;
 
 pub use actor_reference::*;
+pub use copy_failure::*;
 pub use crate_call_frame::*;
 pub use delivery_identity::*;
 pub use delivery_item::*;
@@ -48,6 +56,7 @@ pub use reserved_namespace::*;
 pub use runtime_primitives::{CallId, OperationId, StepName, SyncTime};
 pub use schema_admission::*;
 pub use schema_fingerprint::*;
+pub use schema_support_report::*;
 pub use session_frame::*;
 pub use snapshot_manifest::*;
 pub use snapshot_page::*;

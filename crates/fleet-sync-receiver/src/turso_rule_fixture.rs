@@ -33,7 +33,7 @@ impl TransactionScope for TursoScope<'_> {
 pub(super) struct Hook {
     pub(super) refuse: bool,
 }
-impl ReceiverHook<TursoScope<'_>> for Hook {
+impl ReceiverRules<TursoScope<'_>> for Hook {
     type Protocol = NoConsumer;
     type FollowUp = String;
     fn local_migrations(&self) -> &'static [sqlx_core::migrate::Migration] {
@@ -53,7 +53,7 @@ impl ReceiverHook<TursoScope<'_>> for Hook {
         &self,
         scope: &mut TursoScope<'_>,
         applied: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<String>, HookRefusal> {
+    ) -> Result<Vec<String>, HookError> {
         sqlx_core::query::query::<Turso>("INSERT INTO hook_records(value) VALUES(?1)")
             .bind(applied.through.sequence.value().to_string())
             .execute(scope.executor())
@@ -66,14 +66,19 @@ impl ReceiverHook<TursoScope<'_>> for Hook {
             return Err(HookRefusal {
                 code: fixture_refusal_code("policy"),
                 detail: "refused after writing".into(),
-            });
+            }
+            .into());
         }
         Ok(vec!["deliver notice".into()])
     }
+}
+impl FollowUpHandler for Hook {
+    type Item = String;
     async fn follow_up(&self, _: &String, _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }
 }
+
 pub(super) fn uuid_key(index: i64) -> SqlValue {
     let payload = u128::from(index.unsigned_abs()) & ((1_u128 << 62) - 1);
     SqlValue::Text(uuid::Uuid::from_u128(0x019eef00000070008000000000000000 | payload).to_string())
@@ -125,15 +130,9 @@ pub(super) async fn connection_with_options(
 ) -> TestResult<TursoConnection> {
     let mut connection = options.connect().await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
-    sqlx_core::raw_sql::raw_sql(concat!(
-        include_str!("../migrations/0001_copy_rules.sql"),
-        "\n",
-        include_str!("../migrations/0002_replicated_schema.sql"),
-        "\n",
-        include_str!("../migrations/0003_snapshot_install.sql")
-    ))
-    .execute(&mut *transaction)
-    .await?;
+    RECEIVER_MIGRATOR
+        .run_direct(None, &mut *transaction, false)
+        .await?;
     initialize_hook(&mut TursoScope(&mut transaction), &Hook { refuse: false }).await?;
     create_copy(
         &mut TursoScope(&mut transaction),
@@ -173,20 +172,24 @@ pub(super) async fn connection_with_options(
 }
 
 struct SchemaHook;
-impl ReceiverHook<TursoScope<'_>> for SchemaHook {
+impl ReceiverRules<TursoScope<'_>> for SchemaHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     async fn on_applied(
         &self,
         _: &mut TursoScope<'_>,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, HookRefusal> {
+    ) -> Result<Vec<()>, HookError> {
         Ok(Vec::new())
     }
+}
+impl FollowUpHandler for SchemaHook {
+    type Item = ();
     async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }
 }
+
 pub(super) async fn counts(
     connection: &mut TursoConnection,
 ) -> TestResult<(String, String, String)> {

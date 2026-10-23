@@ -17,10 +17,31 @@ impl ConsumerProtocol for SampleProtocol {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SampleRequest {
     Echo { text: String },
+    Empty(SampleEmptyRequest),
+    Renamed(SampleRenamedRequest),
+    Backtracking(SampleBacktrackingRequest),
+}
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SampleEmptyRequest {}
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SampleRenamedRequest {
+    #[serde(rename = "declared`, expected `tail")]
+    pub known: bool,
+}
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum SampleBacktrackingRequest {
+    First { first: bool },
+    Second { second: bool },
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SampleAnswer {
     Echo { peer: PeerId, text: String },
+    Empty { peer: PeerId },
+    Renamed { peer: PeerId, known: bool },
+    Backtracking { peer: PeerId, accepted: bool },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -191,12 +191,15 @@ where
                 if let Some(answer) = transfer.outcome {
                     return Ok(answer);
                 }
-                let record = storage
+                let mut record = storage
                     .database(database)
                     .await
                     .map_err(step_error)?
                     .ok_or_else(|| step_error(LeaseError::NotRegistered))?;
                 let existing = storage.lease(database).await.map_err(step_error)?;
+                record
+                    .validate_grant(existing.as_ref())
+                    .map_err(step_error)?;
                 let reserved = transfer.intent.new_epoch.ok_or_else(|| {
                     step_error(LeaseError::Corrupt {
                         field: "reserved grant epoch".into(),
@@ -232,7 +235,15 @@ where
                                     DatabaseLifecycle::Unheld { .. }
                                 ) =>
                         {
-                            Some(HolderChangeRefusal::AlreadyHeld)
+                            let holder = existing
+                                .as_ref()
+                                .ok_or_else(|| {
+                                    step_error(LeaseError::Corrupt {
+                                        field: "registered database has no holder".into(),
+                                    })
+                                })?
+                                .holder;
+                            Some(HolderChangeRefusal::AlreadyHeld { holder })
                         }
                         HolderChangeRequest::Move { from_epoch, .. }
                             if existing
@@ -260,6 +271,7 @@ where
                             field: "lease duration must be positive".into(),
                         }));
                     }
+                    record.advance_revision(reserved, now).map_err(step_error)?;
                     if let Some(previous) = existing {
                         let mut history = storage
                             .history(database, previous.epoch)
@@ -291,17 +303,15 @@ where
                         })
                         .await
                         .map_err(step_error)?;
-                    if matches!(record.lifecycle, DatabaseLifecycle::Unheld { .. }) {
-                        storage
-                            .save_database(&DatabaseRecord {
-                                database,
-                                lifecycle: DatabaseLifecycle::Registered {
-                                    origin: Origin::Seeded { position: start },
-                                },
-                            })
-                            .await
-                            .map_err(step_error)?;
+                    if let DatabaseLifecycle::Unheld { import_digest } = &record.lifecycle {
+                        record.lifecycle = DatabaseLifecycle::Registered {
+                            origin: Origin::Seeded { position: start },
+                            imported_from: Some(ImportOrigin {
+                                digest: import_digest.clone(),
+                            }),
+                        };
                     }
+                    storage.save_database(&record).await.map_err(step_error)?;
                     HolderChangeAnswer::Granted {
                         epoch: reserved,
                         expires_at: lease.expires_at,

@@ -25,11 +25,15 @@ fn database() -> TestResult<DatabaseId> {
     )?)
 }
 fn holder(value: u128) -> TestResult<PeerId> {
-    Ok(PeerId::new(uuid::Uuid::from_u128(value))?)
+    Ok(PeerId::new(uuid::Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))?)
 }
 fn request(attempt: u128, epoch: u64) -> TestResult<RenewRequest> {
     Ok(RenewRequest {
-        attempt: RequestId::new(uuid::Uuid::from_u128(attempt))?,
+        attempt: RequestId::new(uuid::Uuid::from_u128(
+            (attempt) | 0x019eef00000070008000000000000000,
+        ))?,
         database: database()?,
         epoch: Epoch::new(epoch)?,
     })
@@ -51,19 +55,24 @@ async fn setup() -> TestResult<TursoConnection> {
         "\n",
         include_str!("../migrations/0002_holder_workflow.sql"),
         "\n",
-        include_str!("../migrations/0003_cleanup_failure.sql")
+        include_str!("../migrations/0003_cleanup_failure.sql"),
+        "\n",
+        include_str!("../migrations/0004_schema_support.sql")
     ))
     .execute(&mut *transaction)
     .await?;
     let mut scope = TursoScope(&mut transaction);
     let database = database()?;
     RegistryStorage(&mut scope)
-        .save_database(&DatabaseRecord {
+        .save_database(&DatabaseRecord::initial(
             database,
-            lifecycle: DatabaseLifecycle::Registered {
+            DatabaseLifecycle::Registered {
                 origin: Origin::Empty,
+                imported_from: None,
             },
-        })
+            Epoch::new(1)?,
+            now(0),
+        ))
         .await?;
     RegistryStorage(&mut scope)
         .save_lease(&RegistryLease {
@@ -195,6 +204,12 @@ async fn replay_preserves_recorded_answer_but_returns_current_lease_after_later_
             expires_at: now(460),
         })
         .await?;
+    let mut record = RegistryStorage(&mut scope)
+        .database(database()?)
+        .await?
+        .ok_or("database missing")?;
+    record.advance_revision(Epoch::new(2)?, now(260))?;
+    RegistryStorage(&mut scope).save_database(&record).await?;
     let replay = renew(
         &mut scope,
         &request(10, 1)?,
@@ -229,8 +244,9 @@ async fn open_transfer_does_not_stop_renewal_and_retired_marker_precedes_saved_a
     let mut connection = setup().await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     let mut scope = TursoScope(&mut transaction);
-    let transfer = TransferId::new(uuid::Uuid::from_u128(20))?;
+    let transfer = TransferId::new(uuid::Uuid::from_u128(0x019eef00000070008000000000000014))?;
     let offered = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: transfer,
         database: database()?,
         from_epoch: Epoch::new(1)?,
@@ -238,10 +254,13 @@ async fn open_transfer_does_not_stop_renewal_and_retired_marker_precedes_saved_a
     };
     RegistryStorage(&mut scope)
         .save_admission(&crate::registry_records::TransferAdmission {
-            operation: durable_steps::OperationId(uuid::Uuid::from_u128(21)),
+            operation: durable_steps::OperationId::new(uuid::Uuid::from_u128(
+                0x019eef00000070008000000000000015,
+            ))?,
             request: offered.clone(),
             requested_by: ActorRef::new("renewal-fixture")?,
             admitted_at: now(200),
+            target_schema: None,
             follow_up: None,
         })
         .await?;
@@ -250,6 +269,7 @@ async fn open_transfer_does_not_stop_renewal_and_retired_marker_precedes_saved_a
             TransferIntent {
                 request: offered,
                 new_epoch: Some(Epoch::new(2)?),
+                target_schema: None,
             },
             now(200),
         ))
@@ -265,12 +285,12 @@ async fn open_transfer_does_not_stop_renewal_and_retired_marker_precedes_saved_a
             ..
         })
     ));
-    RegistryStorage(&mut scope)
-        .save_database(&DatabaseRecord {
-            database: database()?,
-            lifecycle: DatabaseLifecycle::Retired { at: now(500) },
-        })
-        .await?;
+    let mut record = RegistryStorage(&mut scope)
+        .database(database()?)
+        .await?
+        .ok_or("database missing")?;
+    record.change_lifecycle(DatabaseLifecycle::Retired { at: now(500) }, now(500))?;
+    RegistryStorage(&mut scope).save_database(&record).await?;
     assert_eq!(
         renew(
             &mut scope,

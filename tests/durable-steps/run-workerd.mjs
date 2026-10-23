@@ -19,7 +19,7 @@ function options(name) {
   };
 }
 try {
-  for (const path of ["/suite", "/alarm-atomic", "/alarm-concurrent"]) {
+  for (const path of ["/suite", "/reborrow", "/alarm-atomic", "/alarm-concurrent"]) {
     const runtime = new Miniflare(options(randomUUID()));
     try {
       await runtime.ready;
@@ -27,7 +27,14 @@ try {
       const body = await response.text();
       console.log(JSON.stringify({ path, status: response.status, body }));
       assert.equal(response.status, 200);
-      if (path === "/suite") assert.equal(JSON.parse(body).length, 15);
+      if (path === "/suite") assert.equal(JSON.parse(body).length, 20);
+      else if (path === "/reborrow") assert.deepEqual(JSON.parse(body), [
+        "SQL and journal share parent commit and rollback",
+        "parent and view share the observed arbitration owner",
+        "callback rollback restores absent alarm", "SQL rollback restores absent alarm",
+        "callback rollback restores existing alarm", "SQL rollback restores existing alarm",
+        "view then external overlapping wake", "external then view overlapping wake",
+      ]);
       else if (path === "/alarm-concurrent") {
         const observations = JSON.parse(body);
         assert.deepEqual(observations.map(({ order }) => order), [
@@ -45,6 +52,23 @@ try {
       else assert.ok(Number(JSON.parse(body)) > Date.now());
     } finally { await runtime.dispose(); }
   }
+  const retryName = randomUUID();
+  let retryRuntime = new Miniflare(options(retryName));
+  let retryOperation;
+  try {
+    await retryRuntime.ready;
+    const staged = await retryRuntime.dispatchFetch("http://steps.local/retry-stage");
+    assert.equal(staged.status, 200, await staged.clone().text());
+    retryOperation = await staged.json();
+  } finally { await retryRuntime.dispose(); }
+  retryRuntime = new Miniflare(options(retryName));
+  try {
+    await retryRuntime.ready;
+    const finished = await retryRuntime.dispatchFetch(`http://steps.local/retry-finish/${retryOperation}`);
+    const body = await finished.text();
+    assert.equal(finished.status, 200, body);
+    console.log(JSON.stringify({ journey: "NoEffect_actual_runtime_reopen", body }));
+  } finally { await retryRuntime.dispose(); }
   const name = randomUUID();
   let runtime = new Miniflare(options(name));
   try {

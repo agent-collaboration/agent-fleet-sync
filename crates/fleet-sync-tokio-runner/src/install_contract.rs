@@ -1,13 +1,13 @@
 use crate::ObjectKey;
-use durable_steps::{OperationFailure, StoreError, Uuid};
-use fleet_sync_protocol::{DatabaseId, ReceiverId};
+use durable_steps::{OperationFailure, StoreError};
+use fleet_sync_protocol::{DatabaseId, InstallAttemptId, InstallId, ReceiverId};
 use fleet_sync_receiver::SnapshotInstall;
 use serde::{Deserialize, Serialize};
 
 /// Stable identities only. Snapshot rows remain in the staging file.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct InstallRequest {
-    pub attempt: Uuid,
+    pub attempt: InstallAttemptId,
     pub target: ObjectKey,
     pub database: DatabaseId,
     pub source: ReceiverId,
@@ -31,7 +31,7 @@ pub enum InstallStatus {
         snapshot: SnapshotInstall,
     },
     Superseded {
-        by: Uuid,
+        by: InstallId,
         progress: InstallProgress,
     },
     Failed {
@@ -82,13 +82,13 @@ impl InstallStatus {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct InstallRecord {
     pub request: InstallRequest,
-    pub install_id: Uuid,
+    pub install_id: InstallId,
     pub generation: u64,
     pub status: InstallStatus,
 }
 impl InstallRecord {
     pub(crate) fn validate(&self) -> Result<(), StoreError> {
-        if self.request.attempt.is_nil() || self.install_id.is_nil() || self.generation == 0 {
+        if self.generation == 0 {
             return Err(corrupt("invalid install identity or generation"));
         }
         if let Some(snapshot) = self.status.snapshot()
@@ -97,8 +97,7 @@ impl InstallRecord {
         {
             return Err(corrupt("snapshot identity differs from its install record"));
         }
-        if matches!(self.status, InstallStatus::Superseded { by, .. } if by.is_nil() || by == self.install_id)
-        {
+        if matches!(self.status, InstallStatus::Superseded { by, .. } if by == self.install_id) {
             return Err(corrupt("invalid superseding install identity"));
         }
         Ok(())
@@ -109,7 +108,7 @@ impl InstallRecord {
 pub enum InstallFileAnswer {
     Published { snapshot: SnapshotInstall },
     Ready { snapshot: SnapshotInstall },
-    Superseded { by: Uuid },
+    Superseded { by: InstallId },
     Failed { reason: OperationFailure },
 }
 

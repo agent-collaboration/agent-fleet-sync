@@ -32,10 +32,14 @@ impl DeliveryTypes for MapDelivery {
     const MAX_SENDER_BYTES: u32 = 1024;
     const MAX_ADDRESS_BYTES: u32 = 1024;
     const MAX_ACCEPTANCE_BYTES: u32 = 1024;
+    const MAX_STATUS_ROUTE_BYTES: u32 = 4;
     type Body = ConsumerMap;
     type Sender = ();
     type Address = ();
     type Acceptance = ();
+    type LocalObservation = ();
+    const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
+    type StatusRoute = ();
 }
 #[test]
 fn consumer_map_field_order_does_not_change_item_identity() {
@@ -43,7 +47,7 @@ fn consumer_map_field_order_does_not_change_item_identity() {
         ItemId::new("01900000-0000-7000-8000-000000000001".parse().unwrap()).unwrap(),
         (),
         Recipient {
-            peer: PeerId::new("00000000-0000-0000-0000-000000000002".parse().unwrap()).unwrap(),
+            peer: PeerId::new("019eef00-0000-7000-8000-000000000002".parse().unwrap()).unwrap(),
             address: (),
         },
         None,
@@ -61,7 +65,7 @@ fn decoding_rejects_changed_content_with_the_original_valid_digest() {
         ItemId::new("01900000-0000-7000-8000-000000000001".parse().unwrap()).unwrap(),
         (),
         Recipient {
-            peer: PeerId::new("00000000-0000-0000-0000-000000000002".parse().unwrap()).unwrap(),
+            peer: PeerId::new("019eef00-0000-7000-8000-000000000002".parse().unwrap()).unwrap(),
             address: (),
         },
         None,

@@ -50,20 +50,24 @@ impl<D: DeliveryTypes> CallTarget for DeliverCall<D> {
     const KIND: &'static str = "fleet-sync.delivery.deliver";
     const DEDUPLICATES: bool = false;
     type Request = DeliveryItemRef;
-    type Answer = LocalDeliveryOutcome<D::Acceptance>;
+    type Answer = LocalDeliveryOutcome<D>;
 }
 impl<D: DeliveryTypes> DeliverCall<D> {
     /// Hosts must adapt the consumer's result before returning it to the engine.
     /// An invalid receipt cannot undo an external effect: persist Uncertain and never resend.
-    pub fn validated_answer(
-        outcome: LocalOutcome<D::Acceptance>,
-    ) -> LocalDeliveryOutcome<D::Acceptance> {
-        let outcome = if crate::delivery_sizes::check_local_outcome::<D>(&outcome).is_ok() {
-            outcome
+    pub fn validated_answer(delivery: LocalDelivery<D>) -> LocalDeliveryOutcome<D> {
+        let answer = if crate::delivery_sizes::check_local_outcome::<D>(&delivery.outcome).is_ok()
+            && crate::delivery_sizes::canonical_size(&delivery.observation)
+                .is_ok_and(|bytes| bytes <= u64::from(D::MAX_LOCAL_OBSERVATION_BYTES))
+        {
+            LocalDeliveryAnswer::Observed {
+                outcome: delivery.outcome,
+                observation: delivery.observation,
+            }
         } else {
-            LocalOutcome::Uncertain
+            LocalDeliveryAnswer::Uncertain
         };
-        DispatchOutcome::Answered(outcome)
+        DispatchOutcome::Answered(answer)
     }
 }
 
@@ -139,13 +143,13 @@ impl<D: DeliveryTypes> CallTarget for ReportCall<D> {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
-pub struct PublishCall<D> {
-    pub target: PublicationTarget,
+pub struct PublishCall<D: DeliveryTypes> {
+    pub target: PublicationTarget<D::StatusRoute>,
     #[serde(skip)]
     payload: PhantomData<fn() -> D>,
 }
-impl<D> PublishCall<D> {
-    pub const fn new(target: PublicationTarget) -> Self {
+impl<D: DeliveryTypes> PublishCall<D> {
+    pub const fn new(target: PublicationTarget<D::StatusRoute>) -> Self {
         Self {
             target,
             payload: PhantomData,

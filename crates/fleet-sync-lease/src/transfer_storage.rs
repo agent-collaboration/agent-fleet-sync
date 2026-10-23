@@ -36,16 +36,17 @@ where
             request: decode(row.request, "holder-change request")?,
             requested_by: decode(row.requested_by, "holder-change requester")?,
             admitted_at: decode(row.admitted_at, "holder-change admission time")?,
+            target_schema: decode(row.target_schema, "holder-change target schema")?,
             follow_up: row
                 .follow_up
                 .map(|value| decode(Some(value), "holder-change follow-up"))
                 .transpose()?,
         };
         if crate::change_checks::attempt(&record.request) != id
-            || record.operation.0.is_nil()
-            || record
-                .follow_up
-                .is_some_and(|operation| operation.0.is_nil() || operation == record.operation)
+            || record.operation.as_uuid().is_nil()
+            || record.follow_up.is_some_and(|operation| {
+                operation.as_uuid().is_nil() || operation == record.operation
+            })
         {
             return Err(LeaseError::Corrupt {
                 field: "holder-change admission".into(),
@@ -63,6 +64,7 @@ where
                 || existing.request != record.request
                 || existing.requested_by != record.requested_by
                 || existing.admitted_at != record.admitted_at
+                || existing.target_schema != record.target_schema
                 || existing
                     .follow_up
                     .is_some_and(|id| Some(id) != record.follow_up))
@@ -78,6 +80,7 @@ where
             encode(&record.request)?,
             encode(&record.requested_by)?,
             encode(&record.admitted_at)?,
+            encode(&record.target_schema)?,
             record.follow_up.as_ref().map(encode).transpose()?,
         )
         .await?;
@@ -120,6 +123,7 @@ where
             intent: TransferIntent {
                 request: admission.request,
                 new_epoch: decode(intent, "transfer reservation")?,
+                target_schema: admission.target_schema,
             },
             outcome: outcome
                 .map(|value| decode(Some(value), "transfer outcome"))
@@ -194,7 +198,9 @@ where
             .ok_or_else(|| LeaseError::Corrupt {
                 field: "transfer admission missing".into(),
             })?;
-        if admission.request != record.intent.request {
+        if admission.request != record.intent.request
+            || admission.target_schema != record.intent.target_schema
+        {
             return Err(LeaseError::Corrupt {
                 field: "transfer request identity".into(),
             });

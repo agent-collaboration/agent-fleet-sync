@@ -19,6 +19,8 @@ The last tree must contain no Tokio. The `turso` adapter deliberately enables To
 
 `TursoScope::new(&mut transaction, &host)` borrows the caller's connection without owning its transaction. `migrate_journal(&mut connection)` installs the journal on that same connection; the caller supplies the surrounding migration transaction. The borrowed-scope test commits and rolls back an admitted operation with a business row through one caller-owned connection.
 
+`ReborrowScope` is an optional capability of `TursoStore`, `TokioObject` and `DurableObjectStore`. `S::reborrow(parent)` lends a shorter view while exclusively borrowing the parent. It retains the existing transaction, journal, host and wake owner; it does not begin or finish a transaction. Existing `AtomicStore` implementations and callbacks need no change. The real-store reborrow cases read the parent's uncommitted SQL and journal identity through the view, read view writes back through the parent, then check committed and rolled-back SQL and admissions. The Tokio object test also exercises its delegating implementation on its actual file transaction.
+
 ## Native process recovery
 
 ```sh
@@ -42,13 +44,17 @@ cp tests/durable-steps/shim.mjs tests/durable-steps/build/shim.mjs
 node tests/durable-steps/run-workerd.mjs
 ```
 
-The first endpoint runs the same 15-case conformance module on real DO SQLite transactions. The second tests alarm rollback with a business write and absolute, earlier-only scheduling. The third concurrently polls actual `AlarmOwner` clones in the same object event: both deadline orders outside and inside a caller transaction, both deadline orders across two independently started caller transactions, then both polling orders of an external wake and a deadline-writing transaction. All eight must finish and retain the earlier stored alarm. The compiled adapter failed the early-then-late case before shared async exclusion was added, and passed afterward. No cached alarm value or nested transaction substitutes for the real storage operations.
+The `/suite` endpoint runs the same 20-case conformance module on real DO SQLite transactions. `/alarm-atomic` tests alarm rollback with a business write and absolute, earlier-only scheduling. `/alarm-concurrent` concurrently polls actual `AlarmOwner` clones in the same object event: both deadline orders outside and inside a caller transaction, both deadline orders across two independently started caller transactions, then both polling orders of an external wake and a deadline-writing transaction. All eight must finish and retain the earlier stored alarm. The compiled adapter failed the early-then-late case before shared async exclusion was added, and passed afterward. No cached alarm value or nested transaction substitutes for the real storage operations.
+
+The `/reborrow` endpoint adds the shared SQL/journal cases and observes the parent's and view's shared alarm arbitration identity. Its test-support observer identifies the shared `Arc<Mutex<Storage>>`, so legitimate clones match and a new owner over the same storage differs. The parent identity is captured before the exclusive loan. Four error cases cover callback and SQL errors with both absent and pre-existing alarms: the wake is read back inside the transaction, and after rollback SQL must be absent and the durable alarm must exactly equal its pre-transaction value. Two overlapping view/external wake cases use the one observed owner, without aliasing the parent. The existing eight-order alarm race proof remains in the run. These library tests do not establish a consumer's composed session publication, registration or `Welcome` rollback, recovery, or native timer activation; those belong to the consumer adapter.
 
 The journey then starts the **same three-step task as native**, with its last local step due three seconds later. Before shutdown it checks that the first local effect and remote answer are saved, with two step records. It disposes the runtime and opens the same persisted object in a new runtime. Only `alarm()` drives the operation after restart; inspection only reads. A persisted alarm count and timestamp prove a platform alarm ran after the restart. The final observations require one local effect each, one remote delivery/effect and zero step records. The bounded inspection loop observes that result; it does not drive the engine or run an alarm by hand.
 
+The retry control also stages `NoEffect` with its complete generic reason, disposes the runtime, then reopens the actual persisted journal and safely retries a non-deduplicating call. Before disposal it inspects the existing boolean projection (1 for NoEffect) and decodes literal legacy NeverSent, Dispatching and MayHaveReached rows without retry metadata. No journal SQL table changes are involved.
+
 ## Conformance oracles and limits
 
-`crates/durable-steps/tests/conformance` is shared source compiled by the volatile and Turso test runners and the DO worker. Its controlled clock, receiver receipts and fault controls are test stand-ins, so these cases prove journal and replay rules, not receiver durability. The two process/runtime journeys supply the durable interaction proof.
+`crates/durable-steps/tests/conformance` is shared source compiled by the volatile and Turso test runners and the DO worker. Its controlled clock, receiver receipts and fault controls are test stand-ins, so these cases prove journal and replay rules, not receiver durability. The two process/runtime journeys supply the durable interaction proof. The lost-answer → Retryable → repair case additionally commits its counter and receipt through the real store's business transaction; it preserves MayHaveReached and reads back one effect. These are engine/store controls, separate from production copy classification. Four new reach scenarios were introduced with the new API, so no pre-fix executable red was observed for those variants; deliberate history-erasure and missing-Dispatching changes are checked separately for sensitivity.
 
 | Case | Wrong behavior it rejects | Expected observation |
 |---|---|---|
@@ -72,7 +78,7 @@ The resume Finish case failed on the unwired engine and passed after wiring. The
 
 ## Checked SQL
 
-The product migration and fixture migrations seed a fresh native Turso database for query descriptions. The DO driver cannot describe queries or run `sqlx::migrate!`: it executes the same SQL files, maps named private rows, validates their closed domain states, and bootstraps inside its real storage transaction with an explicit schema version. The call row's `may_have_reached` column is true for an unresolved dispatch; the private decoder checks that it agrees with the core's richer attempt state.
+The product migration and fixture migrations seed a fresh native Turso database for query descriptions. The DO driver cannot describe queries or run `sqlx::migrate!`: it executes the same SQL files, maps named private rows, validates their closed domain states, and bootstraps inside its real storage transaction with an explicit schema version. The call row's `may_have_reached` column is true for every reach except NeverSent, including NoEffect; the private decoder checks that it agrees with the core's richer attempt state.
 
 ```sh
 cargo run --locked -p sqlx-turso --example seed_native_schema -- tmp/durable-steps-schema.db crates/durable-steps/migrations crates/durable-steps/tests/conformance/migrations

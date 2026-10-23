@@ -31,7 +31,13 @@ async fn deadline_scan_is_atomic_leaves_fetched_custody_alone_and_publishes_the_
             Box::pin(async move {
                 let mut mailbox = Mailbox::<_, TestTypes>::new(scope, peer(2), limits());
                 mailbox
-                    .submit(peer(1), expiring(2, 20), SyncTime::from_unix_millis(0))
+                    .submit(
+                        peer(1),
+                        expiring(2, 20),
+                        SyncTime::from_unix_millis(0),
+                        "fixture-route".to_owned(),
+                        None,
+                    )
                     .await
                     .map_err(storage_error)?;
                 // Fetch wins the owner transaction before the deadline. Its receipt/report now owns expiry.
@@ -52,6 +58,8 @@ async fn deadline_scan_is_atomic_leaves_fetched_custody_alone_and_publishes_the_
                             peer(1),
                             expiring(id, deadline),
                             SyncTime::from_unix_millis(0),
+                            "fixture-route".to_owned(),
+                            None,
                         )
                         .await
                         .map_err(storage_error)?;
@@ -114,11 +122,12 @@ async fn deadline_scan_is_atomic_leaves_fetched_custody_alone_and_publishes_the_
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let events = StatusStream::<_, TestTypes>::new(scope, peer(1))
-                    .fetch(peer(1), StatusCursor::new(0), 20)
-                    .await
-                    .map_err(storage_error)?
-                    .events;
+                let events =
+                    StatusStream::<_, TestTypes>::new(scope, peer(1), "fixture-route".into())
+                        .fetch(peer(1), StatusCursor::new(0), 20)
+                        .await
+                        .map_err(storage_error)?
+                        .events;
                 let due: Vec<_> = events
                     .into_iter()
                     .filter(|event| event.item == item_id(1))

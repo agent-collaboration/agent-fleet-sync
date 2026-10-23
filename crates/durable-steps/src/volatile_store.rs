@@ -100,6 +100,16 @@ impl<H: Host> AtomicStore for VolatileStore<H> {
 }
 
 impl<H: Host> JournalScope for VolatileScope<'_, H> {
+    async fn running_request_keys(&mut self, kind: &str) -> Result<Vec<RequestKey>, StoreError> {
+        Ok(self
+            .state
+            .operations
+            .values()
+            .filter(|record| matches!(record.execution, OperationExecution::Running { .. }))
+            .filter(|record| record.kind == kind)
+            .map(|record| record.request_key.clone())
+            .collect())
+    }
     async fn admit<T: Task>(
         &mut self,
         request_key: &RequestKey,
@@ -122,7 +132,7 @@ impl<H: Host> JournalScope for VolatileScope<'_, H> {
                 })
             };
         }
-        let id = OperationId(self.host.new_id());
+        let id = OperationId::new(self.host.new_id()).map_err(StoreError::backend)?;
         if self.state.operations.contains_key(&id) {
             return Err(StoreError::Aborted {
                 reason: "host generated an existing operation id".into(),
@@ -188,11 +198,9 @@ impl<H: Host> JournalStorage for VolatileScope<'_, H> {
         now: SyncTime,
         lease: DriveLease,
     ) -> Result<Option<OperationRecord>, StoreError> {
-        let record = self
-            .state
-            .operations
-            .get_mut(&id)
-            .ok_or(StoreError::MissingOperation { id })?;
+        let Some(record) = self.state.operations.get_mut(&id) else {
+            return Ok(None);
+        };
         match &mut record.execution {
             OperationExecution::Running {
                 next_attempt_at,

@@ -11,15 +11,19 @@ use tokio::{
     task::JoinSet,
 };
 
-impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
-    SessionHost<P, A, D, H>
+impl<
+    P: ConsumerProtocol,
+    A: PeerAuthenticator<Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute>,
+    D: SessionHandler<P>,
+    H: Host,
+> SessionHost<P, A, D, H>
 {
     /// Run one owned transport. The server owns and joins this future and its
     /// request tasks; neither the session rules nor this method detaches work.
     pub async fn serve_connection<T: TransportConnection>(
         self: Arc<Self>,
         connection: T,
-        admission: SessionAdmission,
+        admission: SessionAdmission<A::Route>,
         shutdown: watch::Receiver<bool>,
     ) -> Result<(), SessionHostError> {
         if !Arc::ptr_eq(&self.admission_owner, &admission.owner) {
@@ -40,6 +44,7 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
             binding.connection,
             SocketPeer {
                 binding,
+                route: admission.route,
                 revocation_generation: admission.revocation_generation,
                 outgoing,
                 close,
@@ -62,6 +67,8 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
                 .pending
                 .retain(|_, pending| pending.connection != binding.connection);
         }
+        #[cfg(feature = "test-support")]
+        self.registration_changes.send_replace(());
         result?;
         self.dispatch_direct(detached?).await
     }
@@ -102,8 +109,8 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
                             if let SessionEffect::Route {session,frame,operation}=effect {
                                 let host=self.clone();
                                 tasks.spawn(async move {
-                                    if !host.route_allowed(binding,session).await {return Ok(());}
-                                    let answer=host.handler.request(session,operation).await?;
+                                    let Some(route)=host.admitted_request_route(binding,session).await else {return Ok(());};
+                                    let answer=host.handler.request(session,route,operation).await?;
                                     host.send(binding.connection,ServerFrame::Answer {frame,body:answer}).await
                                 });
                             } else {self.dispatch_direct(vec![effect]).await?;}
@@ -146,16 +153,17 @@ impl<P: ConsumerProtocol, A: PeerAuthenticator, D: SessionHandler<P>, H: Host>
         Ok(cause)
     }
 
-    async fn route_allowed(&self, binding: ConnectionBinding, session: SessionKey) -> bool {
+    async fn admitted_request_route(
+        &self,
+        binding: ConnectionBinding,
+        session: SessionKey,
+    ) -> Option<<P::Delivery as DeliveryTypes>::StatusRoute> {
         let runtime = self.runtime.lock().await;
-        runtime
-            .sockets
-            .get(&binding.connection)
-            .is_some_and(|socket| {
-                socket.revocation_generation == runtime.revocations.get(&binding.peer).copied()
-            })
+        let socket = runtime.sockets.get(&binding.connection)?;
+        (socket.revocation_generation == runtime.revocations.get(&binding.peer).copied()
             && binding.peer == session.peer
             && binding.expires_at > self.object.host().now()
-            && matches!(runtime.registrations.get(&binding.connection),Some(ConnectionRegistration::Attached {session_id,..}) if *session_id==session.session_id)
+            && matches!(runtime.registrations.get(&binding.connection),Some(ConnectionRegistration::Attached {session_id,..}) if *session_id==session.session_id))
+            .then(|| socket.route.clone())
     }
 }

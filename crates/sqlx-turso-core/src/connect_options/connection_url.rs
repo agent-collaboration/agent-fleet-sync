@@ -1,7 +1,7 @@
 //! Parsing and rendering `turso:` connection URLs
 //!
 //! Accepted forms: `turso:<path>`, `turso://<path>`, `turso::memory:` and `turso:<path>?mode=…`
-//! with `mode` one of `rw`, `rwc` or `memory`. `mode=ro` is rejected explicitly. Only the
+//! with `mode` one of `ro`, `rw`, `rwc` or `memory`. Only the
 //! target and open mode round-trip.
 
 use std::{path::PathBuf, str::FromStr};
@@ -53,7 +53,7 @@ fn apply_url_parameters(
             ("mode", "rw") => options.create_if_missing(false),
             ("mode", "rwc") => options.create_if_missing(true),
             ("mode", "memory") => options.in_memory(),
-            ("mode", "ro") => return Err(TursoAdapterError::ReadOnlyUnsupported),
+            ("mode", "ro") => options.read_only(true),
             ("mode", _) => {
                 return Err(TursoAdapterError::InvalidUrlParameterValue {
                     name: "mode",
@@ -154,16 +154,11 @@ mod tests {
     }
 
     #[test]
-    fn rejects_read_only_mode_explicitly() {
-        // Act
-        let error = TursoConnectOptions::from_str("turso:data.db?mode=ro")
-            .expect_err("read-only is not supported");
-
-        // Assert
-        assert_eq!(
-            adapter_error(&error),
-            Some(&TursoAdapterError::ReadOnlyUnsupported)
-        );
+    fn parses_read_only_mode() -> sqlx_core::Result<()> {
+        let options = TursoConnectOptions::from_str("turso:data.db?mode=ro")?;
+        assert!(options.get_read_only());
+        assert!(!options.get_create_if_missing());
+        Ok(())
     }
 
     #[test]
@@ -204,6 +199,9 @@ mod tests {
             TursoConnectOptions::new().filename("/tmp/hash#tag/100%.db"),
             TursoConnectOptions::new().filename("/tmp/caf\u{e9}/\u{4e2d}.db"),
             TursoConnectOptions::new()
+                .filename("retained.db")
+                .read_only(true),
+            TursoConnectOptions::new()
                 .filename("relative.db")
                 .create_if_missing(true),
         ] {
@@ -219,6 +217,7 @@ mod tests {
                 options.get_create_if_missing(),
                 "{url}"
             );
+            assert_eq!(parsed.get_read_only(), options.get_read_only(), "{url}");
         }
         Ok(())
     }

@@ -5,7 +5,7 @@ use durable_steps::CallId;
 use fleet_sync_lease::{GateFailure, HolderChangeGate, LifecycleGate};
 use fleet_sync_protocol::*;
 use fleet_sync_receiver::{
-    AppliedPiece, FollowUpDone, FollowUpFailure, InstalledSnapshot, ReceiverHook,
+    AppliedPiece, FollowUpDone, FollowUpFailure, InstalledSnapshot, ReceiverRules,
 };
 use fleet_sync_service::{ConsumerHandler, ServiceConsumer, ServiceError, ServiceScope};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -49,42 +49,58 @@ impl Consumer {
         database: DatabaseId,
         position: ReplicationPosition,
         annotation: String,
-    ) -> Result<Vec<HookEffect>, HookRefusal> {
-        let result: crate::TestResult<Vec<HookEffect>> = async {
-            if self.private_history_checks_enabled.load(Ordering::SeqCst) {
-                if checked_queries::private_history_present(scope).await? {
-                    return Err("private history reached the receiver catalog".into());
-                }
-                self.private_history_checks.fetch_add(1, Ordering::SeqCst);
+    ) -> Result<Vec<HookEffect>, fleet_sync_receiver::HookError> {
+        let refuse = |detail: &str| {
+            fleet_sync_receiver::HookError::Refused(HookRefusal {
+                code: self.hook_code.clone(),
+                detail: detail.into(),
+            })
+        };
+        if self.private_history_checks_enabled.load(Ordering::SeqCst) {
+            if checked_queries::private_history_present(scope)
+                .await
+                .map_err(fleet_sync_receiver::classify_sqlx_error)?
+            {
+                return Err(refuse("private history reached the receiver catalog"));
             }
-            let event_id = format!(
-                "{}:{}:{}:{}",
-                database.as_uuid(),
-                position.epoch.value(),
-                position.sequence.value(),
-                annotation
-            );
-            checked_queries::insert_hook_event(scope, event_id, annotation.clone()).await?;
-            let count = checked_queries::count_hook_events(scope).await?;
-            if count.count_class.as_deref() != Some("integer") {
-                return Err("hook count has wrong storage class".into());
-            }
-            let event_count = count.event_count.ok_or("hook count missing")?.parse()?;
-            if self.hook_failure.load(Ordering::SeqCst) {
-                return Err("consumer refused after local hook write".into());
-            }
-            Ok(vec![HookEffect {
-                database,
-                position,
-                event_count,
-                annotation,
-            }])
+            self.private_history_checks.fetch_add(1, Ordering::SeqCst);
         }
-        .await;
-        result.map_err(|error| HookRefusal {
-            code: self.hook_code.clone(),
-            detail: error.to_string(),
-        })
+        let event_id = format!(
+            "{}:{}:{}:{}",
+            database.as_uuid(),
+            position.epoch.value(),
+            position.sequence.value(),
+            annotation
+        );
+        checked_queries::insert_hook_event(scope, event_id, annotation.clone())
+            .await
+            .map_err(fleet_sync_receiver::classify_sqlx_error)?;
+        let count = checked_queries::count_hook_events(scope)
+            .await
+            .map_err(fleet_sync_receiver::classify_sqlx_error)?;
+        if count.count_class.as_deref() != Some("integer") {
+            return Err(fleet_sync_receiver::StoreError::Corrupt {
+                field: "consumer hook count storage class".into(),
+            }
+            .into());
+        }
+        let invalid_count = || fleet_sync_receiver::StoreError::Corrupt {
+            field: "consumer hook event count".into(),
+        };
+        let event_count = count
+            .event_count
+            .ok_or_else(invalid_count)?
+            .parse()
+            .map_err(|_| invalid_count())?;
+        if self.hook_failure.load(Ordering::SeqCst) {
+            return Err(refuse("consumer refused after local hook write"));
+        }
+        Ok(vec![HookEffect {
+            database,
+            position,
+            event_count,
+            annotation,
+        }])
     }
 }
 impl ConsumerHandler<SampleProtocol> for Consumer {
@@ -96,13 +112,25 @@ impl ConsumerHandler<SampleProtocol> for Consumer {
         self.handled_requests.fetch_add(1, Ordering::SeqCst);
         match request {
             SampleRequest::Echo { text } => Ok(SampleAnswer::Echo { peer, text }),
+            SampleRequest::Empty(_) => Ok(SampleAnswer::Empty { peer }),
+            SampleRequest::Renamed(request) => Ok(SampleAnswer::Renamed {
+                peer,
+                known: request.known,
+            }),
+            SampleRequest::Backtracking(request) => Ok(SampleAnswer::Backtracking {
+                peer,
+                accepted: match request {
+                    crate::SampleBacktrackingRequest::First { first } => first,
+                    crate::SampleBacktrackingRequest::Second { second } => second,
+                },
+            }),
         }
     }
 }
 impl ServiceConsumer<SampleProtocol> for Consumer {
     type HookItem = HookEffect;
 }
-impl ReceiverHook<ServiceScope<'_>> for Consumer {
+impl ReceiverRules<ServiceScope<'_>> for Consumer {
     type Protocol = SampleProtocol;
     type FollowUp = HookEffect;
     fn local_migrations(&self) -> &'static [sqlx_core::migrate::Migration] {
@@ -113,7 +141,7 @@ impl ReceiverHook<ServiceScope<'_>> for Consumer {
         &self,
         scope: &mut ServiceScope<'_>,
         applied: &AppliedPiece<'_, String>,
-    ) -> Result<Vec<HookEffect>, HookRefusal> {
+    ) -> Result<Vec<HookEffect>, fleet_sync_receiver::HookError> {
         self.record_hook(
             scope,
             applied.database,
@@ -126,7 +154,7 @@ impl ReceiverHook<ServiceScope<'_>> for Consumer {
         &self,
         scope: &mut ServiceScope<'_>,
         installed: &InstalledSnapshot,
-    ) -> Result<Vec<HookEffect>, HookRefusal> {
+    ) -> Result<Vec<HookEffect>, fleet_sync_receiver::HookError> {
         self.record_hook(
             scope,
             installed.database,
@@ -135,6 +163,9 @@ impl ReceiverHook<ServiceScope<'_>> for Consumer {
         )
         .await
     }
+}
+impl fleet_sync_receiver::FollowUpHandler for Consumer {
+    type Item = HookEffect;
     async fn follow_up(
         &self,
         item: &HookEffect,
@@ -160,6 +191,7 @@ impl ReceiverHook<ServiceScope<'_>> for Consumer {
         Ok(FollowUpDone)
     }
 }
+
 impl LifecycleGate for Consumer {
     async fn admit_registration(
         &self,

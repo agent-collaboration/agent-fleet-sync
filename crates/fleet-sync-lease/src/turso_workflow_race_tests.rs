@@ -77,6 +77,7 @@ async fn takeover(
     )
     .await?;
     let request = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: id,
         database: database()?,
         preview,
@@ -246,11 +247,11 @@ async fn settling_an_attempt_before_its_delayed_reserve_prevents_the_reservation
         claimant: peer(2)?,
     };
     let settle_call = CallId {
-        operation: OperationId(Uuid::from_u128(2805)),
+        operation: OperationId::new(Uuid::from_u128(0x019eef00000070008000000000000af5))?,
         step: durable_steps::StepName::new("settle")?,
     };
     let reserve_call = CallId {
-        operation: OperationId(Uuid::from_u128(2806)),
+        operation: OperationId::new(Uuid::from_u128(0x019eef00000070008000000000000af6))?,
         step: durable_steps::StepName::new("reserve")?,
     };
     host.gate

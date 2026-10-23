@@ -1,5 +1,5 @@
 use crate::{
-    AppliedPiece, ApplyDecision, ApplyFailure, ReceiverError, ReceiverHook,
+    AppliedPiece, ApplyDecision, ApplyFailure, ReceiverError, ReceiverRules,
     copy_contract::CopyRecord, copy_storage::CopyStorage, part_assembly::assemble_transaction,
     row_transactions::RowTransactions,
 };
@@ -26,7 +26,7 @@ pub fn apply_piece<'scope, S, H>(
 ) -> impl std::future::Future<Output = Result<ApplyDecision<H::FollowUp>, ApplyFailure>> + Send + 'scope
 where
     S: TransactionScope + 'scope,
-    H: ReceiverHook<S>,
+    H: ReceiverRules<S>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'value> String:
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
@@ -153,7 +153,12 @@ where
         let follow_ups = hook
             .on_applied(scope, &applied)
             .await
-            .map_err(|refusal| ApplyFailure::Refused(PieceRefusal::Hook(refusal)))?;
+            .map_err(|error| match error {
+                crate::HookError::Refused(refusal) => {
+                    ApplyFailure::Refused(PieceRefusal::Hook(refusal))
+                }
+                crate::HookError::Storage(error) => crate::ReceiverError::Storage(error).into(),
+            })?;
         for fragment in &staged {
             CopyStorage(scope).save_receipt(fragment).await?;
         }

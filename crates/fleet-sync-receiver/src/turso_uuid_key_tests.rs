@@ -111,7 +111,7 @@ async fn non_uuid_seed_schema_is_schema_unsupported_and_never_publishes() -> Tes
     let seed = seed_begin(
         &mut TursoScope(&mut transaction),
         database,
-        uuid::Uuid::from_u128(85),
+        SeedAttemptId::new(uuid::Uuid::from_u128(0x019eef00000070008000000000000055))?,
         &SeedAuthority::Admin,
     )
     .await?;
@@ -176,7 +176,7 @@ async fn invalid_uuid_seed_row_and_schema_data_step_are_corrupt_without_advancin
     let seed = seed_begin(
         &mut TursoScope(&mut transaction),
         crate::turso_seed_tests::database()?,
-        uuid::Uuid::from_u128(86),
+        SeedAttemptId::new(uuid::Uuid::from_u128(0x019eef00000070008000000000000056))?,
         &SeedAuthority::Admin,
     )
     .await?;

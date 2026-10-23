@@ -1,25 +1,29 @@
 use crate::turso_registry_fixture::*;
 use durable_steps::CallId;
 use fleet_sync_protocol::*;
-use fleet_sync_receiver::{AppliedPiece, FollowUpDone, FollowUpFailure, ReceiverHook};
+use fleet_sync_receiver::{AppliedPiece, FollowUpDone, FollowUpFailure, ReceiverRules};
 use sqlx_core::connection::Connection;
 use std::sync::Arc;
 
 struct EmptyHook;
-impl ReceiverHook<CopyScope<'_>> for EmptyHook {
+impl ReceiverRules<CopyScope<'_>> for EmptyHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     async fn on_applied(
         &self,
         _: &mut CopyScope<'_>,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, HookRefusal> {
+    ) -> Result<Vec<()>, fleet_sync_receiver::HookError> {
         Ok(Vec::new())
     }
+}
+impl fleet_sync_receiver::FollowUpHandler for EmptyHook {
+    type Item = ();
     async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }
 }
+
 pub(super) async fn push_rows(
     host: &Arc<TestHost>,
     commit: u64,
@@ -91,7 +95,9 @@ pub(super) async fn seed_import(host: &Arc<TestHost>) -> TestResult<ReplicationP
     let seed = fleet_sync_receiver::seed_begin(
         &mut scope,
         database()?,
-        durable_steps::Uuid::from_u128(900),
+        SeedAttemptId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000384,
+        ))?,
         &fleet_sync_receiver::SeedAuthority::Admin,
     )
     .await?;

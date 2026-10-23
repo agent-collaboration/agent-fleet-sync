@@ -501,6 +501,18 @@
       "row": "StoredStatusEventRow"
     },
     {
+      "name": "drop_status_events",
+      "sql": "sql/drop_status_events.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "through",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
       "name": "write_report",
       "sql": "sql/write_report.sql",
       "result": "execute",
@@ -552,6 +564,18 @@
         },
         {
           "name": "report_seq",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "drop_inbox_reports",
+      "sql": "sql/drop_inbox_reports.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
           "kind": "text",
           "nullable": false
         }

@@ -39,8 +39,12 @@ pub async fn prepare_source(
     process: &ServiceProcess,
     root: &std::path::Path,
 ) -> TestResult<(DatabaseId, BTreeMap<String, Vec<Vec<SqlValue>>>)> {
-    let peer = PeerId::new(durable_steps::Uuid::from_u128(2))?;
-    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
+    let peer = PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?;
+    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000003,
+    ))?;
     let writer = Arc::new(
         ReplicatedDatabase::create(
             &root.join("source-writer.db"),

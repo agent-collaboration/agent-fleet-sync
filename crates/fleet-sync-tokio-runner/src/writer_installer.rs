@@ -6,7 +6,7 @@ use crate::{
     WriterSessionCalls,
     writer_session_calls::{decode, encode, unavailable},
 };
-use durable_steps::{CallFailure, CallTarget, Engine, NotSentReason, StoreError, Uuid};
+use durable_steps::{CallFailure, CallTarget, Engine, NotSentReason, StoreError};
 use fleet_sync_protocol::*;
 use fleet_sync_receiver::SnapshotInstallError;
 use fleet_sync_writer::{BootstrapError, OpenError, ReplicatedDatabase, ReplicatedSchema};
@@ -17,7 +17,6 @@ type WriterInstallEngine<S, P> = Engine<TokioObject<WriterHost<S, P>>, WriterHos
 
 pub(crate) struct WriterInstaller<S: ReplicatedSchema, P: ConsumerProtocol> {
     pub objects: ObjectStore<WriterHost<S, P>>,
-    pub control: Arc<TokioObject<WriterHost<S, P>>>,
     pub host: Arc<WriterHost<S, P>>,
     pub engine: Arc<WriterInstallEngine<S, P>>,
     coordinator: Arc<InstallCoordinator<WriterHost<S, P>>>,
@@ -56,7 +55,6 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterInstaller<S, P> {
         engine.register(InstallSnapshot::new(host.clone()))?;
         Ok(Arc::new(Self {
             objects,
-            control,
             host,
             engine: Arc::new(engine),
             coordinator,
@@ -67,7 +65,7 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterInstaller<S, P> {
     }
     pub async fn start(
         &self,
-        attempt: Uuid,
+        attempt: InstallAttemptId,
     ) -> Result<InstallHandle<WriterHost<S, P>>, durable_steps::StartRefusal> {
         self.coordinator
             .start(
@@ -81,10 +79,10 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterInstaller<S, P> {
             )
             .await
     }
-    pub async fn wait(&self, attempt: Uuid) -> Result<InstallRecord, StoreError> {
+    pub async fn wait(&self, attempt: InstallAttemptId) -> Result<InstallRecord, StoreError> {
         self.coordinator.wait_for_attempt(attempt).await
     }
-    pub async fn record(&self, id: Uuid) -> Result<InstallRecord, StoreError> {
+    pub async fn record(&self, id: InstallId) -> Result<InstallRecord, StoreError> {
         self.coordinator.record(id).await
     }
     async fn replicate(
@@ -96,6 +94,12 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterInstaller<S, P> {
             .request(OperationRequest::Replication(request))
             .await?
         {
+            OperationAnswer::Replication(ReplicationAnswer::CopyUnavailable { reason }) => {
+                Err(fleet_sync_receiver::retryable_copy(reason))
+            }
+            OperationAnswer::Replication(ReplicationAnswer::OutcomeUnknown { .. }) => {
+                Err(CallFailure::AnswerLost)
+            }
             OperationAnswer::Replication(answer) => Ok(answer),
             _ => Err(CallFailure::AnswerLost),
         }

@@ -94,8 +94,10 @@ impl FixtureHost {
             transaction: &mut transaction,
             state,
             registrations,
+            publications: Vec::new(),
+            effects: Vec::new(),
         };
-        let effects: Vec<SessionEffect<FixtureProtocol>> = match input {
+        let mut effects: Vec<SessionEffect<FixtureProtocol>> = match input {
             RuleInput::Opened if scope.state.revoked => vec![
                 SessionEffect::Send {
                     connection: binding.connection,
@@ -135,6 +137,12 @@ impl FixtureHost {
                 effects
             }
         };
+        // This transport-only fixture stands in for registry acknowledgement.
+        // The native SessionHost journeys prove the real publication barrier.
+        for input in std::mem::take(&mut scope.publications) {
+            complete_schema_publication(&mut scope, &input, now).await?;
+        }
+        effects.append(&mut scope.effects);
         let mut expanded = Vec::new();
         for effect in effects {
             match effect {
@@ -274,7 +282,7 @@ impl FixtureHost {
             return Err("injected registry gather failure".into());
         }
         let state = read_state(&mut host.connection).await?;
-        let database = DatabaseId::new(uuid::Uuid::from_u128(10))?;
+        let database = DatabaseId::new(uuid::Uuid::from_u128(0x019eef0000007000800000000000000a))?;
         let epoch = Epoch::new(1)?;
         let remaining_ms = u64::try_from(
             state
@@ -301,7 +309,9 @@ impl FixtureHost {
         }];
         if host.unreadable_copy {
             databases.push(DatabaseStatus::Unavailable {
-                database: DatabaseId::new(uuid::Uuid::from_u128(11))?,
+                database: DatabaseId::new(uuid::Uuid::from_u128(
+                    0x019eef0000007000800000000000000b,
+                ))?,
                 lease: None,
                 reason: CopyUnavailableReason::Damaged {
                     detail: "injected unreadable copy".into(),
@@ -353,7 +363,9 @@ impl FixtureHost {
                 let binding = ConnectionBinding::new(
                     ConnectionId::new(uuid::Uuid::now_v7())?,
                     VerifiedPeer {
-                        peer: PeerId::new(uuid::Uuid::from_u128(1))?,
+                        peer: PeerId::new(uuid::Uuid::from_u128(
+                            0x019eef00000070008000000000000001,
+                        ))?,
                         expires_at: SyncTime::from_unix_millis(10_000),
                     },
                 );
@@ -415,7 +427,8 @@ impl FixtureHost {
 
 impl PeerAuthenticator for FixtureHost {
     type Material = String;
-    async fn verify(&self, material: String) -> Result<VerifiedPeer, AuthRefusal> {
+    type Route = ();
+    async fn verify(&self, material: String) -> Result<(VerifiedPeer, ()), AuthRefusal> {
         let expires_at = match material.as_str() {
             "Bearer fixture" => SyncTime::from_unix_millis(10_000),
             "Bearer short" => SyncTime::from_unix_millis(50),
@@ -431,9 +444,13 @@ impl PeerAuthenticator for FixtureHost {
         if expires_at <= state.now {
             return Err(AuthRefusal::Expired);
         }
-        Ok(VerifiedPeer {
-            peer: PeerId::new(uuid::Uuid::from_u128(1)).map_err(|_| AuthRefusal::WrongKind)?,
-            expires_at,
-        })
+        Ok((
+            VerifiedPeer {
+                peer: PeerId::new(uuid::Uuid::from_u128(0x019eef00000070008000000000000001))
+                    .map_err(|_| AuthRefusal::WrongKind)?,
+                expires_at,
+            },
+            (),
+        ))
     }
 }

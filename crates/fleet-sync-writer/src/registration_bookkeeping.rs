@@ -1,7 +1,9 @@
 use crate::{
     OpenError, RegisterDatabaseInput, WriterJournalScope, WriterRegistrationOutcome,
     writer_authority::{AuthorityObservation, save_observation},
-    writer_file_record::{WriterFileOrigin, WriterFileRecord, read_file_record, write_file_record},
+    writer_file_record::{
+        RetainedFileOriginKind, WriterFileRecord, read_file_record, write_file_record,
+    },
     writer_registration_state::{RegistrationSeed, RegistrationState},
 };
 use durable_steps::{Host, OperationFailure, RequestKey, StartRefusal, Uuid};
@@ -57,7 +59,7 @@ impl<H: Host> WriterJournalScope<'_, H> {
         let record = read_file_record(self.maintenance.connection)
             .await?
             .ok_or_else(|| OpenError::corrupt("writer.record"))?;
-        if record.origin == WriterFileOrigin::Bootstrap {
+        if record.origin == RetainedFileOriginKind::Bootstrap {
             return Err(OpenError::Holder {
                 error: fleet_sync_lease::HolderError::AlreadyGranted,
             });
@@ -74,8 +76,8 @@ impl<H: Host> WriterJournalScope<'_, H> {
             });
         }
         let origin = match record.origin {
-            WriterFileOrigin::Created => Origin::Empty,
-            WriterFileOrigin::Adopted => {
+            RetainedFileOriginKind::Created => Origin::Empty,
+            RetainedFileOriginKind::Adopted => {
                 let position = match &record.registration {
                     RegistrationState::Seeding { position }
                     | RegistrationState::Granted {
@@ -90,7 +92,7 @@ impl<H: Host> WriterJournalScope<'_, H> {
                 };
                 Origin::Seeded { position }
             }
-            WriterFileOrigin::Bootstrap => {
+            RetainedFileOriginKind::Bootstrap => {
                 return Err(OpenError::corrupt("registration.bootstrap_origin"));
             }
         };

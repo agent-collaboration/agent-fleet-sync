@@ -73,6 +73,7 @@ pub(crate) struct LiveMail<D: DeliveryTypes> {
     pub id: ItemId,
     pub digest: ItemDigest,
     pub origin: PeerId,
+    pub status_target: CurrentStatusTarget<D::StatusRoute>,
 
     pub stream: DeliveryStream,
     pub seq: DeliverySeq,
@@ -87,6 +88,14 @@ pub(crate) struct LiveMail<D: DeliveryTypes> {
     pub cancel_target: Option<ItemId>,
     pub settlement_bytes: u32,
     pub capacity_slot: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct CurrentStatusTarget<R> {
+    pub peer: PeerId,
+    pub route: R,
+    pub rank: Option<u64>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

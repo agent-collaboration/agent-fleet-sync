@@ -7,11 +7,14 @@ use fleet_sync_protocol::{CommitSequence, DatabaseId, Epoch, PeerId, Replication
 use serde::{Deserialize, Serialize};
 use sqlx_turso::TursoConnection;
 
+pub(crate) static BOOKKEEPING_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+pub(crate) const BOOKKEEPING_HISTORY_TABLE: &str = "_fleet_sync_writer_engine_history";
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct WriterFileRecord {
     pub bootstrap: Option<fleet_sync_receiver::SnapshotInstallState>,
-    pub origin: WriterFileOrigin,
+    pub origin: RetainedFileOriginKind,
     pub registration_attempt: Option<fleet_sync_protocol::RequestId>,
     pub registration_failure: Option<durable_steps::OperationFailure>,
     pub renewal_operation: Option<crate::renewal_task::RenewalOperation>,
@@ -27,9 +30,10 @@ pub(crate) struct WriterFileRecord {
     pub epoch_ended_at: Option<ReplicationPosition>,
     pub registration: crate::writer_registration_state::RegistrationState,
 }
+/// Persisted provenance, shared by writer bookkeeping and retained inspection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum WriterFileOrigin {
+pub enum RetainedFileOriginKind {
     Created,
     Adopted,
     Bootstrap,
@@ -43,7 +47,7 @@ impl WriterFileRecord {
         };
         Self {
             bootstrap: None,
-            origin: WriterFileOrigin::Created,
+            origin: RetainedFileOriginKind::Created,
             registration_attempt: None,
             registration_failure: None,
             renewal_operation: None,
@@ -82,6 +86,20 @@ pub(crate) async fn read_file_record(
     let encoded = text(row.record, row.record_class, "writer.record")?;
     let record: WriterFileRecord =
         serde_json::from_str(&encoded).map_err(|_| OpenError::corrupt("writer.record"))?;
+    if let Some(authority) = &record.authority {
+        authority.validate_database(record.database)?;
+        if let crate::writer_authority::AuthorityObservation::Renewal {
+            answer:
+                fleet_sync_protocol::RenewAnswer::Refused(
+                    fleet_sync_protocol::LeaseRefusal::StaleEpoch { epoch_ended_at, .. },
+                ),
+            ..
+        } = authority
+            && record.epoch_ended_at != Some(*epoch_ended_at)
+        {
+            return Err(OpenError::corrupt("writer.authority_end"));
+        }
+    }
     if let Some(marker) = &record.bootstrap
         && (!marker.verified
             || marker.install.database != record.database

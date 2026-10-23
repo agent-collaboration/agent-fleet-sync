@@ -187,35 +187,6 @@ where
         Ok(())
     }
 }
-
-#[derive(Debug)]
-pub(crate) struct StoredSchemaStepRow {
-    pub record: Option<String>,
-}
-pub(crate) fn read_schema_steps<S>(
-    scope: &mut S,
-) -> impl std::future::Future<Output = Result<Vec<StoredSchemaStepRow>, sqlx_core::Error>> + Send
-where
-    S: TransactionScope,
-    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
-    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
-    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
-{
-    async move {
-        let statement = query::<S::Database>(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/sql/read_schema_steps.sql"
-        )));
-        let rows = statement.fetch_all(scope.executor()).await?;
-        rows.iter()
-            .map(|row| {
-                Ok(StoredSchemaStepRow {
-                    record: row.try_get("record")?,
-                })
-            })
-            .collect()
-    }
-}
 pub(crate) fn write_schema_step<S>(
     scope: &mut S,
     version: String,
@@ -390,6 +361,8 @@ pub(crate) struct StoredSchemaEntryRow {
     pub name_class: Option<String>,
     pub statement: Option<String>,
     pub statement_class: Option<String>,
+    pub owner: Option<String>,
+    pub owner_class: Option<String>,
 }
 pub(crate) fn read_schema_entries<S>(
     scope: &mut S,
@@ -415,6 +388,8 @@ where
                     name_class: row.try_get("name_class")?,
                     statement: row.try_get("statement")?,
                     statement_class: row.try_get("statement_class")?,
+                    owner: row.try_get("owner")?,
+                    owner_class: row.try_get("owner_class")?,
                 })
             })
             .collect()
@@ -1053,27 +1028,31 @@ where
         Ok(())
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct InstallPageRow {
+    pub install_id: Option<String>,
+    pub record: Option<String>,
+}
 pub(crate) fn read_install_pages<S>(
     scope: &mut S,
-    install_id: String,
-) -> impl std::future::Future<Output = Result<Vec<InstallRow>, sqlx_core::Error>> + Send
+) -> impl std::future::Future<Output = Result<Vec<InstallPageRow>, sqlx_core::Error>> + Send
 where
     S: TransactionScope,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
     for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
-    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
 {
     async move {
         let statement = query::<S::Database>(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/sql/read_install_pages.sql"
-        )))
-        .bind(install_id);
+        )));
         let rows = statement.fetch_all(scope.executor()).await?;
         rows.iter()
             .map(|row| {
-                Ok(InstallRow {
+                Ok(InstallPageRow {
+                    install_id: row.try_get("install_id")?,
                     record: row.try_get("record")?,
                 })
             })
@@ -1170,5 +1149,83 @@ where
         )));
         statement.execute(scope.executor()).await?;
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct InspectionSchemaRow {
+    pub object_name: Option<String>,
+    pub name_class: Option<String>,
+    pub object_kind: Option<String>,
+    pub kind_class: Option<String>,
+    pub statement: Option<String>,
+    pub statement_class: Option<String>,
+}
+pub(crate) fn read_inspection_corpus<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<InspectionSchemaRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_inspection_corpus.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(InspectionSchemaRow {
+                    object_name: row.try_get("object_name")?,
+                    name_class: row.try_get("name_class")?,
+                    object_kind: row.try_get("object_kind")?,
+                    kind_class: row.try_get("kind_class")?,
+                    statement: row.try_get("statement")?,
+                    statement_class: row.try_get("statement_class")?,
+                })
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct InspectionPartRow {
+    pub transaction_key: Option<String>,
+    pub key_class: Option<String>,
+    pub part_index: Option<String>,
+    pub index_class: Option<String>,
+    pub staged_at: Option<String>,
+    pub time_class: Option<String>,
+}
+pub(crate) fn read_inspection_parts<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<InspectionPartRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_inspection_parts.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(InspectionPartRow {
+                    transaction_key: row.try_get("transaction_key")?,
+                    key_class: row.try_get("key_class")?,
+                    part_index: row.try_get("part_index")?,
+                    index_class: row.try_get("index_class")?,
+                    staged_at: row.try_get("staged_at")?,
+                    time_class: row.try_get("time_class")?,
+                })
+            })
+            .collect()
     }
 }

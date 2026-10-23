@@ -1,9 +1,12 @@
 //! A journal and its application's writes share one real Turso transaction.
 
 use crate::{
-    AtomicStore, BoxFuture, Host, StoreError, SyncTime,
+    AtomicStore, BoxFuture, Host, ReborrowScope, StoreError, SyncTime,
     sql_journal::JournalQueries,
-    sql_rows::{StoredCountRow, StoredIdRow, StoredOperationRow, StoredStepRow, StoredTimeRow},
+    sql_rows::{
+        StoredCountRow, StoredIdRow, StoredOperationRow, StoredRequestKeyRow, StoredStepRow,
+        StoredTimeRow,
+    },
     storage::TransactionScope,
 };
 use sqlx_turso::{
@@ -81,6 +84,12 @@ pub struct TursoScope<'t, H: Host> {
     host: &'t H,
 }
 
+impl<H: Host> ReborrowScope for TursoStore<H> {
+    fn reborrow<'s, 't: 's>(scope: &'s mut Self::Scope<'t>) -> Self::Scope<'s> {
+        TursoScope::new(&mut *scope.connection, scope.host)
+    }
+}
+
 impl<'t, H: Host> TursoScope<'t, H> {
     /// Borrow the caller's transaction connection and host. This scope never
     /// begins, commits or rolls back; the caller must provide the atomic boundary.
@@ -129,6 +138,12 @@ impl<H: Host> AtomicStore for TursoStore<H> {
 }
 
 impl<H: Host> JournalQueries for TursoScope<'_, H> {
+    async fn fetch_running_request_keys(&mut self) -> Result<Vec<StoredRequestKeyRow>, StoreError> {
+        sqlx_turso::query_file_as!(StoredRequestKeyRow, "queries/running_request_keys.sql")
+            .fetch_all(&mut *self.connection)
+            .await
+            .map_err(StoreError::backend)
+    }
     async fn delete_steps(&mut self, id: String) -> Result<(), StoreError> {
         sqlx_turso::query_file!("queries/delete_steps.sql", id)
             .execute(&mut *self.connection)

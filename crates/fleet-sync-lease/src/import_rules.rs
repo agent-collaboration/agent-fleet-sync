@@ -16,14 +16,26 @@ fn existing_import(record: DatabaseRecord, request: &Import) -> ImportAnswer {
         DatabaseLifecycle::Retired { .. } | DatabaseLifecycle::Retiring { .. } => {
             ImportAnswer::Retired
         }
-        DatabaseLifecycle::Unheld { import_digest } if import_digest == request.digest => {
-            ImportAnswer::AlreadyImported
+        DatabaseLifecycle::Unheld { import_digest }
+        | DatabaseLifecycle::Registered {
+            imported_from: Some(ImportOrigin {
+                digest: import_digest,
+            }),
+            ..
+        } => {
+            if import_digest == request.digest {
+                ImportAnswer::AlreadyImported
+            } else {
+                ImportAnswer::ImportConflict {
+                    existing: Some(import_digest),
+                    offered: request.digest.clone(),
+                }
+            }
         }
-        DatabaseLifecycle::Unheld { import_digest } => ImportAnswer::ImportConflict {
-            existing: Some(import_digest),
-            offered: request.digest.clone(),
-        },
-        DatabaseLifecycle::Registered { .. } => ImportAnswer::ImportConflict {
+        DatabaseLifecycle::Registered {
+            imported_from: None,
+            ..
+        } => ImportAnswer::ImportConflict {
             existing: None,
             offered: request.digest.clone(),
         },
@@ -120,6 +132,7 @@ where
         CreateCopyAnswer::CopyCreated | CreateCopyAnswer::AlreadyCreated => None,
     };
     let request = request.clone();
+    let now = ctx.now();
     Ok(ctx
         .local(step("reserve")?, move |scope| {
             Box::pin(async move {
@@ -158,12 +171,14 @@ where
                         }));
                     }
                     storage
-                        .save_database(&DatabaseRecord {
-                            database: request.database,
-                            lifecycle: DatabaseLifecycle::Unheld {
+                        .save_database(&DatabaseRecord::initial(
+                            request.database,
+                            DatabaseLifecycle::Unheld {
                                 import_digest: request.digest.clone(),
                             },
-                        })
+                            epoch,
+                            now,
+                        ))
                         .await
                         .map_err(step_error)?;
                     storage

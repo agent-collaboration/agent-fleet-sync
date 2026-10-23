@@ -1,4 +1,5 @@
 use crate::{DeliveryError, PublicationRef, checked_queries as queries, custody_record::*};
+use crate::{PublicationTarget, status_stream::canonical_encode};
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::*;
 use sqlx_core::{
@@ -8,7 +9,7 @@ use sqlx_core::{
 
 pub async fn resolve_publication<S, D>(
     scope: &mut S,
-    reference: PublicationRef,
+    reference: PublicationRef<D::StatusRoute>,
 ) -> Result<Option<StatusPublication<D::Acceptance>>, DeliveryError>
 where
     S: TransactionScope,
@@ -18,10 +19,14 @@ where
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    let Some(row) =
-        queries::read_publication(scope, item_key(reference.item), encode(&reference.target)?)
-            .await
-            .map_err(sql_error)?
+    crate::delivery_sizes::check_status_route::<D>(reference.target.route())?;
+    let Some(row) = queries::read_publication(
+        scope,
+        item_key(reference.item),
+        canonical_encode(&reference.target)?,
+    )
+    .await
+    .map_err(sql_error)?
     else {
         return Ok(None);
     };
@@ -49,19 +54,21 @@ where
     Ok(Some(publication))
 }
 
-pub async fn retire_publication<S>(
+pub async fn retire_publication<S, D>(
     scope: &mut S,
-    reference: PublicationRef,
+    reference: PublicationRef<D::StatusRoute>,
 ) -> Result<(), DeliveryError>
 where
     S: TransactionScope,
+    D: DeliveryTypes,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
 {
+    crate::delivery_sizes::check_status_route::<D>(reference.target.route())?;
     queries::retire_publication(
         scope,
         item_key(reference.item),
-        encode(&reference.target)?,
+        canonical_encode(&reference.target)?,
         reference.version.value().to_string(),
     )
     .await
@@ -75,7 +82,7 @@ pub async fn admit_publications<S, D, T>(
 where
     S: TransactionScope + durable_steps::JournalScope,
     D: DeliveryTypes,
-    T: durable_steps::Task<Input = PublicationRef>,
+    T: durable_steps::Task<Input = PublicationRef<D::StatusRoute>>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database>,
@@ -94,7 +101,21 @@ where
                 field: "owed publication identity",
             });
         }
-        let target = decode(row.target, "owed publication target")?;
+        let encoded_target = row.target.ok_or(DeliveryError::Corrupt {
+            field: "owed publication target",
+        })?;
+        let target: PublicationTarget<D::StatusRoute> =
+            decode(Some(encoded_target.clone()), "owed publication target")?;
+        crate::delivery_sizes::check_status_route::<D>(target.route()).map_err(|_| {
+            DeliveryError::Corrupt {
+                field: "stored publication route bounds",
+            }
+        })?;
+        if canonical_encode(&target)? != encoded_target {
+            return Err(DeliveryError::Corrupt {
+                field: "owed publication target key",
+            });
+        }
         let reference = PublicationRef {
             item: publication.item,
             version: publication.version,
@@ -102,10 +123,17 @@ where
         };
         admitted.push(
             scope
-                .admit::<T>(&crate::delivery_request_key(&reference)?, &reference)
+                .admit::<T>(&publication_request_key(&reference)?, &reference)
                 .await
                 .map_err(|error| DeliveryError::Storage(error.to_string()))?,
         );
     }
     Ok(admitted)
+}
+
+pub(crate) fn publication_request_key<R: serde::Serialize>(
+    reference: &PublicationRef<R>,
+) -> Result<durable_steps::RequestKey, DeliveryError> {
+    durable_steps::RequestKey::new(canonical_encode(reference)?)
+        .map_err(|error| DeliveryError::Encoding(error.to_string()))
 }

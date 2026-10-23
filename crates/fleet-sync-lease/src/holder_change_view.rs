@@ -209,11 +209,28 @@ where
                     });
                 }
             };
+            let copy_unavailable = call
+                .retry_reason
+                .as_ref()
+                .map(|reason| {
+                    if !matches!(on, WaitingOn::Copy(_)) {
+                        return Err(LeaseError::Corrupt {
+                            field: "retry reason on a non-copy call".into(),
+                        });
+                    }
+                    CopyUnavailableReason::decode_retry(&reason.code, &reason.detail).map_err(
+                        |_| LeaseError::Corrupt {
+                            field: "copy retry reason".into(),
+                        },
+                    )
+                })
+                .transpose()?;
             waiting = Some(Waiting {
                 on,
                 since: call.first_attempt_at,
                 last_seen: call.last_seen,
                 reach: call.reach,
+                copy_unavailable,
                 attempt,
                 next_attempt_at,
             });

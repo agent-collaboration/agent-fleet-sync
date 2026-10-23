@@ -3,6 +3,10 @@ mod consumer;
 mod consumer_claim_gate;
 mod consumer_store;
 mod control;
+mod copy_faults;
+pub use copy_faults::CopyFaultRequest;
+mod schema_control;
+pub use schema_control::{SchemaControlAnswer, SchemaControlRequest};
 mod fixture_authenticator;
 mod protocol;
 mod sample_writes;
@@ -24,7 +28,8 @@ pub use control::{ControlAnswer, ControlRequest};
 pub use fixture_authenticator::FixtureAuthenticator;
 pub use protocol::{
     ClaimGateReceipt, ClaimSettlementReceipt, EffectReceipt, HookEffect, SampleAnswer,
-    SampleProtocol, SampleRequest, SampleSchema, SavedEffect,
+    SampleBacktrackingRequest, SampleEmptyRequest, SampleProtocol, SampleRenamedRequest,
+    SampleRequest, SampleSchema, SavedEffect,
 };
 pub use server::run_server;
 pub use server::run_server_with_policy;

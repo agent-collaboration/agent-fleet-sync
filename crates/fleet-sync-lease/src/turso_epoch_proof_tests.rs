@@ -26,11 +26,14 @@ async fn move_holder(
     from: u64,
     to: u128,
 ) -> TestResult<HolderChangeAnswer> {
-    let attempt = TransferId::new(Uuid::from_u128(attempt))?;
+    let attempt = TransferId::new(Uuid::from_u128(
+        (attempt) | 0x019eef00000070008000000000000000,
+    ))?;
     task_answer::<HolderChangeTask<TestStore, Turso>>(
         engine,
         &holder_change_request_key(attempt)?,
         HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt,
             database: database()?,
             from_epoch: Epoch::new(from)?,
@@ -231,9 +234,10 @@ async fn absent_copy_and_floor_cannot_create_a_preview_or_manufacture_epoch_evid
             },
         )
         .await?;
-    assert!(
-        matches!(engine.status(&id).await?.state, OperationState::Failed { reason: durable_steps::OperationFailure::Refused { code, .. } } if code=="registry_refused")
-    );
+    assert!(matches!(
+        engine.status(&id).await?.state,
+        OperationState::Running { .. }
+    ));
     assert_eq!(
         scalar(
             &store,

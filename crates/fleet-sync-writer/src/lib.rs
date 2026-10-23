@@ -9,27 +9,57 @@ mod bootstrap_schema_tests;
 mod capture_normalization;
 mod capture_stream;
 mod checked_queries;
+mod file_admission;
 mod foreign_key_integrity;
 mod guarded_query;
 mod maintenance_transaction;
 mod migration_execution;
-mod migration_inspection;
 mod migration_lineage;
 mod migration_ownership;
 pub mod native_file;
+mod native_file_inspection;
 mod native_file_owner;
+pub use native_file_inspection::{NativeFileInspection, inspect_native_file};
+#[cfg(all(test, unix))]
+mod native_file_inspection_tests;
 #[cfg(test)]
 mod native_file_tests;
 mod native_pool;
 mod native_rows;
 mod piece_builder;
+mod read_copy;
+mod read_copy_file;
+pub use read_copy::{ReadCopy, ReadCopyError};
 mod read_pool;
+mod read_transaction;
+mod retained_file;
+mod retained_file_format;
+pub use retained_file::{RetainedAuthority, RetainedFile, RetainedFileOrigin};
+pub use writer_file_record::RetainedFileOriginKind;
+#[cfg(test)]
+mod read_transaction_guard_tests;
+#[cfg(test)]
+mod read_transaction_tests;
 mod register_database_task;
 mod registration_bookkeeping;
 mod registration_contract;
 mod renewal_task;
 mod replicated_database;
 mod replicated_schema;
+#[cfg(all(test, unix))]
+mod retained_authority_tests;
+#[cfg(all(test, unix))]
+mod retained_file_fixture;
+#[cfg(all(test, unix))]
+mod retained_file_lifetime_tests;
+#[cfg(all(test, unix))]
+mod retained_file_publication_tests;
+#[cfg(all(test, unix))]
+mod retained_file_tests;
+#[cfg(all(test, unix))]
+mod retained_file_wal_tests;
+#[cfg(all(test, unix))]
+mod retained_origin_tests;
 mod seed_copy_task;
 pub use register_database_task::RegisterDatabase;
 pub use registration_contract::{
@@ -74,6 +104,7 @@ mod writer_move_tests;
 pub use capture_normalization::{CaptureChange, CaptureError, normalize_capture_change};
 pub use maintenance_transaction::MaintenanceTransaction;
 pub use read_pool::ReadPool;
+pub use read_transaction::ReadTransaction;
 pub use replicated_database::ReplicatedDatabase;
 pub use replicated_schema::{Migration, ReplicatedSchema, WriterOptions};
 pub use replication_sender::ReplicationSender;
@@ -97,6 +128,8 @@ mod capture_stream_tests;
 #[cfg(test)]
 mod guarded_executor_tests;
 #[cfg(test)]
+mod schema_catalog_tests;
+#[cfg(test)]
 mod schema_metadata_tests;
 
 #[cfg(test)]
@@ -111,7 +144,13 @@ mod sender_test_fixture;
 mod sender_tests;
 
 #[cfg(test)]
+mod admitted_epoch_tests;
+#[cfg(test)]
+mod bounded_piece_tests;
+#[cfg(test)]
 mod writer_journal_tests;
+#[cfg(test)]
+mod writer_pending_release_tests;
 #[cfg(test)]
 mod writer_release_tests;
 #[cfg(test)]

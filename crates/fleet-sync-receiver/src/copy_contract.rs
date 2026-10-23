@@ -26,7 +26,7 @@ pub(crate) fn validate_copy_status(status: &CopyStatus) -> Result<(), StoreError
 pub(crate) enum CopyRecord {
     Starting {
         status: CopyStatus,
-        install_id: uuid::Uuid,
+        install_id: fleet_sync_protocol::InstallId,
     },
     Seeding {
         status: CopyStatus,
@@ -50,9 +50,8 @@ impl CopyRecord {
     }
     pub(crate) fn validate(&self) -> Result<(), StoreError> {
         match self {
-            Self::Starting { status, install_id }
-                if install_id.is_nil()
-                    || status.role != fleet_sync_protocol::CopyRole::Follower =>
+            Self::Starting { status, .. }
+                if status.role != fleet_sync_protocol::CopyRole::Follower =>
             {
                 Err(StoreError::Corrupt {
                     field: "starting copy marker".into(),

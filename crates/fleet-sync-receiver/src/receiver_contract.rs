@@ -38,7 +38,23 @@ pub enum SeedDecision<TFollowUp> {
     Answer(fleet_sync_protocol::SeedAnswer),
 }
 
-pub trait ReceiverHook<S: TransactionScope>: Send + Sync + 'static {
+/// A consumer policy refusal is terminal; a storage failure keeps its storage class.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum HookError {
+    #[error("receiver rule refused: {0:?}")]
+    Refused(HookRefusal),
+    #[error(transparent)]
+    Storage(#[from] StoreError),
+}
+
+impl From<HookRefusal> for HookError {
+    fn from(refusal: HookRefusal) -> Self {
+        Self::Refused(refusal)
+    }
+}
+
+/// Transaction-time consumer rules return follow-up items for post-commit delivery.
+pub trait ReceiverRules<S: TransactionScope>: Send + Sync + 'static {
     type Protocol: ConsumerProtocol;
     type FollowUp: Serialize + DeserializeOwned + Send + Sync;
     /// Local tables initialized by the host before any piece is applied.
@@ -50,17 +66,22 @@ pub trait ReceiverHook<S: TransactionScope>: Send + Sync + 'static {
         &self,
         _scope: &mut S,
         _installed: &InstalledSnapshot,
-    ) -> impl Future<Output = Result<Vec<Self::FollowUp>, HookRefusal>> + Send {
+    ) -> impl Future<Output = Result<Vec<Self::FollowUp>, HookError>> + Send {
         async { Ok(Vec::new()) }
     }
     fn on_applied(
         &self,
         scope: &mut S,
         applied: &AppliedPiece<'_, <Self::Protocol as ConsumerProtocol>::Annotation>,
-    ) -> impl Future<Output = Result<Vec<Self::FollowUp>, HookRefusal>> + Send;
+    ) -> impl Future<Output = Result<Vec<Self::FollowUp>, HookError>> + Send;
+}
+
+/// The host composes this handler with rules producing exactly its item type.
+pub trait FollowUpHandler: Send + Sync + 'static {
+    type Item: Serialize + DeserializeOwned + Send + Sync;
     fn follow_up(
         &self,
-        item: &Self::FollowUp,
+        item: &Self::Item,
         call: CallId,
     ) -> impl Future<Output = Result<FollowUpDone, FollowUpFailure>> + Send;
 }
@@ -148,6 +169,12 @@ impl From<ReceiverError> for ApplyFailure {
             ReceiverError::SeedRefused { .. } => Self::Storage(StoreError::Corrupt {
                 field: "unexpected seed refusal during apply".into(),
             }),
+            ReceiverError::SnapshotSchema { .. } => Self::Storage(StoreError::Corrupt {
+                field: "unexpected snapshot producer refusal during apply".into(),
+            }),
+            ReceiverError::UnitTooLarge(_) => Self::Storage(StoreError::Corrupt {
+                field: "unexpected unit producer refusal during apply".into(),
+            }),
             ReceiverError::SchemaUnsupported { form } => {
                 Self::Refused(PieceRefusal::SchemaUnsupported { form })
             }
@@ -157,6 +184,10 @@ impl From<ReceiverError> for ApplyFailure {
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ReceiverError {
+    #[error(transparent)]
+    UnitTooLarge(#[from] fleet_sync_protocol::unit_budget::UnitTooLarge),
+    #[error("current snapshot schema encodes to {encoded_size} bytes, exceeding 256 KiB")]
+    SnapshotSchema { encoded_size: usize },
     #[error("unsupported replicated schema: {form:?}")]
     SchemaUnsupported {
         form: fleet_sync_protocol::SchemaStatementForm,

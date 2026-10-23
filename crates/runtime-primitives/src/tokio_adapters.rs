@@ -86,9 +86,7 @@ impl<C: Clock> TokioWakeTimer<C> {
 impl<C: Clock> WakeScheduler for TokioWakeTimer<C> {
     async fn wake_at(&self, at: SyncTime) -> Result<(), WakeFailure> {
         let mut pending = self.pending.lock().await;
-        if pending.as_ref().is_some_and(|current| current.at <= at) {
-            return Ok(());
-        }
+        let at = pending.as_ref().map_or(at, |current| current.at.min(at));
         let delay_ms = u64::try_from(
             at.unix_millis()
                 .saturating_sub(self.clock.now().unix_millis()),
@@ -97,7 +95,16 @@ impl<C: Clock> WakeScheduler for TokioWakeTimer<C> {
         let trigger = Instant::now()
             .checked_add(Duration::from_millis(delay_ms))
             .ok_or(WakeFailure::InvalidDeadline { at })?;
-        *pending = Some(PendingWake { at, trigger });
+        // The clock can move independently of Tokio time. Recheck even a
+        // repeated/later request, while preserving any earlier physical wake.
+        let trigger = pending
+            .as_ref()
+            .map_or(trigger, |current| current.trigger.min(trigger));
+        let next = Some(PendingWake { at, trigger });
+        if *pending == next {
+            return Ok(());
+        }
+        *pending = next;
         drop(pending);
         self.changed.notify_waiters();
         Ok(())

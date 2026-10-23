@@ -37,7 +37,10 @@ impl Clock for TestHost {
 }
 impl IdSource for TestHost {
     fn new_id(&self) -> Uuid {
-        Uuid::from_u128(u128::from(self.ids.fetch_add(1, Ordering::SeqCst) + 1))
+        Uuid::from_u128(
+            (u128::from(self.ids.fetch_add(1, Ordering::SeqCst) + 1))
+                | 0x019eef00000070008000000000000000,
+        )
     }
 }
 impl WakeScheduler for TestHost {
@@ -105,7 +108,10 @@ fn credential() -> PeerCredential {
     PeerCredential::new("Bearer fixture").unwrap()
 }
 fn frame_id(value: u128) -> FrameId {
-    FrameId::new(Uuid::from_u128(value)).unwrap()
+    FrameId::new(Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))
+    .unwrap()
 }
 async fn send_server(sender: &mpsc::Sender<Bytes>, frame: ServerFrame) {
     sender
@@ -227,6 +233,18 @@ async fn answers_correlate_by_frame_and_bidirectional_requests_share_the_transpo
         .await
         .unwrap();
     read_bytes(&mut read).await;
+    send_server(
+        &send,
+        ServerFrame::Welcome {
+            session_id: client.state().session_id,
+            databases: vec![],
+        },
+    )
+    .await;
+    assert!(matches!(
+        event(&mut client, &host).await,
+        ClientEvent::Welcome { .. }
+    ));
     client
         .send_request(frame_id(10), OperationRequest::Consumer(()), &host)
         .await
@@ -387,7 +405,7 @@ async fn ended_session_stops_reconnect_until_a_new_id_is_saved() {
 #[tokio::test]
 async fn failed_send_reports_unknown_instead_of_an_answer() {
     let host = TestHost::default();
-    let (connection, _send, mut read) = channel();
+    let (connection, send, mut read) = channel();
     let mut client = Client::load(
         ChannelTransport(Mutex::new(VecDeque::from([connection]))),
         MemoryClientStore::default(),
@@ -402,6 +420,18 @@ async fn failed_send_reports_unknown_instead_of_an_answer() {
         .await
         .unwrap();
     read_bytes(&mut read).await;
+    send_server(
+        &send,
+        ServerFrame::Welcome {
+            session_id: client.state().session_id,
+            databases: vec![],
+        },
+    )
+    .await;
+    assert!(matches!(
+        event(&mut client, &host).await,
+        ClientEvent::Welcome { .. }
+    ));
     drop(read);
     assert!(matches!(
         client

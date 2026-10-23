@@ -9,6 +9,7 @@ description = "Shared clock, identifiers, wake scheduling and bounded backoff"
 
 [features]
 default = []
+test-support = []
 tokio = ["dep:tokio", "uuid/v7", "uuid/std"]
 durable-object = ["dep:worker", "dep:chrono", "dep:futures-util"]
 

@@ -97,10 +97,14 @@ pub(super) fn policy() -> LeasePolicy {
     }
 }
 pub(super) fn peer() -> TestResult<PeerId> {
-    Ok(PeerId::new(durable_steps::Uuid::from_u128(2))?)
+    Ok(PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?)
 }
 pub(super) fn receiver(id: u128) -> TestResult<ReceiverId> {
-    Ok(ReceiverId::new(durable_steps::Uuid::from_u128(id))?)
+    Ok(ReceiverId::new(durable_steps::Uuid::from_u128(
+        (id) | 0x019eef00000070008000000000000000,
+    ))?)
 }
 pub(super) fn schema(case: &Case) -> TestResult<RenameSchema> {
     let migrations = case

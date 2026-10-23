@@ -47,10 +47,12 @@ async fn real_snapshot_bootstraps_without_replaying_dml_and_later_migration_foll
     coordinator
         .start(
             InstallRequest {
-                attempt: install.install_id,
+                attempt: fleet_sync_protocol::InstallAttemptId::new(install.install_id.as_uuid())?,
                 target: key.clone(),
                 database: install.database,
-                source: ReceiverId::new(durable_steps::Uuid::from_u128(9))?,
+                source: ReceiverId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000009,
+                ))?,
             },
             &owned,
         )
@@ -131,10 +133,12 @@ async fn real_snapshot_bootstraps_without_replaying_dml_and_later_migration_foll
     coordinator
         .start(
             InstallRequest {
-                attempt: install.install_id,
+                attempt: fleet_sync_protocol::InstallAttemptId::new(install.install_id.as_uuid())?,
                 target: key,
                 database: install.database,
-                source: ReceiverId::new(durable_steps::Uuid::from_u128(9))?,
+                source: ReceiverId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000009,
+                ))?,
             },
             &owned,
         )
@@ -196,7 +200,7 @@ async fn real_snapshot_bootstraps_without_replaying_dml_and_later_migration_foll
             epoch: install.position.epoch,
             acked: install.position,
         },
-        target_schema_max: 3,
+        target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 3 }),
         holder: grant.lease.holder,
     };
     assert!(matches!(
@@ -223,7 +227,9 @@ async fn real_snapshot_bootstraps_without_replaying_dml_and_later_migration_foll
         &install.schema,
         "ready exposed the received prefix before later migrations"
     );
-    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(7))?;
+    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000007,
+    ))?;
     let sender = ReplicationSender::new(
         target.clone(),
         Arc::new(()),
@@ -267,11 +273,37 @@ async fn real_snapshot_bootstraps_without_replaying_dml_and_later_migration_foll
             .acked,
         through
     );
-    assert!(copies.iter().any(|copy| copy.copy
-        == ReceiverId::new(durable_steps::Uuid::from_u128(9)).expect("valid receiver")
-        && copy.role == CopyRole::Authoritative
-        && copy.start == install.position));
+    assert!(copies.iter().any(|copy| {
+        copy.copy
+            == ReceiverId::new(durable_steps::Uuid::from_u128(
+                0x019eef00000070008000000000000009,
+            ))
+            .expect("valid receiver")
+            && copy.role == CopyRole::Authoritative
+            && copy.start == install.position
+    }));
     target.close().await;
+    drop(sender);
+    drop(owned);
+    drop(target);
+    let expected = fleet_sync_writer::RetainedFileOrigin {
+        database: install.database,
+        epoch: Epoch::new(2)?,
+        start: install.position,
+        kind: fleet_sync_writer::RetainedFileOriginKind::Bootstrap,
+    };
+    for _ in 0..2 {
+        let retained = fleet_sync_writer::RetainedFile::open_read_only(
+            &root.path().join("target.db"),
+            Schema {
+                count: 3,
+                different: false,
+            },
+        )
+        .await?;
+        assert_eq!(retained.origin(), expected);
+        drop(retained);
+    }
     source.close().await;
     objects.close().await?;
     Ok(())
@@ -362,10 +394,12 @@ async fn interrupted_before_rename(same_arc: bool) -> TestResult {
     coordinator
         .start(
             InstallRequest {
-                attempt: install.install_id,
+                attempt: fleet_sync_protocol::InstallAttemptId::new(install.install_id.as_uuid())?,
                 target: key.clone(),
                 database: install.database,
-                source: ReceiverId::new(durable_steps::Uuid::from_u128(9))?,
+                source: ReceiverId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000009,
+                ))?,
             },
             &owned,
         )
@@ -483,10 +517,12 @@ async fn transient_reopen_failure_after_rename_recovers_the_published_file_on_sa
     coordinator
         .start(
             InstallRequest {
-                attempt: install.install_id,
+                attempt: fleet_sync_protocol::InstallAttemptId::new(install.install_id.as_uuid())?,
                 target: key,
                 database: install.database,
-                source: ReceiverId::new(durable_steps::Uuid::from_u128(9))?,
+                source: ReceiverId::new(durable_steps::Uuid::from_u128(
+                    0x019eef00000070008000000000000009,
+                ))?,
             },
             &owned,
         )

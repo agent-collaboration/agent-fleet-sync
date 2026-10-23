@@ -1,6 +1,6 @@
 //! Initialize consumer-local tables without admitting them to replication.
 use crate::{
-    ReceiverError, ReceiverHook, StoreError, checked_queries,
+    ReceiverError, ReceiverRules, StoreError, checked_queries,
     schema_membership::{SchemaMembership, invalid_schema, statements},
 };
 use durable_steps::storage::TransactionScope;
@@ -19,7 +19,7 @@ pub fn initialize_hook<'scope, S, H>(
 ) -> impl std::future::Future<Output = Result<(), ReceiverError>> + Send + 'scope
 where
     S: TransactionScope + 'scope,
-    H: ReceiverHook<S>,
+    H: ReceiverRules<S>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'value> String:
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,

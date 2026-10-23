@@ -2,6 +2,13 @@
 //!
 //! Consumer hosts supply admission, copy calls, time and the transaction scope.
 
+/// Registry tables applied in the host's migration transaction.
+pub static LEASE_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "generated admission write binds its immutable fields together in SQL order"
+)]
 mod checked_queries;
 mod lease_holder;
 #[cfg(test)]
@@ -12,21 +19,31 @@ mod lease_values;
 mod workflow_values;
 pub use fleet_sync_protocol::ActorRef;
 pub use workflow_values::*;
+mod epoch_history;
 mod registry_contract;
+pub use epoch_history::{EpochEnd, EpochHistoryEntry, EpochHistoryPage, epoch_history};
 mod registry_reads;
 mod registry_records;
+mod registry_snapshot;
 mod registry_storage;
-pub use registry_reads::database_ids;
+pub use registry_snapshot::{
+    RegistryGrant, RegistryRevision, RegistrySnapshot, registry_snapshot, registry_snapshot_ids,
+};
+mod schema_support_rules;
+#[cfg(test)]
+mod turso_schema_support_tests;
+pub use registry_reads::{EpochGrant, database_ids, epoch_holder};
+pub use schema_support_rules::{accepted_schema_support, report_schema_support};
 
 pub use fleet_sync_protocol::{
     Epoch, HolderChangeAnswer, HolderChangeRefusal, HolderChangeRequest, LeaseRefusal, LeaseState,
     LeaseStatus, RenewAnswer, RenewRequest, RenewResult, ReplicationPosition, SyncTime, TransferId,
 };
-pub use lease_holder::{HolderError, LeaseHolder};
+pub use lease_holder::{CurrentLeaseRelation, HolderError, LeaseHolder, current_lease_relation};
 pub use lease_values::{LeasePolicy, RegistryConfig, WriterState};
 
 pub use registry_contract::{GateFailure, HolderChangeGate, LeaseError, LifecycleGate};
-pub use registry_records::DatabaseLifecycle;
+pub use registry_records::{DatabaseLifecycle, ImportOrigin};
 
 mod renew_rules;
 pub use renew_rules::{database_lifecycle, lease_status, renew};
@@ -78,11 +95,23 @@ pub use holder_change_task::HolderChangeTask;
 pub use settle_reservation_task::SettleReservationTask;
 
 #[cfg(test)]
+mod turso_epoch_history_fixture;
+#[cfg(test)]
+mod turso_epoch_history_tests;
+#[cfg(test)]
 mod turso_registry_copy;
 #[cfg(test)]
 mod turso_registry_fixture;
 #[cfg(test)]
 mod turso_registry_gates;
+#[cfg(test)]
+mod turso_registry_snapshot_fixture;
+#[cfg(test)]
+mod turso_registry_snapshot_lifecycle_tests;
+#[cfg(test)]
+mod turso_registry_snapshot_rollback_tests;
+#[cfg(test)]
+mod turso_registry_snapshot_tests;
 
 #[cfg(test)]
 mod turso_lifecycle_tests;
@@ -107,6 +136,8 @@ mod turso_claim_refusal_tests;
 #[cfg(test)]
 mod turso_claim_replay_tests;
 #[cfg(test)]
+mod turso_holder_change_reason_tests;
+#[cfg(test)]
 mod turso_idle_move_tests;
 #[cfg(test)]
 mod turso_move_refusal_tests;
@@ -124,6 +155,8 @@ mod turso_workflow_tests;
 mod transfer_admission;
 pub use transfer_admission::{admit_holder_change, cancel_holder_change};
 mod holder_change_view;
+#[cfg(test)]
+mod turso_copy_retry_tests;
 pub use holder_change_view::holder_change_view;
 
 mod transfer_storage;

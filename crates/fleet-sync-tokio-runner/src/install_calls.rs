@@ -1,5 +1,5 @@
 use crate::{InstallFileAnswer, StagedPage};
-use durable_steps::{CallTarget, Uuid};
+use durable_steps::CallTarget;
 use fleet_sync_protocol::{
     CopyStatus, DatabaseId, ReceiverId, ReplicationPosition, SnapshotCursor,
 };
@@ -18,7 +18,7 @@ impl CallTarget for InstallSource {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InstallFile {
-    pub install_id: Uuid,
+    pub install_id: fleet_sync_protocol::InstallId,
 }
 impl CallTarget for InstallFile {
     const KIND: &'static str = "fleet.snapshot-file";

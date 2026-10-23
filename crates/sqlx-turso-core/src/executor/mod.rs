@@ -22,7 +22,7 @@ use sqlx_core::{
 
 use self::{
     row_stream::{RowStreamState, RunningQuery},
-    sql_inspection::inspect_sql,
+    sql_inspection::{inspect_sql, transaction_control},
 };
 use crate::{
     Turso, TursoAdapterError, TursoArguments, TursoColumn, TursoConnection, TursoQueryResult,
@@ -38,8 +38,33 @@ impl TursoConnection {
         sql: SqlStr,
         persistent: bool,
         arguments: Option<TursoArguments>,
-    ) -> Result<QueryOutputStream, Error> {
+    ) -> Result<BoxStream<'_, Result<Either<TursoQueryResult, TursoRow>, Error>>, Error> {
         self.clear_pending_rollback().await?;
+        let observation = self.before_statement(transaction_control(sql.as_str()))?;
+        match self.fetch_many_unobserved(sql, persistent, arguments).await {
+            Ok(stream) => Ok(stream
+                .map(move |result| {
+                    match &result {
+                        Ok(Either::Left(_)) => self.after_statement_success(observation),
+                        Err(_) => self.after_statement_error(observation),
+                        Ok(Either::Right(_)) => {}
+                    }
+                    result
+                })
+                .boxed()),
+            Err(error) => {
+                self.after_statement_error(observation);
+                Err(error)
+            }
+        }
+    }
+
+    async fn fetch_many_unobserved(
+        &mut self,
+        sql: SqlStr,
+        persistent: bool,
+        arguments: Option<TursoArguments>,
+    ) -> Result<QueryOutputStream, Error> {
         // Logs the statement (and slow statements) when the query's results are done or dropped,
         // as SQLx's other drivers do, honouring the connection's log settings.
         let logger = QueryLogger::new(sql.clone(), self.options().log_settings().clone());
@@ -108,6 +133,7 @@ impl TursoConnection {
     }
 
     async fn prepare_sql(&mut self, sql: SqlStr) -> Result<TursoStatement, Error> {
+        self.require_live_transaction()?;
         self.discard_statements_prepared_for_another_schema()
             .await?;
         if let Some(statement) = self.cached_statement(sql.as_str()) {
@@ -194,7 +220,13 @@ impl<'c> Executor<'c> for &'c mut TursoConnection {
     where
         'c: 'e,
     {
-        async move { self.prepare_sql(sql).await }.boxed()
+        async move {
+            // Returned statements may outlive this connection and its pool.
+            // Keep SDK ownership in the private connection-local cache; query
+            // execution prepares by SQL on the connection it actually pins.
+            Ok(self.prepare_sql(sql).await?.into_metadata())
+        }
+        .boxed()
     }
 
     fn describe<'e>(

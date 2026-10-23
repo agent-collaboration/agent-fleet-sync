@@ -116,7 +116,7 @@ async fn retirement_erases_install_receipts_and_marker() -> TestResult {
 struct InstallHook {
     refuse: bool,
 }
-impl ReceiverHook<TursoScope<'_>> for InstallHook {
+impl ReceiverRules<TursoScope<'_>> for InstallHook {
     type Protocol = NoConsumer;
     type FollowUp = String;
     fn local_migrations(&self) -> &'static [sqlx_core::migrate::Migration] {
@@ -138,14 +138,14 @@ impl ReceiverHook<TursoScope<'_>> for InstallHook {
         &self,
         _: &mut TursoScope<'_>,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<String>, HookRefusal> {
+    ) -> Result<Vec<String>, HookError> {
         Ok(Vec::new())
     }
     async fn on_snapshot_installed(
         &self,
         scope: &mut TursoScope<'_>,
         installed: &InstalledSnapshot,
-    ) -> Result<Vec<String>, HookRefusal> {
+    ) -> Result<Vec<String>, HookError> {
         query::<Turso>("INSERT INTO installed_marks(position) VALUES(?1)")
             .bind(installed.position.sequence.value().to_string())
             .execute(scope.executor())
@@ -158,10 +158,14 @@ impl ReceiverHook<TursoScope<'_>> for InstallHook {
             return Err(HookRefusal {
                 code: crate::turso_rule_fixture::fixture_refusal_code("policy"),
                 detail: "refused after local write".into(),
-            });
+            }
+            .into());
         }
         Ok(vec!["snapshot published".into()])
     }
+}
+impl FollowUpHandler for InstallHook {
+    type Item = String;
     async fn follow_up(
         &self,
         _: &String,
@@ -170,6 +174,7 @@ impl ReceiverHook<TursoScope<'_>> for InstallHook {
         Ok(FollowUpDone)
     }
 }
+
 async fn prepared(
     connection: &mut TursoConnection,
     install: &SnapshotInstall,
@@ -317,14 +322,14 @@ async fn target_fence_and_saved_transfer_survive_snapshot_and_older_snapshot_is_
     ready(&mut old, &install).await?;
     let transfer = FenceRequest {
         database: install.database,
-        transfer_id: TransferId::new(Uuid::from_u128(81))?,
+        transfer_id: TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000051))?,
         new_epoch: Epoch::new(2)?,
-        holder: PeerId::new(Uuid::from_u128(9))?,
+        holder: PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000009))?,
         expect: FenceExpectation {
             epoch: Epoch::new(1)?,
             acked: install.position,
         },
-        target_schema_max: 10,
+        target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 10 }),
     };
     let fenced = fence(&mut TursoScope(&mut old), &transfer).await?;
     assert!(matches!(fenced, FenceResult::Fenced { .. }));
@@ -335,7 +340,7 @@ async fn target_fence_and_saved_transfer_survive_snapshot_and_older_snapshot_is_
 
     let mut replacement = staging().await?;
     let mut newer_install = install.clone();
-    newer_install.install_id = Uuid::from_u128(82);
+    newer_install.install_id = InstallId::new(Uuid::from_u128(0x019eef00000070008000000000000052))?;
     prepared(&mut replacement, &newer_install, &status, &page, &manifest).await?;
     SnapshotInstallRules(&mut TursoScope(&mut replacement))
         .merge_old_fence(&newer_install, Some(&carrier))
@@ -361,7 +366,7 @@ async fn target_fence_and_saved_transfer_survive_snapshot_and_older_snapshot_is_
 
     let mut stale = staging().await?;
     let mut stale_install = install.clone();
-    stale_install.install_id = Uuid::from_u128(83);
+    stale_install.install_id = InstallId::new(Uuid::from_u128(0x019eef00000070008000000000000053))?;
     stale_install.position = ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(6));
     let mut stale_status = status.clone();
     stale_status.acked = stale_install.position;
@@ -389,15 +394,16 @@ async fn staging() -> TestResult<TursoConnection> {
         .foreign_keys(false)
         .connect()
         .await?;
-    sqlx::migrate!("./migrations")
+    crate::RECEIVER_MIGRATOR
         .run_direct(None, &mut connection, false)
         .await?;
     Ok(connection)
 }
-fn source() -> TestResult<(SnapshotInstall, CopyStatus, SnapshotPage, SnapshotManifest)> {
+pub(super) fn source() -> TestResult<(SnapshotInstall, CopyStatus, SnapshotPage, SnapshotManifest)>
+{
     let (page, done) = crate::turso_seed_tests::snapshot(SeedId { generation: 1 })?;
     let install = SnapshotInstall {
-        install_id: Uuid::from_u128(80),
+        install_id: InstallId::new(Uuid::from_u128(0x019eef00000070008000000000000050))?,
         database: done.database,
         position: done.position,
         schema: done.schema.clone(),
@@ -406,7 +412,9 @@ fn source() -> TestResult<(SnapshotInstall, CopyStatus, SnapshotPage, SnapshotMa
         database: done.database,
         role: CopyRole::Authoritative,
         fence: done.position.epoch,
-        holder: Some(PeerId::new(Uuid::from_u128(2))?),
+        holder: Some(PeerId::new(Uuid::from_u128(
+            0x019eef00000070008000000000000002,
+        ))?),
         start: ReplicationPosition::new(done.position.epoch, CommitSequence::new(0)),
         acked: done.position,
         schema: done.schema.clone(),

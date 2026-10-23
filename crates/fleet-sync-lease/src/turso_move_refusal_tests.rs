@@ -4,10 +4,28 @@
 use crate::{
     turso_change_tests::register_first, turso_copy_fixture::push_rows, turso_registry_fixture::*, *,
 };
-use durable_steps::{OperationState, Uuid};
+use durable_steps::{AtomicStore, OperationState, Uuid};
 use fleet_sync_protocol::*;
 use sqlx_turso::Turso;
 use std::sync::Arc;
+
+async fn canonical_answer(
+    store: &TestStore,
+    request: &HolderChangeRequest,
+) -> TestResult<HolderChangeAnswer> {
+    let request = request.clone();
+    store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                holder_change_answer(scope, &request)
+                    .await
+                    .map_err(storage)?
+                    .ok_or_else(|| storage("canonical holder-change answer missing"))
+            })
+        })
+        .await
+        .map_err(Into::into)
+}
 
 #[tokio::test]
 async fn typed_release_refusals_replay_without_fencing_or_changing_the_lease() -> TestResult {
@@ -17,14 +35,20 @@ async fn typed_release_refusals_replay_without_fencing_or_changing_the_lease() -
                 migration: 2,
                 state: MigrationState::Pending,
             },
-            HolderChangeRefusal::MigrationPending,
+            HolderChangeRefusal::MigrationPending {
+                migration: 2,
+                state: MigrationState::Pending,
+            },
         ),
         (
             ReleaseRefusal::MigrationPending {
                 migration: 2,
                 state: MigrationState::Failed,
             },
-            HolderChangeRefusal::MigrationPending,
+            HolderChangeRefusal::MigrationPending {
+                migration: 2,
+                state: MigrationState::Failed,
+            },
         ),
         (
             ReleaseRefusal::SchemaTooNew {
@@ -44,6 +68,16 @@ async fn typed_release_refusals_replay_without_fencing_or_changing_the_lease() -
         ),
     ];
     for (release, expected) in cases {
+        let expected_wire = match &release {
+            ReleaseRefusal::MigrationPending { migration, state } => {
+                let state = match state {
+                    MigrationState::Pending => "pending",
+                    MigrationState::Failed => "failed",
+                };
+                serde_json::json!({"kind":"refused","value":{"kind":"migrationPending","value":{"migration":migration,"state":state}}})
+            }
+            _ => serde_json::to_value(HolderChangeAnswer::Refused(expected.clone()))?,
+        };
         let directory = tempfile::tempdir()?;
         let host = TestHost::open(directory.path(), false).await?;
         let store = open_store(
@@ -56,23 +90,46 @@ async fn typed_release_refusals_replay_without_fencing_or_changing_the_lease() -
         register_first(&engine).await?;
         let lease = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
         *host.release_answer.lock().await = Some(ReleaseAnswer::ReleaseRefused(release));
-        let attempt = TransferId::new(Uuid::from_u128(1601))?;
+        let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000641))?;
         let request = HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt,
             database: database()?,
             from_epoch: Epoch::new(1)?,
             to: peer(2)?,
         };
         let key = holder_change_request_key(attempt)?;
-        assert_eq!(
+        let first =
             task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request.clone())
-                .await?,
-            HolderChangeAnswer::Refused(expected.clone())
-        );
-        host.advance();
+                .await?;
+        assert_eq!(first, HolderChangeAnswer::Refused(expected.clone()));
+        assert_eq!(serde_json::to_value(&first)?, expected_wire);
         assert_eq!(
-            task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request).await?,
-            HolderChangeAnswer::Refused(expected)
+            serde_json::to_value(canonical_answer(&store, &request).await?)?,
+            expected_wire
+        );
+        let changed_state = match &expected {
+            HolderChangeRefusal::MigrationPending {
+                state: MigrationState::Failed,
+                ..
+            } => MigrationState::Pending,
+            _ => MigrationState::Failed,
+        };
+        *host.release_answer.lock().await = Some(ReleaseAnswer::ReleaseRefused(
+            ReleaseRefusal::MigrationPending {
+                migration: 999,
+                state: changed_state,
+            },
+        ));
+        host.advance();
+        let repeated =
+            task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request.clone())
+                .await?;
+        assert_eq!(repeated, HolderChangeAnswer::Refused(expected));
+        assert_eq!(serde_json::to_value(repeated)?, expected_wire);
+        assert_eq!(
+            serde_json::to_value(canonical_answer(&store, &request).await?)?,
+            expected_wire
         );
         assert_eq!(
             scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
@@ -102,7 +159,90 @@ async fn typed_release_refusals_replay_without_fencing_or_changing_the_lease() -
                 .iter()
                 .all(|(kind, _)| kind != "fleet-sync.copy-fence")
         );
+        drop(engine);
+        drop(store);
+        let reopened =
+            open_store(&directory.path().join("registry.db"), host.clone(), false).await?;
+        assert_eq!(
+            serde_json::to_value(canonical_answer(&reopened, &request).await?)?,
+            expected_wire
+        );
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_already_held_claim_replays_its_recorded_holder_after_takeover_and_restart() -> TestResult
+{
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("registry.db");
+    let host = TestHost::open(directory.path(), false).await?;
+    let store = open_store(&path, host.clone(), true).await?;
+    let running = engine(store.clone(), host.clone())?;
+    register_first(&running).await?;
+    let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000901))?;
+    let claim = HolderChangeRequest::Claim {
+        attempt,
+        database: database()?,
+        claimant: peer(2)?,
+    };
+    let key = holder_change_request_key(attempt)?;
+    let expected = serde_json::json!({"kind":"refused","value":{"kind":"alreadyHeld","value":{"holder":peer(1)?.to_string()}}});
+    let refused =
+        task_answer::<HolderChangeTask<TestStore, Turso>>(&running, &key, claim.clone()).await?;
+    assert_eq!(serde_json::to_value(&refused)?, expected);
+    let recorded = scalar(&store, "SELECT outcome AS value FROM _fleet_sync_transfers").await?;
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&recorded)?,
+        expected
+    );
+    let preview = task_answer::<PreviewTakeoverTask<TestStore, Turso>>(
+        &running,
+        &durable_steps::RequestKey::new("refused-claim-takeover")?,
+        PreviewTakeover {
+            database: database()?,
+        },
+    )
+    .await?;
+    let takeover_attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000902))?;
+    let takeover = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
+        attempt: takeover_attempt,
+        database: database()?,
+        preview,
+        to: peer(3)?,
+    };
+    let answer = task_answer::<HolderChangeTask<TestStore, Turso>>(
+        &running,
+        &holder_change_request_key(takeover_attempt)?,
+        takeover,
+    )
+    .await?;
+    assert!(matches!(answer, HolderChangeAnswer::Granted { .. }));
+    let current: serde_json::Value = serde_json::from_str(
+        &scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
+    )?;
+    assert_eq!(
+        current.get("holder"),
+        Some(&serde_json::json!(peer(3)?.to_string()))
+    );
+    let replay =
+        task_answer::<HolderChangeTask<TestStore, Turso>>(&running, &key, claim.clone()).await?;
+    assert_eq!(serde_json::to_value(replay)?, expected);
+    assert_eq!(
+        serde_json::to_value(canonical_answer(&store, &claim).await?)?,
+        expected
+    );
+    drop(running);
+    drop(store);
+    let reopened = open_store(&path, host.clone(), false).await?;
+    assert_eq!(
+        serde_json::to_value(canonical_answer(&reopened, &claim).await?)?,
+        expected
+    );
+    let resumed = engine(reopened, host)?;
+    let replay = task_answer::<HolderChangeTask<TestStore, Turso>>(&resumed, &key, claim).await?;
+    assert_eq!(serde_json::to_value(replay)?, expected);
     Ok(())
 }
 
@@ -120,8 +260,9 @@ async fn released_final_position_waits_for_the_real_copy_then_grants_once() -> T
     register_first(&engine).await?;
     let final_position = ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(9));
     *host.release_answer.lock().await = Some(ReleaseAnswer::Released { final_position });
-    let attempt = TransferId::new(Uuid::from_u128(1602))?;
+    let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000642))?;
     let request = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt,
         database: database()?,
         from_epoch: Epoch::new(1)?,

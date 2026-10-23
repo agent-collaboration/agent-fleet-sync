@@ -11,7 +11,10 @@ use fleet_sync_session::PeerAuthenticator;
 use runtime_primitives::{Backoff, Clock, WakeScheduler};
 use sqlx_turso::Turso;
 use std::{sync::Arc, time::Duration};
-use tokio::sync::watch;
+use tokio::{sync::watch, task::JoinSet, time::Instant};
+
+// Bound pending deadline/drive passes; Engine separately caps active operations.
+const MAX_PENDING_MAILBOX_PASSES: usize = 8;
 
 const RETRY: Backoff = Backoff {
     initial: Duration::from_millis(100),
@@ -38,8 +41,6 @@ async fn mailbox_pass<D: DeliveryTypes>(
     limits: DeliveryLimits,
 ) -> Result<(), PassFailure> {
     let host = owner.object.host();
-    let engine_lock = owner.object.engine_lock();
-    let _work = engine_lock.lock().await;
     owner
         .ensure_schema()
         .await
@@ -61,22 +62,22 @@ async fn mailbox_pass<D: DeliveryTypes>(
             DeliveryError::Corrupt { field } => PassFailure::Corrupt { field },
             error => PassFailure::operational("scan", error),
         })?;
+    if let Some(next) = next {
+        // Keep the earlier of the custody deadline and the engine's retry.
+        host.wake_at(next)
+            .await
+            .map_err(|error| PassFailure::operational("deadlineWake", error))?;
+    }
     let report = owner
         .engine
         .drive_due()
         .await
         .map_err(|error| PassFailure::operational("engine", error))?;
     for (operation, failure) in report.failed {
-        tracing::warn!(operation=%operation.0,?failure,"durable delivery operation failed");
+        tracing::warn!(operation=%operation.as_uuid(),?failure,"durable delivery operation failed");
     }
     if let Some(error) = report.wake_failure {
         return Err(PassFailure::operational("engineWake", error));
-    }
-    if let Some(next) = next {
-        // Keep the earlier of the custody deadline and the engine's retry.
-        host.wake_at(next)
-            .await
-            .map_err(|error| PassFailure::operational("deadlineWake", error))?;
     }
     Ok(())
 }
@@ -89,7 +90,10 @@ pub(crate) async fn run_mailbox<P, C, A>(
 ) where
     P: ConsumerProtocol,
     C: ServiceConsumer<P>,
-    A: PeerAuthenticator<Material = String>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
 {
     let mut attempt = 0_u32;
     loop {
@@ -118,7 +122,16 @@ pub(crate) async fn run_mailbox<P, C, A>(
     }
 }
 
-async fn run_initialized_mailbox<D: DeliveryTypes>(
+async fn owned_mailbox_pass<D: DeliveryTypes>(
+    owner: Arc<DeliveryOwner>,
+    mailbox: PeerId,
+    limits: DeliveryLimits,
+    retry: bool,
+) -> (bool, Result<(), PassFailure>) {
+    (retry, mailbox_pass::<D>(&owner, mailbox, limits).await)
+}
+
+pub(crate) async fn run_initialized_mailbox<D: DeliveryTypes>(
     owner: Arc<DeliveryOwner>,
     mailbox: PeerId,
     limits: DeliveryLimits,
@@ -127,39 +140,74 @@ async fn run_initialized_mailbox<D: DeliveryTypes>(
     let host = owner.object.host();
     let mut health = owner.health.subscribe();
     let mut attempt = 0_u32;
+    let mut retry_at = None;
+    let mut retry_in_flight = false;
+    let mut stopping = *shutdown.borrow() || health.borrow().is_some();
+    let mut passes = JoinSet::new();
+    if !stopping {
+        passes.spawn(owned_mailbox_pass::<D>(
+            owner.clone(),
+            mailbox,
+            limits,
+            false,
+        ));
+    }
     loop {
         if *shutdown.borrow() || health.borrow().is_some() {
+            stopping = true;
+        }
+        if stopping && passes.is_empty() {
             return;
         }
-        let retry = match mailbox_pass::<D>(&owner, mailbox, limits).await {
-            Ok(()) => {
-                attempt = 0;
-                None
-            }
-            Err(PassFailure::Corrupt { field }) => {
-                owner.mark_corrupt(mailbox, field);
-                return;
-            }
-            Err(PassFailure::Operational { phase, cause }) => {
-                let delay = RETRY.delay(attempt);
-                attempt = attempt.saturating_add(1);
-                tracing::warn!(?mailbox, phase, %cause, ?delay, "delivery mailbox operation retry");
-                Some(delay)
-            }
-        };
         tokio::select! {
-            // An operational retry owns its backoff; external kicks cannot spin it.
-            _ = async {
-                match retry {
-                    Some(delay) => tokio::time::sleep(delay).await,
-                    None => { host.wait().await; },
+            observed = passes.join_next(), if !passes.is_empty() => {
+                let Some(observed) = observed else {continue;};
+                let (was_retry, result) = match observed {
+                    Ok(result) => result,
+                    Err(error) => {
+                        tracing::error!(?mailbox, %error, "delivery mailbox pass panicked");
+                        stopping = true;
+                        continue;
+                    }
+                };
+                {
+                    if was_retry { retry_in_flight = false; }
+                    match result {
+                        Ok(()) => {
+                            // A sibling success cannot cancel an outstanding
+                            // operational backoff or its retry attempt.
+                            if retry_at.is_none() && !retry_in_flight {attempt = 0;}
+                        }
+                        Err(PassFailure::Corrupt {field}) => {
+                            owner.mark_corrupt(mailbox, field);
+                            stopping = true;
+                        }
+                        Err(PassFailure::Operational {phase, cause}) => {
+                            let delay = RETRY.delay(attempt);
+                            attempt = attempt.saturating_add(1);
+                            retry_at.get_or_insert_with(|| Instant::now() + delay);
+                            tracing::warn!(?mailbox, phase, %cause, ?delay, "delivery mailbox operation retry");
+                        }
+                    }
                 }
-            } => {},
-            changed = health.changed() => {
-                if changed.is_err() || health.borrow().is_some() { return; }
             },
-            changed = shutdown.changed() => {
-                if changed.is_err() || *shutdown.borrow() { return; }
+            _ = async {
+                match retry_at {
+                    Some(at) => tokio::time::sleep_until(at).await,
+                    None => {host.wait().await;},
+                }
+            }, if !stopping && !retry_in_flight && passes.len() < MAX_PENDING_MAILBOX_PASSES => {
+                // The single timer owner handles both sources. Kicks never
+                // bypass operational backoff, including while its retry runs.
+                let retry = retry_at.take().is_some();
+                retry_in_flight = retry;
+                passes.spawn(owned_mailbox_pass::<D>(owner.clone(), mailbox, limits, retry));
+            },
+            changed = health.changed(), if !stopping => {
+                if changed.is_err() || health.borrow().is_some() {stopping = true;}
+            },
+            changed = shutdown.changed(), if !stopping => {
+                if changed.is_err() || *shutdown.borrow() {stopping = true;}
             }
         }
     }

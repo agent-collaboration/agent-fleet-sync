@@ -37,8 +37,12 @@ impl DeliveryConsumer<TursoScope<'_, TestHost>> for GatedConsumer {
         &self,
         _item: &DeliveryItem<TestTypes>,
         _call: CallId,
-    ) -> LocalOutcome<Acceptance> {
-        LocalOutcome::Uncertain // This sender-only fixture never dispatches local delivery.
+    ) -> LocalDelivery<TestTypes> {
+        // This sender-only fixture never dispatches local delivery.
+        LocalDelivery {
+            outcome: LocalOutcome::Uncertain,
+            observation: (),
+        }
     }
     fn may_cancel(&self, requester: &String, item: &DeliveryHeader<TestTypes>) -> bool {
         requester == item.sender()

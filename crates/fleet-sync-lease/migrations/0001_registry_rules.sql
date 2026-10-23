@@ -1,13 +1,13 @@
 CREATE TABLE _fleet_sync_databases (
-    database TEXT PRIMARY KEY,
+    database TEXT NOT NULL PRIMARY KEY,
     record TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_leases (
-    database TEXT PRIMARY KEY,
+    database TEXT NOT NULL PRIMARY KEY,
     record TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_epoch_floor (
-    database TEXT PRIMARY KEY,
+    database TEXT NOT NULL PRIMARY KEY,
     epoch TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_renewal_attempts (
@@ -23,19 +23,19 @@ CREATE TABLE _fleet_sync_epoch_history (
     PRIMARY KEY(database,epoch)
 );
 CREATE TABLE _fleet_sync_transfers (
-    attempt TEXT PRIMARY KEY,
+    attempt TEXT NOT NULL PRIMARY KEY,
     database TEXT NOT NULL,
     intent TEXT NOT NULL,
     outcome TEXT
 );
 CREATE UNIQUE INDEX _fleet_sync_one_transfer ON _fleet_sync_transfers(database) WHERE outcome IS NULL;
 CREATE TABLE _fleet_sync_takeover_previews (
-    token TEXT PRIMARY KEY,
+    token TEXT NOT NULL PRIMARY KEY,
     database TEXT NOT NULL,
     record TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_lifecycle_attempts (
-    attempt TEXT PRIMARY KEY,
+    attempt TEXT NOT NULL PRIMARY KEY,
     database TEXT NOT NULL,
     intent TEXT NOT NULL,
     outcome TEXT

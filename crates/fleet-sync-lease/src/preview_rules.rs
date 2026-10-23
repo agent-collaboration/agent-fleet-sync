@@ -73,10 +73,11 @@ where
             field: "authoritative copy preview".into(),
         });
     }
-    let token =
-        PreviewToken::new(ctx.id().0.to_string()).map_err(|error| LeaseError::InvalidInput {
+    let token = PreviewToken::new(ctx.id().as_uuid().to_string()).map_err(|error| {
+        LeaseError::InvalidInput {
             field: error.to_string(),
-        })?;
+        }
+    })?;
     Ok(ctx
         .local(step("save")?, move |scope| {
             Box::pin(async move {

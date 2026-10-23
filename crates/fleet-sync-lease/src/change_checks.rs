@@ -190,7 +190,9 @@ where
                             return refuse(
                                 &mut storage,
                                 offered,
-                                HolderChangeRefusal::AlreadyHeld,
+                                HolderChangeRefusal::AlreadyHeld {
+                                    holder: current.holder,
+                                },
                                 now,
                             )
                             .await;
@@ -231,7 +233,9 @@ where
                             return refuse(
                                 &mut storage,
                                 offered,
-                                HolderChangeRefusal::AlreadyHeld,
+                                HolderChangeRefusal::AlreadyHeld {
+                                    holder: current.holder,
+                                },
                                 now,
                             )
                             .await;
@@ -252,16 +256,21 @@ where
                         }
                     }
                     HolderChangeRequest::Claim { .. } => {
-                        if lease.is_some()
-                            || !matches!(record.lifecycle, DatabaseLifecycle::Unheld { .. })
-                        {
+                        if let Some(current) = lease.as_ref() {
                             return refuse(
                                 &mut storage,
                                 offered,
-                                HolderChangeRefusal::AlreadyHeld,
+                                HolderChangeRefusal::AlreadyHeld {
+                                    holder: current.holder,
+                                },
                                 now,
                             )
                             .await;
+                        }
+                        if !matches!(record.lifecycle, DatabaseLifecycle::Unheld { .. }) {
+                            return Err(step_error(LeaseError::Corrupt {
+                                field: "registered database has no holder".into(),
+                            }));
                         }
                     }
                 }
@@ -334,6 +343,7 @@ where
                 let intent = TransferIntent {
                     request: offered,
                     new_epoch: Some(next),
+                    target_schema: admission.target_schema,
                 };
                 let mut transfer = TransferRecord::requested(intent.clone(), admission.admitted_at);
                 if matches!(intent.request, HolderChangeRequest::Move { .. }) {
@@ -381,6 +391,7 @@ where
         TransferIntent {
             request,
             new_epoch: None,
+            target_schema: admission.target_schema,
         },
         admission.admitted_at,
     );

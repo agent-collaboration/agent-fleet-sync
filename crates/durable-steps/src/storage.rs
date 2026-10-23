@@ -4,8 +4,8 @@
 //! Task implementations use `JournalScope`; journal mutation is an adapter responsibility.
 
 use crate::{
-    CallReplay, DriveLease, OperationId, OperationState, OperationStatus, RequestKey, StepName,
-    StoreError, SyncTime,
+    CallReplay, CallRetryReason, DriveLease, OperationId, OperationState, OperationStatus,
+    RequestKey, StepName, StoreError, SyncTime,
 };
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -116,6 +116,8 @@ pub struct CallAttempt {
     pub first_attempt_at: SyncTime,
     pub last_seen: Option<SyncTime>,
     pub reach: CallReach,
+    #[serde(default)]
+    pub retry_reason: Option<CallRetryReason>,
 }
 
 /// Dispatching is committed before sending. On recovery its unanswered attempt
@@ -124,6 +126,9 @@ pub struct CallAttempt {
 #[serde(rename_all = "snake_case")]
 pub enum CallReach {
     NeverSent,
+    /// A receiver replied, with no unresolved possible effect in this history.
+    /// This is not NeverSent and cannot satisfy an unsent timeout.
+    NoEffect,
     Dispatching,
     MayHaveReached,
 }
@@ -145,6 +150,7 @@ pub trait JournalStorage: Send {
         &mut self,
         now: SyncTime,
     ) -> impl Future<Output = Result<Vec<OperationId>, StoreError>> + Send;
+    /// Missing or ineligible operations yield no claim, including IDs from a stale due snapshot.
     fn claim(
         &mut self,
         id: OperationId,

@@ -12,7 +12,7 @@ use sqlx_core::{
 
 use crate::{Turso, TursoArguments, TursoColumn, TursoTypeInfo, column::collect_column_names};
 
-/// Prepared Turso statement metadata
+/// Owned prepared metadata; native handles stay in the connection's private cache.
 #[derive(Clone)]
 pub struct TursoStatement {
     sql: SqlStr,
@@ -57,6 +57,11 @@ impl TursoStatement {
     pub(crate) fn raw(&self) -> Option<turso::Statement> {
         self.raw.clone()
     }
+
+    pub(crate) fn into_metadata(mut self) -> Self {
+        self.raw = None;
+        self
+    }
 }
 
 impl fmt::Debug for TursoStatement {
@@ -98,5 +103,45 @@ impl ColumnIndex<TursoStatement> for str {
             .get(self)
             .copied()
             .ok_or_else(|| sqlx_core::error::Error::ColumnNotFound(self.to_owned()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx_core::{
+        column::Column,
+        connection::{ConnectOptions, Connection},
+        executor::Executor,
+        row::Row,
+    };
+
+    #[tokio::test]
+    async fn prepared_metadata_survives_close_and_uses_the_pinned_target() -> sqlx_core::Result<()>
+    {
+        let mut original = crate::TursoConnectOptions::new().connect().await?;
+        original.execute("CREATE TABLE items(id INTEGER, label TEXT); INSERT INTO items VALUES(1, 'original')").await?;
+        let sql = SqlStr::from_static("SELECT label FROM items WHERE id=?");
+        let prepared = original.prepare(sql.clone()).await?;
+        let cloned = prepared.clone();
+        let description = original.describe(sql.clone()).await?;
+        assert_eq!(original.cached_statements_size(), 1);
+        original.close().await?;
+
+        let mut target = crate::TursoConnectOptions::new().connect().await?;
+        target
+            .execute(
+                "CREATE TABLE items(id INTEGER, label TEXT); INSERT INTO items VALUES(1, 'target')",
+            )
+            .await?;
+        let row = cloned.query().bind(1_i64).fetch_one(&mut target).await?;
+        assert_eq!(row.try_get::<String, _>("label")?, "target");
+        assert_eq!(prepared.sql().as_str(), sql.as_str());
+        assert_eq!(prepared.columns().len(), 1);
+        assert_eq!(prepared.columns()[0].name(), "label");
+        assert!(prepared.parameters().is_none());
+        assert_eq!(description.columns()[0].name(), "label");
+        target.close().await?;
+        Ok(())
     }
 }

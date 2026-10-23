@@ -5,18 +5,20 @@ use uuid::Uuid;
 #[test]
 fn server_release_and_client_answer_use_the_canonical_call_identity() {
     let call: runtime_primitives::CallId = CallId {
-        operation: OperationId(Uuid::from_u128(1)),
+        operation: OperationId::new(Uuid::from_u128(0x019eef00000070008000000000000001)).unwrap(),
         step: StepName::new("release").unwrap(),
     };
-    let frame_id = FrameId::new(Uuid::from_u128(2)).unwrap();
+    let frame_id = FrameId::new(Uuid::from_u128(0x019eef00000070008000000000000002)).unwrap();
     let frame: ServerFrame = ServerFrame::Request {
         frame: frame_id,
         body: ServerRequest::Crate(ServerCall::Release {
             call: call.clone(),
             request: ReleaseRequest {
-                database: DatabaseId::new(Uuid::from_u128(3)).unwrap(),
+                database: DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000003))
+                    .unwrap(),
                 epoch: Epoch::new(1).unwrap(),
-                transfer: TransferId::new(Uuid::from_u128(4)).unwrap(),
+                transfer: TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000004))
+                    .unwrap(),
             },
         }),
     };
@@ -45,18 +47,19 @@ fn server_release_and_client_answer_use_the_canonical_call_identity() {
 
 #[test]
 fn peer_session_lease_frames_exclude_administrative_operations() {
-    let database = DatabaseId::new(Uuid::from_u128(1)).unwrap();
-    let attempt = TransferId::new(Uuid::from_u128(2)).unwrap();
-    let target = PeerId::new(Uuid::from_u128(3)).unwrap();
+    let database = DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000001)).unwrap();
+    let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000002)).unwrap();
+    let target = PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000003)).unwrap();
     let position = ReplicationPosition::new(Epoch::new(1).unwrap(), CommitSequence::new(7));
     let retirement = Retirement {
-        attempt: RequestId::new(Uuid::from_u128(4)).unwrap(),
+        attempt: RequestId::new(Uuid::from_u128(0x019eef00000070008000000000000004)).unwrap(),
         database,
         expect_fence: Epoch::new(1).unwrap(),
         expect_acked: position,
     };
     let administrative = [
         serde_json::to_value(HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change").unwrap(),
             attempt,
             database,
             from_epoch: Epoch::new(1).unwrap(),
@@ -64,10 +67,11 @@ fn peer_session_lease_frames_exclude_administrative_operations() {
         })
         .unwrap(),
         serde_json::to_value(HolderChangeRequest::Takeover {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change").unwrap(),
             attempt,
             database,
             preview: TakeoverPreview {
-                token: PreviewToken::new("preview-token").unwrap(),
+                token: PreviewToken::new("019eef00-0000-7000-8000-000000000001").unwrap(),
                 fence: Epoch::new(1).unwrap(),
                 acked: position,
                 holder: target,
@@ -77,7 +81,7 @@ fn peer_session_lease_frames_exclude_administrative_operations() {
         })
         .unwrap(),
         serde_json::json!({"kind":"previewTakeover","value": PreviewTakeover { database }}),
-        serde_json::json!({"kind":"import","value": Import { attempt: RequestId::new(Uuid::from_u128(5)).unwrap(), database, digest: ImportDigest::new("a".repeat(64)).unwrap() }}),
+        serde_json::json!({"kind":"import","value": Import { attempt: RequestId::new(Uuid::from_u128(0x019eef00000070008000000000000005)).unwrap(), database, digest: ImportDigest::new("a".repeat(64)).unwrap() }}),
         serde_json::json!({"kind":"retire","value":retirement}),
         serde_json::json!({"kind":"retirement","value":retirement}),
     ];
@@ -89,14 +93,15 @@ fn peer_session_lease_frames_exclude_administrative_operations() {
             "peer session admitted {kind}"
         );
     }
-    let claim = serde_json::json!({"kind":"lease","value":{"kind":"claim","value":{"attempt":"00000000-0000-0000-0000-000000000006","database":"00000000-0000-0000-0000-000000000001"}}});
+    let claim = serde_json::json!({"kind":"lease","value":{"kind":"claim","value":{"attempt":"019eef00-0000-7000-8000-000000000006","database":"019eef00-0000-7000-8000-000000000001"}}});
     assert!(matches!(
         serde_json::from_value::<OperationRequest>(claim).unwrap(),
         OperationRequest::Lease(LeaseRequest::Claim { .. })
     ));
     let shell: OperationRequest = OperationRequest::Delivery(DeliveryRequest::Fetch {
         call: CallId {
-            operation: OperationId(Uuid::from_u128(7)),
+            operation: OperationId::new(Uuid::from_u128(0x019eef00000070008000000000000007))
+                .unwrap(),
             step: StepName::new("fetch").unwrap(),
         },
         stream: DeliveryStream::Controls,

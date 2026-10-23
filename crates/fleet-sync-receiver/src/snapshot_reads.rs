@@ -3,6 +3,9 @@ use crate::{
     row_apply::primary_columns, schema_reads::SchemaReads,
 };
 use durable_steps::storage::TransactionScope;
+use fleet_sync_protocol::unit_budget::{
+    MAX_UNIT_BYTES, TARGET_UNIT_BYTES, UnitTooLarge, measure_snapshot_unit, snapshot_size_after_row,
+};
 use fleet_sync_protocol::{SnapshotCursor, SnapshotPage, SnapshotRead};
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
@@ -10,6 +13,12 @@ use sqlx_core::{
 };
 
 pub(crate) const PAGE_SIZE: usize = 256;
+// Four consumed rows plus one lookahead: near-cap native incremental RSS was
+// 55.25 MiB above empty, versus 68.81 MiB at eight (64 MiB proxy ceiling).
+// The Durable Object total peak remains unmeasured; this is a native proxy,
+// measured with ~1.5 MiB rows, not a bound for arbitrary oversized stored rows.
+// See docs/wip/2026-10-19-consumer-fit-w-c41-proof.md.
+const SNAPSHOT_READ_BATCH_ROWS: usize = 4;
 
 /// Read one primary-key ordered page at a fixed acknowledged position.
 // Explicit Send is required by borrowed-scope host dispatch.
@@ -72,40 +81,66 @@ where
         None => 0,
     };
     let table = tables.get(table_index).cloned().unwrap_or_default();
-    let schema_steps = SchemaReads(scope).steps().await?;
-    let mut rows = Vec::new();
-    let mut next = None;
-    if !table.is_empty() {
-        let columns = SchemaReads(scope).table_columns(&table).await?;
-        let keys = primary_columns(&columns);
-        let column_names = columns
-            .iter()
-            .map(|column| column.name.clone())
-            .collect::<Vec<_>>();
-        let column_sql = column_names
-            .iter()
-            .map(|name| quoted_identifier(name))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let key_sql = keys
-            .iter()
-            .map(|column| quoted_identifier(&column.name))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let after = cursor
-            .as_ref()
-            .map(|cursor| cursor.after_key.as_slice())
-            .unwrap_or_default();
-        if !after.is_empty()
-            && (after.len() != keys.len()
-                || after
-                    .iter()
-                    .any(|value| matches!(value, fleet_sync_protocol::SqlValue::Null)))
-        {
-            return Err(ReceiverError::InvalidInput {
-                field: "snapshot cursor key shape mismatch".into(),
-            });
+    let schema_steps = SchemaReads(scope).snapshot_statements().await?;
+    let next_table = tables.get(table_index + 1).map(|table| SnapshotCursor {
+        position: status.acked,
+        table: table.clone(),
+        after_key: Vec::new(),
+    });
+    let page = SnapshotPage {
+        database: status.database,
+        position: status.acked,
+        schema: status.schema.clone(),
+        schema_steps,
+        table: table.clone(),
+        rows: Vec::new(),
+        next: next_table.clone(),
+    };
+    let measured = measure_page(page).map_err(|_| ReceiverError::InvalidInput {
+        field: "snapshot encoding".into(),
+    })?;
+    if measured.encoded_size > MAX_UNIT_BYTES {
+        return Err(UnitTooLarge::SnapshotSchema {
+            encoded_size: measured.encoded_size,
         }
+        .into());
+    }
+    let mut encoded_size = measured.encoded_size;
+    let mut page = measured.unit;
+    if table.is_empty() {
+        return checked_page(page, encoded_size);
+    }
+    let columns = SchemaReads(scope).table_columns(&table).await?;
+    let keys = primary_columns(&columns);
+    let column_names = columns
+        .iter()
+        .map(|column| column.name.clone())
+        .collect::<Vec<_>>();
+    let column_sql = column_names
+        .iter()
+        .map(|name| quoted_identifier(name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let key_sql = keys
+        .iter()
+        .map(|column| quoted_identifier(&column.name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let after = cursor
+        .as_ref()
+        .map(|cursor| cursor.after_key.as_slice())
+        .unwrap_or_default();
+    if !after.is_empty()
+        && (after.len() != keys.len()
+            || after
+                .iter()
+                .any(|value| matches!(value, fleet_sync_protocol::SqlValue::Null)))
+    {
+        return Err(ReceiverError::InvalidInput {
+            field: "snapshot cursor key shape mismatch".into(),
+        });
+    }
+    let read_next = |after: &[fleet_sync_protocol::SqlValue]| {
         let predicate = if after.is_empty() {
             String::new()
         } else {
@@ -114,54 +149,129 @@ where
                 after.iter().map(|_| "?").collect::<Vec<_>>().join(", ")
             )
         };
-        let result = BoundStatement::query(
+        BoundStatement::query(
             format!(
                 "SELECT {column_sql} FROM {}{predicate} ORDER BY {key_sql} LIMIT {}",
                 quoted_identifier(&table),
-                PAGE_SIZE + 1
+                SNAPSHOT_READ_BATCH_ROWS + 1,
             ),
             after.to_vec(),
-            column_names,
+            column_names.clone(),
         )
-        .fetch_rows(scope)
-        .await?;
-        for row in result.iter().take(PAGE_SIZE) {
-            rows.push(
-                columns
-                    .iter()
-                    .map(|column| row.value(&column.name).cloned())
-                    .collect::<Result<Vec<_>, StoreError>>()?,
-            );
+    };
+    #[cfg(test)]
+    READ_QUERIES.with(|count| count.set(count.get() + 1));
+    let mut batch = read_next(after).fetch_rows(scope).await?.into_iter();
+    let mut batch_rows = 0;
+    let mut after = after.to_vec();
+    loop {
+        if batch_rows == SNAPSHOT_READ_BATCH_ROWS {
+            if batch.len() == 0 {
+                break;
+            }
+            drop(batch);
+            #[cfg(test)]
+            READ_QUERIES.with(|count| count.set(count.get() + 1));
+            batch = read_next(&after).fetch_rows(scope).await?.into_iter();
+            batch_rows = 0;
         }
-        if result.len() > PAGE_SIZE {
-            let last = result
-                .get(PAGE_SIZE - 1)
-                .ok_or_else(|| StoreError::Corrupt {
-                    field: "snapshot page".into(),
-                })?;
-            next = Some(SnapshotCursor {
+        let Some(row) = batch.next() else {
+            break;
+        };
+        let key = keys
+            .iter()
+            .map(|column| row.value(&column.name).cloned())
+            .collect::<Result<Vec<_>, StoreError>>()?;
+        let values = columns
+            .iter()
+            .map(|column| row.value(&column.name).cloned())
+            .collect::<Result<Vec<_>, StoreError>>()?;
+        let next = if batch.len() > 0 {
+            Some(SnapshotCursor {
                 position: status.acked,
                 table: table.clone(),
-                after_key: keys
-                    .iter()
-                    .map(|column| last.value(&column.name).cloned())
-                    .collect::<Result<Vec<_>, StoreError>>()?,
-            });
-        } else if let Some(table) = tables.get(table_index + 1) {
-            next = Some(SnapshotCursor {
-                position: status.acked,
-                table: table.clone(),
-                after_key: Vec::new(),
-            });
+                after_key: key.clone(),
+            })
+        } else {
+            next_table.clone()
+        };
+        let candidate_size = snapshot_size_after_row(
+            encoded_size,
+            !page.rows.is_empty(),
+            &values,
+            &page.next,
+            &next,
+        )
+        .map_err(|_| ReceiverError::InvalidInput {
+            field: "snapshot encoding".into(),
+        })?;
+        let previous_next = page.next.take();
+        page.rows.push(values);
+        page.next = next;
+
+        if page.rows.len() > 1 && candidate_size > TARGET_UNIT_BYTES {
+            page.rows.pop();
+            page.next = previous_next;
+            break;
         }
+        if candidate_size > MAX_UNIT_BYTES {
+            let key = key
+                .into_iter()
+                .map(|value| match value {
+                    fleet_sync_protocol::SqlValue::Text(value) => Ok(value),
+                    _ => Err(StoreError::Corrupt {
+                        field: "snapshot row key".into(),
+                    }),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            return Err(UnitTooLarge::Row {
+                table: table.clone(),
+                key,
+                encoded_size: candidate_size,
+            }
+            .into());
+        }
+        encoded_size = candidate_size;
+        if candidate_size >= TARGET_UNIT_BYTES || page.rows.len() == PAGE_SIZE {
+            break;
+        }
+        after = key;
+        batch_rows += 1;
     }
-    Ok(SnapshotRead::Page(Box::new(SnapshotPage {
-        database: status.database,
-        position: status.acked,
-        schema: status.schema,
-        schema_steps,
-        table,
-        rows,
-        next,
-    })))
+    checked_page(page, encoded_size)
 }
+
+fn checked_page(page: SnapshotPage, expected: usize) -> Result<SnapshotRead, ReceiverError> {
+    let measured = measure_page(page).map_err(|_| ReceiverError::InvalidInput {
+        field: "snapshot encoding".into(),
+    })?;
+    if measured.encoded_size != expected {
+        return Err(StoreError::Corrupt {
+            field: "snapshot size changed".into(),
+        }
+        .into());
+    }
+    Ok(SnapshotRead::Page(Box::new(measured.unit)))
+}
+
+fn measure_page(
+    page: SnapshotPage,
+) -> Result<
+    fleet_sync_protocol::unit_budget::MeasuredUnit<SnapshotPage>,
+    fleet_sync_protocol::unit_budget::UnitEncodingError,
+> {
+    #[cfg(test)]
+    FULL_MEASURES.with(|count| count.set(count.get() + 1));
+    measure_snapshot_unit(page)
+}
+#[cfg(test)]
+std::thread_local! { static FULL_MEASURES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "snapshot_sizing_oracle.rs"]
+mod sizing_oracle;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "snapshot_sizing_tests.rs"]
+mod sizing_tests;
+
+#[cfg(test)]
+std::thread_local! { static READ_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }

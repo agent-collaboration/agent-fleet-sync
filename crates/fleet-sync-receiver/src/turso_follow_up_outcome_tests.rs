@@ -20,14 +20,14 @@ async fn permanent_hook_failure_ends_with_its_code_and_is_never_retried() -> Tes
     let directory = tempfile::tempdir()?;
     let host = host(&directory.path().join("consumer.db")).await?;
     host.lose_answer.store(false, Ordering::SeqCst);
-    *host.hook.next_failure.lock().await = Some(FollowUpFailure::Failed {
+    *host.follow_up_delivery.next_failure.lock().await = Some(FollowUpFailure::Failed {
         reason: FailureCode::new("delivery_rejected")?,
     });
     let store = Arc::new(
         Store::open_and_migrate(directory.path().join("copy.db"), Arc::clone(&host)).await?,
     );
-    setup(&store, Arc::clone(&host.hook)).await?;
-    apply_and_admit(&store, Arc::clone(&host.hook), false).await?;
+    setup(&store, Arc::clone(&host.receiver_rules)).await?;
+    apply_and_admit(&store, Arc::clone(&host.receiver_rules), false).await?;
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
 
     let report = engine.drive_due().await?;
@@ -37,7 +37,12 @@ async fn permanent_hook_failure_ends_with_its_code_and_is_never_retried() -> Tes
     assert!(matches!(failure, OperationFailure::Refused { code, .. } if code=="delivery_rejected"));
     host.now.store(1_000_000, Ordering::SeqCst);
     assert!(engine.drive_due().await?.failed.is_empty());
-    assert_eq!(host.hook.follow_up_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        host.follow_up_delivery
+            .follow_up_calls
+            .load(Ordering::SeqCst),
+        1
+    );
     Ok(())
 }
 
@@ -47,12 +52,12 @@ async fn retry_then_done_reuses_one_call_identity_and_completes_one_effect() -> 
     let directory = tempfile::tempdir()?;
     let host = host(&directory.path().join("consumer.db")).await?;
     host.lose_answer.store(false, Ordering::SeqCst);
-    *host.hook.next_failure.lock().await = Some(FollowUpFailure::Retry);
+    *host.follow_up_delivery.next_failure.lock().await = Some(FollowUpFailure::Retry);
     let store = Arc::new(
         Store::open_and_migrate(directory.path().join("copy.db"), Arc::clone(&host)).await?,
     );
-    setup(&store, Arc::clone(&host.hook)).await?;
-    apply_and_admit(&store, Arc::clone(&host.hook), false).await?;
+    setup(&store, Arc::clone(&host.receiver_rules)).await?;
+    apply_and_admit(&store, Arc::clone(&host.receiver_rules), false).await?;
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
 
     let first = engine.drive_due().await?;
@@ -63,8 +68,13 @@ async fn retry_then_done_reuses_one_call_identity_and_completes_one_effect() -> 
     let calls = host.calls.lock().await;
     assert_eq!(calls.len(), 2);
     assert_eq!(calls.first(), calls.last());
-    assert_eq!(host.hook.follow_up_calls.load(Ordering::SeqCst), 2);
-    let mut delivered = host.hook.delivered.lock().await;
+    assert_eq!(
+        host.follow_up_delivery
+            .follow_up_calls
+            .load(Ordering::SeqCst),
+        2
+    );
+    let mut delivered = host.follow_up_delivery.delivered.lock().await;
     let row = sqlx_core::query::query::<sqlx_turso::Turso>(
         "SELECT CAST(count(*) AS TEXT) AS effects FROM delivered",
     )
@@ -112,16 +122,21 @@ async fn saved_failed_answer_survives_journal_reopen_without_calling_the_hook_ag
     let path = directory.path().join("copy.db");
     let host = host(&directory.path().join("consumer.db")).await?;
     host.lose_answer.store(false, Ordering::SeqCst);
-    *host.hook.next_failure.lock().await = Some(FollowUpFailure::Failed {
+    *host.follow_up_delivery.next_failure.lock().await = Some(FollowUpFailure::Failed {
         reason: FailureCode::new("delivery_rejected")?,
     });
     let store = Arc::new(Store::open_and_migrate(&path, Arc::clone(&host)).await?);
-    setup(&store, Arc::clone(&host.hook)).await?;
-    apply_and_admit(&store, Arc::clone(&host.hook), false).await?;
+    setup(&store, Arc::clone(&host.receiver_rules)).await?;
+    apply_and_admit(&store, Arc::clone(&host.receiver_rules), false).await?;
     let mut interrupted = Engine::new(Arc::clone(&store), Arc::clone(&host));
     interrupted.register(InterruptAfterAnswer)?;
     assert_eq!(interrupted.drive_due().await?.retried.len(), 1);
-    assert_eq!(host.hook.follow_up_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        host.follow_up_delivery
+            .follow_up_calls
+            .load(Ordering::SeqCst),
+        1
+    );
     drop(interrupted);
     drop(store);
     host.now.store(1_000_000, Ordering::SeqCst);
@@ -133,7 +148,12 @@ async fn saved_failed_answer_survives_journal_reopen_without_calling_the_hook_ag
     assert!(report.retried.is_empty());
     let (_, failure) = report.failed.first().ok_or("failed operation missing")?;
     assert!(matches!(failure, OperationFailure::Refused { code, .. } if code=="delivery_rejected"));
-    assert_eq!(host.hook.follow_up_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        host.follow_up_delivery
+            .follow_up_calls
+            .load(Ordering::SeqCst),
+        1
+    );
     assert_eq!(host.calls.lock().await.len(), 1);
     Ok(())
 }

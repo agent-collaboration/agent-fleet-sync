@@ -257,6 +257,9 @@ impl<H: Host> WriterJournalScope<'_, H> {
 }
 
 impl<H: Host> JournalScope for WriterJournalScope<'_, H> {
+    async fn running_request_keys(&mut self, kind: &str) -> Result<Vec<RequestKey>, StoreError> {
+        self.journal().running_request_keys(kind).await
+    }
     async fn admit<T: Task>(
         &mut self,
         key: &RequestKey,

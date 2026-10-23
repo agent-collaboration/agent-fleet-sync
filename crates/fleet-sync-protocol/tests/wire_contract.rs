@@ -4,12 +4,75 @@ use fleet_sync_protocol::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+#[test]
+fn entity_identities_refuse_non_v7_and_noncanonical_text() {
+    let canonical = "0197abc0-def0-7123-8123-abcdef012345";
+    let version_four = "0197abc0-def0-4123-8123-abcdef012345";
+    macro_rules! check_identity {
+        ($($identity:ty),+ $(,)?) => {$(
+            assert!(<$identity>::new(Uuid::parse_str(canonical).unwrap()).is_ok());
+            assert!(<$identity>::new(Uuid::parse_str(version_four).unwrap()).is_err());
+            assert!(<$identity>::new(Uuid::parse_str(&canonical.replace("8123", "0123")).unwrap()).is_err());
+            assert!(<$identity>::new(Uuid::nil()).is_err());
+            for spelling in [version_four.to_owned(), canonical.to_uppercase(),
+                canonical.replace('-', ""), format!("{{{canonical}}}"),
+                format!("urn:uuid:{canonical}")] {
+                assert!(serde_json::from_value::<$identity>(serde_json::json!(spelling)).is_err(),
+                    "{} accepted {spelling}", stringify!($identity));
+            }
+            assert!(serde_json::from_value::<$identity>(serde_json::json!(canonical)).is_ok());
+        )+};
+    }
+    check_identity!(
+        DatabaseId,
+        PeerId,
+        ReceiverId,
+        SessionId,
+        RequestId,
+        TransferId,
+        ItemId,
+        SeedAttemptId,
+        InstallId,
+        InstallAttemptId
+    );
+    assert!(ConnectionId::new(Uuid::parse_str(version_four).unwrap()).is_ok());
+    assert!(FrameId::new(Uuid::parse_str(version_four).unwrap()).is_ok());
+    assert!(ConnectionId::new(Uuid::nil()).is_err());
+    assert!(FrameId::new(Uuid::nil()).is_err());
+    assert!(
+        serde_json::from_value::<FrameId>(serde_json::json!(format!("{{{version_four}}}"))).is_ok()
+    );
+}
+
+#[test]
+fn preview_tokens_refuse_noncanonical_or_non_v7_text() {
+    let canonical = "0197abc0-def0-7123-8123-abcdef012345";
+    for spelling in [
+        "".to_owned(),
+        "preview-token".to_owned(),
+        canonical.replace("7123", "4123"),
+        canonical.to_uppercase(),
+        canonical.replace('-', ""),
+        format!("{{{canonical}}}"),
+        format!("urn:uuid:{canonical}"),
+    ] {
+        assert!(PreviewToken::new(&spelling).is_err(), "accepted {spelling}");
+        assert!(serde_json::from_value::<PreviewToken>(serde_json::json!(spelling)).is_err());
+    }
+    let token = PreviewToken::new(canonical).unwrap();
+    assert_eq!(token.as_str(), canonical);
+    assert_eq!(
+        serde_json::to_value(token).unwrap(),
+        serde_json::json!(canonical)
+    );
+}
+
 fn position(sequence: u64) -> ReplicationPosition {
     ReplicationPosition::new(Epoch::new(1).unwrap(), CommitSequence::new(sequence))
 }
 fn contents(annotation: Option<String>) -> PieceContents<String> {
     PieceContents {
-        database: DatabaseId::new(Uuid::from_u128(1)).unwrap(),
+        database: DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000001)).unwrap(),
         epoch: Epoch::new(1).unwrap(),
         continues_from: position(0),
         through: position(1),
@@ -184,9 +247,9 @@ impl ConsumerProtocol for ExampleProtocol {
 #[test]
 fn consumer_payloads_are_typed_and_frames_never_supply_peer_identity() {
     let frame: ClientFrame<ExampleProtocol> = ClientFrame::Request {
-        frame: FrameId::new(Uuid::from_u128(2)).unwrap(),
+        frame: FrameId::new(Uuid::from_u128(0x019eef00000070008000000000000002)).unwrap(),
         body: OperationRequest::Consumer(ConsumerRequest {
-            request: RequestId::new(Uuid::from_u128(3)).unwrap(),
+            request: RequestId::new(Uuid::from_u128(0x019eef00000070008000000000000003)).unwrap(),
             text: "payload".into(),
         }),
     };
@@ -195,8 +258,8 @@ fn consumer_payloads_are_typed_and_frames_never_supply_peer_identity() {
     assert!(
         matches!(decoded, ClientFrame::Request { body: OperationRequest::Consumer(ConsumerRequest { text, .. }), .. } if text == "payload")
     );
-    assert!(serde_json::from_str::<ClientFrame>(r#"{"kind":"hello","value":{"sessionId":"00000000-0000-0000-0000-000000000001","schemaSupport":{"maxVersion":1}}}"#).is_ok());
-    assert!(serde_json::from_str::<ClientFrame>(r#"{"kind":"hello","value":{"sessionId":"00000000-0000-0000-0000-000000000001","schemaSupport":{"maxVersion":1},"peer":"forged"}}"#).is_err());
+    assert!(serde_json::from_str::<ClientFrame>(r#"{"kind":"hello","value":{"sessionId":"019eef00-0000-7000-8000-000000000001","schemaSupport":{"maxVersion":1}}}"#).is_ok());
+    assert!(serde_json::from_str::<ClientFrame>(r#"{"kind":"hello","value":{"sessionId":"019eef00-0000-7000-8000-000000000001","schemaSupport":{"maxVersion":1},"peer":"forged"}}"#).is_err());
 }
 
 #[test]

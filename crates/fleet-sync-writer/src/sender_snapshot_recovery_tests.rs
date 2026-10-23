@@ -39,7 +39,7 @@ async fn install_follower(
     let manifest = snapshot.manifest().await?;
     assert_eq!(source.acked, manifest.position);
     let install = SnapshotInstall {
-        install_id: durable_steps::Uuid::now_v7(),
+        install_id: fleet_sync_protocol::InstallId::new(durable_steps::Uuid::now_v7())?,
         database: manifest.database,
         position: manifest.position,
         schema: manifest.schema.clone(),
@@ -345,7 +345,9 @@ async fn same_follower_resumes_after_snapshot_then_migration_before_and_after_na
                         },
                         current: LeaseStatus {
                             database: fixture.database.database(),
-                            holder: PeerId::new(durable_steps::Uuid::from_u128(2))?,
+                            holder: PeerId::new(durable_steps::Uuid::from_u128(
+                                0x019eef00000070008000000000000002,
+                            ))?,
                             epoch: Epoch::new(1)?,
                             state: LeaseState::Held,
                             expires_at: now.after(Duration::from_secs(600)),

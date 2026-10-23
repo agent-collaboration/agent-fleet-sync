@@ -81,7 +81,9 @@ pub async fn run_server_with_policy(
     tokio::fs::create_dir_all(directory).await?;
     let store = ConsumerStore::open(&directory.join("consumer.db")).await?;
     let consumer = Arc::new(Consumer::new(store.clone())?);
-    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(receiver))?;
+    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+        (receiver) | 0x019eef00000070008000000000000000,
+    ))?;
     let options = ServiceOptions {
         delivery: Some(crate::delivery_limits()?),
         directory: directory.join("service"),
@@ -92,7 +94,6 @@ pub async fn run_server_with_policy(
                 renew_interval: Duration::from_secs(30).min(lease_duration / 3),
             },
             authoritative_receiver: receiver,
-            target_schema_max: 100,
             release_unsent_for: Duration::from_secs(5),
             move_needs_renewal_within: Some(move_renewal_within),
         },
@@ -134,6 +135,8 @@ pub async fn run_server_with_policy(
         consumer,
         authenticator,
         service: service.handle(),
+        schema_drive: Default::default(),
+        copy_drives: Default::default(),
         shutdown: shutdown.clone(),
         source_events,
     });

@@ -25,7 +25,8 @@ async fn every_connection_close_preserves_the_session_and_notice_history() {
             &mut scope,
             &key,
             Notice::LeaseChanged {
-                database: DatabaseId::new(Uuid::from_u128(4)).unwrap(),
+                database: DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000004))
+                    .unwrap(),
             },
         )
         .await
@@ -66,7 +67,7 @@ async fn replacement_ignores_old_frames_hello_and_late_close() {
             .is_empty()
     );
     let request: ClientFrame = ClientFrame::Request {
-        frame: FrameId::new(Uuid::from_u128(5)).unwrap(),
+        frame: FrameId::new(Uuid::from_u128(0x019eef00000070008000000000000005)).unwrap(),
         body: OperationRequest::Consumer(()),
     };
     assert!(
@@ -225,7 +226,7 @@ async fn a_connection_attaches_once_and_both_operation_directions_use_the_bindin
     let connection = binding(2);
     let id = session(3);
     attach(&mut scope, &connection, id).await;
-    let frame = FrameId::new(Uuid::from_u128(4)).unwrap();
+    let frame = FrameId::new(Uuid::from_u128(0x019eef00000070008000000000000004)).unwrap();
     let request: ClientFrame = ClientFrame::Request {
         frame,
         body: OperationRequest::Consumer(()),
@@ -276,7 +277,7 @@ async fn equal_session_ids_on_different_peers_do_not_share_state() {
     let mut scope = SqlScope::new().await;
     let first = binding(2);
     let second = ConnectionBinding {
-        peer: PeerId::new(Uuid::from_u128(9)).unwrap(),
+        peer: PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000009)).unwrap(),
         ..binding(3)
     };
     attach(&mut scope, &first, session(4)).await;
@@ -318,7 +319,7 @@ async fn rollback_discards_session_notices_and_staged_registrations_before_effec
         &mut scope,
         &key,
         Notice::LeaseChanged {
-            database: DatabaseId::new(Uuid::from_u128(4)).unwrap(),
+            database: DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000004)).unwrap(),
         },
     )
     .await
@@ -332,6 +333,8 @@ async fn rollback_discards_session_notices_and_staged_registrations_before_effec
         transaction: pool.begin().await.unwrap(),
         pool,
         registrations: published_registrations,
+        publications: Vec::new(),
+        effects: Vec::new(),
     };
     assert!(
         crate::session_storage::load_session(&mut reopened, &key)
@@ -364,7 +367,7 @@ async fn notice_positions_keep_the_full_u64_range_and_refuse_overflow() {
         .await
         .unwrap();
     let notice = || Notice::LeaseChanged {
-        database: DatabaseId::new(Uuid::from_u128(4)).unwrap(),
+        database: DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000004)).unwrap(),
     };
     publish_notice::<_, NoConsumer>(&mut scope, &key, notice())
         .await

@@ -39,6 +39,7 @@ impl TransactionScope for CopyScope<'_> {
     }
 }
 pub(super) struct TestHost {
+    pub copy_no_effect: Mutex<Option<&'static str>>,
     pub now: AtomicI64,
     pub copies: Mutex<BTreeMap<DatabaseId, TursoConnection>>,
     pub gate: TursoGate,
@@ -77,7 +78,10 @@ impl Clock for TestHost {
 }
 impl IdSource for TestHost {
     fn new_id(&self) -> Uuid {
-        Uuid::from_u128(u128::from(TEST_IDS.fetch_add(1, Ordering::SeqCst)))
+        Uuid::from_u128(
+            (u128::from(TEST_IDS.fetch_add(1, Ordering::SeqCst)))
+                | 0x019eef00000070008000000000000000,
+        )
     }
 }
 impl WakeScheduler for TestHost {
@@ -94,6 +98,7 @@ impl TestHost {
             .await?;
         sqlx_core::raw_sql::raw_sql("CREATE TABLE IF NOT EXISTS calls(call TEXT PRIMARY KEY,request TEXT NOT NULL,answer TEXT NOT NULL); CREATE TABLE IF NOT EXISTS reservations(attempt TEXT PRIMARY KEY,change TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settlements(attempt TEXT PRIMARY KEY,outcome TEXT NOT NULL); CREATE TABLE IF NOT EXISTS releases(call TEXT PRIMARY KEY,request TEXT NOT NULL,answer TEXT NOT NULL); CREATE TABLE IF NOT EXISTS withdrawals(call TEXT PRIMARY KEY,request TEXT NOT NULL,answer TEXT NOT NULL);").execute(&mut gate).await?;
         Ok(Arc::new(Self {
+            copy_no_effect: Mutex::new(None),
             now: AtomicI64::new(1000),
             copies: Mutex::new(BTreeMap::new()),
             gate: TursoGate {
@@ -129,11 +134,14 @@ impl TestHost {
         self.now.fetch_add(1_000_000, Ordering::SeqCst);
     }
     pub async fn copy_connection(&self, database: DatabaseId) -> TestResult<TursoConnection> {
+        let copy_path = self
+            .copy_directory
+            .join(format!("copy-{}.db", database.as_uuid()));
+        self.copy_connection_at(&copy_path).await
+    }
+    pub async fn copy_connection_at(&self, path: &Path) -> TestResult<TursoConnection> {
         let mut connection = TursoConnectOptions::new()
-            .filename(
-                self.copy_directory
-                    .join(format!("copy-{}.db", database.as_uuid())),
-            )
+            .filename(path)
             .create_if_missing(true)
             .foreign_keys(false)
             .connect()
@@ -256,10 +264,14 @@ pub(super) fn storage(error: impl std::fmt::Display) -> durable_steps::StoreErro
     durable_steps::StoreError::backend(error)
 }
 pub(super) fn database() -> TestResult<DatabaseId> {
-    Ok(DatabaseId::new(Uuid::from_u128(100))?)
+    Ok(DatabaseId::new(Uuid::from_u128(
+        0x019eef00000070008000000000000064,
+    ))?)
 }
 pub(super) fn peer(value: u128) -> TestResult<PeerId> {
-    Ok(PeerId::new(Uuid::from_u128(value))?)
+    Ok(PeerId::new(Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))?)
 }
 pub(super) fn config() -> TestResult<RegistryConfig> {
     Ok(RegistryConfig {
@@ -267,15 +279,18 @@ pub(super) fn config() -> TestResult<RegistryConfig> {
             lease_duration: Duration::from_millis(2000),
             renew_interval: Duration::from_millis(500),
         },
-        authoritative_receiver: ReceiverId::new(Uuid::from_u128(101))?,
-        target_schema_max: 10,
+        authoritative_receiver: ReceiverId::new(Uuid::from_u128(
+            0x019eef00000070008000000000000065,
+        ))?,
         release_unsent_for: Duration::from_millis(100),
         move_needs_renewal_within: None,
     })
 }
 pub(super) fn registration(attempt: u128, writer: u128) -> TestResult<Registration> {
     Ok(Registration {
-        attempt: RequestId::new(Uuid::from_u128(attempt))?,
+        attempt: RequestId::new(Uuid::from_u128(
+            (attempt) | 0x019eef00000070008000000000000000,
+        ))?,
         database: database()?,
         writer: peer(writer)?,
         origin: Origin::Empty,
@@ -283,7 +298,9 @@ pub(super) fn registration(attempt: u128, writer: u128) -> TestResult<Registrati
 }
 pub(super) fn import_request(attempt: u128, digest: &str) -> TestResult<Import> {
     Ok(Import {
-        attempt: RequestId::new(Uuid::from_u128(attempt))?,
+        attempt: RequestId::new(Uuid::from_u128(
+            (attempt) | 0x019eef00000070008000000000000000,
+        ))?,
         database: database()?,
         digest: ImportDigest::new(digest.repeat(64))?,
     })
@@ -298,19 +315,38 @@ pub(super) async fn open_store(
         store
             .transaction(|scope| {
                 Box::pin(async move {
-                    sqlx_core::raw_sql::raw_sql(concat!(
-                        include_str!("../migrations/0001_registry_rules.sql"),
-                        "\n",
-                        include_str!("../migrations/0002_holder_workflow.sql"),
-                        "\n",
-                        include_str!("../migrations/0003_cleanup_failure.sql")
-                    ))
-                    .execute(scope.executor())
-                    .await?;
+                    let mut migrator = sqlx_core::migrate::Migrator::with_migrations(
+                        LEASE_MIGRATOR.iter().cloned().collect::<Vec<_>>(),
+                    );
+                    migrator.dangerous_set_table_name("_fleet_sync_registry_migrations");
+                    migrator
+                        .run_direct(None, scope.executor(), false)
+                        .await
+                        .map_err(storage)?;
                     Ok(())
                 })
             })
             .await?;
+        for identity in 1..=10 {
+            let report = ReportSchemaSupport {
+                peer: peer(identity)?,
+                session_id: SessionId::new(Uuid::from_u128(
+                    0x019eef00000070008000000000000100 | identity,
+                ))?,
+                attach_seq: AttachSequence::new(1)?,
+                support: SchemaSupport { max_version: 10 },
+            };
+            store
+                .transaction(move |scope| {
+                    Box::pin(async move {
+                        report_schema_support(scope, &report)
+                            .await
+                            .map_err(storage)?;
+                        Ok(())
+                    })
+                })
+                .await?;
+        }
     }
     Ok(store)
 }

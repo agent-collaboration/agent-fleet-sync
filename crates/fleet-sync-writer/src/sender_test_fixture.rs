@@ -8,7 +8,7 @@ use fleet_sync_protocol::{
     PeerId, Piece, ReceiverId, ReplicationAnswer, TableName,
 };
 use fleet_sync_receiver::{
-    AppliedPiece, ApplyDecision, ApplyFailure, FollowUpDone, FollowUpFailure, ReceiverHook,
+    AppliedPiece, ApplyDecision, ApplyFailure, FollowUpDone, FollowUpFailure, ReceiverRules,
 };
 use sqlx_core::{
     connection::{ConnectOptions, Connection},
@@ -98,7 +98,7 @@ pub(super) struct CopyHook {
     storage_code: HookRefusalCode,
     policy_code: HookRefusalCode,
 }
-impl ReceiverHook<WriterScope<'_>> for CopyHook {
+impl ReceiverRules<WriterScope<'_>> for CopyHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     fn local_migrations(&self) -> &'static [Migration] {
@@ -108,7 +108,7 @@ impl ReceiverHook<WriterScope<'_>> for CopyHook {
         &self,
         scope: &mut WriterScope<'_>,
         applied: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, fleet_sync_protocol::HookRefusal> {
+    ) -> Result<Vec<()>, fleet_sync_receiver::HookError> {
         query::<Turso>("INSERT INTO hook_calls(position) VALUES(?)")
             .bind(applied.through.sequence.value().to_string())
             .execute(&mut *scope.0)
@@ -121,10 +121,14 @@ impl ReceiverHook<WriterScope<'_>> for CopyHook {
             return Err(fleet_sync_protocol::HookRefusal {
                 code: self.policy_code.clone(),
                 detail: "refused after hook write".into(),
-            });
+            }
+            .into());
         }
         Ok(Vec::new())
     }
+}
+impl fleet_sync_receiver::FollowUpHandler for CopyHook {
+    type Item = ();
     async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }
@@ -281,16 +285,19 @@ pub(super) struct SenderFixture {
     pub second: ReceiverId,
 }
 impl SenderFixture {
+    pub(super) fn schema() -> TestResult<SenderSchema> {
+        Ok(SenderSchema {
+            tables: TABLES.as_ref().map_err(Clone::clone)?,
+            migration_count: Arc::new(AtomicUsize::new(2)),
+        })
+    }
     pub async fn open() -> TestResult<Self> {
         let directory = tempfile::tempdir()?;
-        let peer = PeerId::new(Uuid::from_u128(2))?;
+        let peer = PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002))?;
         let database = Arc::new(
             ReplicatedDatabase::create(
                 &directory.path().join("writer.db"),
-                SenderSchema {
-                    tables: TABLES.as_ref().map_err(Clone::clone)?,
-                    migration_count: Arc::new(AtomicUsize::new(2)),
-                },
+                Self::schema()?,
                 peer,
                 LeasePolicy {
                     lease_duration: Duration::from_secs(600),
@@ -316,8 +323,8 @@ impl SenderFixture {
             database.writer_state().await?,
             WriterState::Writing { .. }
         ));
-        let first = ReceiverId::new(Uuid::from_u128(3))?;
-        let second = ReceiverId::new(Uuid::from_u128(4))?;
+        let first = ReceiverId::new(Uuid::from_u128(0x019eef00000070008000000000000003))?;
+        let second = ReceiverId::new(Uuid::from_u128(0x019eef00000070008000000000000004))?;
         let mut files = BTreeMap::new();
         for copy in [first, second] {
             let mut connection = TursoConnectOptions::new()

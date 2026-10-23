@@ -593,6 +593,7 @@ pub(crate) struct StoredTransferAdmissionRow {
     pub request: Option<String>,
     pub requested_by: Option<String>,
     pub admitted_at: Option<String>,
+    pub target_schema: Option<String>,
     pub follow_up: Option<String>,
 }
 pub(crate) fn read_transfer_admission<S>(
@@ -620,6 +621,7 @@ where
                     request: row.try_get("request")?,
                     requested_by: row.try_get("requested_by")?,
                     admitted_at: row.try_get("admitted_at")?,
+                    target_schema: row.try_get("target_schema")?,
                     follow_up: row.try_get("follow_up")?,
                 })
             })
@@ -633,6 +635,7 @@ pub(crate) fn write_transfer_admission<S>(
     request: String,
     requested_by: String,
     admitted_at: String,
+    target_schema: String,
     follow_up: Option<String>,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
@@ -651,6 +654,7 @@ where
         .bind(request)
         .bind(requested_by)
         .bind(admitted_at)
+        .bind(target_schema)
         .bind(follow_up);
         statement.execute(scope.executor()).await?;
         Ok(())
@@ -728,5 +732,203 @@ where
         .bind(attempt);
         statement.execute(scope.executor()).await?;
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredSchemaSupportRow {
+    pub peer: Option<String>,
+    pub record: Option<String>,
+}
+pub(crate) fn read_schema_support<S>(
+    scope: &mut S,
+    peer: String,
+) -> impl std::future::Future<Output = Result<Option<StoredSchemaSupportRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_schema_support.sql"
+        )))
+        .bind(peer);
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(StoredSchemaSupportRow {
+                    peer: row.try_get("peer")?,
+                    record: row.try_get("record")?,
+                })
+            })
+            .transpose()
+    }
+}
+pub(crate) fn write_schema_support<S>(
+    scope: &mut S,
+    peer: String,
+    record: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/write_schema_support.sql"
+        )))
+        .bind(peer)
+        .bind(record);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredHistoryPageRow {
+    pub epoch: Option<String>,
+    pub record: Option<String>,
+}
+pub(crate) fn read_history_page<S>(
+    scope: &mut S,
+    database: String,
+    after: String,
+    before: String,
+    limit: String,
+) -> impl std::future::Future<Output = Result<Vec<StoredHistoryPageRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_history_page.sql"
+        )))
+        .bind(database)
+        .bind(after)
+        .bind(before)
+        .bind(limit);
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredHistoryPageRow {
+                    epoch: row.try_get("epoch")?,
+                    record: row.try_get("record")?,
+                })
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredHistorySuccessorRow {
+    pub epoch: Option<String>,
+    pub record: Option<String>,
+}
+pub(crate) fn read_history_successor<S>(
+    scope: &mut S,
+    database: String,
+    after: String,
+) -> impl std::future::Future<Output = Result<Option<StoredHistorySuccessorRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_history_successor.sql"
+        )))
+        .bind(database)
+        .bind(after);
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(StoredHistorySuccessorRow {
+                    epoch: row.try_get("epoch")?,
+                    record: row.try_get("record")?,
+                })
+            })
+            .transpose()
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredInvalidHistoryEpochRow {
+    pub epoch: Option<String>,
+}
+pub(crate) fn read_invalid_history_epoch<S>(
+    scope: &mut S,
+    database: String,
+) -> impl std::future::Future<Output = Result<Option<StoredInvalidHistoryEpochRow>, sqlx_core::Error>>
++ Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_invalid_history_epoch.sql"
+        )))
+        .bind(database);
+        let row = statement.fetch_optional(scope.executor()).await?;
+        row.as_ref()
+            .map(|row| {
+                Ok(StoredInvalidHistoryEpochRow {
+                    epoch: row.try_get("epoch")?,
+                })
+            })
+            .transpose()
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredHistoryTransferRow {
+    pub attempt: Option<String>,
+}
+pub(crate) fn read_history_transfer<S>(
+    scope: &mut S,
+    database: String,
+    intent: String,
+) -> impl std::future::Future<Output = Result<Vec<StoredHistoryTransferRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_history_transfer.sql"
+        )))
+        .bind(database)
+        .bind(intent);
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredHistoryTransferRow {
+                    attempt: row.try_get("attempt")?,
+                })
+            })
+            .collect()
     }
 }

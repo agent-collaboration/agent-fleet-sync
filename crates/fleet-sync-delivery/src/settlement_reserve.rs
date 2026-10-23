@@ -22,8 +22,14 @@ fn with_acceptance<D: DeliveryTypes>(
         Ok(size)
     }
 }
+fn with_route<D: DeliveryTypes>(size: u64) -> Result<u64, DeliveryConfigError> {
+    size.checked_sub(4)
+        .and_then(|size| size.checked_add(u64::from(D::MAX_STATUS_ROUTE_BYTES)))
+        .ok_or(DeliveryConfigError::ReserveOverflow)
+}
 /// The allowance covers both item headers, one cancel, and the largest owed
-/// report/status pair at the busiest hop. Unit placeholders encode as `null`;
+/// reports and all four historical status targets per item at the busiest hop.
+/// Unit route and receipt placeholders encode as `null`;
 /// their four bytes are replaced by the consumer's canonical size bounds.
 pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryConfigError> {
     let invalid = |error: Box<dyn std::fmt::Display>| DeliveryConfigError::Encoding {
@@ -33,16 +39,31 @@ pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryC
         0x01900000000070008000000000000001,
     ))
     .map_err(|error| invalid(Box::new(error)))?;
-    let peer =
-        PeerId::new(durable_steps::Uuid::from_u128(1)).map_err(|error| invalid(Box::new(error)))?;
+    let peer = PeerId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000001,
+    ))
+    .map_err(|error| invalid(Box::new(error)))?;
     let digest = ItemDigest::try_from("f".repeat(64)).map_err(|error| invalid(Box::new(error)))?;
     let time = SyncTime::from_unix_millis(i64::MIN);
     let mut refusals = vec![
+        DeliveryRefusal::RecipientRefused {
+            code: RecipientRefusalCode::new("R".repeat(MAX_RECIPIENT_REFUSAL_CODE_BYTES))
+                .map_err(|error| invalid(Box::new(error)))?,
+        },
         DeliveryRefusal::ItemConflict {
             existing: digest.clone(),
         },
+        DeliveryRefusal::CancelAlreadyRequested {
+            existing: DeliveryItemRef {
+                item,
+                digest: digest.clone(),
+            },
+        },
         DeliveryRefusal::TooLarge {
             field: DeliverySizeField::Acceptance,
+        },
+        DeliveryRefusal::TooLarge {
+            field: DeliverySizeField::StatusRoute,
         },
     ];
     for kind in [
@@ -120,11 +141,16 @@ pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryC
             }),
             delivered,
         )?);
-        mailbox_header = mailbox_header.max(with_acceptance::<D>(
+        mailbox_header = mailbox_header.max(with_route::<D>(with_acceptance::<D>(
             &MailRecord::<NoDelivery>::Live(LiveMail {
                 id: item,
                 digest: digest.clone(),
                 origin: peer,
+                status_target: CurrentStatusTarget {
+                    peer,
+                    route: (),
+                    rank: Some(u64::MAX),
+                },
                 stream: DeliveryStream::Controls,
                 seq: DeliverySeq::new(u64::MAX),
                 payload: None,
@@ -142,18 +168,24 @@ pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryC
                 capacity_slot: false,
             }),
             delivered,
-        )?);
-        publication = publication.max(with_acceptance::<D>(
-            &StatusPublication {
-                item,
-                status,
-                version: StatusVersion::new(u64::MAX),
-                cancel: Some(CancelResult::TooLate {
-                    at: TooLateAt::Uncertain,
-                }),
-            },
+        )?)?);
+        publication = publication.max(with_route::<D>(with_acceptance::<D>(
+            &(
+                PublicationTarget::StatusStream {
+                    sender: peer,
+                    route: (),
+                },
+                StatusPublication {
+                    item,
+                    status,
+                    version: StatusVersion::new(u64::MAX),
+                    cancel: Some(CancelResult::TooLate {
+                        at: TooLateAt::Uncertain,
+                    }),
+                },
+            ),
             delivered,
-        )?);
+        )?)?);
     }
     let outcomes = [
         RecipientOutcome::Held,
@@ -207,8 +239,10 @@ pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryC
             .ok_or(DeliveryConfigError::ReserveOverflow)?,
         );
     }
+    const PUBLISHED_STATUS_RANKS: u64 = 4;
+    let retained_publications = 2 * PUBLISHED_STATUS_RANKS * publication;
     let headers = (2 * outbox_header)
-        .max(2 * mailbox_header + 2 * publication)
+        .max(2 * mailbox_header + retained_publications)
         .max(2 * inbox_header + 2 * report);
     u32::try_from(headers + cancel_bytes).map_err(|_| DeliveryConfigError::ReserveOverflow)
 }

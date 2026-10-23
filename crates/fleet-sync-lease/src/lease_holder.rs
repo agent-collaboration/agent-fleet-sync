@@ -19,6 +19,36 @@ pub enum HolderError {
     AlreadyGranted,
 }
 
+/// The current lease's epoch and holder relative to a writer file.
+/// Database identity and lease timing are validated by their owning caller.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CurrentLeaseRelation {
+    OlderEpoch,
+    SameWriter,
+    NewerEpoch,
+    OtherWriter,
+}
+
+pub fn current_lease_relation(
+    current: &LeaseStatus,
+    peer: PeerId,
+    epoch: Option<Epoch>,
+) -> CurrentLeaseRelation {
+    if let Some(epoch) = epoch {
+        if current.epoch < epoch {
+            return CurrentLeaseRelation::OlderEpoch;
+        }
+        if current.epoch > epoch {
+            return CurrentLeaseRelation::NewerEpoch;
+        }
+    }
+    if current.holder != peer {
+        CurrentLeaseRelation::OtherWriter
+    } else {
+        CurrentLeaseRelation::SameWriter
+    }
+}
+
 #[derive(Clone, Debug)]
 struct CachedLease {
     epoch: Epoch,
@@ -259,22 +289,21 @@ impl LeaseHolder {
             return Err(HolderError::LeaseMismatch);
         }
         self.registration_granted = true;
-        if let Some(known) = self.known_epoch() {
-            if current.epoch < known {
-                return Ok(());
-            }
-            if current.epoch > known {
+        match current_lease_relation(&current, self.peer, self.known_epoch()) {
+            CurrentLeaseRelation::OlderEpoch => return Ok(()),
+            CurrentLeaseRelation::NewerEpoch => {
                 self.authority = HolderAuthority::Superseded {
                     current: current.epoch,
                 };
                 return Ok(());
             }
-        }
-        if current.holder != self.peer {
-            self.authority = HolderAuthority::Refused(LeaseRefusal::NotWriter {
-                current: Some(current.epoch),
-            });
-            return Ok(());
+            CurrentLeaseRelation::OtherWriter => {
+                self.authority = HolderAuthority::Refused(LeaseRefusal::NotWriter {
+                    current: Some(current.epoch),
+                });
+                return Ok(());
+            }
+            CurrentLeaseRelation::SameWriter => {}
         }
         let activity = match &self.authority {
             HolderAuthority::Draining { transfer, .. } => WriteActivity::Draining {
@@ -354,7 +383,7 @@ impl LeaseHolder {
         transfer: TransferId,
         final_position: Option<ReplicationPosition>,
     ) -> Result<(), HolderError> {
-        if final_position.is_some_and(|position| position.epoch != epoch) {
+        if final_position.is_some_and(|position| position.epoch > epoch) {
             return Err(HolderError::LeaseMismatch);
         }
         if self.known_epoch().is_some_and(|known| known > epoch)
@@ -439,7 +468,7 @@ impl LeaseHolder {
     ) -> Result<(), HolderError> {
         match &mut self.authority {
             HolderAuthority::Lease { cached, activity }
-                if cached.epoch == final_position.epoch
+                if final_position.epoch <= cached.epoch
                     && matches!(&*activity, WriteActivity::Draining { transfer: existing } if *existing == transfer) =>
             {
                 *activity = WriteActivity::Released {

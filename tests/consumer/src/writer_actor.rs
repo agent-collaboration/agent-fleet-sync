@@ -14,7 +14,7 @@ use sqlx_core::{
     connection::{ConnectOptions, Connection},
     migrate::Migrator,
 };
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{collections::VecDeque, path::Path, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     sync::{mpsc, watch},
@@ -79,12 +79,13 @@ pub async fn run_writer(
 ) -> TestResult {
     tokio::fs::create_dir_all(directory).await?;
     let path = directory.join("writer.db");
-    let bootstrap = matches!(mode, "bootstrap" | "resume-bootstrap" | "rename-bootstrap");
-    let peer = PeerId::new(durable_steps::Uuid::from_u128(if bootstrap {
-        4
-    } else {
-        2
-    }))?;
+    let bootstrap = matches!(
+        mode,
+        "bootstrap" | "resume-bootstrap" | "rename-bootstrap" | "bootstrap-current"
+    );
+    let peer = PeerId::new(durable_steps::Uuid::from_u128(
+        (if bootstrap { 4 } else { 2 }) | 0x019eef00000070008000000000000000,
+    ))?;
     let store = ConsumerStore::open(&directory.join("client.db")).await?;
     let client = SessionClient::<_, _, SampleProtocol>::load(
         WebSocketTransport::default(),
@@ -116,6 +117,21 @@ pub async fn run_writer(
         pump.run(pumping).await?;
         Ok(())
     });
+    // Bootstrap makes immediate requests. Transport activation alone is not
+    // readiness; retain any forwarded events for the normal owner below.
+    let mut initial_events = VecDeque::new();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            match incoming.recv().await {
+                Some(ClientEvent::Welcome { .. }) => {
+                    return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+                }
+                Some(event) => initial_events.push_back(event),
+                None => return Err("writer session ended before Welcome".into()),
+            }
+        }
+    })
+    .await??;
     let options = WriterOptions {
         allow_provisional_writes: true,
     };
@@ -159,7 +175,7 @@ pub async fn run_writer(
             )
             .await?
         }
-        "bootstrap" | "resume-bootstrap" | "rename-bootstrap" => {
+        "bootstrap" | "resume-bootstrap" | "rename-bootstrap" | "bootstrap-current" => {
             crate::writer_bootstrap::open(
                 &path,
                 database_id.ok_or("bootstrap needs database identity")?,
@@ -167,6 +183,8 @@ pub async fn run_writer(
                 policy(),
                 if mode == "rename-bootstrap" {
                     SampleSchema::rename_bundle()?
+                } else if mode == "bootstrap-current" {
+                    SampleSchema::new()?
                 } else {
                     SampleSchema::extended()?
                 },
@@ -187,7 +205,9 @@ pub async fn run_writer(
         .await?;
         write.commit().await?;
     }
-    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(3))?;
+    let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000003,
+    ))?;
     let mut runtime =
         NativeWriterRuntime::new(database.clone(), receiver, requests.clone()).await?;
     if bootstrap {
@@ -249,7 +269,7 @@ pub async fn run_writer(
             event=event_stream.recv()=>if let Some(Ok(ReplicationEvents::Acknowledged {through,..}))=event {
                 let current=*acked.borrow();acked.send_replace(Some(current.map_or(through,|old:ReplicationPosition|old.max(through))));
             },
-            event=incoming.recv()=>match event {
+            event=async {match initial_events.pop_front() {Some(event)=>Some(event),None=>incoming.recv().await}}=>match event {
                 Some(ClientEvent::Notice {position,body})=>{
                     if matches!(body,Notice::LeaseChanged {database:changed} if changed==database.database()){runtime.prompt_renewal().await?;}
                     requests.acknowledge_notice(position).await?;

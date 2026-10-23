@@ -20,7 +20,9 @@ async fn saved_answer(
     Ok(serde_json::from_slice(&result)?)
 }
 fn transfer(value: u128) -> TestResult<TransferId> {
-    Ok(TransferId::new(Uuid::from_u128(value))?)
+    Ok(TransferId::new(Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))?)
 }
 
 #[tokio::test]
@@ -44,6 +46,7 @@ async fn superseded_move_finishes_after_reopen_without_resending_its_unanswered_
         let move_id = transfer(801)?;
         let takeover_id = transfer(802)?;
         let request = HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt: move_id,
             database: database()?,
             from_epoch: Epoch::new(1)?,
@@ -82,6 +85,7 @@ async fn superseded_move_finishes_after_reopen_without_resending_its_unanswered_
             &engine,
             &holder_change_request_key(takeover_id)?,
             HolderChangeRequest::Takeover {
+                reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
                 attempt: takeover_id,
                 database: database()?,
                 preview,
@@ -175,6 +179,7 @@ async fn dispatched_old_fence_and_takeover_interleave_without_two_grants_or_epoc
             .await
             .insert(takeover_id, Arc::clone(&new_gate));
         let old_request = HolderChangeRequest::Move {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt: move_id,
             database: database()?,
             from_epoch: Epoch::new(1)?,
@@ -182,6 +187,7 @@ async fn dispatched_old_fence_and_takeover_interleave_without_two_grants_or_epoc
         };
         let old_key = holder_change_request_key(move_id)?;
         let new_request = HolderChangeRequest::Takeover {
+            reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
             attempt: takeover_id,
             database: database()?,
             preview,
@@ -251,6 +257,7 @@ async fn dispatched_old_fence_and_takeover_interleave_without_two_grants_or_epoc
             .await?;
             assert_eq!(preview.fence, Epoch::new(2)?);
             let request = HolderChangeRequest::Takeover {
+                reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
                 attempt: transfer(703)?,
                 database: database()?,
                 preview,

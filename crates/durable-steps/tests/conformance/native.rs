@@ -61,6 +61,73 @@ async fn turso_shared_conformance() -> Result<(), StoreError> {
 }
 
 struct BorrowedTask;
+#[tokio::test]
+async fn reborrowed_scope_shares_parent_sql_journal_commit_and_rollback() -> Result<(), StoreError>
+{
+    use runtime_primitives::Clock;
+    let host = crate::support::TestHost::new();
+    let directory = tempfile::tempdir().map_err(StoreError::backend)?;
+    let store = Arc::new(
+        TursoStore::open_and_migrate(directory.path().join("reborrow.db"), host.clone()).await?,
+    );
+    store
+        .transaction(|scope| {
+            Box::pin(async move {
+                scope
+                    .executor()
+                    .execute(include_str!("migrations/1000_business.sql"))
+                    .await?;
+                Ok(())
+            })
+        })
+        .await?;
+    conformance::reborrow_cases::commit_and_rollback(store, host.now()).await
+}
+
+#[tokio::test]
+async fn no_effect_and_reason_survive_closing_and_reopening_the_actual_journal()
+-> Result<(), StoreError> {
+    let directory = tempfile::tempdir().map_err(StoreError::backend)?;
+    let path = directory.path().join("retry-history.db");
+    let host = crate::support::TestHost::new();
+    let store = Arc::new(TursoStore::open_and_migrate(&path, host.clone()).await?);
+    let operation = conformance::retryable_cases::stage_no_effect(
+        store.clone(),
+        host.clone(),
+        "reopened-no-effect",
+    )
+    .await?;
+    store.transaction(move |scope| Box::pin(async move {
+        use sqlx_core::{query::query, row::Row};
+        use sqlx_turso::Turso;
+        use durable_steps::storage::{CallReach, StepState};
+        let row = query::<Turso>("SELECT intent,may_have_reached FROM _fleet_sync_steps WHERE operation_id=? AND position=0")
+            .bind(operation.as_uuid().to_string()).fetch_one(scope.executor()).await?;
+        let original: String = row.try_get("intent")?;
+        conformance::check(row.try_get::<i64,_>("may_have_reached")? == 1, "NoEffect boolean projection must be 1")?;
+        let value: serde_json::Value = serde_json::from_str(&original).map_err(StoreError::backend)?;
+        for (reach, expected, may) in [("never_sent", CallReach::NeverSent, 0_i64), ("dispatching", CallReach::Dispatching, 1), ("may_have_reached", CallReach::MayHaveReached, 1)] {
+            let mut old = value.clone();
+            let object = old.as_object_mut().ok_or_else(|| StoreError::backend("intent is not an object"))?;
+            object.insert("reach".into(), reach.into());
+            object.insert("last_seen".into(), serde_json::json!(123));
+            object.remove("retry_reason");
+            query::<Turso>("UPDATE _fleet_sync_steps SET intent=?,may_have_reached=? WHERE operation_id=? AND position=0")
+                .bind(old.to_string()).bind(may).bind(operation.as_uuid().to_string()).execute(scope.executor()).await?;
+            let Some(step) = scope.step(operation, 0).await? else { return Err(StoreError::backend("old step missing")); };
+            let StepState::CallPending { attempt, .. } = step.state else { return Err(StoreError::backend("old pending row changed kind")); };
+            conformance::check(attempt.reach == expected && attempt.retry_reason.is_none() && attempt.last_seen == Some(runtime_primitives::SyncTime::from_unix_millis(123)), "legacy reach and last_seen retain their meanings")?;
+        }
+        query::<Turso>("UPDATE _fleet_sync_steps SET intent=?,may_have_reached=1 WHERE operation_id=? AND position=0")
+            .bind(original).bind(operation.as_uuid().to_string()).execute(scope.executor()).await?;
+        Ok(())
+    })).await?;
+    drop(store);
+    let restarted_host = crate::support::TestHost::new();
+    let reopened = Arc::new(TursoStore::open_and_migrate(&path, restarted_host.clone()).await?);
+    conformance::retryable_cases::finish_no_effect(reopened, restarted_host, operation).await
+}
+
 impl Task for BorrowedTask {
     const KIND: &'static str = "borrowed-connection";
     const VERSION: u32 = 1;

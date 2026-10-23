@@ -1,11 +1,30 @@
 use crate::session_storage::{load_session, save_session, sessions_for_peer};
 use crate::*;
+use serde::Deserialize;
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
 };
 
 use fleet_sync_protocol::*;
+
+// Identify correlation independently from the consumer's body types. Unknown
+// fields are checked by ClientFrame's full decoder after this envelope is read.
+#[derive(Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
+enum ClientEnvelope {
+    Hello {},
+    Request { frame: FrameId },
+    Answer { frame: FrameId },
+}
+impl ClientEnvelope {
+    fn frame(&self) -> Option<FrameId> {
+        match self {
+            Self::Hello {} => None,
+            Self::Request { frame } | Self::Answer { frame } => Some(*frame),
+        }
+    }
+}
 
 pub async fn connection_opened<S, P: ConsumerProtocol>(
     scope: &mut S,
@@ -63,9 +82,26 @@ where
         )
         .await;
     }
+    let envelope = match serde_json::from_slice::<ClientEnvelope>(frame) {
+        Ok(envelope) => envelope,
+        Err(_) => return close_connection(scope, binding, CloseReason::MalformedFrame, now).await,
+    };
     let frame = match serde_json::from_slice::<ClientFrame<P>>(frame) {
         Ok(frame) => frame,
-        Err(_) => return close_connection(scope, binding, CloseReason::MalformedFrame, now).await,
+        Err(_) => {
+            if let Some(frame_id) = envelope.frame() {
+                return Ok(vec![SessionEffect::Send {
+                    connection: binding.connection,
+                    frame: ServerFrame::Answer {
+                        frame: frame_id,
+                        body: OperationAnswer::InvalidShape {
+                            field: crate::frame_shape::invalid_shape_field::<P>(frame),
+                        },
+                    },
+                }]);
+            }
+            return close_connection(scope, binding, CloseReason::MalformedFrame, now).await;
+        }
     };
     if let ClientFrame::Hello {
         session_id,
@@ -135,6 +171,16 @@ where
     };
     match registration {
         ConnectionRegistration::Closed => return Ok(Vec::new()),
+        ConnectionRegistration::Attaching {
+            session_id: attached,
+            schema_support: declared,
+            ..
+        } => {
+            if attached != session_id || declared != schema_support {
+                return close_connection(scope, binding, CloseReason::MalformedFrame, now).await;
+            }
+            return Ok(Vec::new());
+        }
         ConnectionRegistration::Attached {
             session_id: attached,
             schema_support: declared,
@@ -196,14 +242,30 @@ where
         connection: binding.connection,
     };
     save_session(scope, &record).await?;
+    let attach_seq = crate::session_storage::next_attach_sequence(scope, binding.peer).await?;
     scope.set_registration(
         &binding.connection,
-        ConnectionRegistration::Attached {
+        ConnectionRegistration::Attaching {
             session_id,
             schema_support,
+            attach_seq,
         },
     );
-    effects.extend(welcome(binding, session_id));
+    scope
+        .publish_schema_support(
+            PublishSchemaSupportInput {
+                connection: binding.connection,
+                expires_at: binding.expires_at,
+                report: ReportSchemaSupport {
+                    peer: binding.peer,
+                    session_id,
+                    attach_seq,
+                    support: schema_support,
+                },
+            },
+            now,
+        )
+        .await?;
     Ok(effects)
 }
 
@@ -233,7 +295,11 @@ where
 {
     let registration = scope.registration(&binding.connection);
     scope.set_registration(&binding.connection, ConnectionRegistration::Closed);
-    if let Some(ConnectionRegistration::Attached { session_id, .. }) = registration {
+    if let Some(
+        ConnectionRegistration::Attached { session_id, .. }
+        | ConnectionRegistration::Attaching { session_id, .. },
+    ) = registration
+    {
         let key = SessionKey {
             peer: binding.peer,
             session_id,

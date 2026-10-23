@@ -3,7 +3,7 @@ CREATE TABLE _fleet_sync_copy (
     record TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_receipts (
-    identity TEXT PRIMARY KEY,
+    identity TEXT NOT NULL PRIMARY KEY,
     digest TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_staged_parts (
@@ -14,14 +14,14 @@ CREATE TABLE _fleet_sync_staged_parts (
     PRIMARY KEY(transaction_key, part_index)
 );
 CREATE TABLE _fleet_sync_fence_receipts (
-    transfer TEXT PRIMARY KEY,
+    transfer TEXT NOT NULL PRIMARY KEY,
     request TEXT NOT NULL,
     old_epoch TEXT NOT NULL UNIQUE,
     old_holder TEXT,
     result TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_schema_steps (
-    version TEXT PRIMARY KEY,
+    version TEXT NOT NULL PRIMARY KEY,
     record TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_seed (
@@ -36,7 +36,7 @@ CREATE TABLE _fleet_sync_seed_pages (
     PRIMARY KEY(seed, page)
 );
 CREATE TABLE _fleet_sync_seed_attempts (
-    attempt TEXT PRIMARY KEY,
+    attempt TEXT NOT NULL PRIMARY KEY,
     record TEXT NOT NULL
 );
 CREATE TABLE _fleet_sync_creation (singleton INTEGER PRIMARY KEY, request TEXT NOT NULL);

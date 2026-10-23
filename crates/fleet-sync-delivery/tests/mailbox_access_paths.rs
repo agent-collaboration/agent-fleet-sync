@@ -39,7 +39,13 @@ async fn history_fixture() -> Fixture {
                         .unwrap(),
                     );
                     mailbox
-                        .submit(peer(1), expired, SyncTime::from_unix_millis(0))
+                        .submit(
+                            peer(1),
+                            expired,
+                            SyncTime::from_unix_millis(0),
+                            "fixture-route".to_owned(),
+                            None,
+                        )
                         .await
                         .map_err(storage_error)?;
                     mailbox
@@ -70,7 +76,13 @@ async fn history_fixture() -> Fixture {
                     .unwrap(),
                 );
                 mailbox
-                    .submit(peer(1), fetched, SyncTime::from_unix_millis(0))
+                    .submit(
+                        peer(1),
+                        fetched,
+                        SyncTime::from_unix_millis(0),
+                        "fixture-route".to_owned(),
+                        None,
+                    )
                     .await
                     .map_err(storage_error)?;
                 mailbox
@@ -99,7 +111,13 @@ async fn history_fixture() -> Fixture {
                         .unwrap(),
                     );
                     mailbox
-                        .submit(peer(1), live, SyncTime::from_unix_millis(0))
+                        .submit(
+                            peer(1),
+                            live,
+                            SyncTime::from_unix_millis(0),
+                            "fixture-route".to_owned(),
+                            None,
+                        )
                         .await
                         .map_err(storage_error)?;
                 }

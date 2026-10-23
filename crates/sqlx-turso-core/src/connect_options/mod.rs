@@ -65,6 +65,11 @@ impl TursoConnectOptions {
         self.0.open_mode == OpenMode::CreateIfMissing
     }
 
+    /// Returns whether read-only engine access was requested
+    pub fn get_read_only(&self) -> bool {
+        self.0.open_mode == OpenMode::ReadOnly
+    }
+
     /// Returns the driver's maximum lock-wait budget for a statement
     pub fn get_busy_timeout(&self) -> Duration {
         self.0.busy_timeout
@@ -105,6 +110,20 @@ impl TursoConnectOptions {
     pub fn create_if_missing(mut self, create_if_missing: bool) -> Self {
         Arc::make_mut(&mut self.0).open_mode = if create_if_missing {
             OpenMode::CreateIfMissing
+        } else {
+            OpenMode::ReadWrite
+        };
+        self
+    }
+
+    /// Requests Turso's read-only mode for an existing file.
+    ///
+    /// This and `create_if_missing` select mutually exclusive modes; the last
+    /// setter wins. File ownership must exclude live writable SDK instances in
+    /// this process because Turso caches them by physical file identity.
+    pub fn read_only(mut self, read_only: bool) -> Self {
+        Arc::make_mut(&mut self.0).open_mode = if read_only {
+            OpenMode::ReadOnly
         } else {
             OpenMode::ReadWrite
         };
@@ -309,7 +328,7 @@ mod tests {
 
     #[test]
     fn adapter_errors_surface_as_configuration_errors() {
-        let error: Error = TursoAdapterError::ReadOnlyUnsupported.into();
+        let error: Error = TursoAdapterError::BatchArgumentsUnsupported.into();
         assert!(matches!(error, Error::Configuration(_)));
     }
 }

@@ -20,7 +20,7 @@ impl EngineConnection {
     pub(crate) async fn open(options: &TursoConnectOptions) -> Result<Self, Error> {
         let path = engine_path(options).await?;
 
-        let engine = open_local(&path).await?;
+        let engine = open_local(&path, options.get_read_only()).await?;
         apply_connection_settings(options, &engine.raw).await?;
         Ok(engine)
     }
@@ -40,16 +40,17 @@ async fn engine_path(options: &TursoConnectOptions) -> Result<String, Error> {
 async fn ensure_file_may_open(open_mode: OpenMode, path: &Path) -> Result<(), Error> {
     match open_mode {
         OpenMode::CreateIfMissing => Ok(()),
-        OpenMode::ReadWrite if tokio::fs::try_exists(path).await? => Ok(()),
-        OpenMode::ReadWrite => Err(Error::Io(io::Error::new(
+        OpenMode::ReadOnly | OpenMode::ReadWrite if tokio::fs::try_exists(path).await? => Ok(()),
+        OpenMode::ReadOnly | OpenMode::ReadWrite => Err(Error::Io(io::Error::new(
             io::ErrorKind::NotFound,
             format!("database file {} does not exist", path.display()),
         ))),
     }
 }
 
-async fn open_local(path: &str) -> Result<EngineConnection, Error> {
+async fn open_local(path: &str, read_only: bool) -> Result<EngineConnection, Error> {
     let database = turso::Builder::new_local(path)
+        .read_only(read_only)
         .build()
         .await
         .map_err(map_turso_error)?;

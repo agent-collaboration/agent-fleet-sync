@@ -12,13 +12,13 @@ axum = { version = "0.8.9", features = ["ws"] }
 fleet-sync-protocol = { path = "../fleet-sync-protocol" }
 fleet-sync-session = { path = "../fleet-sync-session" }
 futures-util.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 tokio-tungstenite = { version = "0.29.0", features = ["rustls-tls-webpki-roots"] }
 
 [dev-dependencies]
 runtime-primitives = { path = "../runtime-primitives", features = ["tokio"] }
 serde.workspace = true
-serde_json.workspace = true
 uuid = { version = "1.26.0", default-features = false, features = ["v7", "serde"] }
 sqlx = { workspace = true, features = ["migrate", "macros"] }
 sqlx-turso.workspace = true

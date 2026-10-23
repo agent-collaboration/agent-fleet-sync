@@ -28,6 +28,22 @@ fn conflict(field: &str) -> LeaseError {
         field: format!("{field} identity has different contents"),
     }
 }
+pub(crate) fn decode_history(
+    database: DatabaseId,
+    epoch: Epoch,
+    record: Option<String>,
+) -> Result<EpochHistory, LeaseError> {
+    let record: EpochHistory = decode(record, "epoch history")?;
+    if record.database != database
+        || record.epoch != epoch
+        || record.ended_at.is_some_and(|end| end.epoch > epoch)
+    {
+        return Err(LeaseError::Corrupt {
+            field: "epoch history".into(),
+        });
+    }
+    Ok(record)
+}
 pub(crate) struct RegistryStorage<'scope, S>(pub &'scope mut S);
 impl<S> RegistryStorage<'_, S>
 where
@@ -40,6 +56,15 @@ where
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
     pub(crate) async fn database_ids(&mut self) -> Result<Vec<DatabaseId>, LeaseError> {
+        Ok(self
+            .database_records()
+            .await?
+            .into_iter()
+            .filter(|record| !matches!(record.lifecycle, DatabaseLifecycle::Retired { .. }))
+            .map(|record| record.database)
+            .collect())
+    }
+    pub(crate) async fn database_records(&mut self) -> Result<Vec<DatabaseRecord>, LeaseError> {
         let mut databases = Vec::new();
         for row in checked_queries::read_databases(self.0).await? {
             let record: DatabaseRecord = decode(row.record, "database record")?;
@@ -48,9 +73,9 @@ where
                     field: "database record".into(),
                 });
             }
-            if !matches!(record.lifecycle, DatabaseLifecycle::Retired { .. }) {
-                databases.push(record.database);
-            }
+            let lease = self.lease(record.database).await?;
+            record.validate_grant(lease.as_ref())?;
+            databases.push(record);
         }
         Ok(databases)
     }
@@ -167,16 +192,7 @@ where
         else {
             return Ok(None);
         };
-        let record: EpochHistory = decode(row.record, "epoch history")?;
-        if record.database != database
-            || record.epoch != epoch
-            || record.ended_at.is_some_and(|end| end.epoch > epoch)
-        {
-            return Err(LeaseError::Corrupt {
-                field: "epoch history".into(),
-            });
-        }
-        Ok(Some(record))
+        decode_history(database, epoch, row.record).map(Some)
     }
     pub(crate) async fn save_history(&mut self, record: &EpochHistory) -> Result<(), LeaseError> {
         if let Some(existing) = self.history(record.database, record.epoch).await?

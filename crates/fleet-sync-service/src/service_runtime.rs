@@ -1,6 +1,6 @@
 use crate::{
     ServiceConsumer, ServiceError, ServiceHost, ServiceOptions,
-    call_router::{RoutedCall, ServiceCalls},
+    call_router::{RoutedCall, ServiceCalls, unreachable},
     registry_host::registry_engine,
     service_state::{ServiceSessions, ServiceState},
     session_handler::ServiceSessionHandler,
@@ -23,12 +23,19 @@ use tokio::{
     task::JoinSet,
 };
 
+#[cfg(test)]
+#[path = "service_shutdown_tests.rs"]
+mod shutdown_tests;
+
 /// The service owns every spawned task. The consumer supplies its authenticated
 /// admin surface separately from the peer session router.
 pub struct FleetService<
     P: ConsumerProtocol,
     C: ServiceConsumer<P>,
-    A: PeerAuthenticator<Material = String>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
 > {
     pub(crate) state: Arc<ServiceState<P, C, A>>,
     pub(crate) sessions: Arc<ServiceSessions<P, C, A>>,
@@ -37,13 +44,22 @@ pub struct FleetService<
 pub struct ServiceHandle<
     P: ConsumerProtocol,
     C: ServiceConsumer<P>,
-    A: PeerAuthenticator<Material = String>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
 > {
     pub(crate) state: Arc<ServiceState<P, C, A>>,
     pub(crate) sessions: Arc<ServiceSessions<P, C, A>>,
 }
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>> Clone
-    for ServiceHandle<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> Clone for ServiceHandle<P, C, A>
 {
     fn clone(&self) -> Self {
         Self {
@@ -52,8 +68,14 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
         }
     }
 }
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    FleetService<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> FleetService<P, C, A>
 {
     pub async fn open(
         options: ServiceOptions,
@@ -110,6 +132,10 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             shutdown: watch::channel(false).0,
             #[cfg(feature = "test-support")]
             install_page_probe: Default::default(),
+            #[cfg(feature = "test-support")]
+            schema_support_probe: Default::default(),
+            #[cfg(feature = "test-support")]
+            retirement_reply_probe: Default::default(),
             copies: Mutex::new(BTreeMap::new()),
             copy_added: Notify::new(),
             delivery: Mutex::new(BTreeMap::new()),
@@ -215,10 +241,17 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             .into_future();
         tokio::pin!(server);
         let mut tasks = JoinSet::new();
+        let session_runner = self.sessions.clone();
+        let session_stop = stopped.clone();
+        tasks.spawn(async move {
+            session_runner
+                .run(session_stop)
+                .await
+                .map_err(ServiceError::rule)
+        });
         let registry_runner = TokioRunner::new(
             self.state.registry_engine.clone(),
             self.state.registry.host(),
-            self.state.registry.engine_lock(),
         );
         let registry_stop = stopped.clone();
         tasks.spawn(async move {
@@ -227,11 +260,8 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 .await
                 .map_err(ServiceError::from)
         });
-        let control_runner = TokioRunner::new(
-            self.state.control_engine.clone(),
-            self.state.control.host(),
-            self.state.control.engine_lock(),
-        );
+        let control_runner =
+            TokioRunner::new(self.state.control_engine.clone(), self.state.control.host());
         let control_stop = stopped.clone();
         tasks.spawn(async move {
             control_runner
@@ -299,6 +329,11 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             let _ = accepted.done.send(());
         }
         self.calls.close();
+        // These calls never entered routing. Release their waiting runners
+        // before joining them; closing the carrier alone retains the replies.
+        while let Ok(call) = self.calls.try_recv() {
+            let _ = call.answer.send(Err(unreachable()));
+        }
         // Calls have deadlines and shutdown is delivered to every object runner.
         // The owner joins them before it closes native connections.
         while let Some(task) = tasks.join_next().await {
@@ -350,11 +385,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                 continue;
             };
             started.insert(key);
-            let runner = TokioRunner::new(
-                owner.engine.clone(),
-                owner.object.host(),
-                owner.object.engine_lock(),
-            );
+            let runner = TokioRunner::new(owner.engine.clone(), owner.object.host());
             let shutdown = shutdown.clone();
             tasks.spawn(async move { runner.run(shutdown).await.map_err(ServiceError::from) });
         }
@@ -377,11 +408,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             if !started.insert(database) {
                 continue;
             }
-            let runner = TokioRunner::new(
-                owner.engine.clone(),
-                owner.object.host(),
-                owner.object.engine_lock(),
-            );
+            let runner = TokioRunner::new(owner.engine.clone(), owner.object.host());
             let shutdown = shutdown.clone();
             tasks.spawn(async move {
                 if let Err(error) = runner.run(shutdown).await {

@@ -97,12 +97,15 @@ where
                         field: "holder rejected the release call identity".into(),
                     });
                 }
-                ReleaseAnswer::ReleaseRefused(ReleaseRefusal::MigrationPending { .. }) => {
+                ReleaseAnswer::ReleaseRefused(ReleaseRefusal::MigrationPending {
+                    migration,
+                    state,
+                }) => {
                     return change_completion::refuse::<C, D>(
                         ctx,
                         request,
                         "release_refused",
-                        HolderChangeRefusal::MigrationPending,
+                        HolderChangeRefusal::MigrationPending { migration, state },
                     )
                     .await;
                 }
@@ -284,7 +287,7 @@ where
                 transfer_id: change_checks::attempt(request),
                 new_epoch,
                 expect: expect.clone(),
-                target_schema_max: config.target_schema_max,
+                target_schema: intent.target_schema,
                 holder: change_checks::target(request),
             },
         )
@@ -314,7 +317,7 @@ where
                     transfer_id: change_checks::attempt(request),
                     new_epoch,
                     expect: expect.clone(),
-                    target_schema_max: config.target_schema_max,
+                    target_schema: intent.target_schema,
                     holder: change_checks::target(request),
                 },
             )
@@ -337,7 +340,7 @@ where
         FenceResult::PreviewStale { .. } => Some(HolderChangeRefusal::PreviewStale),
         FenceResult::SchemaTooNew { store, supported } => Some(HolderChangeRefusal::SchemaTooNew {
             store: store.clone(),
-            supported: Some(*supported),
+            supported: *supported,
         }),
         FenceResult::NotInitialized => Some(HolderChangeRefusal::Unavailable),
         FenceResult::Retired => Some(HolderChangeRefusal::Retired),

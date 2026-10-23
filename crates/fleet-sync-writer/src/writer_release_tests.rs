@@ -55,11 +55,13 @@ fn policy() -> LeasePolicy {
     }
 }
 fn peer() -> TestResult<PeerId> {
-    Ok(PeerId::new(Uuid::from_u128(2))?)
+    Ok(PeerId::new(Uuid::from_u128(
+        0x019eef00000070008000000000000002,
+    ))?)
 }
 fn call() -> TestResult<CallId> {
     Ok(CallId {
-        operation: OperationId(Uuid::from_u128(3)),
+        operation: OperationId::new(Uuid::from_u128(0x019eef00000070008000000000000003))?,
         step: StepName::new("request_release")?,
     })
 }
@@ -67,7 +69,7 @@ fn request(database: fleet_sync_protocol::DatabaseId) -> TestResult<ReleaseReque
     Ok(ReleaseRequest {
         database,
         epoch: Epoch::new(1)?,
-        transfer: TransferId::new(Uuid::from_u128(4))?,
+        transfer: TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000004))?,
     })
 }
 fn renewal(
@@ -96,7 +98,8 @@ pub(super) async fn create(
     path: &std::path::Path,
     clock: Arc<TestClock>,
 ) -> TestResult<Arc<ReplicatedDatabase<ReleaseSchema>>> {
-    let id = fleet_sync_protocol::DatabaseId::new(Uuid::from_u128(1))?;
+    let id =
+        fleet_sync_protocol::DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000001))?;
     let database = Arc::new(
         ReplicatedDatabase::open_with(
             path,
@@ -163,7 +166,7 @@ async fn release_drains_accepted_transaction_and_replays_after_reopen_without_re
         answer
     );
     let mut changed = release_request.clone();
-    changed.transfer = TransferId::new(Uuid::from_u128(5))?;
+    changed.transfer = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000005))?;
     assert_eq!(
         database
             .request_release(&changed, release_call.clone())
@@ -371,7 +374,7 @@ async fn withdrawal_before_release_is_a_tombstone_and_does_not_erase_another_tra
         WithdrawAnswer::Withdrawn
     );
     let mut second = first.clone();
-    second.transfer = TransferId::new(Uuid::from_u128(5))?;
+    second.transfer = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000005))?;
     assert!(
         database
             .withdraw_release(&withdrawal(&second), named_call("withdraw_first")?)

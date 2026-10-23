@@ -18,7 +18,9 @@ pub async fn run_move(
             .await?;
     } else {
         tokio::fs::metadata(&source).await?;
-        let peer = PeerId::new(durable_steps::Uuid::from_u128(2))?;
+        let peer = PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000002,
+        ))?;
         let owner = Arc::new(
             ReplicatedDatabase::open_with(
                 &source,

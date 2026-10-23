@@ -4,7 +4,7 @@ use crate::{
     migration_execution::inspect_present_tables,
     native_file::{PublishError, checkpoint_for_publish},
     snapshot_schema::snapshot_schema,
-    writer_file_record::{WriterFileOrigin, read_file_record, write_file_record},
+    writer_file_record::{RetainedFileOriginKind, read_file_record, write_file_record},
     writer_registration_state::{RegistrationSeed, RegistrationState},
     writer_scope::WriterScope,
 };
@@ -20,6 +20,10 @@ use sqlx_core::{
 };
 use sqlx_turso::{TursoConnectOptions, TursoConnection};
 use std::{path::Path, sync::Arc};
+
+#[cfg(test)]
+#[path = "bootstrap_catalog_tests.rs"]
+mod catalog_tests;
 
 /// The observed grant and the fenced predecessor's final position. The original
 /// request time anchors lease admission across a restart.
@@ -120,7 +124,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(
-            crate::snapshot_schema::replicated_entries(&mut connection, &tables, &layouts)
+            crate::snapshot_schema::replicated_entries(&mut connection, &tables)
                 .await?
                 .into_iter()
                 .map(|entry| entry.name)
@@ -187,7 +191,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             ) -> BoxFuture<'path, Result<(), PublishError>>
             + Send,
     {
-        let mut source = open_closed(live).await?;
+        let live_admission = crate::file_admission::FileAdmission::writer(live, false).await?;
+        let mut source = open_closed(live, &live_admission).await?;
         let record = read_file_record(&mut source).await;
         source.close().await?;
         let record = record?.ok_or_else(|| OpenError::corrupt("bootstrap.source_record"))?;
@@ -198,14 +203,15 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         {
             return Ok(());
         }
-        if record.origin != WriterFileOrigin::Bootstrap
+        if record.origin != RetainedFileOriginKind::Bootstrap
             || record.database != install.database
             || record.start != install.position
             || install.position.epoch >= record.epoch
         {
             return Err(OpenError::corrupt("bootstrap.snapshot_identity").into());
         }
-        let mut staged = open_closed(staging).await?;
+        let staged_admission = crate::file_admission::FileAdmission::writer(staging, false).await?;
+        let mut staged = open_closed(staging, &staged_admission).await?;
         let state = SnapshotInstallRules(&mut WriterScope(&mut staged))
             .state()
             .await;
@@ -214,7 +220,9 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             return Err(fleet_sync_receiver::SnapshotInstallError::NotVerified.into());
         }
         carry(live, staging).await?;
-        let mut staged = open_closed(staging).await?;
+        let converted_admission =
+            crate::file_admission::FileAdmission::writer(staging, false).await?;
+        let mut staged = open_closed(staging, &converted_admission).await?;
         let converted = Self::convert_staged_bootstrap(&mut staged, install, prefix, &tables).await;
         let closed = staged.close().await;
         converted?;
@@ -248,7 +256,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             .ok_or_else(|| OpenError::corrupt("bootstrap.carried_record"))?;
         if record.database != install.database
             || record.start != install.position
-            || record.origin != WriterFileOrigin::Bootstrap
+            || record.origin != RetainedFileOriginKind::Bootstrap
         {
             return Err(OpenError::corrupt("bootstrap.carried_identity").into());
         }
@@ -261,7 +269,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             .map_err(|error| OpenError::Storage {
                 message: error.to_string(),
             })?;
-        let (found, statements) = snapshot_schema(&mut transaction, tables, &layouts).await?;
+        let (found, statements) = snapshot_schema(&mut transaction, tables).await?;
         if found != install.schema {
             return Err(OpenError::BootstrapSchemaMismatch {
                 expected: install.schema.clone(),
@@ -354,7 +362,10 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         Ok(())
     }
 }
-async fn open_closed(path: &Path) -> Result<TursoConnection, OpenError> {
+async fn open_closed(
+    path: &Path,
+    _admission: &crate::file_admission::FileAdmission,
+) -> Result<TursoConnection, OpenError> {
     let mut connection = TursoConnectOptions::new()
         .filename(path)
         .create_if_missing(false)

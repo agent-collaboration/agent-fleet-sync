@@ -121,11 +121,12 @@ async fn cancelling_each_kind_before_check_survives_restart_without_external_deb
         let request = match kind {
             "move" => move_request(id)?,
             "takeover" => HolderChangeRequest::Takeover {
+                reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
                 attempt: id,
                 database: database()?,
                 to: peer(3)?,
                 preview: TakeoverPreview {
-                    token: PreviewToken::new("not consulted on cancel")?,
+                    token: PreviewToken::new("019eef00-0000-7000-8000-000000000002")?,
                     fence: Epoch::new(1)?,
                     acked: ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(0)),
                     holder: peer(1)?,

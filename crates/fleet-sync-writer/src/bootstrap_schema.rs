@@ -89,8 +89,8 @@ pub(crate) async fn validate_prefix(
                 })?;
             guard = StatementGuard::new(inspect_present_tables(&mut transaction, &tables).await?);
         }
-        let layouts = inspect_present_tables(&mut transaction, &tables).await?;
-        let (found, _) = snapshot_schema(&mut transaction, &tables, &layouts).await?;
+        inspect_present_tables(&mut transaction, &tables).await?;
+        let (found, _) = snapshot_schema(&mut transaction, &tables).await?;
         if found != *expected {
             return Err(OpenError::BootstrapSchemaMismatch {
                 expected: expected.clone(),

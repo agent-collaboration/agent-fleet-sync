@@ -25,9 +25,9 @@ fn release_refusal_and_fence_results_keep_their_typed_details() {
 fn takeover_preview_carries_content_fence_and_optional_last_seen_without_clock_expiry() {
     for last_seen in [serde_json::Value::Null, serde_json::json!(1234)] {
         let wire = serde_json::json!({
-            "token": "preview-token", "fence": 2,
+            "token": "019eef00-0000-7000-8000-000000000001", "fence": 2,
             "acked": {"epoch": 2, "sequence": 7},
-            "holder": "00000000-0000-0000-0000-000000000003",
+            "holder": "019eef00-0000-7000-8000-000000000003",
             "lastSeen": last_seen
         });
         let preview: TakeoverPreview = serde_json::from_value(wire.clone()).unwrap();

@@ -22,29 +22,45 @@ pub struct ReadPool {
     pub(crate) pool: crate::native_pool::NativePool,
     pub(crate) readers: Arc<RwLock<()>>,
     statements: Mutex<StatementGuard>,
+    pub(crate) file: Option<Arc<crate::read_copy_file::ReadCopyFile>>,
+}
+
+/// Pins both the reader admission and, for disposable copies, its physical file.
+pub(crate) struct ReadPin {
+    _reader: OwnedRwLockReadGuard<()>,
+    _file: Option<Arc<crate::read_copy_file::ReadCopyFile>>,
 }
 
 impl ReadPool {
+    /// Keep related reads on one transaction until it is closed or dropped.
+    pub async fn begin_read(&self) -> Result<crate::ReadTransaction, sqlx_core::Error> {
+        crate::ReadTransaction::begin(self).await
+    }
+
     #[cfg(test)]
     pub(crate) fn new(pool: Pool<Turso>) -> Self {
-        Self::from_native_pool(crate::native_pool::NativePool::new(pool))
+        Self::from_native_pool(crate::native_pool::NativePool::passive(pool))
     }
     pub(crate) fn from_native_pool(pool: crate::native_pool::NativePool) -> Self {
         Self {
             pool,
             readers: Arc::new(RwLock::new(())),
             statements: Mutex::new(StatementGuard::new(Vec::new())),
+            file: None,
         }
     }
-    fn read_guard(&self) -> Result<OwnedRwLockReadGuard<()>, sqlx_core::Error> {
-        self.readers
+    fn read_guard(&self) -> Result<ReadPin, sqlx_core::Error> {
+        let reader = self
+            .readers
             .clone()
             .try_read_owned()
-            .map_err(|_| sqlx_core::Error::PoolClosed)
+            .map_err(|_| sqlx_core::Error::PoolClosed)?;
+        Ok(ReadPin {
+            _reader: reader,
+            _file: self.file.clone(),
+        })
     }
-    pub(crate) async fn pin(
-        &self,
-    ) -> Result<(Pool<Turso>, OwnedRwLockReadGuard<()>), sqlx_core::Error> {
+    pub(crate) async fn pin(&self) -> Result<(Pool<Turso>, ReadPin), sqlx_core::Error> {
         let guard = self.read_guard()?;
         self.pool.recover().await?;
         Ok((self.pool.current()?, guard))
@@ -140,7 +156,7 @@ impl<'pool> Executor<'pool> for &'pool ReadPool {
 
 struct GuardedReadStream<'query> {
     stream: BoxStream<'query, Result<Either<TursoQueryResult, TursoRow>, sqlx_core::Error>>,
-    _guard: OwnedRwLockReadGuard<()>,
+    _guard: ReadPin,
 }
 impl futures_core::Stream for GuardedReadStream<'_> {
     type Item = Result<Either<TursoQueryResult, TursoRow>, sqlx_core::Error>;

@@ -86,6 +86,43 @@ pub struct TakeoverPreview {
     pub last_seen: Option<SyncTime>,
 }
 
+/// The caller's reason, preserved verbatim in the holder-change record.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct HolderChangeReason(String);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("holder-change reason must contain 1 to 16384 UTF-8 bytes")]
+pub struct HolderChangeReasonError;
+
+impl HolderChangeReason {
+    pub fn new(value: impl Into<String>) -> Result<Self, HolderChangeReasonError> {
+        let value = value.into();
+        if value.is_empty() || value.len() > 16 * 1024 {
+            return Err(HolderChangeReasonError);
+        }
+        Ok(Self(value))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for HolderChangeReason {
+    type Error = HolderChangeReasonError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<HolderChangeReason> for String {
+    fn from(value: HolderChangeReason) -> Self {
+        value.0
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -100,12 +137,14 @@ pub enum HolderChangeRequest {
         database: DatabaseId,
         from_epoch: Epoch,
         to: PeerId,
+        reason: HolderChangeReason,
     },
     Takeover {
         attempt: TransferId,
         database: DatabaseId,
         preview: TakeoverPreview,
         to: PeerId,
+        reason: HolderChangeReason,
     },
     Claim {
         attempt: TransferId,
@@ -133,12 +172,17 @@ pub enum HolderChangeRefusal {
         transfer: TransferId,
     },
     PreviewStale,
-    MigrationPending,
+    MigrationPending {
+        migration: u64,
+        state: crate::MigrationState,
+    },
     SchemaTooNew {
         store: SchemaIdentity,
         supported: Option<u64>,
     },
-    AlreadyHeld,
+    AlreadyHeld {
+        holder: PeerId,
+    },
     NotFound,
     Unavailable,
     EpochUnprovable,

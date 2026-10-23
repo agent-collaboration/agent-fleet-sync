@@ -726,6 +726,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "sqlx",
  "sqlx-core",
  "thiserror",
 ]
@@ -740,6 +741,7 @@ dependencies = [
  "runtime-primitives",
  "serde",
  "serde_json",
+ "sqlx",
  "sqlx-core",
  "thiserror",
  "uuid",
@@ -777,6 +779,7 @@ dependencies = [
  "fleet-sync-query-gen",
  "serde",
  "serde_json",
+ "sqlx",
  "sqlx-core",
  "thiserror",
  "turso_parser",
@@ -882,6 +885,7 @@ dependencies = [
  "fleet-sync-protocol",
  "fleet-sync-session",
  "futures-util",
+ "serde_json",
  "tokio",
  "tokio-tungstenite",
 ]

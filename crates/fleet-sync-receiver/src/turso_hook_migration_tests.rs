@@ -2,7 +2,7 @@
 #![allow(clippy::panic_in_result_fn)]
 use crate::{turso_rule_fixture::*, *};
 use durable_steps::CallId;
-use fleet_sync_protocol::{HookRefusal, NoConsumer};
+use fleet_sync_protocol::NoConsumer;
 use sqlx_core::{
     connection::Connection,
     migrate::{Migration, MigrationType},
@@ -13,7 +13,7 @@ use sqlx_turso::Turso;
 use std::sync::LazyLock;
 
 struct LocalHook(&'static [Migration]);
-impl ReceiverHook<TursoScope<'_>> for LocalHook {
+impl ReceiverRules<TursoScope<'_>> for LocalHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
     fn local_migrations(&self) -> &'static [Migration] {
@@ -23,13 +23,17 @@ impl ReceiverHook<TursoScope<'_>> for LocalHook {
         &self,
         _: &mut TursoScope<'_>,
         _: &AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, HookRefusal> {
+    ) -> Result<Vec<()>, HookError> {
         Ok(Vec::new())
     }
+}
+impl FollowUpHandler for LocalHook {
+    type Item = ();
     async fn follow_up(&self, _: &(), _: CallId) -> Result<FollowUpDone, FollowUpFailure> {
         Ok(FollowUpDone)
     }
 }
+
 fn migration(version: i64, sql: &'static str) -> Migration {
     Migration::new(
         version,

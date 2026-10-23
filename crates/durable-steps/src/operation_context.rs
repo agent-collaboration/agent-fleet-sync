@@ -184,12 +184,12 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
             .transaction(|scope| Box::pin(async move { scope.earliest().await }))
             .await?;
         if let Some(at) = earliest {
-            self.wake_failure = self
-                .host
-                .wake_at(at)
-                .await
-                .err()
-                .or(self.wake_failure.take());
+            let requested = match crate::operation_engine::future_wake_deadline(at, self.host.now())
+            {
+                Ok(at) => self.host.wake_at(at).await,
+                Err(error) => Err(error),
+            };
+            self.wake_failure = requested.err().or(self.wake_failure.take());
         }
         Ok(())
     }

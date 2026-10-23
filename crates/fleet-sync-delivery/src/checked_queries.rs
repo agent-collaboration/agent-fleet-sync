@@ -886,6 +886,25 @@ where
             .collect()
     }
 }
+pub(crate) fn drop_status_events<S>(
+    scope: &mut S,
+    through: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/drop_status_events.sql"
+        )))
+        .bind(through);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
 pub(crate) fn write_report<S>(
     scope: &mut S,
     item_id: String,
@@ -955,6 +974,25 @@ where
         )))
         .bind(item_id)
         .bind(report_seq);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn drop_inbox_reports<S>(
+    scope: &mut S,
+    item_id: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/drop_inbox_reports.sql"
+        )))
+        .bind(item_id);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

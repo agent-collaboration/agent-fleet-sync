@@ -1,5 +1,6 @@
 use crate::{
-    DeliveryError, DeliveryLimits, checked_queries as queries, custody_record::*, inbox_record::*,
+    DeliveryConsumer, DeliveryError, DeliveryLimits, checked_queries as queries, custody_record::*,
+    inbox_record::*,
 };
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::*;
@@ -243,19 +244,31 @@ where
         .await
         .map_err(sql_error)
     }
-    pub(crate) async fn record_outcome(
+    pub(crate) async fn record_outcome<C>(
         &mut self,
         record: &mut InboxRecord<D>,
         outcome: RecipientOutcome<D::Acceptance>,
-    ) -> Result<Option<ReportRef>, DeliveryError> {
-        self.record_header_outcome(&mut record.header, outcome)
+        consumer: &C,
+        observation: Option<&D::LocalObservation>,
+    ) -> Result<Option<ReportRef>, DeliveryError>
+    where
+        C: DeliveryConsumer<S>,
+        C::Protocol: ConsumerProtocol<Delivery = D>,
+    {
+        self.record_header_outcome(&mut record.header, outcome, consumer, observation)
             .await
     }
-    pub(crate) async fn record_header_outcome(
+    pub(crate) async fn record_header_outcome<C>(
         &mut self,
         header: &mut InboxHeader<D>,
         outcome: RecipientOutcome<D::Acceptance>,
-    ) -> Result<Option<ReportRef>, DeliveryError> {
+        consumer: &C,
+        observation: Option<&D::LocalObservation>,
+    ) -> Result<Option<ReportRef>, DeliveryError>
+    where
+        C: DeliveryConsumer<S>,
+        C::Protocol: ConsumerProtocol<Delivery = D>,
+    {
         header.report_seq = header
             .report_seq
             .next()
@@ -266,6 +279,14 @@ where
             report_seq: header.report_seq,
             outcome,
         };
+        consumer
+            .on_outcome(self.scope, header.id, &report.outcome, observation)
+            .await?;
+        if let Some(target) = header.cancel_target {
+            consumer
+                .on_cancel_outcome(self.scope, header.id, target, &report.outcome)
+                .await?;
+        }
         if matches!(header.route, InboxRoute::Local) {
             return Ok(None);
         }

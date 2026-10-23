@@ -30,7 +30,7 @@ async fn bounded_retention_releases_a_follower_but_keeps_every_unacknowledged_au
         .find(|copy| copy.copy == fixture.first)
         .ok_or("no authoritative checkpoint")?
         .acked;
-    let absent = ReceiverId::new(Uuid::from_u128(44))?;
+    let absent = ReceiverId::new(Uuid::from_u128(0x019eef0000007000800000000000002c))?;
     fixture
         .sender
         .add_copy(absent, CopyRole::Follower, start)
@@ -133,10 +133,10 @@ async fn release_stops_writes_but_sender_drains_every_accepted_commit_to_its_fin
             &ReleaseRequest {
                 database: fixture.database.database(),
                 epoch: Epoch::new(1)?,
-                transfer: TransferId::new(Uuid::from_u128(40))?,
+                transfer: TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000028))?,
             },
             CallId {
-                operation: OperationId(Uuid::from_u128(41)),
+                operation: OperationId::new(Uuid::from_u128(0x019eef00000070008000000000000029))?,
                 step: StepName::new("release")?,
             },
         )
@@ -207,14 +207,14 @@ async fn replayed_renewal_can_close_gate_before_authoritative_probe_records_the_
             &mut WriterScope(&mut transaction),
             &FenceRequest {
                 database: fixture.database.database(),
-                transfer_id: TransferId::new(Uuid::from_u128(42))?,
+                transfer_id: TransferId::new(Uuid::from_u128(0x019eef0000007000800000000000002a))?,
                 new_epoch: Epoch::new(2)?,
                 expect: FenceExpectation {
                     epoch: Epoch::new(1)?,
                     acked: status.acked,
                 },
-                target_schema_max: 2,
-                holder: PeerId::new(Uuid::from_u128(43))?,
+                target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 2 }),
+                holder: PeerId::new(Uuid::from_u128(0x019eef0000007000800000000000002b))?,
             },
         )
         .await?;
@@ -239,7 +239,7 @@ async fn replayed_renewal_can_close_gate_before_authoritative_probe_records_the_
                 current: LeaseStatus {
                     database: fixture.database.database(),
                     epoch: Epoch::new(2)?,
-                    holder: PeerId::new(Uuid::from_u128(43))?,
+                    holder: PeerId::new(Uuid::from_u128(0x019eef0000007000800000000000002b))?,
                     state: LeaseState::Held,
                     expires_at: now,
                     remaining_ms: 10_000,

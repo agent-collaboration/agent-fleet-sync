@@ -2,7 +2,7 @@ use crate::{
     ServiceConsumer, ServiceError, ServiceHandle, ServiceHost, ServiceObject, call_router::lost,
     service_state::ServiceState,
 };
-use durable_steps::{CallFailure, Uuid};
+use durable_steps::CallFailure;
 use fleet_sync_protocol::*;
 use fleet_sync_receiver::{
     SnapshotInstallError, SnapshotInstallRules, SnapshotReady, admit_snapshot_follow_ups,
@@ -14,12 +14,18 @@ use fleet_sync_tokio_runner::{
 };
 use runtime_primitives::{Clock, WakeScheduler};
 
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceHandle<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceHandle<P, C, A>
 {
     pub async fn install_snapshot(
         &self,
-        attempt: Uuid,
+        attempt: InstallAttemptId,
         database: DatabaseId,
         source: ReceiverId,
     ) -> Result<InstallHandle<ServiceHost>, ServiceError> {
@@ -38,14 +44,17 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
             .await
             .map_err(ServiceError::rule)
     }
-    pub async fn install_record(&self, install: Uuid) -> Result<InstallRecord, ServiceError> {
+    pub async fn install_record(&self, install: InstallId) -> Result<InstallRecord, ServiceError> {
         Ok(self.state.installs.record(install).await?)
     }
-    pub async fn wait_install(&self, install: Uuid) -> Result<InstallRecord, ServiceError> {
+    pub async fn wait_install(
+        &self,
+        install: InstallAttemptId,
+    ) -> Result<InstallRecord, ServiceError> {
         Ok(self.state.installs.wait_for_attempt(install).await?)
     }
     #[cfg(feature = "test-support")]
-    pub async fn replay_snapshot_ready(&self, install: Uuid) -> Result<(), ServiceError> {
+    pub async fn replay_snapshot_ready(&self, install: InstallId) -> Result<(), ServiceError> {
         match self
             .state
             .install_file(
@@ -66,8 +75,14 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
         }
     }
 }
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceState<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceState<P, C, A>
 {
     pub(crate) async fn install_source(
         &self,
@@ -197,7 +212,7 @@ impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material =
                     .host()
                     .wake_at(copy.object.host().now())
                     .await
-                    .map_err(lost)?;
+                    .unwrap_or_else(|error| tracing::warn!(%error, "copy Ready wake failed after target transaction"));
                 answer
             }
         };

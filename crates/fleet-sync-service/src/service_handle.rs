@@ -13,7 +13,7 @@ use sqlx_turso::Turso;
 pub enum ImportSeedRequest {
     Begin {
         database: DatabaseId,
-        attempt: durable_steps::Uuid,
+        attempt: SeedAttemptId,
     },
     Page(SeedPage),
     Complete(SeedComplete),
@@ -21,8 +21,14 @@ pub enum ImportSeedRequest {
 
 /// Trusted consumer entry points. The peer WebSocket exposes none of these
 /// admin operations; the consumer authenticates its own admin surface.
-impl<P: ConsumerProtocol, C: ServiceConsumer<P>, A: PeerAuthenticator<Material = String>>
-    ServiceHandle<P, C, A>
+impl<
+    P: ConsumerProtocol,
+    C: ServiceConsumer<P>,
+    A: PeerAuthenticator<
+            Material = String,
+            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
+        >,
+> ServiceHandle<P, C, A>
 {
     pub async fn database_statuses(
         &self,

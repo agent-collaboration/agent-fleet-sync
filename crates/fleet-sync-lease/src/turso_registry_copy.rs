@@ -34,6 +34,20 @@ impl TestHost {
         request: serde_json::Value,
         call: CallId,
     ) -> Result<serde_json::Value, CallFailure> {
+        if self
+            .copy_no_effect
+            .lock()
+            .await
+            .is_some_and(|target| target == kind)
+        {
+            // A controlled pre-apply refusal, outside any receiver write. The
+            // native journey separately exercises real damaged-copy rollback.
+            return Err(fleet_sync_receiver::retryable_copy(
+                CopyUnavailableReason::Damaged {
+                    detail: "controlled pre-apply copy refusal".into(),
+                },
+            ));
+        }
         if kind == "fleet-sync.copy-retire" && self.retire_unreachable.load(Ordering::SeqCst) {
             return Err(CallFailure::NotSent {
                 reason: NotSentReason::Unreachable { last_seen: None },
@@ -105,12 +119,19 @@ impl TestHost {
                 fleet_sync_receiver::create_copy(&mut scope, &decode(request)?)
                     .await
                     .map_err(lost)?,
-            )?,
-            "fleet-sync.copy-fence" => encode(
-                fleet_sync_receiver::fence(&mut scope, &decode(request)?)
+            ),
+            "fleet-sync.copy-fence" => {
+                let answer = fleet_sync_receiver::fence(&mut scope, &decode(request)?)
                     .await
-                    .map_err(lost)?,
-            )?,
+                    .map_err(lost)?;
+                if answer == FenceResult::NotInitialized {
+                    Err(fleet_sync_receiver::retryable_copy(
+                        CopyUnavailableReason::Uninitialized,
+                    ))
+                } else {
+                    encode(answer)
+                }
+            }
             "fleet-sync.copy-retire" => encode(
                 fleet_sync_receiver::retire_copy(
                     &mut scope,
@@ -119,12 +140,19 @@ impl TestHost {
                 )
                 .await
                 .map_err(lost)?,
-            )?,
-            "fleet-sync.copy-status" => encode(
-                fleet_sync_receiver::copy_status(&mut scope)
+            ),
+            "fleet-sync.copy-status" => {
+                let answer = fleet_sync_receiver::copy_status(&mut scope)
                     .await
-                    .map_err(lost)?,
-            )?,
+                    .map_err(lost)?;
+                if answer == CopyStatusAnswer::NotInitialized {
+                    Err(fleet_sync_receiver::retryable_copy(
+                        CopyUnavailableReason::Uninitialized,
+                    ))
+                } else {
+                    encode(answer)
+                }
+            }
             "fleet-sync.copy-acknowledged" => {
                 let requested: AwaitAcked = decode(request)?;
                 let answer = match fleet_sync_receiver::copy_status(&mut scope)
@@ -140,7 +168,13 @@ impl TestHost {
                     CopyStatusAnswer::NotInitialized => AwaitAckedAnswer::NotInitialized,
                     CopyStatusAnswer::Retired => AwaitAckedAnswer::Retired,
                 };
-                encode(answer)?
+                if answer == AwaitAckedAnswer::NotInitialized {
+                    Err(fleet_sync_receiver::retryable_copy(
+                        CopyUnavailableReason::Uninitialized,
+                    ))
+                } else {
+                    encode(answer)
+                }
             }
             "fleet-sync.holder-release" => {
                 let requested: ReleaseRequest = decode(request)?;
@@ -163,7 +197,9 @@ impl TestHost {
         if kind == "fleet-sync.copy-retire" && self.lose_retire.swap(false, Ordering::SeqCst) {
             return Err(CallFailure::AnswerLost);
         }
-        Ok(answer)
+        // Return the shared certainty classification only after the actual
+        // receiver transaction commits, matching the production call boundary.
+        answer
     }
     async fn released(
         &self,

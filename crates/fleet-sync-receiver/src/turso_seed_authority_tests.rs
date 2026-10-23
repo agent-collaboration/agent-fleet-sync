@@ -11,10 +11,14 @@ use uuid::Uuid;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 fn writer(id: u128) -> TestResult<PeerId> {
-    Ok(PeerId::new(Uuid::from_u128(id))?)
+    Ok(PeerId::new(Uuid::from_u128(
+        (id) | 0x019eef00000070008000000000000000,
+    ))?)
 }
-fn attempt() -> Uuid {
-    Uuid::from_u128(2300)
+fn attempt() -> TestResult<SeedAttemptId> {
+    Ok(SeedAttemptId::new(Uuid::from_u128(
+        0x019eef000000700080000000000008fc,
+    ))?)
 }
 async fn state(connection: &mut TursoConnection) -> TestResult<Vec<String>> {
     let rows = sqlx_core::query::query::<Turso>("SELECT 'copy:'||record AS value FROM _fleet_sync_copy UNION ALL SELECT 'seed:'||record FROM _fleet_sync_seed UNION ALL SELECT 'attempt:'||attempt||':'||record FROM _fleet_sync_seed_attempts UNION ALL SELECT 'page:'||seed||':'||CAST(page AS TEXT)||':'||digest||':'||payload FROM _fleet_sync_seed_pages UNION ALL SELECT 'creation:'||request FROM _fleet_sync_creation UNION ALL SELECT 'schema:'||type||':'||name||':'||coalesce(sql,'') FROM sqlite_schema ORDER BY value").fetch_all(connection).await?;
@@ -28,7 +32,7 @@ async fn stage(
     authority: &SeedAuthority,
 ) -> TestResult<(SeedPage, SeedComplete)> {
     let mut tx = connection.begin_with("BEGIN IMMEDIATE").await?;
-    let seed = seed_begin(&mut TursoScope(&mut tx), database()?, attempt(), authority).await?;
+    let seed = seed_begin(&mut TursoScope(&mut tx), database()?, attempt()?, authority).await?;
     let (page, done) = snapshot(seed)?;
     assert_eq!(
         seed_page(&mut TursoScope(&mut tx), &page, authority).await?,
@@ -48,7 +52,10 @@ async fn refuse_all(
         current: Some(Epoch::new(epoch)?),
     });
     let before = state(connection).await?;
-    for offered in [attempt(), Uuid::from_u128(2301)] {
+    for offered in [
+        attempt()?,
+        SeedAttemptId::new(Uuid::from_u128(0x019eef000000700080000000000008fd))?,
+    ] {
         let mut tx = connection.begin_with("BEGIN IMMEDIATE").await?;
         assert_eq!(
             seed_begin(&mut TursoScope(&mut tx), database()?, offered, authority)
@@ -155,13 +162,13 @@ async fn seed_authority_comes_from_immutable_creation_after_the_current_holder_c
             &mut TursoScope(&mut tx),
             &FenceRequest {
                 database: database()?,
-                transfer_id: TransferId::new(Uuid::from_u128(2302))?,
+                transfer_id: TransferId::new(Uuid::from_u128(0x019eef000000700080000000000008fe))?,
                 new_epoch: Epoch::new(2)?,
                 expect: FenceExpectation {
                     epoch: Epoch::new(1)?,
                     acked: position()?
                 },
-                target_schema_max: 10,
+                target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 10 }),
                 holder: writer(2)?
             }
         )
@@ -179,7 +186,7 @@ async fn seed_authority_comes_from_immutable_creation_after_the_current_holder_c
     .await?;
     let mut tx = connection.begin_with("BEGIN IMMEDIATE").await?;
     assert_eq!(
-        seed_begin(&mut TursoScope(&mut tx), database()?, attempt(), &original).await?,
+        seed_begin(&mut TursoScope(&mut tx), database()?, attempt()?, &original).await?,
         page.seed
     );
     assert!(

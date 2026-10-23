@@ -11,24 +11,26 @@ use tokio::sync::watch;
 pub type ConsumerHandle = ServiceHandle<SampleProtocol, Consumer, FixtureAuthenticator>;
 #[derive(Serialize, Deserialize)]
 pub enum ControlRequest {
+    Schema(crate::SchemaControlRequest),
+    CopyFault(crate::CopyFaultRequest),
     AttachSource {
         receiver: ReceiverId,
         endpoint: String,
         peer: u128,
     },
     InstallSnapshot {
-        attempt: durable_steps::Uuid,
+        attempt: InstallAttemptId,
         database: DatabaseId,
         source: ReceiverId,
     },
     InstallRecord {
-        install: durable_steps::Uuid,
+        install: InstallId,
     },
     WaitInstall {
-        install: durable_steps::Uuid,
+        install: InstallAttemptId,
     },
     ReplaySnapshotReady {
-        install: durable_steps::Uuid,
+        install: InstallId,
     },
     HoldNextInstallPageAnswer,
     WaitStagedInstallPage,
@@ -106,7 +108,7 @@ pub enum ControlRequest {
     Import(Import),
     SeedBegin {
         database: DatabaseId,
-        attempt: durable_steps::Uuid,
+        attempt: SeedAttemptId,
     },
     SeedPage(Box<SeedPage>),
     SeedComplete(SeedComplete),
@@ -141,6 +143,14 @@ pub enum ControlRequest {
     AllowPeer {
         peer: PeerId,
     },
+    #[cfg(feature = "test-support")]
+    HoldNextRetirementReply,
+    #[cfg(feature = "test-support")]
+    WaitRetirementReplyCommitted,
+    ConfigureStatusRoute {
+        peer: PeerId,
+        route: String,
+    },
     HoldNextVerification {
         peer: PeerId,
     },
@@ -152,6 +162,11 @@ pub enum ControlRequest {
 }
 #[derive(Serialize, Deserialize)]
 pub enum ControlAnswer {
+    Schema(crate::SchemaControlAnswer),
+    CopyWakeFailures(u64),
+    CopyMarker(String),
+    CopyCall(durable_steps::CallId),
+    CopyWaiter(durable_steps::storage::CallReach),
     Install(fleet_sync_tokio_runner::InstallRecord),
     Staged(fleet_sync_receiver::InstallPageReceipt),
     #[cfg(feature = "test-support")]
@@ -203,6 +218,9 @@ pub(crate) struct ControlState {
     pub consumer: Arc<Consumer>,
     pub authenticator: Arc<FixtureAuthenticator>,
     pub service: ConsumerHandle,
+    pub schema_drive: tokio::sync::Mutex<Option<durable_steps::DriveHold>>,
+    pub copy_drives:
+        tokio::sync::Mutex<std::collections::BTreeMap<DatabaseId, durable_steps::DriveHold>>,
     pub shutdown: watch::Sender<bool>,
     pub source_events:
         tokio::sync::mpsc::Sender<fleet_sync_service::AttachedSource<SampleProtocol>>,
@@ -211,6 +229,8 @@ impl ControlState {
     pub async fn dispatch(&self, request: ControlRequest) -> ControlAnswer {
         let result: crate::TestResult<ControlAnswer> = async {
             Ok(match request {
+                ControlRequest::Schema(request) => self.schema_control(request).await?,
+                ControlRequest::CopyFault(request) => self.copy_fault(request).await?,
                 ControlRequest::AttachSource {
                     receiver,
                     endpoint,
@@ -519,6 +539,20 @@ impl ControlState {
                 }
                 ControlRequest::AllowPeer { peer } => {
                     self.authenticator.set_allowed(peer, true).await;
+                    ControlAnswer::Ok
+                }
+                #[cfg(feature = "test-support")]
+                ControlRequest::HoldNextRetirementReply => {
+                    self.service.hold_next_retirement_reply().await?;
+                    ControlAnswer::Ok
+                }
+                #[cfg(feature = "test-support")]
+                ControlRequest::WaitRetirementReplyCommitted => {
+                    self.service.wait_retirement_reply_committed().await?;
+                    ControlAnswer::Ok
+                }
+                ControlRequest::ConfigureStatusRoute { peer, route } => {
+                    self.authenticator.set_route(peer, route).await;
                     ControlAnswer::Ok
                 }
                 ControlRequest::HoldNextVerification { peer } => {

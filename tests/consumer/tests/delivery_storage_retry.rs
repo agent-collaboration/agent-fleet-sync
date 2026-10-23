@@ -93,6 +93,10 @@ async fn submit_begin_failure_keeps_sender_custody_and_recovers_once_without_qua
     .await??;
     assert_body(&mut origin, item).await?;
     let other = enqueue(&mut other_origin, 832, peer(8)?).await?;
+    // Enqueue schedules Submit; wait for relay custody before fetching.
+    other_origin
+        .wait(other, CustodySide::Outbox, "sent")
+        .await?;
     other_recipient
         .command(NodeCommand::Receive {
             stream: DeliveryStream::Items,
@@ -202,6 +206,10 @@ async fn deadline_scan_backend_lock_retries_after_recovery_and_other_mailboxes_s
     other_origin.connect(&relay).await?;
     other_recipient.connect(&relay).await?;
     let other = enqueue(&mut other_origin, 841, peer(8)?).await?;
+    // Enqueue schedules Submit; wait for relay custody before fetching.
+    other_origin
+        .wait(other, CustodySide::Outbox, "sent")
+        .await?;
     other_recipient
         .command(NodeCommand::Receive {
             stream: DeliveryStream::Items,

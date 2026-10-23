@@ -5,7 +5,8 @@ use fleet_sync_lease::LeasePolicy;
 use fleet_sync_protocol::PeerId;
 use fleet_sync_protocol::TableName;
 use fleet_sync_writer::{
-    AdoptionHistory, Migration, OpenError, ReplicatedDatabase, ReplicatedSchema, WriterOptions,
+    AdoptionHistory, Migration, OpenError, ReplicatedDatabase, ReplicatedSchema, RetainedFile,
+    RetainedFileOrigin, RetainedFileOriginKind, WriterOptions,
 };
 use sqlx_core::{
     connection::{ConnectOptions, Connection},
@@ -45,8 +46,10 @@ async fn adopt(path: &std::path::Path) -> Result<ReplicatedDatabase<Schema>, Ope
                 message: error.to_string(),
             })?,
         },
-        PeerId::new(Uuid::from_u128(2)).map_err(|error| OpenError::Storage {
-            message: error.to_string(),
+        PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002)).map_err(|error| {
+            OpenError::Storage {
+                message: error.to_string(),
+            }
         })?,
         LeasePolicy {
             lease_duration: Duration::from_secs(60),
@@ -116,7 +119,31 @@ async fn adoption_preserves_prefix_data_and_captures_only_later_migrations() -> 
     );
     seed_into_real_copy(&directory.path().join("copy.db"), &mut snapshot).await?;
     snapshot.close().await?;
+    let expected = RetainedFileOrigin {
+        database: writer.database(),
+        epoch: fleet_sync_protocol::Epoch::new(1)?,
+        start: fleet_sync_protocol::ReplicationPosition::new(
+            fleet_sync_protocol::Epoch::new(1)?,
+            fleet_sync_protocol::CommitSequence::new(0),
+        ),
+        kind: RetainedFileOriginKind::Adopted,
+    };
     writer.close().await;
+    drop(writer);
+    // Real adoption starts at sequence zero; it must never pass as creation.
+    for _ in 0..2 {
+        let retained = RetainedFile::open_read_only(
+            &path,
+            Schema {
+                tables: TABLES.as_ref().map_err(|error| OpenError::Storage {
+                    message: error.to_string(),
+                })?,
+            },
+        )
+        .await?;
+        assert_eq!(retained.origin(), expected);
+        drop(retained);
+    }
     Ok(())
 }
 
@@ -132,16 +159,19 @@ impl durable_steps::storage::TransactionScope for CopyScope<'_> {
     }
 }
 struct CopyHook;
-impl fleet_sync_receiver::ReceiverHook<CopyScope<'_>> for CopyHook {
+impl fleet_sync_receiver::ReceiverRules<CopyScope<'_>> for CopyHook {
     type Protocol = fleet_sync_protocol::NoConsumer;
     type FollowUp = ();
     async fn on_applied(
         &self,
         _: &mut CopyScope<'_>,
         _: &fleet_sync_receiver::AppliedPiece<'_, ()>,
-    ) -> Result<Vec<()>, fleet_sync_protocol::HookRefusal> {
+    ) -> Result<Vec<()>, fleet_sync_receiver::HookError> {
         Ok(Vec::new())
     }
+}
+impl fleet_sync_receiver::FollowUpHandler for CopyHook {
+    type Item = ();
     async fn follow_up(
         &self,
         _: &(),
@@ -169,7 +199,7 @@ async fn seed_into_real_copy(
     migrator.dangerous_set_table_name("_fleet_sync_copy_migrations");
     migrator.run_direct(None, &mut *transaction, false).await?;
     let manifest = snapshot.manifest().await?;
-    let peer = PeerId::new(Uuid::from_u128(2))?;
+    let peer = PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002))?;
     let authority = fleet_sync_receiver::SeedAuthority::Writer(peer);
     let mut scope = CopyScope(&mut transaction);
     fleet_sync_receiver::initialize_hook(&mut scope, &CopyHook).await?;
@@ -188,7 +218,9 @@ async fn seed_into_real_copy(
     let seed = fleet_sync_receiver::seed_begin(
         &mut scope,
         manifest.database,
-        Uuid::from_u128(10),
+        fleet_sync_protocol::SeedAttemptId::new(Uuid::from_u128(
+            0x019eef0000007000800000000000000a,
+        ))?,
         &authority,
     )
     .await?;

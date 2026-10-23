@@ -244,12 +244,15 @@ where
                             expires_at: now.after(policy.lease_duration),
                         };
                         storage
-                            .save_database(&DatabaseRecord {
-                                database: request.database,
-                                lifecycle: DatabaseLifecycle::Registered {
+                            .save_database(&DatabaseRecord::initial(
+                                request.database,
+                                DatabaseLifecycle::Registered {
                                     origin: request.origin.clone(),
+                                    imported_from: None,
                                 },
-                            })
+                                epoch,
+                                now,
+                            ))
                             .await
                             .map_err(step_error)?;
                         storage

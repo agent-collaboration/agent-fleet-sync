@@ -132,10 +132,7 @@ where
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    let Some(attempt) = uuid::Uuid::parse_str(key.as_str())
-        .ok()
-        .and_then(|id| RequestId::new(id).ok())
-    else {
+    let Some(attempt) = RequestId::try_from(key.as_str().to_owned()).ok() else {
         return Ok(());
     };
     let mut storage = RegistryStorage(scope);

@@ -16,11 +16,17 @@ pub type TursoTransaction<'c> = sqlx_core::transaction::Transaction<'c, Turso>;
 #[derive(Debug)]
 pub struct TursoTransactionManager;
 
+#[cfg(test)]
+mod auto_rollback_tests;
+#[cfg(test)]
+mod rollback_certainty_tests;
+
 impl TransactionManager for TursoTransactionManager {
     type Database = Turso;
 
     async fn begin(conn: &mut TursoConnection, statement: Option<SqlStr>) -> Result<(), Error> {
         conn.clear_pending_rollback().await?;
+        conn.require_live_transaction()?;
 
         if statement.is_some() && conn.transaction_depth() > 0 {
             return Err(Error::InvalidSavePointStatement);
@@ -34,6 +40,7 @@ impl TransactionManager for TursoTransactionManager {
 
     async fn commit(conn: &mut TursoConnection) -> Result<(), Error> {
         conn.clear_pending_rollback().await?;
+        conn.require_certain_transaction("commit")?;
 
         let depth = conn.transaction_depth();
         if depth == 0 {
@@ -53,6 +60,13 @@ impl TransactionManager for TursoTransactionManager {
         if depth == 0 {
             return Ok(());
         }
+
+        if conn.engine_rolled_back() {
+            conn.forget_cached_statements();
+            conn.decrement_transaction_depth();
+            return Ok(());
+        }
+        conn.require_certain_transaction("rollback")?;
 
         let sql = rollback_ansi_transaction_sql(depth);
         // The rollback may restore an earlier schema whose cookie a later change reuses.

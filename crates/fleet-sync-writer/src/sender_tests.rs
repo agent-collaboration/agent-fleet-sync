@@ -219,7 +219,9 @@ async fn bounded_retention_marks_a_lagging_copy_before_releasing_its_history() -
         .find(|copy| copy.copy == fixture.first)
         .ok_or("no first copy")?
         .acked;
-    let absent = ReceiverId::new(durable_steps::Uuid::from_u128(9))?;
+    let absent = ReceiverId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000009,
+    ))?;
     fixture
         .sender
         .add_copy(absent, CopyRole::Follower, before)
@@ -314,14 +316,18 @@ async fn fencing_records_the_rejected_tail_and_preserves_it_until_consumer_ackno
             &mut WriterScope(&mut transaction),
             &FenceRequest {
                 database: fixture.database.database(),
-                transfer_id: TransferId::new(durable_steps::Uuid::from_u128(12))?,
+                transfer_id: TransferId::new(durable_steps::Uuid::from_u128(
+                    0x019eef0000007000800000000000000c,
+                ))?,
                 new_epoch: Epoch::new(2)?,
                 expect: FenceExpectation {
                     epoch: Epoch::new(1)?,
                     acked: status.acked,
                 },
-                target_schema_max: 2,
-                holder: PeerId::new(durable_steps::Uuid::from_u128(13))?,
+                target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 2 }),
+                holder: PeerId::new(durable_steps::Uuid::from_u128(
+                    0x019eef0000007000800000000000000d,
+                ))?,
             },
         )
         .await?;

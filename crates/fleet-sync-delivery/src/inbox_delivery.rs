@@ -23,7 +23,7 @@ where
         &mut self,
         input: DeliveryAttempt,
         kind: DeliveryFailureKind,
-        _consumer: &C,
+        consumer: &C,
         _now: SyncTime,
     ) -> Result<InboxEffects, DeliveryError>
     where
@@ -35,14 +35,20 @@ where
             RecipientOutcome::Refused {
                 reason: DeliveryRefusal::ProcessingFailed { kind },
             },
+            consumer,
         )
         .await
     }
-    pub(crate) async fn record_terminal(
+    pub(crate) async fn record_terminal<C>(
         &mut self,
         input: DeliveryAttempt,
         outcome: RecipientOutcome<D::Acceptance>,
-    ) -> Result<InboxEffects, DeliveryError> {
+        consumer: &C,
+    ) -> Result<InboxEffects, DeliveryError>
+    where
+        C: DeliveryConsumer<S>,
+        C::Protocol: ConsumerProtocol<Delivery = D>,
+    {
         let mut header = self
             .header(input.item)
             .await?
@@ -61,9 +67,10 @@ where
         };
         header.release_requested = false;
         let mut effects = InboxEffects::default();
-        effects
-            .reports
-            .extend(self.record_header_outcome(&mut header, outcome).await?);
+        effects.reports.extend(
+            self.record_header_outcome(&mut header, outcome, consumer, None)
+                .await?,
+        );
         self.update_header(&header).await?;
         Ok(effects)
     }
@@ -83,9 +90,16 @@ where
             {
                 Ok(Some(RecipientOutcome::Held))
             }
-            InboxProgress::Pending { .. }
-            | InboxProgress::Attempting { .. }
-            | InboxProgress::Control { .. } => Ok(None),
+            InboxProgress::Control { outcome } => Ok(match outcome {
+                ControlOutcome::Pending => None,
+                ControlOutcome::Prevented => Some(RecipientOutcome::Prevented { cancel: item }),
+                ControlOutcome::TooLate { at } => {
+                    Some(RecipientOutcome::TooLate { cancel: item, at })
+                }
+                ControlOutcome::Refused { reason } => Some(RecipientOutcome::Refused { reason }),
+                ControlOutcome::Expired => Some(RecipientOutcome::Expired),
+            }),
+            InboxProgress::Pending { .. } | InboxProgress::Attempting { .. } => Ok(None),
         }
     }
     pub async fn check_delivery(
@@ -139,6 +153,7 @@ where
         outcome: LocalOutcome<D::Acceptance>,
         consumer: &C,
         now: SyncTime,
+        observation: Option<&D::LocalObservation>,
     ) -> Result<InboxEffects, DeliveryError>
     where
         C: DeliveryConsumer<S>,
@@ -212,9 +227,10 @@ where
             };
         }
         record.header.release_requested = false;
-        effects
-            .reports
-            .extend(self.record_outcome(&mut record, recipient_outcome).await?);
+        effects.reports.extend(
+            self.record_outcome(&mut record, recipient_outcome, consumer, observation)
+                .await?,
+        );
         self.save(&record).await?;
         let cancellation = self
             .apply_pending_cancel(input.item, consumer, now, false)

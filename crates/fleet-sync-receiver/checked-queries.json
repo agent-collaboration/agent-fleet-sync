@@ -107,13 +107,6 @@
       ]
     },
     {
-      "name": "read_schema_steps",
-      "sql": "sql/read_schema_steps.sql",
-      "row": "StoredSchemaStepRow",
-      "result": "many",
-      "parameters": []
-    },
-    {
       "name": "write_schema_step",
       "sql": "sql/write_schema_step.sql",
       "result": "execute",
@@ -514,15 +507,9 @@
     {
       "name": "read_install_pages",
       "sql": "sql/read_install_pages.sql",
-      "row": "InstallRow",
+      "row": "InstallPageRow",
       "result": "many",
-      "parameters": [
-        {
-          "name": "install_id",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
+      "parameters": []
     },
     {
       "name": "write_install_page",
@@ -563,6 +550,20 @@
       "name": "erase_install_pages",
       "sql": "sql/erase_install_pages.sql",
       "result": "execute",
+      "parameters": []
+    },
+    {
+      "name": "read_inspection_corpus",
+      "sql": "sql/read_inspection_corpus.sql",
+      "row": "InspectionSchemaRow",
+      "result": "many",
+      "parameters": []
+    },
+    {
+      "name": "read_inspection_parts",
+      "sql": "sql/read_inspection_parts.sql",
+      "row": "InspectionPartRow",
+      "result": "many",
       "parameters": []
     }
   ]

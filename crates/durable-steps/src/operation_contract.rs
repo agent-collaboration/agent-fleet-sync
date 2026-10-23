@@ -82,7 +82,20 @@ pub trait AtomicStore: Send + Sync + 'static {
             + 'static;
 }
 
+/// Lend a shorter scope in the parent's transaction, journal and wake owner.
+/// The parent stays exclusively borrowed while the view lives. Implementations
+/// must retain the existing state and owners without starting a transaction.
+pub trait ReborrowScope: AtomicStore {
+    fn reborrow<'s, 't: 's>(scope: &'s mut Self::Scope<'t>) -> Self::Scope<'s>;
+}
+
 pub trait JournalScope: Send {
+    /// Read live work of this kind in the caller's transaction. Finished
+    /// request keys are excluded; absence does not establish past completion.
+    fn running_request_keys(
+        &mut self,
+        kind: &str,
+    ) -> impl Future<Output = Result<Vec<RequestKey>, StoreError>> + Send;
     fn admit<T: Task>(
         &mut self,
         request_key: &RequestKey,

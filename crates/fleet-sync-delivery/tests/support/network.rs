@@ -19,7 +19,7 @@ pub struct TestNetwork {
     pub sender: Weak<TestStore>,
     pub mailbox: Weak<TestStore>,
     pub recipient: Mutex<Weak<TestStore>>,
-    pub status: Weak<TestStore>,
+    pub publications: super::publication_network::PublicationRoutes,
     pub relay_up: AtomicBool,
     pub lose_submit: AtomicBool,
     pub lose_fetch: AtomicBool,
@@ -52,7 +52,7 @@ impl TestNetwork {
         kind: &str,
         target: Value,
         request: Value,
-        _call: CallId,
+        call: CallId,
         now: SyncTime,
     ) -> Result<Value, CallFailure> {
         if kind != DeliverCall::<TestTypes>::KIND && !self.relay_up.load(Ordering::SeqCst) {
@@ -96,7 +96,13 @@ impl TestNetwork {
                                 Box::pin(async move {
                                     let answer =
                                         Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                                            .submit(peer(1), resolved.item, now)
+                                            .submit(
+                                                peer(1),
+                                                resolved.item,
+                                                now,
+                                                "fixture-route".to_owned(),
+                                                None,
+                                            )
                                             .await
                                             .map_err(storage_error)?;
                                     admit_publications::<_, TestTypes, PublishTask>(scope)
@@ -236,7 +242,10 @@ impl TestNetwork {
                         if self.lose_delivery.swap(false, Ordering::SeqCst) {
                             return Err(CallFailure::AnswerLost);
                         }
-                        DeliverCall::<TestTypes>::validated_answer(answer)
+                        DeliverCall::<TestTypes>::validated_answer(LocalDelivery {
+                            outcome: answer,
+                            observation: (),
+                        })
                     }
                     Err(error) => DispatchOutcome::Unresolvable {
                         reason: error.failure_kind(),
@@ -273,37 +282,9 @@ impl TestNetwork {
                 let target: PublishCall<TestTypes> = serde_json::from_value(target).unwrap();
                 let publication: StatusPublication<Acceptance> =
                     serde_json::from_value(request).unwrap();
-                match target.target {
-                    PublicationTarget::StatusStream { sender } => self
-                        .status
-                        .upgrade()
-                        .unwrap()
-                        .transaction(move |scope| {
-                            Box::pin(async move {
-                                StatusStream::<_, TestTypes>::new(scope, sender)
-                                    .append_and_admit::<PublishTask>(&publication)
-                                    .await
-                                    .map_err(storage_error)?;
-                                Ok(())
-                            })
-                        })
-                        .await
-                        .unwrap(),
-                    PublicationTarget::Peer { .. } => self
-                        .sender
-                        .upgrade()
-                        .unwrap()
-                        .transaction(move |scope| {
-                            Box::pin(async move {
-                                Outbox::<_, TestTypes>::new(scope, limits())
-                                    .publish_status(publication)
-                                    .await
-                                    .map_err(storage_error)
-                            })
-                        })
-                        .await
-                        .unwrap(),
-                }
+                self.publications
+                    .dispatch(target.target, publication, call)
+                    .await;
                 if self.lose_publication.swap(false, Ordering::SeqCst) {
                     return Err(CallFailure::AnswerLost);
                 }
@@ -331,7 +312,10 @@ impl NetworkFixture {
             sender: Arc::downgrade(&sender.store),
             mailbox: Arc::downgrade(&mailbox.store),
             recipient: Mutex::new(Arc::downgrade(&recipient.store)),
-            status: Arc::downgrade(&status.store),
+            publications: super::publication_network::PublicationRoutes::new(
+                &sender.store,
+                &status.store,
+            ),
             relay_up: AtomicBool::new(true),
             lose_submit: AtomicBool::new(false),
             lose_fetch: AtomicBool::new(false),
@@ -378,7 +362,11 @@ impl NetworkFixture {
             .register(ReceiveTask::new(config, consumer.clone()))
             .unwrap();
         engine
-            .register(DeliverTask::new(config, consumer, fixture.host.clone()))
+            .register(DeliverTask::new(
+                config.local,
+                consumer,
+                fixture.host.clone(),
+            ))
             .unwrap();
         engine.register(ReportTask::new(config)).unwrap();
         engine.register(PublishTask::new()).unwrap();
@@ -426,9 +414,11 @@ impl NetworkFixture {
 }
 pub fn config() -> DeliveryTaskConfig {
     DeliveryTaskConfig {
-        owner: peer(2),
+        local: LocalDeliveryConfig {
+            owner: peer(2),
+            limits: limits(),
+        },
         relay: peer(3),
-        limits: limits(),
         fetch_items: 10,
         fetch_bytes: 100_000,
     }

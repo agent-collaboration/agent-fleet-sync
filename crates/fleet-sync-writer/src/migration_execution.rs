@@ -15,6 +15,8 @@ use sqlx_core::{
 };
 use sqlx_turso::TursoConnection;
 
+pub(crate) const LOCAL_HISTORY_TABLE: &str = "_fleet_sync_local_migrations";
+
 pub(crate) async fn inspect_present_tables(
     connection: &mut TursoConnection,
     tables: &[TableName],
@@ -194,7 +196,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         }
         let mut local_transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
         let mut local_migrator = Migrator::with_migrations(local);
-        local_migrator.dangerous_set_table_name("_fleet_sync_local_migrations");
+        local_migrator.dangerous_set_table_name(LOCAL_HISTORY_TABLE);
         local_migrator
             .run_direct(None, &mut *local_transaction, false)
             .await
@@ -224,6 +226,9 @@ async fn apply_migration(
                 message: error.to_string(),
             })?;
         let layouts = inspect_present_tables(&mut transaction, tables).await?;
+        // Admit the current replicated catalog inside this transaction, before
+        // schema history or captured changes can become durable.
+        crate::snapshot_schema::snapshot_schema(&mut transaction, tables).await?;
         let encoded_statements = serde_json::to_string(&statements)
             .map_err(|_| OpenError::corrupt("migration.statements"))?;
         let encoded_layout =

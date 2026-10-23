@@ -22,7 +22,9 @@ async fn writer(path: &std::path::Path) -> TestResult<ReplicatedDatabase<EmptySc
     Ok(ReplicatedDatabase::create(
         path,
         EmptySchema,
-        PeerId::new(durable_steps::Uuid::from_u128(2))?,
+        PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000002,
+        ))?,
         LeasePolicy {
             lease_duration: Duration::from_secs(60),
             renew_interval: Duration::from_secs(10),

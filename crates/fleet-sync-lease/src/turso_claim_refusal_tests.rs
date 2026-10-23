@@ -1,4 +1,4 @@
-//! Every typed terminal copy refusal after a claim reservation settles that reservation.
+//! Terminal copy refusals settle the reservation; a missing copy stays pending for repair.
 #![allow(clippy::panic_in_result_fn)]
 use crate::{
     turso_copy_fixture::{push_rows, seed_import},
@@ -13,7 +13,9 @@ use sqlx_turso::Turso;
 use std::{sync::Arc, time::Duration};
 
 fn attempt() -> TestResult<TransferId> {
-    Ok(TransferId::new(Uuid::from_u128(2100))?)
+    Ok(TransferId::new(Uuid::from_u128(
+        0x019eef00000070008000000000000834,
+    ))?)
 }
 fn request() -> TestResult<HolderChangeRequest> {
     Ok(HolderChangeRequest::Claim {
@@ -36,7 +38,7 @@ async fn prepare(engine: &TestEngine, host: &Arc<TestHost>) -> TestResult {
     seed_import(host).await?;
     Ok(())
 }
-async fn retire_copy(host: &TestHost) -> TestResult {
+pub(super) async fn retire_copy(host: &TestHost) -> TestResult {
     let mut copies = host.copies.lock().await;
     let copy = copies.get_mut(&database()?).ok_or("copy missing")?;
     let mut tx = copy.begin_with("BEGIN IMMEDIATE").await?;
@@ -75,13 +77,15 @@ async fn advance_copy(host: &TestHost, to: u64) -> TestResult {
             &mut CopyScope(&mut tx),
             &FenceRequest {
                 database: database()?,
-                transfer_id: TransferId::new(Uuid::from_u128(2200 + u128::from(to)))?,
+                transfer_id: TransferId::new(Uuid::from_u128(
+                    (2200 + u128::from(to)) | 0x019eef00000070008000000000000000
+                ))?,
                 new_epoch: Epoch::new(to)?,
                 expect: FenceExpectation {
                     epoch: status.fence,
                     acked: status.acked
                 },
-                target_schema_max: 10,
+                target_schema: Some(fleet_sync_protocol::SchemaSupport { max_version: 10 }),
                 holder: peer(1)?
             }
         )
@@ -143,9 +147,8 @@ async fn retired_copy_status_settles_a_reserved_claim_without_granting() -> Test
 }
 
 #[tokio::test]
-async fn copy_changes_after_status_settle_unavailable_retired_and_stale_claim_fences() -> TestResult
-{
-    for change in ["missing", "retired", "moved"] {
+async fn retired_and_moved_copies_after_status_settle_the_reserved_claim() -> TestResult {
+    for change in ["retired", "moved"] {
         let directory = tempfile::tempdir()?;
         let host = TestHost::open(directory.path(), true).await?;
         let store = open_store(
@@ -168,14 +171,6 @@ async fn copy_changes_after_status_settle_unavailable_retired_and_stale_claim_fe
         let control = async {
             gate.started.notified().await;
             match change {
-                "missing" => {
-                    // Model a lost copy record after status answered, before fence delivery.
-                    let mut copies = host.copies.lock().await;
-                    let copy = copies.get_mut(&database()?).ok_or("copy missing")?;
-                    sqlx_core::query::query::<Turso>("DELETE FROM _fleet_sync_copy")
-                        .execute(copy)
-                        .await?;
-                }
                 "retired" => retire_copy(&host).await?,
                 "moved" => {
                     advance_copy(&host, 2).await?;
@@ -193,7 +188,6 @@ async fn copy_changes_after_status_settle_unavailable_retired_and_stale_claim_fe
         .await?;
         control?;
         let refusal = match change {
-            "missing" => HolderChangeRefusal::Unavailable,
             "retired" => HolderChangeRefusal::Retired,
             _ => HolderChangeRefusal::PreviewStale,
         };
@@ -265,5 +259,161 @@ async fn a_second_floor_refusal_settles_claim_epoch_unprovable_without_reusing_t
         HolderChangeAnswer::Refused(HolderChangeRefusal::EpochUnprovable)
     );
     assert_eq!(host.calls.lock().await.len(), calls);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_copy_missing_after_status_keeps_the_claim_pending_until_seed_repair() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let registry_path = directory.path().join("registry.db");
+    let host = TestHost::open(directory.path(), true).await?;
+    let store = open_store(&registry_path, host.clone(), true).await?;
+    let running = engine(store.clone(), host.clone())?;
+    prepare(&running, &host).await?;
+    let gate = FenceGate::new();
+    host.fence_gates
+        .lock()
+        .await
+        .insert(attempt()?, gate.clone());
+    let key = holder_change_request_key(attempt()?)?;
+    let offered = request()?;
+    let drive = running.start::<HolderChangeTask<TestStore, Turso>>(&key, offered.clone());
+    let control = async {
+        gate.started.notified().await;
+        let mut copies = host.copies.lock().await;
+        let copy = copies.get_mut(&database()?).ok_or("copy missing")?;
+        sqlx_core::query::query::<Turso>("DELETE FROM _fleet_sync_copy")
+            .execute(copy)
+            .await?;
+        drop(copies);
+        host.fence_gates.lock().await.remove(&attempt()?);
+        gate.proceed.notify_one();
+        Ok::<_, Box<dyn std::error::Error>>(())
+    };
+    let (operation, control) = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(drive, control)
+    })
+    .await?;
+    control?;
+    let operation = operation?;
+    let before = crate::turso_workflow_tests::view(&store, attempt()?).await?;
+    assert!(
+        before.outcome.is_none(),
+        "missing copy fence must not become a terminal refusal"
+    );
+    let waiting = before.waiting.as_ref().ok_or("copy wait missing")?;
+    assert_eq!(waiting.reach, durable_steps::storage::CallReach::NoEffect);
+    assert_eq!(
+        waiting.copy_unavailable,
+        Some(CopyUnavailableReason::Uninitialized)
+    );
+    assert_eq!(host.gate.settlement_count().await?, "0");
+    assert_eq!(
+        scalar(
+            &store,
+            "SELECT CAST(count(*) AS TEXT) AS value FROM _fleet_sync_leases"
+        )
+        .await?,
+        "0"
+    );
+    let floor = scalar(&store, "SELECT epoch AS value FROM _fleet_sync_epoch_floor").await?;
+    let reservation = scalar(&store, "SELECT intent AS value FROM _fleet_sync_transfers").await?;
+    drop(running);
+    drop(store);
+    let reopened = open_store(&registry_path, host.clone(), false).await?;
+    assert_eq!(
+        crate::turso_workflow_tests::view(&reopened, attempt()?).await?,
+        before
+    );
+    // Administrative repair replaces lost copy storage, then uses the actual
+    // receiver's creation and complete seed publication path. No row is forged.
+    let mut repaired = host
+        .copy_connection_at(&directory.path().join("repaired-copy.db"))
+        .await?;
+    let mut transaction = repaired.begin_with("BEGIN IMMEDIATE").await?;
+    assert_eq!(
+        fleet_sync_receiver::create_copy(
+            &mut CopyScope(&mut transaction),
+            &CreateCopy {
+                database: database()?,
+                epoch: Epoch::new(1)?,
+                holder: None,
+                origin: CopyOrigin::AwaitingSeed {
+                    expected_position: None
+                },
+            }
+        )
+        .await?,
+        CreateCopyAnswer::CopyCreated
+    );
+    transaction.commit().await?;
+    let previous = host
+        .copies
+        .lock()
+        .await
+        .insert(database()?, repaired)
+        .ok_or("old copy missing")?;
+    previous.close().await?;
+    let position = seed_import(&host).await?;
+    host.advance();
+    let resumed = engine(reopened.clone(), host.clone())?;
+    assert_eq!(resumed.drive_due().await?.completed, vec![operation]);
+    assert_eq!(
+        resumed
+            .start::<HolderChangeTask<TestStore, Turso>>(&key, offered.clone())
+            .await?,
+        operation
+    );
+    let answer =
+        task_answer::<HolderChangeTask<TestStore, Turso>>(&resumed, &key, offered.clone()).await?;
+    assert!(
+        matches!(answer, HolderChangeAnswer::Granted { epoch, start, .. } if epoch == Epoch::new(2)? && start == position)
+    );
+    assert_eq!(
+        task_answer::<HolderChangeTask<TestStore, Turso>>(&resumed, &key, offered).await?,
+        answer
+    );
+    assert_eq!(host.gate.settlement_count().await?, "1");
+    assert_eq!(
+        host.gate.settlement_outcome(attempt()?).await?,
+        Some(SettleOutcome::Granted {
+            epoch: Epoch::new(2)?
+        })
+    );
+    assert_eq!(
+        scalar(
+            &reopened,
+            "SELECT epoch AS value FROM _fleet_sync_epoch_floor"
+        )
+        .await?,
+        floor
+    );
+    assert_eq!(
+        scalar(
+            &reopened,
+            "SELECT intent AS value FROM _fleet_sync_transfers"
+        )
+        .await?,
+        reservation
+    );
+    assert_eq!(
+        host.calls
+            .lock()
+            .await
+            .iter()
+            .filter(|(kind, _)| kind == "fleet-sync.claim-reservation")
+            .count(),
+        1
+    );
+    let fences = host
+        .calls
+        .lock()
+        .await
+        .iter()
+        .filter(|(kind, _)| kind == "fleet-sync.copy-fence")
+        .map(|(_, call)| call.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(fences.len(), 2);
+    assert_eq!(fences.first(), fences.last());
     Ok(())
 }

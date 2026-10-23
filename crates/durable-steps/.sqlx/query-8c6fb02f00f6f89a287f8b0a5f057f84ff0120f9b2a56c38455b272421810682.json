@@ -1,0 +1,28 @@
+{
+  "db_name": "Turso",
+  "query": "SELECT kind AS \"kind!\", request_key AS \"request_key!\" FROM _fleet_sync_operations WHERE state = 'running';\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind!",
+        "type_info": {
+          "name": "TEXT"
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "request_key!",
+        "type_info": {
+          "name": "TEXT"
+        }
+      }
+    ],
+    "parameters": null,
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "8c6fb02f00f6f89a287f8b0a5f057f84ff0120f9b2a56c38455b272421810682"
+}

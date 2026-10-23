@@ -166,6 +166,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct InstallRecordRow {
+    pub install_id: Option<String>,
     pub record: Option<String>,
     pub record_class: Option<String>,
 }
@@ -190,6 +191,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(InstallRecordRow {
+                    install_id: row.try_get("install_id")?,
                     record: row.try_get("record")?,
                     record_class: row.try_get("record_class")?,
                 })
@@ -218,6 +220,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(InstallRecordRow {
+                    install_id: row.try_get("install_id")?,
                     record: row.try_get("record")?,
                     record_class: row.try_get("record_class")?,
                 })
@@ -246,6 +249,7 @@ where
         rows.iter()
             .map(|row| {
                 Ok(InstallRecordRow {
+                    install_id: row.try_get("install_id")?,
                     record: row.try_get("record")?,
                     record_class: row.try_get("record_class")?,
                 })

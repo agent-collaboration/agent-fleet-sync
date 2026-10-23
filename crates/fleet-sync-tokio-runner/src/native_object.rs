@@ -1,7 +1,7 @@
 use crate::ObjectKey;
 use durable_steps::{
-    AtomicStore, BoxFuture, Host, StoreError,
-    turso_store::{TursoScope, migrate_journal},
+    AtomicStore, BoxFuture, Host, ReborrowScope, StoreError,
+    turso_store::{TursoScope, TursoStore, migrate_journal},
 };
 use sqlx_turso::{
     TursoConnectOptions, TursoConnection,
@@ -41,6 +41,14 @@ pub struct TokioObject<H: Host> {
     /// A publish also acquires this lock before draining the file connection.
     pub(crate) engine_work: Arc<Mutex<()>>,
     committed: watch::Sender<()>,
+    #[cfg(feature = "test-fault")]
+    transaction_fault: std::sync::atomic::AtomicU8,
+}
+#[cfg(feature = "test-fault")]
+#[derive(Clone, Copy, Debug)]
+pub enum TransactionReplyFault {
+    Commit,
+    Rollback,
 }
 pub(crate) enum ObjectConnection {
     Open(Box<TursoConnection>),
@@ -98,6 +106,8 @@ impl<H: Host> ObjectStore<H> {
                     host,
                     engine_work: Arc::new(Mutex::new(())),
                     committed: watch::channel(()).0,
+                    #[cfg(feature = "test-fault")]
+                    transaction_fault: 0.into(),
                 }))
             })
             .await?;
@@ -151,6 +161,16 @@ pub(crate) async fn open_existing_connection(
 }
 
 impl<H: Host> TokioObject<H> {
+    #[cfg(feature = "test-fault")]
+    pub fn lose_transaction_reply_for_test(&self, fault: TransactionReplyFault) {
+        self.transaction_fault.store(
+            match fault {
+                TransactionReplyFault::Commit => 1,
+                TransactionReplyFault::Rollback => 2,
+            },
+            std::sync::atomic::Ordering::SeqCst,
+        );
+    }
     pub fn key(&self) -> &ObjectKey {
         &self.key
     }
@@ -193,6 +213,18 @@ impl<H: Host> TokioObject<H> {
             + Send
             + 'static,
     {
+        self.rule_transaction_inner(run, true).await
+    }
+    async fn rule_transaction_inner<T, E, F>(&self, run: F, _inject_fault: bool) -> Result<T, E>
+    where
+        T: Send + 'static,
+        E: From<StoreError> + Send + 'static,
+        F: for<'scope, 'transaction> FnOnce(
+                &'scope mut TursoScope<'transaction, H>,
+            ) -> BoxFuture<'scope, Result<T, E>>
+            + Send
+            + 'static,
+    {
         let mut guard = self.connection.lock().await;
         let ObjectConnection::Open(connection) = &mut *guard else {
             return Err(StoreError::Aborted {
@@ -210,6 +242,23 @@ impl<H: Host> TokioObject<H> {
                     .commit()
                     .await
                     .map_err(|error| E::from(StoreError::backend(error)))?;
+                #[cfg(feature = "test-fault")]
+                if _inject_fault
+                    && self
+                        .transaction_fault
+                        .compare_exchange(
+                            1,
+                            0,
+                            std::sync::atomic::Ordering::SeqCst,
+                            std::sync::atomic::Ordering::SeqCst,
+                        )
+                        .is_ok()
+                {
+                    return Err(StoreError::backend(
+                        "injected loss of committed transaction reply",
+                    )
+                    .into());
+                }
                 Ok(value)
             }
             Err(error) => {
@@ -217,6 +266,23 @@ impl<H: Host> TokioObject<H> {
                     .rollback()
                     .await
                     .map_err(|error| E::from(StoreError::backend(error)))?;
+                #[cfg(feature = "test-fault")]
+                if _inject_fault
+                    && self
+                        .transaction_fault
+                        .compare_exchange(
+                            2,
+                            0,
+                            std::sync::atomic::Ordering::SeqCst,
+                            std::sync::atomic::Ordering::SeqCst,
+                        )
+                        .is_ok()
+                {
+                    return Err(StoreError::backend(
+                        "injected loss of rolled back transaction reply",
+                    )
+                    .into());
+                }
                 Err(error)
             }
         }
@@ -234,8 +300,14 @@ impl<H: Host> AtomicStore for TokioObject<H> {
             + Send
             + 'static,
     {
-        let result = self.rule_transaction(run).await?;
+        let result = self.rule_transaction_inner(run, false).await?;
         self.notify_committed();
         Ok(result)
+    }
+}
+
+impl<H: Host> ReborrowScope for TokioObject<H> {
+    fn reborrow<'s, 't: 's>(scope: &'s mut Self::Scope<'t>) -> Self::Scope<'s> {
+        <TursoStore<H> as ReborrowScope>::reborrow(scope)
     }
 }

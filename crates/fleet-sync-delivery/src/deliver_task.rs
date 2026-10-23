@@ -11,14 +11,15 @@ use sqlx_core::{
 use std::{marker::PhantomData, sync::Arc};
 
 pub struct DeliverLocally<S, Db, D, C> {
-    config: DeliveryTaskConfig,
+    config: LocalDeliveryConfig,
     consumer: Arc<C>,
     clock: Arc<dyn runtime_primitives::Clock>,
     store: TaskTypes<S, Db, D>,
 }
+pub(crate) const DELIVER_LOCALLY_KIND: &str = "fleet-sync.delivery.deliver-locally";
 impl<S, Db, D, C> DeliverLocally<S, Db, D, C> {
     pub fn new(
-        config: DeliveryTaskConfig,
+        config: LocalDeliveryConfig,
         consumer: Arc<C>,
         clock: Arc<dyn runtime_primitives::Clock>,
     ) -> Self {
@@ -44,8 +45,8 @@ where
     for<'t> C: DeliveryConsumer<S::Scope<'t>>,
     for<'t> <C as DeliveryConsumer<S::Scope<'t>>>::Protocol: ConsumerProtocol<Delivery = D>,
 {
-    const KIND: &'static str = "fleet-sync.delivery.deliver-locally";
-    const VERSION: u32 = 1;
+    const KIND: &'static str = DELIVER_LOCALLY_KIND;
+    const VERSION: u32 = 2;
     const KEEP_RESULT: bool = false;
     type Store = S;
     type Input = DeliveryAttempt;
@@ -74,11 +75,11 @@ where
                 })
             })
             .await?;
-        let outcome = match check {
+        let (outcome, observation) = match check {
             DeliveryCheck::Finish { outcome: None } => return Ok(()),
             DeliveryCheck::Finish {
                 outcome: Some(RecipientOutcome::Expired),
-            } => LocalOutcome::Expired,
+            } => (LocalOutcome::Expired, None),
             DeliveryCheck::Finish { .. } | DeliveryCheck::Wait { .. } => {
                 return Err(OperationFailure::InvalidPayload {
                     message: "invalid saved delivery check".into(),
@@ -88,7 +89,13 @@ where
                 .call(step("deliver")?, DeliverCall::<D>::new(), reference)
                 .await?
             {
-                DispatchOutcome::Answered(outcome) => outcome,
+                DispatchOutcome::Answered(LocalDeliveryAnswer::Observed {
+                    outcome,
+                    observation,
+                }) => (outcome, Some(observation)),
+                DispatchOutcome::Answered(LocalDeliveryAnswer::Uncertain) => {
+                    (LocalOutcome::Uncertain, None)
+                }
                 DispatchOutcome::Unresolvable { reason } => {
                     return Err(OperationFailure::Refused {
                         code: reason.as_str().to_owned(),
@@ -102,7 +109,7 @@ where
         ctx.local(step("outcome")?, move |scope| {
             Box::pin(async move {
                 let effects = Inbox::<_, D>::new(scope, config.owner, config.limits)
-                    .complete_attempt(input, outcome, consumer.as_ref(), now)
+                    .complete_attempt(input, outcome, consumer.as_ref(), now, observation.as_ref())
                     .await
                     .map_err(step_error)?;
                 admit_effects::<_, Self, ReportOutcome<S, Db, D>>(scope, effects)
@@ -164,7 +171,7 @@ where
             };
             let mut inbox = Inbox::<_, D>::new(scope, self.config.owner, self.config.limits);
             let mut effects = inbox
-                .record_terminal(input, outcome)
+                .record_terminal(input, outcome, self.consumer.as_ref())
                 .await
                 .map_err(store_error)?;
             let cancelled = inbox

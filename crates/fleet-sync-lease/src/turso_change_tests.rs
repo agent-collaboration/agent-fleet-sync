@@ -8,7 +8,9 @@ use sqlx_turso::Turso;
 use std::sync::{Arc, atomic::Ordering};
 
 fn transfer(value: u128) -> TestResult<TransferId> {
-    Ok(TransferId::new(Uuid::from_u128(value))?)
+    Ok(TransferId::new(Uuid::from_u128(
+        (value) | 0x019eef00000070008000000000000000,
+    ))?)
 }
 pub(super) async fn register_first(engine: &TestEngine) -> TestResult {
     let request = registration(201, 1)?;
@@ -79,6 +81,10 @@ async fn claim_grants_the_next_epoch_and_settles_once_after_seed_publication() -
         scalar(&store, "SELECT epoch AS value FROM _fleet_sync_epoch_floor").await?,
         "2"
     );
+    let lease_before = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
+    let database_before =
+        scalar(&store, "SELECT record AS value FROM _fleet_sync_databases").await?;
+    let calls_before = host.calls.lock().await.len();
     let reimport = import_request(202, "a")?;
     assert_eq!(
         task_answer::<ImportTask<TestStore, Turso>>(
@@ -87,11 +93,53 @@ async fn claim_grants_the_next_epoch_and_settles_once_after_seed_publication() -
             reimport
         )
         .await?,
+        ImportAnswer::AlreadyImported
+    );
+    let mut conflicting = import.clone();
+    conflicting.attempt = import_request(203, "b")?.attempt;
+    conflicting.digest = ImportDigest::of_canonical(&"different")?;
+    assert_eq!(
+        task_answer::<ImportTask<TestStore, Turso>>(
+            &engine,
+            &lifecycle_request_key(conflicting.attempt)?,
+            conflicting.clone()
+        )
+        .await?,
         ImportAnswer::ImportConflict {
-            existing: None,
-            offered: import.digest
+            existing: Some(import.digest.clone()),
+            offered: conflicting.digest
         }
     );
+    assert_eq!(
+        task_answer::<ImportTask<TestStore, Turso>>(
+            &engine,
+            &lifecycle_request_key(import.attempt)?,
+            import
+        )
+        .await?,
+        ImportAnswer::Imported
+    );
+    assert_eq!(
+        scalar(&store, "SELECT epoch AS value FROM _fleet_sync_epoch_floor").await?,
+        "2"
+    );
+    assert_eq!(
+        scalar(
+            &store,
+            "SELECT CAST(count(*) AS TEXT) AS value FROM _fleet_sync_epoch_history"
+        )
+        .await?,
+        "1"
+    );
+    assert_eq!(
+        scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
+        lease_before
+    );
+    assert_eq!(
+        scalar(&store, "SELECT record AS value FROM _fleet_sync_databases").await?,
+        database_before
+    );
+    assert_eq!(host.calls.lock().await.len(), calls_before);
     Ok(())
 }
 
@@ -111,6 +159,7 @@ async fn lost_release_answer_replays_one_call_even_past_the_unsent_bound_and_kee
     let final_position = push_rows(&host, 9).await?;
     host.lose_release.store(true, Ordering::SeqCst);
     let request = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: transfer(301)?,
         database: database()?,
         from_epoch: Epoch::new(1)?,
@@ -172,6 +221,7 @@ async fn never_sent_move_ends_unreachable_without_fencing_or_changing_holder() -
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
     register_first(&engine).await?;
     let request = HolderChangeRequest::Move {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: transfer(301)?,
         database: database()?,
         from_epoch: Epoch::new(1)?,
@@ -252,6 +302,7 @@ async fn takeover_refuses_a_moved_preview_then_new_preview_uses_a_later_reserved
     .await?;
     let cutoff = push_rows(&host, 9).await?;
     let first = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: transfer(301)?,
         database: database()?,
         preview,
@@ -276,6 +327,7 @@ async fn takeover_refuses_a_moved_preview_then_new_preview_uses_a_later_reserved
     .await?;
     assert_eq!(preview.acked, cutoff);
     let second = HolderChangeRequest::Takeover {
+        reason: fleet_sync_protocol::HolderChangeReason::new("exercise holder change")?,
         attempt: transfer(302)?,
         database: database()?,
         preview,

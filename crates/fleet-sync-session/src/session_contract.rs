@@ -16,6 +16,8 @@ pub enum SessionError {
     Storage(#[from] StoreError),
     #[error("notice position exhausted")]
     NoticePositionExhausted,
+    #[error("attach sequence exhausted")]
+    AttachSequenceExhausted,
     #[error("session does not exist or has ended")]
     SessionEnded,
 }
@@ -73,6 +75,11 @@ impl SessionRecord {
 )]
 pub enum ConnectionRegistration {
     Opening,
+    Attaching {
+        session_id: SessionId,
+        schema_support: SchemaSupport,
+        attach_seq: AttachSequence,
+    },
     Attached {
         session_id: SessionId,
         schema_support: SchemaSupport,
@@ -88,10 +95,12 @@ pub struct VerifiedPeer {
 
 pub trait PeerAuthenticator: Send + Sync + 'static {
     type Material: Send;
+    /// Owned address from the same authenticated binding as `VerifiedPeer`.
+    type Route: Clone + Send + Sync + 'static;
     fn verify(
         &self,
         material: Self::Material,
-    ) -> impl Future<Output = Result<VerifiedPeer, AuthRefusal>> + Send;
+    ) -> impl Future<Output = Result<(VerifiedPeer, Self::Route), AuthRefusal>> + Send;
 }
 
 /// Host-created identity for one authenticated transport, never decoded from a frame.
@@ -162,4 +171,20 @@ pub struct StoredNotice<P: ConsumerProtocol> {
 pub trait SessionScope: durable_steps::storage::TransactionScope {
     fn registration(&self, connection: &ConnectionId) -> Option<ConnectionRegistration>;
     fn set_registration(&mut self, connection: &ConnectionId, registration: ConnectionRegistration);
+    /// Admit PublishSchemaSupport and ensure its durable deadline through this
+    /// same borrowed journal transaction. The runtime activates it after commit.
+    fn publish_schema_support(
+        &mut self,
+        input: crate::PublishSchemaSupportInput,
+        now: SyncTime,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
+    /// Stage Welcome as a host effect, never as a journaled local-step output.
+    /// Commit publishes registration edits and exposes effects; rollback discards
+    /// both. External effects run after transaction exclusion is released.
+    fn welcome_after_commit(
+        &mut self,
+        connection: ConnectionId,
+        peer: PeerId,
+        session_id: SessionId,
+    );
 }

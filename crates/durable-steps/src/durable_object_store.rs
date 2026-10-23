@@ -1,9 +1,12 @@
 //! A Durable Object's SQL journal, business writes and alarm share its transaction.
 
 use crate::{
-    AtomicStore, BoxFuture, Host, StoreError, SyncTime,
+    AtomicStore, BoxFuture, Host, ReborrowScope, StoreError, SyncTime,
     sql_journal::JournalQueries,
-    sql_rows::{StoredCountRow, StoredIdRow, StoredOperationRow, StoredStepRow, StoredTimeRow},
+    sql_rows::{
+        StoredCountRow, StoredIdRow, StoredOperationRow, StoredRequestKeyRow, StoredStepRow,
+        StoredTimeRow,
+    },
     storage::TransactionScope,
 };
 use runtime_primitives::{AlarmOwner, WakeScheduler};
@@ -66,6 +69,24 @@ pub struct DurableObjectScope<'t, H: Host> {
     alarm: &'t AlarmOwner,
 }
 
+impl<H: Host> ReborrowScope for DurableObjectStore<H> {
+    fn reborrow<'s, 't: 's>(scope: &'s mut Self::Scope<'t>) -> Self::Scope<'s> {
+        DurableObjectScope {
+            transaction: scope.transaction,
+            host: scope.host,
+            alarm: scope.alarm,
+        }
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl<H: Host> DurableObjectScope<'_, H> {
+    /// Identify shared alarm arbitration without extending the parent's loan.
+    pub fn alarm_arbitration_identity_for_test(&self) -> usize {
+        self.alarm.arbitration_identity_for_test()
+    }
+}
+
 impl<H: Host> TransactionScope for DurableObjectScope<'_, H> {
     type Database = Do;
     type Executor<'query>
@@ -105,6 +126,12 @@ impl<H: Host> AtomicStore for DurableObjectStore<H> {
 // files checked through native Turso metadata; FromRow maps their named fields
 // into private storage rows, then the shared decoder validates domain states.
 impl<H: Host> JournalQueries for DurableObjectScope<'_, H> {
+    async fn fetch_running_request_keys(&mut self) -> Result<Vec<StoredRequestKeyRow>, StoreError> {
+        query_as::<Do, StoredRequestKeyRow>(include_str!("../queries/running_request_keys.sql"))
+            .fetch_all(self.transaction)
+            .await
+            .map_err(StoreError::from)
+    }
     async fn delete_steps(&mut self, id: String) -> Result<(), StoreError> {
         query::<Do>(include_str!("../queries/delete_steps.sql"))
             .bind(id)
@@ -249,6 +276,8 @@ impl<H: Host> JournalQueries for DurableObjectScope<'_, H> {
         )
     }
     async fn ensure_alarm(&mut self, at: SyncTime) -> Result<(), StoreError> {
+        let at = crate::operation_engine::future_wake_deadline(at, self.host.now())
+            .map_err(StoreError::backend)?;
         self.alarm.wake_at(at).await.map_err(StoreError::backend)
     }
 }

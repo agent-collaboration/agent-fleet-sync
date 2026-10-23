@@ -133,35 +133,46 @@ pub(crate) fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
+fn orphan_statement(table: &TableName, foreign_key: &ForeignKey) -> Result<String, OpenError> {
+    let non_null = foreign_key
+        .columns
+        .iter()
+        .map(|(child, _)| format!("child.{} IS NOT NULL", quote_identifier(child)))
+        .collect::<Vec<_>>()
+        .join(" AND ");
+    let matching = foreign_key
+        .columns
+        .iter()
+        .map(|(child, parent)| {
+            format!(
+                "parent.{}=child.{}",
+                quote_identifier(parent),
+                quote_identifier(child)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" AND ");
+    let (_, first_parent_column) = foreign_key
+        .columns
+        .first()
+        .ok_or_else(|| metadata_error(table, "empty foreign key"))?;
+    // Every checked child key is non-null. A matched parent's first key
+    // therefore cannot be null; only the join's unmatched row passes this guard.
+    Ok(format!(
+        "SELECT 1 FROM {} AS child LEFT JOIN {} AS parent ON {matching} WHERE {non_null} AND parent.{} IS NULL LIMIT 1",
+        quote_identifier(table.as_str()),
+        quote_identifier(foreign_key.parent.as_str()),
+        quote_identifier(first_parent_column)
+    ))
+}
+
 pub(crate) async fn reject_orphans(
     connection: &mut TursoConnection,
     tables: &[TableName],
 ) -> Result<(), OpenError> {
     for table in tables {
         for foreign_key in read_foreign_keys(connection, table).await? {
-            let non_null = foreign_key
-                .columns
-                .iter()
-                .map(|(child, _)| format!("child.{} IS NOT NULL", quote_identifier(child)))
-                .collect::<Vec<_>>()
-                .join(" AND ");
-            let matching = foreign_key
-                .columns
-                .iter()
-                .map(|(child, parent)| {
-                    format!(
-                        "parent.{}=child.{}",
-                        quote_identifier(parent),
-                        quote_identifier(child)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(" AND ");
-            let statement = format!(
-                "SELECT 1 FROM {} AS child WHERE {non_null} AND NOT EXISTS(SELECT 1 FROM {} AS parent WHERE {matching}) LIMIT 1",
-                quote_identifier(table.as_str()),
-                quote_identifier(foreign_key.parent.as_str())
-            );
+            let statement = orphan_statement(table, &foreign_key)?;
             // Identifiers come from checked schema metadata and are quoted. The
             // number and names of these columns are consumer-defined, so this
             // schema-bound existence query cannot be a fixed generated statement.
@@ -181,3 +192,7 @@ pub(crate) async fn reject_orphans(
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "foreign_key_integrity_tests.rs"]
+mod tests;

@@ -57,12 +57,14 @@ async fn admit(
                     peer(1),
                     DeliveryEnvelope::Item(original),
                     SyncTime::from_unix_millis(0),
+                    "fixture-route".to_owned(),
+                    None,
                 )
                 .await?;
         }
         _ => {
             Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                .enqueue_local(original, SyncTime::from_unix_millis(0))
+                .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                 .await?;
         }
     }

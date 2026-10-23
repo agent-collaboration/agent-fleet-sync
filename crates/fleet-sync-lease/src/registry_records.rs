@@ -9,16 +9,103 @@ use serde::{Deserialize, Serialize};
     deny_unknown_fields
 )]
 pub enum DatabaseLifecycle {
-    Registered { origin: Origin },
-    Unheld { import_digest: ImportDigest },
-    Retiring { attempt: RequestId },
-    Retired { at: SyncTime },
+    Registered {
+        origin: Origin,
+        imported_from: Option<ImportOrigin>,
+    },
+    Unheld {
+        import_digest: ImportDigest,
+    },
+    Retiring {
+        attempt: RequestId,
+    },
+    Retired {
+        at: SyncTime,
+    },
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ImportOrigin {
+    pub digest: ImportDigest,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DatabaseRecord {
     pub database: DatabaseId,
     pub lifecycle: DatabaseLifecycle,
+    pub revision: crate::RegistryRevision,
+    pub changed_at: SyncTime,
+}
+impl DatabaseRecord {
+    pub(crate) fn initial(
+        database: DatabaseId,
+        lifecycle: DatabaseLifecycle,
+        epoch: Epoch,
+        at: SyncTime,
+    ) -> Self {
+        Self {
+            database,
+            lifecycle,
+            revision: crate::RegistryRevision {
+                epoch,
+                change: std::num::NonZeroU64::MIN,
+            },
+            changed_at: at,
+        }
+    }
+
+    pub(crate) fn validate_grant(
+        &self,
+        grant: Option<&RegistryLease>,
+    ) -> Result<(), crate::LeaseError> {
+        if grant.is_some_and(|grant| {
+            grant.database != self.database || grant.epoch != self.revision.epoch
+        }) || (grant.is_none() && matches!(self.lifecycle, DatabaseLifecycle::Registered { .. }))
+            || (grant.is_some() && matches!(self.lifecycle, DatabaseLifecycle::Unheld { .. }))
+        {
+            return Err(crate::LeaseError::Corrupt {
+                field: "registry revision grant".into(),
+            });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn advance_revision(
+        &mut self,
+        epoch: Epoch,
+        at: SyncTime,
+    ) -> Result<(), crate::LeaseError> {
+        let change =
+            match epoch.cmp(&self.revision.epoch) {
+                std::cmp::Ordering::Less => {
+                    return Err(crate::LeaseError::Corrupt {
+                        field: "registry revision epoch regression".into(),
+                    });
+                }
+                std::cmp::Ordering::Equal => self.revision.change.checked_add(1).ok_or(
+                    crate::LeaseError::RevisionExhausted {
+                        database: self.database,
+                        epoch,
+                    },
+                )?,
+                std::cmp::Ordering::Greater => std::num::NonZeroU64::MIN,
+            };
+        self.revision = crate::RegistryRevision { epoch, change };
+        self.changed_at = at;
+        Ok(())
+    }
+
+    pub(crate) fn change_lifecycle(
+        &mut self,
+        lifecycle: DatabaseLifecycle,
+        at: SyncTime,
+    ) -> Result<(), crate::LeaseError> {
+        if self.lifecycle != lifecycle {
+            self.advance_revision(self.revision.epoch, at)?;
+            self.lifecycle = lifecycle;
+        }
+        Ok(())
+    }
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,6 +137,7 @@ pub(crate) struct RenewalAttempt {
 pub(crate) struct TransferIntent {
     pub request: HolderChangeRequest,
     pub new_epoch: Option<Epoch>,
+    pub target_schema: Option<SchemaSupport>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TransferRecord {
@@ -73,6 +161,7 @@ pub(crate) struct TransferAdmission {
     pub request: HolderChangeRequest,
     pub requested_by: ActorRef,
     pub admitted_at: SyncTime,
+    pub target_schema: Option<SchemaSupport>,
     pub follow_up: Option<durable_steps::OperationId>,
 }
 

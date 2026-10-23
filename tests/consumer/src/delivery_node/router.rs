@@ -21,7 +21,7 @@ impl CallRouter for NodeRouter {
             .get()
             .and_then(Weak::upgrade)
             .ok_or_else(unreachable)?;
-        let config = state.config().map_err(|_| unreachable())?;
+        let config = state.local_config().map_err(|_| unreachable())?;
         let CallEnvelope {
             kind,
             target,
@@ -105,14 +105,16 @@ impl CallRouter for NodeRouter {
                         encoded(answer)
                     }
                     Err(DeliveryError::Storage(_)) => Err(unreachable()),
-                    Err(error) => encoded(DispatchOutcome::<LocalOutcome<String>>::Unresolvable {
+                    Err(error) => encoded(LocalDeliveryOutcome::<SampleDelivery>::Unresolvable {
                         reason: error.failure_kind(),
                     }),
                 }
             }
             FetchCall::<SampleDelivery>::KIND => {
                 let target: FetchCall<SampleDelivery> = decoded(target)?;
-                if target.mailbox != config.owner || target.relay != config.relay {
+                if target.mailbox != config.owner
+                    || target.relay != state.remote_config().map_err(|_| unreachable())?.relay
+                {
                     return Err(unreachable());
                 }
                 let request: FetchInput = decoded(request)?;
@@ -134,7 +136,9 @@ impl CallRouter for NodeRouter {
             }
             ReceivedCall::KIND => {
                 let target: ReceivedCall = decoded(target)?;
-                if target.mailbox != config.owner || target.relay != config.relay {
+                if target.mailbox != config.owner
+                    || target.relay != state.remote_config().map_err(|_| unreachable())?.relay
+                {
                     return Err(unreachable());
                 }
                 let request: ReceiptInput = decoded(request)?;
@@ -154,7 +158,9 @@ impl CallRouter for NodeRouter {
             }
             ReportCall::<SampleDelivery>::KIND => {
                 let target: ReportCall<SampleDelivery> = decoded(target)?;
-                if target.mailbox != config.owner || target.relay != config.relay {
+                if target.mailbox != config.owner
+                    || target.relay != state.remote_config().map_err(|_| unreachable())?.relay
+                {
                     return Err(unreachable());
                 }
                 let report = decoded(request)?;
