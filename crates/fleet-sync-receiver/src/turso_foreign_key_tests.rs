@@ -9,7 +9,7 @@ use sqlx_core::connection::{ConnectOptions, Connection};
 use sqlx_turso::Turso;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
-struct NoHook;
+pub(super) struct NoHook;
 impl<S: TransactionScope> ReceiverRules<S> for NoHook {
     type Protocol = NoConsumer;
     type FollowUp = ();
@@ -24,6 +24,25 @@ pub(super) fn seeded_pages(
     let parent_sql = "CREATE TABLE z_parent(id TEXT NOT NULL PRIMARY KEY)";
     let child_sql =
         "CREATE TABLE a_child(id TEXT NOT NULL PRIMARY KEY, parent TEXT REFERENCES z_parent(id))";
+    relation_seed_pages(
+        seed,
+        parent_sql,
+        child_sql,
+        vec![vec![uuid_key(1), uuid_key(2)]],
+        if include_parent {
+            vec![vec![uuid_key(2)]]
+        } else {
+            Vec::new()
+        },
+    )
+}
+pub(super) fn relation_seed_pages(
+    seed: SeedId,
+    parent_sql: &str,
+    child_sql: &str,
+    child: Vec<Vec<SqlValue>>,
+    parent: Vec<Vec<SqlValue>>,
+) -> TestResult<(Vec<SeedPage>, SeedComplete)> {
     let statements = vec![parent_sql.into(), child_sql.into()];
     let schema = SchemaIdentity::new(
         1,
@@ -40,12 +59,6 @@ pub(super) fn seeded_pages(
             },
         ])?,
     )?;
-    let child = vec![vec![uuid_key(1), uuid_key(2)]];
-    let parent = if include_parent {
-        vec![vec![uuid_key(2)]]
-    } else {
-        Vec::new()
-    };
     let mut pages = Vec::new();
     let mut digests = Vec::new();
     for (index, (table, rows)) in [("a_child", child), ("z_parent", parent)]
@@ -129,7 +142,7 @@ async fn orphan_seed_refuses_before_publication_with_native_engine_fks_disabled(
     Ok(())
 }
 
-fn export(name: &str, value: &impl serde::Serialize) -> TestResult {
+pub(super) fn export(name: &str, value: &impl serde::Serialize) -> TestResult {
     if let Some(root) = std::env::var_os("FK_FIXTURE_ROOT") {
         let root = std::path::PathBuf::from(root);
         std::fs::create_dir_all(&root)?;
@@ -219,7 +232,7 @@ fn at(sequence: u64) -> TestResult<ReplicationPosition> {
         CommitSequence::new(sequence),
     ))
 }
-fn incoming(sequence: u64, transaction: ReplicatedTransaction) -> TestResult<Piece> {
+pub(super) fn incoming(sequence: u64, transaction: ReplicatedTransaction) -> TestResult<Piece> {
     Ok(Piece::new(PieceContents {
         database: database()?,
         epoch: Epoch::new(1)?,
@@ -230,7 +243,7 @@ fn incoming(sequence: u64, transaction: ReplicatedTransaction) -> TestResult<Pie
         annotation: None,
     })?)
 }
-fn rows(sequence: u64, changes: Vec<RowChange>) -> TestResult<Piece> {
+pub(super) fn rows(sequence: u64, changes: Vec<RowChange>) -> TestResult<Piece> {
     incoming(
         sequence,
         ReplicatedTransaction::Rows {
@@ -254,7 +267,7 @@ fn changes(include_parent: bool) -> TestResult<Vec<RowChange>> {
     }
     Ok(rows)
 }
-async fn apply(
+pub(super) async fn apply(
     connection: &mut sqlx_turso::TursoConnection,
     piece: &Piece,
 ) -> TestResult<Result<ApplyDecision<()>, ApplyFailure>> {

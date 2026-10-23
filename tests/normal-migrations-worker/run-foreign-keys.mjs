@@ -57,6 +57,45 @@ try {
       return { completed };
     });
   }
+  const affinityCases = [
+    ["text-integer-valid", true], ["text-integer-orphan", false],
+    ["numeric-text-valid", true], ["numeric-text-orphan", false],
+    ["blob-integer-orphan", false], ["blob-integer-valid", true],
+    ["parent-collation-valid", true],
+  ];
+  for (const [scenario, valid] of affinityCases) {
+    const input = JSON.parse(await readFile(resolve(fixtures, `affinity-seed-${scenario}.json`), "utf8"));
+    await run(`affinity-seed-${scenario}`, async name => {
+      await call(name, { action: "initialize", create: input.create, journal: true });
+      assert.equal((await call(name, { action: "seed", input: { kind: "begin", database: input.create.database, attempt: input.attempt } })).kind, "seedStarted");
+      for (const page of input.pages) {
+        assert.deepEqual(await call(name, { action: "seed", input: { kind: "page", page } }), { kind: "seedPage", value: { kind: "staged" } });
+      }
+      const completed = await call(name, { action: "seed", input: { kind: "complete", done: input.done } });
+      assert.deepEqual(completed, { kind: "seedComplete", value: valid ? { kind: "published", value: { position: input.done.position } } : violation });
+      if (valid) {
+        assert.deepEqual(await count(name, ["a_child", "z_parent"]), [1, 1]);
+      } else {
+        assert.deepEqual((await call(name, { action: "inspect", queries: ["SELECT CAST(COUNT(*) AS TEXT) AS result FROM sqlite_schema WHERE name IN ('a_child','z_parent')", "SELECT json_extract(record,'$.state') AS result FROM _fleet_sync_copy"] })).results, [["0"], ["seeding"]]);
+      }
+      return { completed };
+    });
+    const replay = JSON.parse(await readFile(resolve(fixtures, `affinity-apply-${scenario}.json`), "utf8"));
+    await run(`affinity-apply-${scenario}`, async name => {
+      await call(name, { action: "initialize", create: replay.create, journal: true });
+      const apply = piece => call(name, { action: "certaintyApply", sender: replay.sender, fault: "none", piece });
+      assert.equal((await apply(replay.schema)).kind, "applied");
+      const answer = await apply(replay.insert);
+      if (valid) {
+        assert.equal(answer.kind, "applied");
+        assert.deepEqual(await count(name, ["a_child", "z_parent", "_fleet_sync_receipts"]), [1, 1, 2]);
+      } else {
+        assert.deepEqual(answer, { kind: "refused", value: violation });
+        assert.deepEqual(await count(name, ["a_child", "z_parent", "_fleet_sync_receipts"]), [0, 0, 1]);
+      }
+      return { answer };
+    });
+  }
   for (const action of ["NO-ACTION", "RESTRICT"]) {
     for (const split of [false, true]) {
       const input = JSON.parse(await readFile(resolve(fixtures, `apply-${action}-${split}.json`), "utf8"));

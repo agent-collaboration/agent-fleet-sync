@@ -156,7 +156,7 @@ where
                         return Err(corrupt().into());
                     }
                     matching.push(format!(
-                        "parent.{}=child.{}",
+                        "parent.{}=+child.{}",
                         quoted_identifier(&referenced),
                         quoted_identifier(&child)
                     ));
@@ -166,7 +166,13 @@ where
                     return Err(corrupt().into());
                 }
                 // Identifiers are validated schema metadata and quoted. Parent
-                // columns stay on the left to retain SQLite collation/affinity.
+                // columns stay on the left for their collation; unary + removes
+                // the child's declared affinity without changing its value. This
+                // makes SQLite apply only the parent's affinity, as FK equality
+                // requires (foreignkeys.html#fk_basics, datatype3.html sections
+                // "Affinity Of Expressions" and "Type Conversions Prior To
+                // Comparison"). CAST is unsuitable: it can be lossy whereas
+                // affinity leaves nonnumeric text unchanged.
                 let query = format!(
                     "SELECT 1 AS violation FROM {} AS child WHERE {} AND NOT EXISTS (SELECT 1 FROM {} AS parent WHERE {}) LIMIT 1",
                     quoted_identifier(table),

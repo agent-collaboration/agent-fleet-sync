@@ -131,6 +131,8 @@ mod turso_rule_fixture;
 mod turso_schema_isolation_tests;
 
 #[cfg(test)]
+mod turso_foreign_key_affinity_tests;
+#[cfg(test)]
 mod turso_foreign_key_tests;
 
 #[cfg(test)]

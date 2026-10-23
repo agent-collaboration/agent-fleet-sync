@@ -45,7 +45,7 @@ Keep `WASM_BINDGEN` pinned to CLI 0.2.129 as above. From the repository root:
 
 ```sh
 FK_FIXTURE_ROOT="$PWD/tmp/fk-fixtures" CARGO_TARGET_DIR=target \
-  cargo test --locked -p fleet-sync-receiver turso_foreign_key_tests
+  cargo test --locked -p fleet-sync-receiver turso_foreign_key
 FK_CAPTURE_FIXTURE="$PWD/tmp/fk-fixtures/captured.json" CARGO_TARGET_DIR=target \
   cargo test --locked --manifest-path tests/consumer/Cargo.toml \
   --test native_receiver_foreign_keys
@@ -59,8 +59,12 @@ node tests/normal-migrations-worker/run-foreign-keys.mjs \
   tmp/fk-fixtures tmp/fk-workerd-evidence
 ```
 
-All eight cases must pass: valid child-before-parent seed, orphan seed rollback,
+All 22 cases must pass: valid child-before-parent seed, orphan seed rollback,
 ordinary and split apply under NO ACTION/RESTRICT, nullable composite and same-table
-references, and unchanged real writer CDC order. Refusal cases compare the exact
+references, unchanged real writer CDC order, and seven parent-affinity/collation
+cases each for seed publication and piece application. The mixed-affinity cases
+include TEXT parent '01' versus INTEGER child 1 (refused), TEXT parent '1' versus
+INTEGER child 1 (accepted), NUMERIC affinity without lossy casts, BLOB affinity,
+and conflicting parent/child collations. Refusal cases compare the exact
 IntegrityViolation payload and independently read rows/receipts/Copy state after
 rollback. This is local workerd proof, not hosted Cloudflare behavior.
