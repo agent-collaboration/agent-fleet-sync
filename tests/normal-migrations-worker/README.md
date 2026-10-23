@@ -35,3 +35,36 @@ node tests/normal-migrations-worker/run-copy-certainty.mjs <fixture.json> <evide
 ```
 
 Four controls apply real schema/row pieces and inspect SQLite row and receipt counts: a callback refusal after apply rolls back and answers CopyUnavailable; lost rollback or committed replies answer OutcomeUnknown; an unrelated rollback code is corruption and cannot prove no-effect. The same piece then applies once or reconciles to AlreadyApplied. Boundary-reply loss is injected after real storage completion, not a physical I/O fault. The DO adapter's rollback certainty relies on the platform guarantee that rejecting a storage transaction rolls back its writes; these controls observe that behavior locally. They do not prove session containment or hosted Cloudflare behavior; those remain central G3 evidence.
+
+## Receiver foreign-key integrity
+
+The permanent FK matrix uses real receiver rules, DurableObjectStore rollback
+and typed failure classification. Native tests export synthetic pages and Piece
+fixtures; the consumer test separately captures actual writer transactions.
+Keep `WASM_BINDGEN` pinned to CLI 0.2.129 as above. From the repository root:
+
+```sh
+FK_FIXTURE_ROOT="$PWD/tmp/fk-fixtures" CARGO_TARGET_DIR=target \
+  cargo test --locked -p fleet-sync-receiver turso_foreign_key
+FK_CAPTURE_FIXTURE="$PWD/tmp/fk-fixtures/captured.json" CARGO_TARGET_DIR=target \
+  cargo test --locked --manifest-path tests/consumer/Cargo.toml \
+  --test native_receiver_foreign_keys
+CARGO_TARGET_DIR=target cargo build --locked \
+  --manifest-path tests/normal-migrations-worker/Cargo.toml \
+  --target wasm32-unknown-unknown
+"$WASM_BINDGEN" target/wasm32-unknown-unknown/debug/normal_migrations_worker.wasm \
+  --target bundler --out-name index --out-dir tests/normal-migrations-worker/build
+cp tests/normal-migrations-worker/shim.mjs tests/normal-migrations-worker/build/shim.mjs
+node tests/normal-migrations-worker/run-foreign-keys.mjs \
+  tmp/fk-fixtures tmp/fk-workerd-evidence
+```
+
+All 22 cases must pass: valid child-before-parent seed, orphan seed rollback,
+ordinary and split apply under NO ACTION/RESTRICT, nullable composite and same-table
+references, unchanged real writer CDC order, and seven parent-affinity/collation
+cases each for seed publication and piece application. The mixed-affinity cases
+include TEXT parent '01' versus INTEGER child 1 (refused), TEXT parent '1' versus
+INTEGER child 1 (accepted), NUMERIC affinity without lossy casts, BLOB affinity,
+and conflicting parent/child collations. Refusal cases compare the exact
+IntegrityViolation payload and independently read rows/receipts/Copy state after
+rollback. This is local workerd proof, not hosted Cloudflare behavior.

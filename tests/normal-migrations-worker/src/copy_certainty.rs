@@ -22,7 +22,7 @@ pub enum CopyProbeFault {
     UnknownRollbackCode,
 }
 
-struct ProbeHost;
+pub(crate) struct ProbeHost;
 pub async fn migrate_journal(state: &State) -> worker::Result<()> {
     DurableObjectStore::new(
         DoConnection::new(state.storage()),

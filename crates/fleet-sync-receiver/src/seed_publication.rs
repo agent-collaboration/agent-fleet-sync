@@ -45,6 +45,9 @@ where
         fleet_sync_protocol::admit_replicated_schema_statement(sql)
             .map_err(|error| ReceiverError::SchemaUnsupported { form: error.form })?;
     }
+    crate::foreign_key_integrity::ForeignKeyIntegrity(scope)
+        .defer()
+        .await?;
     crate::schema_membership::SchemaMembership(scope)
         .apply(&first.contents.schema_steps)
         .await?;
@@ -130,6 +133,20 @@ where
             });
         }
     }
+    if let Some(violation) = crate::foreign_key_integrity::ForeignKeyIntegrity(scope)
+        .validate()
+        .await?
+    {
+        return Err(ReceiverError::SeedRefused {
+            answer: SeedAnswer::IntegrityViolation {
+                table: violation.table,
+                references: violation.references,
+            },
+        });
+    }
+    crate::foreign_key_integrity::ForeignKeyIntegrity(scope)
+        .restore()
+        .await?;
     let record = SchemaStepRecord {
         version: done.schema.version,
         statements: first.contents.schema_steps.clone(),

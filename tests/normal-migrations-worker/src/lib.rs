@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 mod copy_certainty;
+mod seed_integrity;
 use durable_steps::{CallId, storage::TransactionScope};
 use fleet_sync_protocol::{
     CopyStatus, CreateCopy, HookRefusal, HookRefusalCode, NoConsumer, PeerId, Piece,
@@ -56,6 +57,9 @@ impl fleet_sync_receiver::FollowUpHandler for ProbeHook {
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "camelCase")]
 enum ProbeRequest {
+    Seed {
+        input: seed_integrity::SeedInput,
+    },
     CertaintyApply {
         piece: Piece,
         sender: PeerId,
@@ -111,6 +115,7 @@ impl DurableObject for ProbeObject {
         let input: ProbeRequest = serde_json::from_str(&request.text().await?).map_err(error)?;
         let conn = DoConnection::new(self.state.storage());
         let reply: serde_json::Value = match input {
+            ProbeRequest::Seed {input} => serde_json::to_value(seed_integrity::run(&self.state,input).await?).map_err(error)?,
             ProbeRequest::CertaintyApply { piece, sender, fault } => serde_json::to_value(
                 copy_certainty::apply(&self.state, piece, sender, fault).await?
             ).map_err(error)?,

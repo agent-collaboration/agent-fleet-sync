@@ -1229,3 +1229,61 @@ where
             .collect()
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct StoredForeignKeyRow {
+    pub foreign_key_id: Option<String>,
+    pub id_class: Option<String>,
+    pub column_order: Option<String>,
+    pub order_class: Option<String>,
+    pub parent_table: Option<String>,
+    pub table_class: Option<String>,
+    pub child_column: Option<String>,
+    pub child_class: Option<String>,
+    pub parent_column: Option<String>,
+    pub parent_class: Option<String>,
+    pub update_action: Option<String>,
+    pub update_class: Option<String>,
+    pub delete_action: Option<String>,
+    pub delete_class: Option<String>,
+}
+pub(crate) fn read_foreign_keys<S>(
+    scope: &mut S,
+    table: String,
+) -> impl std::future::Future<Output = Result<Vec<StoredForeignKeyRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_foreign_keys.sql"
+        )))
+        .bind(table);
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredForeignKeyRow {
+                    foreign_key_id: row.try_get("foreign_key_id")?,
+                    id_class: row.try_get("id_class")?,
+                    column_order: row.try_get("column_order")?,
+                    order_class: row.try_get("order_class")?,
+                    parent_table: row.try_get("parent_table")?,
+                    table_class: row.try_get("table_class")?,
+                    child_column: row.try_get("child_column")?,
+                    child_class: row.try_get("child_class")?,
+                    parent_column: row.try_get("parent_column")?,
+                    parent_class: row.try_get("parent_class")?,
+                    update_action: row.try_get("update_action")?,
+                    update_class: row.try_get("update_class")?,
+                    delete_action: row.try_get("delete_action")?,
+                    delete_class: row.try_get("delete_class")?,
+                })
+            })
+            .collect()
+    }
+}

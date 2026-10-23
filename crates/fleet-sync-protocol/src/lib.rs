@@ -61,3 +61,6 @@ pub use session_frame::*;
 pub use snapshot_manifest::*;
 pub use snapshot_page::*;
 pub use transaction_part::*;
+
+#[cfg(test)]
+mod receiver_integrity_tests;

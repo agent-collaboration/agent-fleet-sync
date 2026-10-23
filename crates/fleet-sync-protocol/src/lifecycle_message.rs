@@ -120,6 +120,10 @@ pub enum SeedPageAnswer {
     deny_unknown_fields
 )]
 pub enum SeedAnswer {
+    IntegrityViolation {
+        table: TableName,
+        references: TableName,
+    },
     Published {
         position: ReplicationPosition,
     },

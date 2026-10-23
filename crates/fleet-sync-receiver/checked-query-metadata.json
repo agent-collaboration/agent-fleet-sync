@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-queries.json": "8a516bad83a63465616b4ea527a3480e8172c7e48c1693fb74b405964abd074a",
+    "checked-queries.json": "822df54223483d13fa7b649ed7aeb5671aa0a5a0717ecc07fc57a0b7bacf0e0d",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -52,7 +52,7 @@
     "generator:sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "generator:sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "generator:sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "generator:workspace/Cargo.lock": "7d655c6601f18fa8115084bf708cbe9103a0b535598b3c003d4b7bf3fea9886f",
+    "generator:workspace/Cargo.lock": "bdddb75f0a7512f79ab5a5f4d2db966f6be220eb6a8146d8f4aa89aab3a5d458",
     "generator:workspace/rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "migrations/0001_copy_rules.sql": "2edfb5ed73cfa0d0c0f17ff38ca3aabb9da25ec57b806904cbb006f5ae573e85",
     "migrations/0002_replicated_schema.sql": "56450d0f0ff8c8ec0e6d9354ca71902447bba3e415ae9398893ce57618af4c9e",
@@ -77,6 +77,7 @@
     "sql/read_creation.sql": "b244300fe028cbc187dfe0b20f7a48b781c9349b5c5dbef81efd6b5d9ac07c33",
     "sql/read_epoch_fence.sql": "f455e28f2ecbde42be7c8cc044dd31b65b51f61efaa5bbaac28fe4dcb477325b",
     "sql/read_fence_receipt.sql": "bde95c4e455efd2ddd0b1f20468d6987067931a1bca91b6bcb76d1bd1ae13ce8",
+    "sql/read_foreign_keys.sql": "7ecca70236bf3d19a579874c974a159bd9ed565aa2523e305c8b8870a4d22387",
     "sql/read_hook_migrations.sql": "48772108665c87eb58ddc8cd533860d4fa607be9fa5389ba5e6e6a95bd4b424a",
     "sql/read_inspection_corpus.sql": "5abcee590b18f409ff4949e892e16e031ad8095976e2e51757ce4e8cceee0836",
     "sql/read_inspection_parts.sql": "63a88de452402a8e0fcdcc6efabf3010de27ff074b40f6e4ae26fe70eecfb6b2",
@@ -105,9 +106,9 @@
     "sql/write_seed.sql": "1760686d585a282c49d7eee530ebe6bcd883d49623d339587ba861adfb372783",
     "sql/write_seed_attempt.sql": "6b7bb9dd642308388c49521b264703c0291d95870d6c172caece780aecd583eb",
     "sql/write_seed_page.sql": "2f10b3342821b1a27f8683e064f8445dd16f74c761b5d095a0c56e0f991c95d8",
-    "src/checked_queries.rs": "73524de00b347c23f143e494b1870e92564949997767a68afda3d9e24deca2ae"
+    "src/checked_queries.rs": "ee6133caa9996326ed2b701e17dbd0331f7947dd38fa5a820726f171947541bc"
   },
-  "queries_digest": "7a03eb6a366cd9164cf3d1d595c713b2b1d0568127c0763a274c8d3c0e983446",
+  "queries_digest": "c9ee68d4829fb05c243f3b00bea5e3620ac028539d48069d57635ca02131e640",
   "queries": [
     {
       "name": "read_copy",
@@ -803,6 +804,110 @@
         },
         {
           "name": "time_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "read_foreign_keys",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "foreign_key_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "id_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "column_order",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "order_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "parent_table",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "table_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "child_column",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "child_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "parent_column",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "parent_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "update_action",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "update_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "delete_action",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "delete_class",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
