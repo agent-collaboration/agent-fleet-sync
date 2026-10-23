@@ -565,6 +565,19 @@
       "row": "InspectionPartRow",
       "result": "many",
       "parameters": []
+    },
+    {
+      "name": "read_foreign_keys",
+      "sql": "sql/read_foreign_keys.sql",
+      "row": "StoredForeignKeyRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "table",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
     }
   ]
 }

@@ -55,6 +55,28 @@ The unreleased seed protocol includes `SeedPageAnswer::UnitTooLarge`, encoded as
 
 Registry copy calls use `CallFailure::Retryable` only for known no-new-effect refusals. The call remains pending with its generic code/detail reason, while `holder_change_view.waiting.copy_unavailable` decodes the closed copy reason. `CallReach::NoEffect` records a receiver response with no earlier unresolved possible effect. It survives restart, cannot satisfy an unsent timeout, and records `Dispatching` before retry; an earlier `MayHaveReached` is never cleared by a later refusal. Unknown retry codes fail closed. Final holder-change refusals remain terminal. The library's `test-fault` feature supplies controls on the actual native copy transaction replies and host timer; normal builds omit them.
 
+## Receiver foreign-key integrity
+
+Seed replacement and each assembled replicated transaction validate the final
+relationships of the replicated tables before publication, receipts or the
+acknowledged position advance. Durable Object replay defers immediate foreign
+keys within that transaction; the native receiver uses the same metadata-based
+orphan check. A matching snapshot manifest does not replace this check during
+native staging verification. FK declarations and schema fingerprints stay intact.
+
+`SeedAnswer::IntegrityViolation { table, references }` and
+`PieceRefusal::IntegrityViolation { table, references }` name only the child and
+parent tables. They carry no row keys or content. A violating transaction rolls
+back, and consumers treat the refusal as terminal for that seed attempt or piece,
+not as retryable storage unavailability. These additions to exhaustive enums
+require the coordinated v0.2.0 update on both sides of the protocol.
+
+Turso 0.8.1 does not implement `PRAGMA defer_foreign_keys`; successful execution
+of an unsupported pragma is not an integrity check. Receiver tests explicitly
+disable native engine FKs to prove the metadata gate rejects orphans itself.
+The regular writer pool enables native engine FKs; captured child-first writes
+in the regression use a declared deferred constraint, preserving source validity.
+
 ## Local workerd integration
 
 Install the wasm target, wasm-bindgen CLI **0.2.129**, Node.js, and the pinned package dependencies, then run:

@@ -19,6 +19,7 @@ mod inspection_corpus;
 pub use copy_inspection::{CopyInspection, CopyStage, StagedPart, StagedTransaction, inspect_copy};
 mod copy_storage;
 mod fence_rules;
+mod foreign_key_integrity;
 mod hook_migrations;
 mod part_assembly;
 mod receiver_contract;
@@ -128,3 +129,9 @@ mod turso_real_staging_tests;
 mod turso_rule_fixture;
 #[cfg(test)]
 mod turso_schema_isolation_tests;
+
+#[cfg(test)]
+mod turso_foreign_key_tests;
+
+#[cfg(test)]
+mod turso_foreign_key_install_tests;

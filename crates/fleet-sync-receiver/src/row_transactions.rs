@@ -1,5 +1,5 @@
 use crate::{
-    ReceiverError, StoreError, checked_queries, copy_storage::encode_record,
+    ApplyFailure, ReceiverError, StoreError, checked_queries, copy_storage::encode_record,
     row_apply::plan_row_change, schema_reads::SchemaReads,
 };
 use durable_steps::storage::TransactionScope;
@@ -36,8 +36,11 @@ where
         &mut self,
         schema: &mut SchemaIdentity,
         transactions: &[ReplicatedTransaction],
-    ) -> Result<(), ReceiverError> {
+    ) -> Result<(), ApplyFailure> {
         for transaction in transactions {
+            crate::foreign_key_integrity::ForeignKeyIntegrity(self.0)
+                .defer()
+                .await?;
             match transaction {
                 ReplicatedTransaction::Rows { rows, .. } => {
                     for row in rows {
@@ -58,7 +61,8 @@ where
                     if *migration_version <= schema.version {
                         return Err(ReceiverError::InvalidInput {
                             field: "schema version must advance".into(),
-                        });
+                        }
+                        .into());
                     }
                     crate::schema_membership::SchemaMembership(self.0)
                         .apply(statements)
@@ -84,6 +88,20 @@ where
                     })?;
                 }
             }
+            if let Some(violation) = crate::foreign_key_integrity::ForeignKeyIntegrity(self.0)
+                .validate()
+                .await?
+            {
+                return Err(ApplyFailure::Refused(
+                    fleet_sync_protocol::PieceRefusal::IntegrityViolation {
+                        table: violation.table,
+                        references: violation.references,
+                    },
+                ));
+            }
+            crate::foreign_key_integrity::ForeignKeyIntegrity(self.0)
+                .restore()
+                .await?;
         }
         Ok(())
     }

@@ -262,7 +262,7 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "durable-steps"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "futures-util",
  "runtime-primitives",
@@ -320,7 +320,7 @@ checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
 
 [[package]]
 name = "fleet-sync-protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "runtime-primitives",
  "serde",
@@ -333,7 +333,7 @@ dependencies = [
 
 [[package]]
 name = "fleet-sync-query-gen"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -343,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "fleet-sync-receiver"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "durable-steps",
  "fleet-sync-protocol",
@@ -969,7 +969,7 @@ dependencies = [
 
 [[package]]
 name = "runtime-primitives"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "futures-util",

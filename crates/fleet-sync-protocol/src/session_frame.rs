@@ -118,6 +118,10 @@ pub struct HookRefusal {
     deny_unknown_fields
 )]
 pub enum PieceRefusal {
+    IntegrityViolation {
+        table: TableName,
+        references: TableName,
+    },
     StaleEpoch {
         newer: Epoch,
         ended_at: ReplicationPosition,

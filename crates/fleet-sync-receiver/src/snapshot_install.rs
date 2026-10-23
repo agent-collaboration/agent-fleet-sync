@@ -228,6 +228,19 @@ where
             {
                 return Err(SnapshotInstallError::ManifestMismatch);
             }
+            if let Some(violation) = crate::foreign_key_integrity::ForeignKeyIntegrity(self.0)
+                .validate()
+                .await?
+            {
+                return Err(ReceiverError::InvalidInput {
+                    field: format!(
+                        "foreign key {} references {}",
+                        violation.table.as_str(),
+                        violation.references.as_str()
+                    ),
+                }
+                .into());
+            }
             marker.verified = Some(manifest.clone());
             InstallStorage(self.0).save(&marker).await
         }
