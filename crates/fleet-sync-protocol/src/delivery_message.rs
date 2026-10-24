@@ -28,6 +28,9 @@ pub enum DeliveryRequest<D: DeliveryTypes = NoDelivery> {
         after: DeliverySeq,
         max_items: u32,
         max_bytes: u64,
+        /// Total receiving room, including per-item settlement reserves.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        inbox_room_bytes: Option<u64>,
     },
     Received {
         call: CallId,

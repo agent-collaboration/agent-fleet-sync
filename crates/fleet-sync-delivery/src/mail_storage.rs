@@ -174,6 +174,7 @@ where
         record: &LiveMail<D>,
     ) -> Result<(), DeliveryError> {
         let compacted = MailRecord::<D>::Compacted(CompactedMail {
+            acceptance_bound: record.acceptance_bound,
             id: record.id,
             digest: record.digest.clone(),
             status: copy_wire(&record.status)?,

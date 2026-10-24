@@ -38,6 +38,7 @@ where
         let reason = DeliveryFailureKind::CustodyUnresolvable;
         let version = StatusVersion::new(1);
         let record = MailRecord::<D>::Compacted(CompactedMail {
+            acceptance_bound: None,
             id: item,
             digest,
             status: DeliveryStatus::Refused {

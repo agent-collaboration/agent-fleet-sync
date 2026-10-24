@@ -54,6 +54,8 @@ pub(crate) struct InboxHeader<D: DeliveryTypes> {
     pub route: InboxRoute,
     pub progress: InboxProgress<D::Acceptance>,
     pub report_seq: ReportSeq,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance_bound: Option<u32>,
     pub settlement_bytes: u32,
     pub release_requested: bool,
 }
@@ -88,6 +90,12 @@ impl<D: DeliveryTypes> InboxHeader<D> {
         )
     }
     pub fn validate(&self, owner: PeerId) -> Result<(), DeliveryError> {
+        crate::delivery_sizes::stored_acceptance_bound::<D>(self.acceptance_bound)?;
+        if self.acceptance_bound.is_some()
+            && let InboxProgress::Final { outcome, .. } = &self.progress
+        {
+            crate::delivery_sizes::check_outcome_bound::<D>(outcome, self.acceptance_bound)?;
+        }
         let processing_failed = matches!(
             &self.progress,
             InboxProgress::Final {
@@ -159,6 +167,7 @@ impl<D: DeliveryTypes> InboxRecord<D> {
                 route,
                 progress,
                 report_seq: ReportSeq::new(0),
+                acceptance_bound: crate::delivery_sizes::envelope_acceptance_bound(&payload)?,
                 settlement_bytes,
                 release_requested: false,
             },
@@ -362,4 +371,24 @@ pub enum DeliveryCheck<A> {
     Finish {
         outcome: Option<RecipientOutcome<A>>,
     },
+}
+
+/// Recipient custody resolved for one local call. Its admitted receipt bound
+/// remains authoritative even when the consumer's body policy later changes.
+pub struct ResolvedDelivery<D: DeliveryTypes> {
+    pub(crate) item: DeliveryItem<D>,
+    pub(crate) acceptance_bound: u32,
+}
+impl<D: DeliveryTypes> ResolvedDelivery<D> {
+    pub fn item(&self) -> &DeliveryItem<D> {
+        &self.item
+    }
+    /// Validate before returning the call answer to the engine for journaling.
+    /// Invalid receipt evidence cannot undo the effect and becomes Uncertain.
+    pub fn validated_answer(
+        &self,
+        delivery: crate::LocalDelivery<D>,
+    ) -> crate::LocalDeliveryOutcome<D> {
+        crate::DeliverCall::<D>::validated_answer_with_bound(delivery, self.acceptance_bound)
+    }
 }

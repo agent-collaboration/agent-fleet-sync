@@ -114,12 +114,12 @@ where
             return Ok(None);
         };
         let header: InboxHeader<D> = decode(row.record, "inbox header")?;
+        crate::delivery_sizes::stored_acceptance_bound::<D>(header.acceptance_bound)?;
         if let InboxProgress::Final { outcome, .. } = &header.progress {
-            crate::delivery_sizes::check_outcome::<D>(outcome).map_err(|_| {
-                DeliveryError::Corrupt {
+            crate::delivery_sizes::check_outcome_bound::<D>(outcome, header.acceptance_bound)
+                .map_err(|_| DeliveryError::Corrupt {
                     field: "stored inbox outcome bounds",
-                }
-            })?;
+                })?;
         }
         if header.id != item {
             return Err(DeliveryError::Corrupt {
@@ -180,6 +180,16 @@ where
         &mut self,
         reference: &DeliveryItemRef,
     ) -> Result<DeliveryItem<D>, DeliveryError> {
+        self.resolve_local_delivery(reference)
+            .await
+            .map(|resolved| resolved.item)
+    }
+    /// Resolve the body and its stored receipt bound together. Hosts use the
+    /// returned value to validate the answer before the call is checkpointed.
+    pub async fn resolve_local_delivery(
+        &mut self,
+        reference: &DeliveryItemRef,
+    ) -> Result<ResolvedDelivery<D>, DeliveryError> {
         let record = self
             .load(reference.item)
             .await?
@@ -191,8 +201,13 @@ where
                 field: "local delivery custody digest",
             });
         }
+        let acceptance_bound =
+            crate::delivery_sizes::stored_acceptance_bound::<D>(record.header.acceptance_bound)?;
         match record.payload {
-            Some(DeliveryEnvelope::Item(item)) => Ok(item),
+            Some(DeliveryEnvelope::Item(item)) => Ok(ResolvedDelivery {
+                item,
+                acceptance_bound,
+            }),
             None => Err(DeliveryError::CustodyMissing),
             Some(DeliveryEnvelope::Cancel(_)) => Err(DeliveryError::Corrupt {
                 field: "cancel resolved as external delivery",
@@ -269,6 +284,7 @@ where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        crate::delivery_sizes::check_outcome_bound::<D>(&outcome, header.acceptance_bound)?;
         header.report_seq = header
             .report_seq
             .next()

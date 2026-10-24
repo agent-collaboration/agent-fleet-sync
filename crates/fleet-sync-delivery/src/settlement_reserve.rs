@@ -9,14 +9,15 @@ fn bytes(value: &impl Serialize) -> Result<u64, DeliveryConfigError> {
         message: error.to_string(),
     })
 }
-fn with_acceptance<D: DeliveryTypes>(
+fn with_acceptance(
     value: &impl Serialize,
     delivered: bool,
+    acceptance_bound: u32,
 ) -> Result<u64, DeliveryConfigError> {
     let size = bytes(value)?;
     if delivered {
         size.checked_sub(4)
-            .and_then(|size| size.checked_add(u64::from(D::MAX_ACCEPTANCE_BYTES)))
+            .and_then(|size| size.checked_add(u64::from(acceptance_bound)))
             .ok_or(DeliveryConfigError::ReserveOverflow)
     } else {
         Ok(size)
@@ -32,6 +33,13 @@ fn with_route<D: DeliveryTypes>(size: u64) -> Result<u64, DeliveryConfigError> {
 /// Unit route and receipt placeholders encode as `null`;
 /// their four bytes are replaced by the consumer's canonical size bounds.
 pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryConfigError> {
+    allowance_with_bound::<D>(None)
+}
+
+pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
+    acceptance_bound: Option<u32>,
+) -> Result<u32, DeliveryConfigError> {
+    let maximum = acceptance_bound.unwrap_or(D::MAX_ACCEPTANCE_BYTES);
     let invalid = |error: Box<dyn std::fmt::Display>| DeliveryConfigError::Encoding {
         message: error.to_string(),
     };
@@ -122,7 +130,7 @@ pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryC
     let mut publication = 0;
     for status in statuses {
         let delivered = matches!(status, DeliveryStatus::Delivered { .. });
-        outbox_header = outbox_header.max(with_acceptance::<D>(
+        outbox_header = outbox_header.max(with_acceptance(
             &OutboxHeaderState::Item(OutboxHeader {
                 id: item,
                 digest: digest.as_str().into(),
@@ -136,12 +144,14 @@ pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryC
                     at: TooLateAt::Uncertain,
                 }),
                 cancel_target: Some(item),
+                acceptance_bound,
                 settlement_bytes: u32::MAX,
                 capacity_slot: false,
             }),
             delivered,
+            maximum,
         )?);
-        mailbox_header = mailbox_header.max(with_route::<D>(with_acceptance::<D>(
+        mailbox_header = mailbox_header.max(with_route::<D>(with_acceptance(
             &MailRecord::<NoDelivery>::Live(LiveMail {
                 id: item,
                 digest: digest.clone(),
@@ -164,12 +174,14 @@ pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryC
                     at: TooLateAt::Uncertain,
                 }),
                 cancel_target: Some(item),
+                acceptance_bound,
                 settlement_bytes: u32::MAX,
                 capacity_slot: false,
             }),
             delivered,
+            maximum,
         )?)?);
-        publication = publication.max(with_route::<D>(with_acceptance::<D>(
+        publication = publication.max(with_route::<D>(with_acceptance(
             &(
                 PublicationTarget::StatusStream {
                     sender: peer,
@@ -185,6 +197,7 @@ pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryC
                 },
             ),
             delivered,
+            maximum,
         )?)?);
     }
     let outcomes = [
@@ -204,16 +217,17 @@ pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryC
     let mut report = 0;
     for outcome in outcomes {
         let delivered = matches!(outcome, RecipientOutcome::Delivered { .. });
-        report = report.max(with_acceptance::<D>(
+        report = report.max(with_acceptance(
             &RecipientReport::<NoDelivery> {
                 item,
                 report_seq: ReportSeq::new(u64::MAX),
                 outcome: outcome.clone(),
             },
             delivered,
+            maximum,
         )?);
         inbox_header = inbox_header.max(
-            with_acceptance::<D>(
+            with_acceptance(
                 &InboxHeader::<NoDelivery> {
                     id: item,
                     digest: digest.as_str().into(),
@@ -228,10 +242,12 @@ pub fn minimum_settlement_allowance<D: DeliveryTypes>() -> Result<u32, DeliveryC
                         outcome,
                     },
                     report_seq: ReportSeq::new(u64::MAX),
+                    acceptance_bound,
                     settlement_bytes: u32::MAX,
                     release_requested: false,
                 },
                 delivered,
+                maximum,
             )?
             .checked_sub(8)
             .and_then(|size| size.checked_add(u64::from(D::MAX_SENDER_BYTES)))

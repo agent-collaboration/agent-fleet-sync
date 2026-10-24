@@ -25,6 +25,40 @@ where
         max_bytes: u64,
         now: SyncTime,
     ) -> Result<FetchResult<D>, DeliveryError> {
+        self.fetch_with_budget(
+            recipient,
+            crate::FetchInput {
+                stream,
+                after,
+                max_items,
+                max_bytes,
+                inbox_room_bytes: None,
+            },
+            now,
+        )
+        .await
+    }
+
+    /// Select a batch against both wire bytes and the receiver's available room.
+    /// The legacy fetch entry point supplies no room budget.
+    pub async fn fetch_with_budget(
+        &mut self,
+        recipient: PeerId,
+        input: crate::FetchInput,
+        now: SyncTime,
+    ) -> Result<FetchResult<D>, DeliveryError> {
+        let crate::FetchInput {
+            stream,
+            after,
+            max_items,
+            max_bytes,
+            inbox_room_bytes,
+        } = input;
+        let inbox_room_bytes = if D::PER_ITEM_SETTLEMENT {
+            inbox_room_bytes
+        } else {
+            None
+        };
         if recipient != self.storage.owner {
             return Err(DeliveryError::InvalidBatch);
         }
@@ -74,6 +108,7 @@ where
         candidates.sort_by_key(|candidate| candidate.0);
         let mut entries = Vec::new();
         let mut used_bytes = 0_u64;
+        let mut used_room = 0_u64;
         let mut through = after;
         for (seq, mail, retirement) in candidates {
             if entries.len() >= max_items as usize {
@@ -116,6 +151,24 @@ where
                 {
                     break;
                 }
+                if let Some(available) = inbox_room_bytes {
+                    let settlement = match payload {
+                        DeliveryEnvelope::Item(item) => {
+                            self.limits.settlement_for::<D>(item.body())?
+                        }
+                        DeliveryEnvelope::Cancel(_) => 0,
+                    };
+                    let room = size
+                        .checked_add(u64::from(settlement))
+                        .ok_or(DeliveryError::SequenceExhausted)?;
+                    let Some(total) = used_room
+                        .checked_add(room)
+                        .filter(|total| *total <= available)
+                    else {
+                        break;
+                    };
+                    used_room = total;
+                }
                 mail.fetched = true;
                 self.storage.save_live(&mail).await?;
                 entries.push(entry);
@@ -128,6 +181,15 @@ where
                     .is_none_or(|size| size > max_bytes)
                 {
                     break;
+                }
+                if let Some(available) = inbox_room_bytes {
+                    let Some(total) = used_room
+                        .checked_add(size)
+                        .filter(|total| *total <= available)
+                    else {
+                        break;
+                    };
+                    used_room = total;
                 }
                 used_bytes += size;
                 entries.push(entry);

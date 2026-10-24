@@ -52,7 +52,7 @@
     "generator:sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "generator:sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "generator:sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "generator:workspace/Cargo.lock": "bdddb75f0a7512f79ab5a5f4d2db966f6be220eb6a8146d8f4aa89aab3a5d458",
+    "generator:workspace/Cargo.lock": "9fde12d6703fbf8c0e97155b6e563598866136197e591236c5584cd16016d7ce",
     "generator:workspace/rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "tests/fixtures/corpus/migrations/1_example.sql": "26762d56152ae5fb189c13af92c7fe1442f0a1968a58377574b7a3db7c4c9126",
     "tests/fixtures/corpus/sql/example_exists.sql": "a2ba185d36daff4b42d158d5ce50479c38354cedc29022528586b08d73074d6d",

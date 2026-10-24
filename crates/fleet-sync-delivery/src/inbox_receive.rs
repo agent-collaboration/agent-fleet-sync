@@ -93,7 +93,12 @@ where
                         }
                         let size = u64::try_from(encode(&item)?.len())
                             .map_err(|_| DeliveryError::SequenceExhausted)?;
-                        let mut settlement = self.limits.settlement_allowance;
+                        let mut settlement = match &item {
+                            DeliveryEnvelope::Item(item) => {
+                                self.limits.settlement_for::<D>(item.body())?
+                            }
+                            DeliveryEnvelope::Cancel(_) => 0,
+                        };
                         let item_progress = match &item {
                             DeliveryEnvelope::Item(_) => {
                                 if let Some(cancel) = self.pending_cancel(id).await? {

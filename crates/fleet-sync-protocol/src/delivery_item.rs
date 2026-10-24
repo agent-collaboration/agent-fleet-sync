@@ -5,6 +5,13 @@ pub trait DeliveryTypes: Send + Sync + 'static {
     const MAX_SENDER_BYTES: u32;
     const MAX_ADDRESS_BYTES: u32;
     const MAX_ACCEPTANCE_BYTES: u32;
+    /// Opt in to body-specific settlement reserves and capacity-aware fetches.
+    const PER_ITEM_SETTLEMENT: bool = false;
+    /// Maximum canonical JSON bytes of this body's acceptance. Must not exceed
+    /// `MAX_ACCEPTANCE_BYTES`. Used only with `PER_ITEM_SETTLEMENT` enabled.
+    fn max_acceptance_bytes_for(_body: &Self::Body) -> u32 {
+        Self::MAX_ACCEPTANCE_BYTES
+    }
     /// Maximum bytes in the canonical JSON encoding of `Self::LocalObservation`.
     const MAX_LOCAL_OBSERVATION_BYTES: u32;
     /// Maximum canonical JSON bytes of the host-owned status address.

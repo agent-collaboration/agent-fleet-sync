@@ -141,7 +141,7 @@ impl Host for ObservationHost {
             .transaction(move |scope| {
                 Box::pin(async move {
                     Inbox::<_, ObservationTypes>::new(scope, peer(2), limits())
-                        .resolve_delivery(&reference)
+                        .resolve_local_delivery(&reference)
                         .await
                         .map_err(StoreError::backend)
                 })
@@ -149,8 +149,8 @@ impl Host for ObservationHost {
             .await
             .unwrap();
         self.calls.fetch_add(1, Ordering::SeqCst);
-        let delivery = self.consumer.deliver_locally(&item, call).await;
-        let answer = DeliverCall::<ObservationTypes>::validated_answer(delivery);
+        let delivery = self.consumer.deliver_locally(item.item(), call).await;
+        let answer = item.validated_answer(delivery);
         Ok(serde_json::from_value(serde_json::to_value(answer).unwrap()).unwrap())
     }
 }

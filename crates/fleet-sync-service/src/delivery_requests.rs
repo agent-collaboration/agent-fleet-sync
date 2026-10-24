@@ -107,10 +107,21 @@ impl<
                                 after,
                                 max_items,
                                 max_bytes,
+                                inbox_room_bytes,
                                 ..
                             } => DeliveryAnswer::Fetch(
                                 mailbox
-                                    .fetch(peer, stream, after, max_items, max_bytes, now)
+                                    .fetch_with_budget(
+                                        peer,
+                                        fleet_sync_delivery::FetchInput {
+                                            stream,
+                                            after,
+                                            max_items,
+                                            max_bytes,
+                                            inbox_room_bytes,
+                                        },
+                                        now,
+                                    )
                                     .await?,
                             ),
                             DeliveryRequest::Received {

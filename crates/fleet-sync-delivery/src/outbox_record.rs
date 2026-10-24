@@ -16,6 +16,8 @@ pub(crate) struct OutboxHeader<A> {
     pub submit_attempted: bool,
     pub cancel: Option<CancelResult>,
     pub cancel_target: Option<ItemId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance_bound: Option<u32>,
     pub settlement_bytes: u32,
     pub capacity_slot: bool,
 }
@@ -170,6 +172,8 @@ impl SubmitInput {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct RecoveredOutbox<A> {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance_bound: Option<u32>,
     pub item: ItemId,
     pub digest: ItemDigest,
     pub status: DeliveryStatus<A>,

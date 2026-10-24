@@ -130,6 +130,15 @@ where
         max_items: u32,
         max_bytes: u64,
     ) -> Result<(u32, u64), DeliveryError> {
+        let budget = self.receive_request(input, max_items, max_bytes).await?;
+        Ok((budget.max_items, budget.max_bytes))
+    }
+    pub async fn receive_request(
+        &mut self,
+        input: ReceiveInput,
+        max_items: u32,
+        max_bytes: u64,
+    ) -> Result<crate::FetchInput, DeliveryError> {
         let mut state = self.state().await?;
         let progress = state.stream(input.stream);
         if !progress
@@ -139,7 +148,13 @@ where
             return Err(DeliveryError::InvalidBatch);
         }
         if input.stream == DeliveryStream::Controls {
-            return Ok((max_items, max_bytes));
+            return Ok(crate::FetchInput {
+                stream: input.stream,
+                after: input.after,
+                max_items,
+                max_bytes,
+                inbox_room_bytes: None,
+            });
         }
         let accounting = queries::read_inbox_accounting(self.scope)
             .await
@@ -151,6 +166,15 @@ where
                 field: "inbox occupied bytes",
             })?;
         let available = self.limits.inbox_bytes.saturating_sub(used);
+        if D::PER_ITEM_SETTLEMENT {
+            return Ok(crate::FetchInput {
+                stream: input.stream,
+                after: input.after,
+                max_items: if available == 0 { 0 } else { max_items },
+                max_bytes: available.min(max_bytes),
+                inbox_room_bytes: Some(available),
+            });
+        }
         // One item guarantees progress for any item that fits this inbox. The
         // next cycle drains the next item; concurrent triggers coalesce.
         let count = if max_items == 0 || available <= u64::from(self.limits.settlement_allowance) {
@@ -158,11 +182,14 @@ where
         } else {
             1
         };
-        Ok((
-            count,
-            available
+        Ok(crate::FetchInput {
+            stream: input.stream,
+            after: input.after,
+            max_items: count,
+            max_bytes: available
                 .saturating_sub(u64::from(self.limits.settlement_allowance))
                 .min(max_bytes),
-        ))
+            inbox_room_bytes: None,
+        })
     }
 }

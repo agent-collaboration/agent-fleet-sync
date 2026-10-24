@@ -24,6 +24,7 @@ pub struct TestNetwork {
     pub lose_submit: AtomicBool,
     pub lose_fetch: AtomicBool,
     pub fetch_barrier: Mutex<Option<FetchBarrier>>,
+    pub fetch_calls: Mutex<Vec<(CallId, FetchInput)>>,
     pub invalid_fetch: AtomicBool,
     pub unavailable_fetch: AtomicBool,
     pub unavailable_receipt: AtomicBool,
@@ -147,6 +148,10 @@ impl TestNetwork {
                     return Err(CallFailure::AnswerLost);
                 }
                 let request: FetchInput = serde_json::from_value(request).unwrap();
+                self.fetch_calls
+                    .lock()
+                    .unwrap()
+                    .push((call.clone(), request));
                 let mut answer = self
                     .mailbox
                     .upgrade()
@@ -154,14 +159,7 @@ impl TestNetwork {
                     .transaction(move |scope| {
                         Box::pin(async move {
                             let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                                .fetch(
-                                    peer(2),
-                                    request.stream,
-                                    request.after,
-                                    request.max_items,
-                                    request.max_bytes,
-                                    now,
-                                )
+                                .fetch_with_budget(peer(2), request, now)
                                 .await
                                 .map_err(storage_error)?;
                             admit_publications::<_, TestTypes, PublishTask>(scope)
@@ -220,14 +218,14 @@ impl TestNetwork {
                     .transaction(move |scope| {
                         Box::pin(async move {
                             Ok(Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                                .resolve_delivery(&reference)
+                                .resolve_local_delivery(&reference)
                                 .await)
                         })
                     })
                     .await
                     .unwrap();
                 let answer = match resolved {
-                    Ok(item) => {
+                    Ok(resolved) => {
                         self.local_calls.fetch_add(1, Ordering::SeqCst);
                         let answer = self
                             .local_answers
@@ -236,13 +234,13 @@ impl TestNetwork {
                             .pop_front()
                             .unwrap_or_else(|| LocalOutcome::Delivered {
                                 acceptance: Acceptance {
-                                    receipt: item.body().clone(),
+                                    receipt: resolved.item().body().clone(),
                                 },
                             });
                         if self.lose_delivery.swap(false, Ordering::SeqCst) {
                             return Err(CallFailure::AnswerLost);
                         }
-                        DeliverCall::<TestTypes>::validated_answer(LocalDelivery {
+                        resolved.validated_answer(LocalDelivery {
                             outcome: answer,
                             observation: (),
                         })
@@ -320,6 +318,7 @@ impl NetworkFixture {
             lose_submit: AtomicBool::new(false),
             lose_fetch: AtomicBool::new(false),
             fetch_barrier: Mutex::new(None),
+            fetch_calls: Mutex::new(Vec::new()),
             invalid_fetch: AtomicBool::new(false),
             unavailable_fetch: AtomicBool::new(false),
             unavailable_receipt: AtomicBool::new(false),
