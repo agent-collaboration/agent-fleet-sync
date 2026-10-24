@@ -372,3 +372,23 @@ pub enum DeliveryCheck<A> {
         outcome: Option<RecipientOutcome<A>>,
     },
 }
+
+/// Recipient custody resolved for one local call. Its admitted receipt bound
+/// remains authoritative even when the consumer's body policy later changes.
+pub struct ResolvedDelivery<D: DeliveryTypes> {
+    pub(crate) item: DeliveryItem<D>,
+    pub(crate) acceptance_bound: u32,
+}
+impl<D: DeliveryTypes> ResolvedDelivery<D> {
+    pub fn item(&self) -> &DeliveryItem<D> {
+        &self.item
+    }
+    /// Validate before returning the call answer to the engine for journaling.
+    /// Invalid receipt evidence cannot undo the effect and becomes Uncertain.
+    pub fn validated_answer(
+        &self,
+        delivery: crate::LocalDelivery<D>,
+    ) -> crate::LocalDeliveryOutcome<D> {
+        crate::DeliverCall::<D>::validated_answer_with_bound(delivery, self.acceptance_bound)
+    }
+}

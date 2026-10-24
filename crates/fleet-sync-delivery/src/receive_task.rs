@@ -10,6 +10,15 @@ use sqlx_core::{
 };
 use std::{marker::PhantomData, sync::Arc};
 
+// Keep the v0.2.0 tuple readable at its original step identity, including
+// when a consumer enables per-item budgeting while an operation is pending.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+enum ReceiveBudget {
+    Legacy((u32, u64)),
+    PerItem(FetchInput),
+}
+
 pub struct ReceiveItems<S, Db, D, C> {
     config: DeliveryTaskConfig,
     consumer: Arc<C>,
@@ -51,16 +60,37 @@ where
     ) -> Result<(), OperationFailure> {
         let input = *input;
         let config = self.config;
-        let fetch_input = ctx
+        let budget = ctx
             .local(step("budget")?, move |scope| {
                 Box::pin(async move {
-                    Inbox::<_, D>::new(scope, config.local.owner, config.local.limits)
-                        .receive_request(input, config.fetch_items, config.fetch_bytes)
-                        .await
-                        .map_err(step_error)
+                    let mut inbox =
+                        Inbox::<_, D>::new(scope, config.local.owner, config.local.limits);
+                    if D::PER_ITEM_SETTLEMENT {
+                        inbox
+                            .receive_request(input, config.fetch_items, config.fetch_bytes)
+                            .await
+                            .map(ReceiveBudget::PerItem)
+                            .map_err(step_error)
+                    } else {
+                        inbox
+                            .receive_budget(input, config.fetch_items, config.fetch_bytes)
+                            .await
+                            .map(ReceiveBudget::Legacy)
+                            .map_err(step_error)
+                    }
                 })
             })
             .await?;
+        let fetch_input = match budget {
+            ReceiveBudget::Legacy((max_items, max_bytes)) => FetchInput {
+                stream: input.stream,
+                after: input.after,
+                max_items,
+                max_bytes,
+                inbox_room_bytes: None,
+            },
+            ReceiveBudget::PerItem(input) => input,
+        };
         let batch = ctx
             .call(
                 step("fetch")?,

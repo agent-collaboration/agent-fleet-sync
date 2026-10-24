@@ -88,14 +88,11 @@ pub(crate) fn check_outcome<D: DeliveryTypes>(
 
 pub(crate) fn check_local_outcome<D: DeliveryTypes>(
     outcome: &crate::LocalOutcome<D::Acceptance>,
+    maximum: u32,
 ) -> Result<(), DeliveryError> {
     // Every other variant contains only closed protocol types with fixed bounds.
     if let crate::LocalOutcome::Delivered { acceptance } = outcome {
-        check(
-            acceptance,
-            D::MAX_ACCEPTANCE_BYTES,
-            DeliverySizeField::Acceptance,
-        )?;
+        check(acceptance, maximum, DeliverySizeField::Acceptance)?;
     }
     Ok(())
 }

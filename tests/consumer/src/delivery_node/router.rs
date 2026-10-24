@@ -85,7 +85,7 @@ impl CallRouter for NodeRouter {
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
                             Inbox::<_, SampleDelivery>::new(scope, config.owner, config.limits)
-                                .resolve_delivery(&reference)
+                                .resolve_local_delivery(&reference)
                                 .await
                         })
                     })
@@ -93,12 +93,13 @@ impl CallRouter for NodeRouter {
                 match resolved {
                     Ok(item) => {
                         let consumer = consumer::NodeConsumer(Arc::downgrade(&state));
-                        let outcome =
-                            <consumer::NodeConsumer as DeliveryConsumer<
-                                durable_steps::turso_store::TursoScope<'_, NodeHost>,
-                            >>::deliver_locally(&consumer, &item, call)
-                            .await;
-                        let answer = DeliverCall::<SampleDelivery>::validated_answer(outcome);
+                        let outcome = <consumer::NodeConsumer as DeliveryConsumer<
+                            durable_steps::turso_store::TursoScope<'_, NodeHost>,
+                        >>::deliver_locally(
+                            &consumer, item.item(), call
+                        )
+                        .await;
+                        let answer = item.validated_answer(outcome);
                         if state.gate.after("local").await {
                             return Err(CallFailure::AnswerLost);
                         }

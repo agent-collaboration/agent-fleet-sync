@@ -39,7 +39,7 @@ pub use delivery_rollback::{
 pub use fleet_sync_protocol::*;
 pub use inbox_record::{
     DeliveryAttempt, DeliveryCheck, InboxEffects, LocalCancelAdmission, LocalItemAdmission,
-    ReceiveInput, ReportRef,
+    ReceiveInput, ReportRef, ResolvedDelivery,
 };
 pub use inbox_retirement::{LocalRetirement, LocalRetirementRefusal};
 pub use inbox_storage::Inbox;

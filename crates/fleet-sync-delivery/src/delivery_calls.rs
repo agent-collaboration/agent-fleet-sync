@@ -53,10 +53,21 @@ impl<D: DeliveryTypes> CallTarget for DeliverCall<D> {
     type Answer = LocalDeliveryOutcome<D>;
 }
 impl<D: DeliveryTypes> DeliverCall<D> {
-    /// Hosts must adapt the consumer's result before returning it to the engine.
-    /// An invalid receipt cannot undo an external effect: persist Uncertain and never resend.
+    /// Legacy hosts validate their result before returning it for journaling.
+    /// Opted-in hosts use `Inbox::resolve_local_delivery` and the resolved value's
+    /// validator; an unbound Delivered answer cannot establish their receipt.
     pub fn validated_answer(delivery: LocalDelivery<D>) -> LocalDeliveryOutcome<D> {
-        let answer = if crate::delivery_sizes::check_local_outcome::<D>(&delivery.outcome).is_ok()
+        if D::PER_ITEM_SETTLEMENT && matches!(delivery.outcome, LocalOutcome::Delivered { .. }) {
+            return DispatchOutcome::Answered(LocalDeliveryAnswer::Uncertain);
+        }
+        Self::validated_answer_with_bound(delivery, D::MAX_ACCEPTANCE_BYTES)
+    }
+    pub(crate) fn validated_answer_with_bound(
+        delivery: LocalDelivery<D>,
+        maximum: u32,
+    ) -> LocalDeliveryOutcome<D> {
+        let answer = if crate::delivery_sizes::check_local_outcome::<D>(&delivery.outcome, maximum)
+            .is_ok()
             && crate::delivery_sizes::canonical_size(&delivery.observation)
                 .is_ok_and(|bytes| bytes <= u64::from(D::MAX_LOCAL_OBSERVATION_BYTES))
         {
