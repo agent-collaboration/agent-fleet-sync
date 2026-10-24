@@ -54,6 +54,8 @@ pub(crate) struct InboxHeader<D: DeliveryTypes> {
     pub route: InboxRoute,
     pub progress: InboxProgress<D::Acceptance>,
     pub report_seq: ReportSeq,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance_bound: Option<u32>,
     pub settlement_bytes: u32,
     pub release_requested: bool,
 }
@@ -88,6 +90,12 @@ impl<D: DeliveryTypes> InboxHeader<D> {
         )
     }
     pub fn validate(&self, owner: PeerId) -> Result<(), DeliveryError> {
+        crate::delivery_sizes::stored_acceptance_bound::<D>(self.acceptance_bound)?;
+        if self.acceptance_bound.is_some()
+            && let InboxProgress::Final { outcome, .. } = &self.progress
+        {
+            crate::delivery_sizes::check_outcome_bound::<D>(outcome, self.acceptance_bound)?;
+        }
         let processing_failed = matches!(
             &self.progress,
             InboxProgress::Final {
@@ -159,6 +167,7 @@ impl<D: DeliveryTypes> InboxRecord<D> {
                 route,
                 progress,
                 report_seq: ReportSeq::new(0),
+                acceptance_bound: crate::delivery_sizes::envelope_acceptance_bound(&payload)?,
                 settlement_bytes,
                 release_requested: false,
             },

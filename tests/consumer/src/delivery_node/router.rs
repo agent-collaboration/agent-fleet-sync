@@ -126,6 +126,7 @@ impl CallRouter for NodeRouter {
                         after: request.after,
                         max_items: request.max_items,
                         max_bytes: request.max_bytes,
+                        inbox_room_bytes: request.inbox_room_bytes,
                     })
                     .await?;
                 match answer {

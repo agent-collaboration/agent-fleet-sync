@@ -181,6 +181,14 @@ where
         {
             return Ok(effects);
         }
+        if let LocalOutcome::Delivered { acceptance } = &outcome {
+            crate::delivery_sizes::check_status_bound::<D>(
+                &DeliveryStatus::Delivered {
+                    acceptance: copy_wire(acceptance)?,
+                },
+                record.header.acceptance_bound,
+            )?;
+        }
         let recipient_outcome = match outcome {
             LocalOutcome::Held { until } => {
                 let deadline = if record.header.release_requested {

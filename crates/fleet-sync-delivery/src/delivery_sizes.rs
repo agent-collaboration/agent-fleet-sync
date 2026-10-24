@@ -34,6 +34,7 @@ pub(crate) fn check_status_route<D: DeliveryTypes>(
     )
 }
 pub(crate) fn check_item<D: DeliveryTypes>(item: &DeliveryItem<D>) -> Result<(), DeliveryError> {
+    body_acceptance_bound::<D>(item.body())?;
     check(
         item.sender(),
         D::MAX_SENDER_BYTES,
@@ -48,6 +49,7 @@ pub(crate) fn check_item<D: DeliveryTypes>(item: &DeliveryItem<D>) -> Result<(),
 pub(crate) fn check_envelope<D: DeliveryTypes>(
     item: &DeliveryEnvelope<D>,
 ) -> Result<(), DeliveryError> {
+    envelope_acceptance_bound(item)?;
     check(
         item.sender(),
         D::MAX_SENDER_BYTES,
@@ -94,6 +96,63 @@ pub(crate) fn check_local_outcome<D: DeliveryTypes>(
             D::MAX_ACCEPTANCE_BYTES,
             DeliverySizeField::Acceptance,
         )?;
+    }
+    Ok(())
+}
+
+/// Legacy consumers omit the field to preserve their stored representation.
+/// Opted-in items retain their admission bound even if the global ceiling changes.
+pub(crate) fn body_acceptance_bound<D: DeliveryTypes>(
+    body: &D::Body,
+) -> Result<Option<u32>, crate::DeliveryConfigError> {
+    if !D::PER_ITEM_SETTLEMENT {
+        return Ok(None);
+    }
+    let supplied = D::max_acceptance_bytes_for(body);
+    if supplied > D::MAX_ACCEPTANCE_BYTES {
+        return Err(crate::DeliveryConfigError::AcceptanceBoundTooLarge {
+            supplied,
+            maximum: D::MAX_ACCEPTANCE_BYTES,
+        });
+    }
+    Ok(Some(supplied))
+}
+pub(crate) fn envelope_acceptance_bound<D: DeliveryTypes>(
+    envelope: &DeliveryEnvelope<D>,
+) -> Result<Option<u32>, crate::DeliveryConfigError> {
+    match envelope {
+        DeliveryEnvelope::Item(item) => body_acceptance_bound::<D>(item.body()),
+        DeliveryEnvelope::Cancel(_) => Ok(None),
+    }
+}
+pub(crate) fn stored_acceptance_bound<D: DeliveryTypes>(
+    bound: Option<u32>,
+) -> Result<u32, DeliveryError> {
+    let maximum = bound.unwrap_or(D::MAX_ACCEPTANCE_BYTES);
+    if maximum > D::MAX_ACCEPTANCE_BYTES {
+        return Err(DeliveryError::Corrupt {
+            field: "stored acceptance bound",
+        });
+    }
+    Ok(maximum)
+}
+pub(crate) fn check_status_bound<D: DeliveryTypes>(
+    status: &DeliveryStatus<D::Acceptance>,
+    bound: Option<u32>,
+) -> Result<(), DeliveryError> {
+    let maximum = stored_acceptance_bound::<D>(bound)?;
+    if let DeliveryStatus::Delivered { acceptance } = status {
+        check(acceptance, maximum, DeliverySizeField::Acceptance)?;
+    }
+    Ok(())
+}
+pub(crate) fn check_outcome_bound<D: DeliveryTypes>(
+    outcome: &RecipientOutcome<D::Acceptance>,
+    bound: Option<u32>,
+) -> Result<(), DeliveryError> {
+    let maximum = stored_acceptance_bound::<D>(bound)?;
+    if let RecipientOutcome::Delivered { acceptance } = outcome {
+        check(acceptance, maximum, DeliverySizeField::Acceptance)?;
     }
     Ok(())
 }

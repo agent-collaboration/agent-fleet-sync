@@ -132,6 +132,11 @@ where
             DeliveryEnvelope::Cancel(cancel) => Some(cancel.target()),
         };
         let mut capacity_slot = true;
+        let mut acceptance_bound = crate::delivery_sizes::envelope_acceptance_bound(&item)?;
+        let settlement = match &item {
+            DeliveryEnvelope::Item(item) => self.limits.settlement_for::<D>(item.body())?,
+            DeliveryEnvelope::Cancel(_) => self.limits.settlement_allowance,
+        };
         if let Some(target) = cancel_target {
             if let Some(link) = queries::read_mail_cancel_link(self.storage.scope, item_key(target))
                 .await
@@ -175,6 +180,7 @@ where
                     },
                 )?;
                 self.storage.save_live(&original).await?;
+                acceptance_bound = original.acceptance_bound;
                 capacity_slot = false;
             }
         }
@@ -184,7 +190,7 @@ where
                 .map_err(sql_error)?;
             let count = decode_decimal(accounting.items, "mail item count")?;
             let used = decode_decimal(accounting.bytes, "mail occupied bytes")?;
-            if !fits_mailbox(self.limits, count, used, bytes) {
+            if !fits_mailbox(self.limits, count, used, bytes, settlement) {
                 return Ok(SubmitResult::Refused {
                     reason: DeliveryRefusal::MailboxFull,
                 });
@@ -218,11 +224,8 @@ where
             released_at: terminal.then_some(now),
             cancel: cancel_target.map(|_| CancelResult::Pending),
             cancel_target,
-            settlement_bytes: if capacity_slot {
-                self.limits.settlement_allowance
-            } else {
-                0
-            },
+            acceptance_bound,
+            settlement_bytes: if capacity_slot { settlement } else { 0 },
             capacity_slot,
         };
         self.storage.save_live(&record).await?;
@@ -321,6 +324,11 @@ where
                 field: "report item missing",
             });
         };
+        let acceptance_bound = match &record {
+            MailRecord::Live(live) => live.acceptance_bound,
+            MailRecord::Compacted(compacted) => compacted.acceptance_bound,
+        };
+        crate::delivery_sizes::check_outcome_bound::<D>(&report.outcome, acceptance_bound)?;
         if let MailRecord::Live(live) = &mut record
             && report.report_seq > live.last_report_seq
         {

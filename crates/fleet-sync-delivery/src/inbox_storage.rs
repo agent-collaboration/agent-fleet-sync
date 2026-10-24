@@ -114,12 +114,12 @@ where
             return Ok(None);
         };
         let header: InboxHeader<D> = decode(row.record, "inbox header")?;
+        crate::delivery_sizes::stored_acceptance_bound::<D>(header.acceptance_bound)?;
         if let InboxProgress::Final { outcome, .. } = &header.progress {
-            crate::delivery_sizes::check_outcome::<D>(outcome).map_err(|_| {
-                DeliveryError::Corrupt {
+            crate::delivery_sizes::check_outcome_bound::<D>(outcome, header.acceptance_bound)
+                .map_err(|_| DeliveryError::Corrupt {
                     field: "stored inbox outcome bounds",
-                }
-            })?;
+                })?;
         }
         if header.id != item {
             return Err(DeliveryError::Corrupt {
@@ -269,6 +269,7 @@ where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        crate::delivery_sizes::check_outcome_bound::<D>(&outcome, header.acceptance_bound)?;
         header.report_seq = header
             .report_seq
             .next()

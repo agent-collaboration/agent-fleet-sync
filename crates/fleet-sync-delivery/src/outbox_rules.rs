@@ -143,6 +143,7 @@ where
                 version,
                 cancel,
             } => {
+                crate::delivery_sizes::check_status_bound::<D>(&status, header.acceptance_bound)?;
                 if version > header.version {
                     header.status = status;
                     header.version = version;
@@ -276,7 +277,19 @@ where
                 None,
             ),
         };
+        let acceptance_bound = match self.recovery_header(input.item).await {
+            Ok(Some(OutboxHeaderState::Item(header))) if header.digest == input.digest.as_str() => {
+                header.acceptance_bound
+            }
+            Ok(Some(OutboxHeaderState::Recovered(record))) if record.digest == input.digest => {
+                record.acceptance_bound
+            }
+            Ok(_) | Err(DeliveryError::Corrupt { .. }) => None,
+            Err(error) => return Err(error),
+        };
+        crate::delivery_sizes::check_status_bound::<D>(&status, acceptance_bound)?;
         self.save_recovered(&RecoveredOutbox {
+            acceptance_bound,
             item: input.item,
             digest: input.digest.clone(),
             status,
@@ -325,10 +338,12 @@ where
         let valid = match &state {
             OutboxHeaderState::Item(header) => {
                 header.validate()?;
-                crate::delivery_sizes::check_status::<D>(&header.status).map_err(|_| {
-                    DeliveryError::Corrupt {
-                        field: "stored outbox status bounds",
-                    }
+                crate::delivery_sizes::check_status_bound::<D>(
+                    &header.status,
+                    header.acceptance_bound,
+                )
+                .map_err(|_| DeliveryError::Corrupt {
+                    field: "stored outbox status bounds",
                 })?;
                 live == u64::from(!header.status.is_terminal())
                     && slot == u64::from(header.capacity_slot)
@@ -344,6 +359,10 @@ where
                     && (!header.status.is_terminal() || row.payload.is_none())
             }
             OutboxHeaderState::Recovered(record) => {
+                crate::delivery_sizes::check_status_bound::<D>(
+                    &record.status,
+                    record.acceptance_bound,
+                )?;
                 record.version.value() <= i64::MAX as u64
                     && record.status.rank() > 0
                     && live == 0
@@ -418,10 +437,12 @@ where
             .transpose()?;
         let record = OutboxRecord { header, payload };
         record.validate()?;
-        crate::delivery_sizes::check_status::<D>(&record.header.status).map_err(|_| {
-            DeliveryError::Corrupt {
-                field: "stored outbox status bounds",
-            }
+        crate::delivery_sizes::check_status_bound::<D>(
+            &record.header.status,
+            record.header.acceptance_bound,
+        )
+        .map_err(|_| DeliveryError::Corrupt {
+            field: "stored outbox status bounds",
         })?;
         if let Some(payload) = &record.payload {
             crate::delivery_sizes::check_envelope(payload).map_err(|_| DeliveryError::Corrupt {

@@ -30,6 +30,10 @@ where
         let mut header = match state {
             Some(crate::outbox_record::OutboxHeaderState::Item(header)) => header,
             Some(crate::outbox_record::OutboxHeaderState::Recovered(mut record)) => {
+                crate::delivery_sizes::check_status_bound::<D>(
+                    &publication.status,
+                    record.acceptance_bound,
+                )?;
                 if publication.version <= record.version {
                     return Ok(());
                 }
@@ -41,6 +45,10 @@ where
             }
             _ => return Ok(()),
         };
+        crate::delivery_sizes::check_status_bound::<D>(
+            &publication.status,
+            header.acceptance_bound,
+        )?;
         if publication.version <= header.version {
             return Ok(());
         }

@@ -17,6 +17,8 @@ pub enum DeliveryConfigError {
     SettlementAllowanceTooSmall { supplied: u32, minimum: u32 },
     #[error("declared delivery bounds exceed the settlement reserve range")]
     ReserveOverflow,
+    #[error("per-item acceptance bound {supplied} exceeds global ceiling {maximum}")]
+    AcceptanceBoundTooLarge { supplied: u32, maximum: u32 },
     #[error("cannot encode delivery settlement metadata: {message}")]
     Encoding { message: String },
 }
@@ -49,6 +51,21 @@ impl DeliveryLimits {
             });
         }
         Ok(())
+    }
+    pub(crate) fn settlement_for<D: DeliveryTypes>(
+        &self,
+        body: &D::Body,
+    ) -> Result<u32, DeliveryConfigError> {
+        let bound = crate::delivery_sizes::body_acceptance_bound::<D>(body)?;
+        if bound.is_none() {
+            return Ok(self.settlement_allowance);
+        }
+        let global = minimum_settlement_allowance::<D>()?;
+        let per_item = crate::settlement_reserve::allowance_with_bound::<D>(bound)?;
+        self.settlement_allowance
+            .checked_sub(global)
+            .and_then(|extra| extra.checked_add(per_item))
+            .ok_or(DeliveryConfigError::ReserveOverflow)
     }
     pub const fn mailbox_payload_bytes(&self) -> u64 {
         self.mailbox_payload_bytes

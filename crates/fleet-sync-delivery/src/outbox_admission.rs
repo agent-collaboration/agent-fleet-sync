@@ -199,7 +199,11 @@ where
             DeliveryEnvelope::Cancel(cancel) => Some(cancel.target()),
         };
         let mut capacity_slot = true;
-        let mut settlement = self.limits.settlement_allowance;
+        let mut acceptance_bound = crate::delivery_sizes::envelope_acceptance_bound(&envelope)?;
+        let mut settlement = match &envelope {
+            DeliveryEnvelope::Item(item) => self.limits.settlement_for::<D>(item.body())?,
+            DeliveryEnvelope::Cancel(_) => self.limits.settlement_allowance,
+        };
         if let Some(target) = cancel_target {
             if let Some(link) = queries::read_outbox_cancel_link(self.scope, item_key(target))
                 .await
@@ -254,6 +258,7 @@ where
                     },
                 )?;
                 self.update_header(&original).await?;
+                acceptance_bound = original.acceptance_bound;
                 capacity_slot = false;
                 settlement = 0;
             }
@@ -302,6 +307,7 @@ where
                 }
             }),
             cancel_target,
+            acceptance_bound,
             settlement_bytes: settlement,
             capacity_slot,
         };

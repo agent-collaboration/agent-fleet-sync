@@ -154,14 +154,7 @@ impl TestNetwork {
                     .transaction(move |scope| {
                         Box::pin(async move {
                             let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                                .fetch(
-                                    peer(2),
-                                    request.stream,
-                                    request.after,
-                                    request.max_items,
-                                    request.max_bytes,
-                                    now,
-                                )
+                                .fetch_with_budget(peer(2), request, now)
                                 .await
                                 .map_err(storage_error)?;
                             admit_publications::<_, TestTypes, PublishTask>(scope)

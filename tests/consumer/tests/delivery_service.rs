@@ -201,6 +201,7 @@ async fn native_relay_custody_and_status_stream_are_bound_to_the_authenticated_o
             after: DeliverySeq::new(0),
             max_items: 10,
             max_bytes: 10_000,
+            inbox_room_bytes: None,
         })
         .await?
     {
@@ -269,6 +270,7 @@ async fn native_relay_custody_and_status_stream_are_bound_to_the_authenticated_o
             after: DeliverySeq::new(0),
             max_items: 10,
             max_bytes: 10_000,
+            inbox_room_bytes: None,
         })
         .await?
     {
@@ -555,6 +557,7 @@ async fn native_retirement_reply_lost_after_commit_replays_once_after_process_re
             after: DeliverySeq::new(0),
             max_items: 10,
             max_bytes: 10_000,
+            inbox_room_bytes: None,
         })
         .await?
     {

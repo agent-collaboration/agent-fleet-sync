@@ -78,6 +78,9 @@ pub struct FetchInput {
     pub after: DeliverySeq,
     pub max_items: u32,
     pub max_bytes: u64,
+    /// Absent preserves the legacy payload-only fetch budget.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbox_room_bytes: Option<u64>,
 }
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

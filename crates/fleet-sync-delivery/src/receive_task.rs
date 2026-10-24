@@ -51,11 +51,11 @@ where
     ) -> Result<(), OperationFailure> {
         let input = *input;
         let config = self.config;
-        let (max_items, max_bytes) = ctx
+        let fetch_input = ctx
             .local(step("budget")?, move |scope| {
                 Box::pin(async move {
                     Inbox::<_, D>::new(scope, config.local.owner, config.local.limits)
-                        .receive_budget(input, config.fetch_items, config.fetch_bytes)
+                        .receive_request(input, config.fetch_items, config.fetch_bytes)
                         .await
                         .map_err(step_error)
                 })
@@ -65,12 +65,7 @@ where
             .call(
                 step("fetch")?,
                 FetchCall::<D>::new(config.relay, config.local.owner),
-                FetchInput {
-                    stream: input.stream,
-                    after: input.after,
-                    max_items,
-                    max_bytes,
-                },
+                fetch_input,
             )
             .await?;
         let consumer = Arc::clone(&self.consumer);

@@ -86,6 +86,8 @@ pub(crate) struct LiveMail<D: DeliveryTypes> {
     pub released_at: Option<SyncTime>,
     pub cancel: Option<CancelResult>,
     pub cancel_target: Option<ItemId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance_bound: Option<u32>,
     pub settlement_bytes: u32,
     pub capacity_slot: bool,
 }
@@ -100,6 +102,8 @@ pub(crate) struct CurrentStatusTarget<R> {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct CompactedMail<A> {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance_bound: Option<u32>,
     pub id: ItemId,
     pub digest: ItemDigest,
     pub status: DeliveryStatus<A>,
@@ -138,6 +142,15 @@ impl<D: DeliveryTypes> MailRecord<D> {
         }
     }
     pub fn validate(&self, owner: PeerId) -> Result<(), DeliveryError> {
+        let acceptance_bound = match self {
+            Self::Live(record) => record.acceptance_bound,
+            Self::Compacted(record) => record.acceptance_bound,
+        };
+        crate::delivery_sizes::check_status_bound::<D>(self.status(), acceptance_bound).map_err(
+            |_| DeliveryError::Corrupt {
+                field: "stored mail status bounds",
+            },
+        )?;
         if self.version().value() == 0 || self.version().value() > i64::MAX as u64 {
             return Err(DeliveryError::Corrupt {
                 field: "mail status version",
@@ -247,10 +260,11 @@ pub(crate) fn fits_mailbox(
     items: u64,
     bytes: u64,
     new_payload: u64,
+    settlement: u32,
 ) -> bool {
     items < limits.mailbox_items
         && new_payload
-            .checked_add(u64::from(limits.settlement_allowance))
+            .checked_add(u64::from(settlement))
             .and_then(|size| bytes.checked_add(size))
             .is_some_and(|total| total <= limits.mailbox_payload_bytes)
 }

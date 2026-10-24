@@ -82,7 +82,7 @@ where
             attempt: 0,
             not_before: now,
         };
-        let mut settlement = self.limits.settlement_allowance;
+        let mut settlement = self.limits.settlement_for::<D>(item.body())?;
         if let Some(cancel) = self.pending_cancel(item.id()).await? {
             let cancel_bytes = u32::try_from(
                 encode(
