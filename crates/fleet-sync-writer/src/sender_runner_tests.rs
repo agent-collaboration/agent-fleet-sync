@@ -167,10 +167,11 @@ async fn error_waits_for_retry_after_even_when_change_signals_arrive() -> TestRe
             started.borrow().get(&fixture.first).copied().unwrap_or(0) >= 2,
             "retry starts after the deadline without another time advance"
         );
-        let event = tokio::select! {
+        tokio::select! {
             () = &mut worker => return Err("worker stopped before retrying".into()),
-            result = received.recv() => result.ok_or("runner closed")??,
-        };
+            result = wait_for_pass(&mut completed, fixture.first, 2) => result?,
+        }
+        let event = received.try_recv()??;
         assert!(matches!(event, ReplicationEvents::Acknowledged { .. }));
         assert!(started.borrow().get(&fixture.first).copied().unwrap_or(0) >= 2);
         shutdown.send_replace(true);
@@ -337,7 +338,9 @@ async fn completing_a_snapshot_wakes_the_same_idle_copy() -> TestResult {
     let sender = fixture.sender.clone();
     let copy = fixture.second;
     let worker = tokio::spawn(async move { sender.run_copy(copy, stopped, events).await });
-    let event = received.recv().await.ok_or("runner closed")??;
+    let event = tokio::time::timeout(Duration::from_secs(1), received.recv())
+        .await?
+        .ok_or("runner closed")??;
     assert!(
         matches!(event, ReplicationEvents::CopyNeedsSnapshot { copy: changed } if changed == copy)
     );
