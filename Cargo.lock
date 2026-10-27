@@ -629,7 +629,7 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "durable-steps"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "futures-executor",
  "futures-util",
@@ -650,7 +650,7 @@ dependencies = [
 
 [[package]]
 name = "durable-steps-worker"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "durable-steps",
  "futures-util",
@@ -761,7 +761,7 @@ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "fleet-sync-delivery"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "durable-steps",
  "fleet-sync-protocol",
@@ -780,7 +780,7 @@ dependencies = [
 
 [[package]]
 name = "fleet-sync-lease"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "durable-steps",
  "fleet-sync-protocol",
@@ -800,7 +800,7 @@ dependencies = [
 
 [[package]]
 name = "fleet-sync-protocol"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "runtime-primitives",
  "serde",
@@ -813,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "fleet-sync-query-gen"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "durable-steps",
  "serde",
@@ -829,7 +829,7 @@ dependencies = [
 
 [[package]]
 name = "fleet-sync-receiver"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "durable-steps",
  "either",
@@ -851,7 +851,7 @@ dependencies = [
 
 [[package]]
 name = "fleet-sync-service"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "axum",
  "durable-steps",
@@ -876,7 +876,7 @@ dependencies = [
 
 [[package]]
 name = "fleet-sync-session"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bytes",
  "durable-steps",
@@ -896,7 +896,7 @@ dependencies = [
 
 [[package]]
 name = "fleet-sync-tokio-runner"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "durable-steps",
  "fleet-sync-lease",
@@ -921,7 +921,7 @@ dependencies = [
 
 [[package]]
 name = "fleet-sync-transport-websocket"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "axum",
  "fleet-sync-protocol",
@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "fleet-sync-writer"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "durable-steps",
  "either",
@@ -2260,7 +2260,7 @@ dependencies = [
 
 [[package]]
 name = "runtime-primitives"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "futures-util",
@@ -2860,7 +2860,7 @@ dependencies = [
 
 [[package]]
 name = "sqlx-turso"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "serde",
@@ -2875,7 +2875,7 @@ dependencies = [
 
 [[package]]
 name = "sqlx-turso-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "either",
@@ -2900,7 +2900,7 @@ dependencies = [
 
 [[package]]
 name = "sqlx-turso-macros"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",

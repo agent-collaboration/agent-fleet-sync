@@ -147,16 +147,16 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
                 .filter(|candidate| candidate.version <= migration.version)
                 .cloned()
                 .collect::<Vec<_>>();
-            let result = apply_migration(
-                &mut connection,
-                migration,
-                prefix,
-                plan.statements,
-                &plan.tables,
-                self.clock.as_ref(),
-                &control,
-            )
-            .await;
+            let result = self
+                .apply_migration(
+                    &mut connection,
+                    migration,
+                    prefix,
+                    plan.statements,
+                    &plan.tables,
+                    &control,
+                )
+                .await;
             let enforcement = connection.execute("PRAGMA foreign_keys=ON").await;
             if let Err(error) = enforcement {
                 connection.close().await?;
@@ -206,59 +206,60 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         local_transaction.commit().await?;
         Ok(())
     }
-}
 
-async fn apply_migration(
-    connection: &mut TursoConnection,
-    migration: &Migration,
-    prefix: Vec<Migration>,
-    statements: Vec<String>,
-    tables: &[TableName],
-    clock: &dyn runtime_primitives::Clock,
-    control: &crate::write_transaction::WriterControl,
-) -> Result<Vec<crate::TableLayout>, OpenError> {
-    let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
-    let result = async {
-        Migrator::with_migrations(prefix)
-            .run_direct(None, &mut *transaction, false)
-            .await
-            .map_err(|error| OpenError::Storage {
-                message: error.to_string(),
-            })?;
-        let layouts = inspect_present_tables(&mut transaction, tables).await?;
-        // Admit the current replicated catalog inside this transaction, before
-        // schema history or captured changes can become durable.
-        crate::snapshot_schema::snapshot_schema(&mut transaction, tables).await?;
-        let encoded_statements = serde_json::to_string(&statements)
-            .map_err(|_| OpenError::corrupt("migration.statements"))?;
-        let encoded_layout =
-            serde_json::to_string(&layouts).map_err(|_| OpenError::corrupt("migration.layout"))?;
-        checked_queries::write_schema_step(
-            &mut WriterScope(&mut transaction),
-            migration.version,
-            encoded_statements,
-            encoded_layout,
-        )
-        .await?;
-        if !matches!(
-            control.holder.writer_state(clock.now()),
-            Ok(WriterState::Provisional)
-        ) {
-            control
-                .admit(clock.now())
-                .map_err(|refusal| OpenError::WriteRefused { refusal })?;
+    async fn apply_migration(
+        &self,
+        connection: &mut TursoConnection,
+        migration: &Migration,
+        prefix: Vec<Migration>,
+        statements: Vec<String>,
+        tables: &[TableName],
+        control: &crate::write_transaction::WriterControl,
+    ) -> Result<Vec<crate::TableLayout>, OpenError> {
+        let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+        let result = async {
+            Migrator::with_migrations(prefix)
+                .run_direct(None, &mut *transaction, false)
+                .await
+                .map_err(|error| OpenError::Storage {
+                    message: error.to_string(),
+                })?;
+            let layouts = inspect_present_tables(&mut transaction, tables).await?;
+            // Admit the current replicated catalog inside this transaction, before
+            // schema history or captured changes can become durable.
+            crate::snapshot_schema::snapshot_schema(&mut transaction, tables).await?;
+            let encoded_statements = serde_json::to_string(&statements)
+                .map_err(|_| OpenError::corrupt("migration.statements"))?;
+            let encoded_layout = serde_json::to_string(&layouts)
+                .map_err(|_| OpenError::corrupt("migration.layout"))?;
+            checked_queries::write_schema_step(
+                &mut WriterScope(&mut transaction),
+                migration.version,
+                encoded_statements,
+                encoded_layout,
+            )
+            .await?;
+            if !matches!(
+                control.holder.writer_state(self.clock.now()),
+                Ok(WriterState::Provisional)
+            ) {
+                control
+                    .admit(self.clock.now())
+                    .map_err(|refusal| OpenError::WriteRefused { refusal })?;
+            }
+            Ok::<_, OpenError>(layouts)
         }
-        Ok::<_, OpenError>(layouts)
-    }
-    .await;
-    match result {
-        Ok(layouts) => {
-            transaction.commit().await?;
-            Ok(layouts)
-        }
-        Err(error) => {
-            transaction.rollback().await?;
-            Err(error)
+        .await;
+        match result {
+            Ok(layouts) => {
+                transaction.commit().await?;
+                self.capture_changes.send_replace(());
+                Ok(layouts)
+            }
+            Err(error) => {
+                transaction.rollback().await?;
+                Err(error)
+            }
         }
     }
 }

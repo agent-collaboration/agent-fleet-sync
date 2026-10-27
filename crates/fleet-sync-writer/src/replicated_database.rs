@@ -41,6 +41,8 @@ pub struct ReplicatedDatabase<S: ReplicatedSchema> {
     pub(crate) control: Arc<Mutex<WriterControl>>,
     pub(crate) clock: Arc<dyn Clock>,
     pub(crate) authority_changes: tokio::sync::watch::Sender<()>,
+    pub(crate) capture_changes: tokio::sync::watch::Sender<()>,
+    pub(crate) copies_changes: tokio::sync::watch::Sender<()>,
     pub(crate) engine_work: Arc<Mutex<()>>,
     pub(crate) bootstrap_publish_probe: crate::bootstrap_publish_probe::BootstrapPublishProbe,
     pub(crate) move_probe: crate::writer_move_probe::MoveAsideProbe,
@@ -353,6 +355,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         );
         let readers = ReadPool::from_native_pool(native_owner.readers());
         let (authority_changes, _) = tokio::sync::watch::channel(());
+        let (capture_changes, _) = tokio::sync::watch::channel(());
+        let (copies_changes, _) = tokio::sync::watch::channel(());
         let database = Self {
             path: path.into(),
             database,
@@ -367,6 +371,8 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             })),
             clock,
             authority_changes,
+            capture_changes,
+            copies_changes,
             engine_work: Arc::new(Mutex::new(())),
             bootstrap_publish_probe,
             move_probe: Default::default(),
@@ -406,6 +412,11 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
     }
     pub fn subscribe_authority_changes(&self) -> tokio::sync::watch::Receiver<()> {
         self.authority_changes.subscribe()
+    }
+    /// A wake hint after committed writes or replicated migrations. Subscribe
+    /// before checking capture, and mark seen before each check.
+    pub fn subscribe_capture_changes(&self) -> tokio::sync::watch::Receiver<()> {
+        self.capture_changes.subscribe()
     }
     pub async fn registration_outcome(
         &self,
@@ -447,6 +458,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
             &self.writer.current().map_err(WriteRefusal::from_sqlx)?,
             control,
             self.clock.clone(),
+            self.capture_changes.clone(),
         )
         .await
     }

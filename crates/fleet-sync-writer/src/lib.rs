@@ -74,6 +74,8 @@ mod schema_layout;
 mod sender_contract;
 mod sender_retention;
 mod sender_runner;
+#[cfg(test)]
+mod sender_runner_tests;
 mod sender_snapshot_recovery;
 mod sender_storage;
 mod snapshot_schema;

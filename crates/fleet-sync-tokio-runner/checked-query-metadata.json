@@ -53,7 +53,7 @@
     "generator:sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "generator:sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "generator:sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "generator:workspace/Cargo.lock": "9fde12d6703fbf8c0e97155b6e563598866136197e591236c5584cd16016d7ce",
+    "generator:workspace/Cargo.lock": "e6dd6bbdd6d3915326e1bb54c57870a5d55f515e4be70732d385a2c7fd5bebbe",
     "generator:workspace/rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "query-schema/0001_native_sequence.sql": "165243dad92f95583c3aa10704c78005845868934faf23561c85615a9d86b3e0",
     "sql/erase_local_sequence.sql": "b897975d138eb74c6914c7468af1b7cba37b954b3b098af8769def8242836c66",

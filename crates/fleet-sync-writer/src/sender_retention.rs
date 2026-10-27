@@ -18,7 +18,9 @@ where
     pub(crate) async fn enforce_retention(&self) -> Result<Vec<ReplicationEvents>, SenderError> {
         let mut control = self.database.control.lock().await;
         let mut connection = self.database.maintenance.acquire().await?;
-        let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+        // The control guard excludes this owner's writes. A deferred snapshot
+        // takes the file write lock only if retention actually changes state.
+        let mut transaction = connection.begin().await?;
         crate::writer_authority::restore_authority(&mut transaction, &mut control.holder).await?;
         let mut record = read_file_record(&mut transaction)
             .await?
@@ -133,6 +135,9 @@ where
             }
         }
         transaction.commit().await?;
+        if !events.is_empty() {
+            self.database.copies_changes.send_replace(());
+        }
         Ok(events)
     }
 }

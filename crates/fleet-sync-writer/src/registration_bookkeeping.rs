@@ -167,7 +167,9 @@ impl<H: Host> WriterJournalScope<'_, H> {
         receiver: ReceiverId,
         position: ReplicationPosition,
     ) -> Result<(), OpenError> {
-        register_sender_copy(self.maintenance.connection, receiver, position).await
+        register_sender_copy(self.maintenance.connection, receiver, position).await?;
+        self.copies_changed = true;
+        Ok(())
     }
     pub(crate) async fn holder_epoch(&mut self) -> Result<Epoch, OpenError> {
         Ok(read_file_record(self.maintenance.connection)

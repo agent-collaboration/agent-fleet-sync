@@ -23,6 +23,7 @@ pub struct WriterJournalScope<'transaction, H: Host> {
     pub(crate) maintenance: MaintenanceTransaction<'transaction>,
     pub(crate) host: &'transaction H,
     pub(crate) holder: fleet_sync_lease::LeaseHolder,
+    pub(crate) copies_changed: bool,
 }
 
 impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
@@ -190,9 +191,11 @@ impl<S: ReplicatedSchema, H: Host> WriterJournalStore<S, H> {
             ),
             host: self.host.as_ref(),
             holder: control.holder.clone(),
+            copies_changed: false,
         };
         match run(&mut scope).await {
             Ok(value) => {
+                let copies_changed = scope.copies_changed;
                 let mut next_holder = control.holder.clone();
                 restore_authority(&mut transaction, &mut next_holder)
                     .await
@@ -203,6 +206,9 @@ impl<S: ReplicatedSchema, H: Host> WriterJournalStore<S, H> {
                     .map_err(|error| E::from(StoreError::backend(error)))?;
                 control.holder = next_holder;
                 self.database.authority_changes.send_replace(());
+                if copies_changed {
+                    self.database.copies_changes.send_replace(());
+                }
                 Ok(value)
             }
             Err(error) => {

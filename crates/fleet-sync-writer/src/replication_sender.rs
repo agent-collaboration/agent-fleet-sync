@@ -30,12 +30,27 @@ pub struct ReplicationSender<
     pub(crate) transport: Arc<T>,
     pub(crate) options: SenderOptions,
     copy_locks: Mutex<BTreeMap<ReceiverId, Arc<tokio::sync::Mutex<()>>>>,
+    #[cfg(test)]
+    pub(crate) copy_passes: tokio::sync::watch::Sender<BTreeMap<ReceiverId, usize>>,
+    #[cfg(test)]
+    pub(crate) copy_pass_starts: tokio::sync::watch::Sender<BTreeMap<ReceiverId, usize>>,
 }
 
 enum CopyPreparation<A> {
     Idle,
     NeedsSnapshot,
     Pieces(Vec<Piece<A>>),
+}
+
+pub(crate) enum ReplicationPass {
+    Idle(Vec<ReplicationEvents>),
+    Progress(Vec<ReplicationEvents>),
+}
+
+enum PieceContinuation {
+    NextPart,
+    Drain,
+    Wait,
 }
 
 pub(crate) struct SentPiece {
@@ -65,6 +80,10 @@ where
             transport,
             options,
             copy_locks: Mutex::new(BTreeMap::new()),
+            #[cfg(test)]
+            copy_passes: tokio::sync::watch::channel(BTreeMap::new()).0,
+            #[cfg(test)]
+            copy_pass_starts: tokio::sync::watch::channel(BTreeMap::new()).0,
         }
     }
 
@@ -108,6 +127,7 @@ where
             .await?;
         }
         transaction.commit().await?;
+        self.database.copies_changes.send_replace(());
         Ok(())
     }
 
@@ -186,7 +206,9 @@ where
         ) {
             return Ok(CopyPreparation::Idle);
         }
-        let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+        // The control guard excludes local writes; idle discovery only needs
+        // a read snapshot. Capture bookkeeping upgrades it when work exists.
+        let mut transaction = connection.begin().await?;
         let record = read_file_record(&mut transaction)
             .await?
             .ok_or_else(|| OpenError::corrupt("writer.record"))?;
@@ -205,13 +227,16 @@ where
                     .iter()
                     .any(|tail| tail.epoch == record.epoch))
         {
+            transaction.commit().await?;
             return Ok(CopyPreparation::Idle);
         }
         if status.needs_snapshot {
+            transaction.commit().await?;
             return Ok(CopyPreparation::NeedsSnapshot);
         }
         let commits = read_window(&mut transaction, &record, status.acked, 1).await?;
         let Some(captured) = commits.first() else {
+            transaction.commit().await?;
             return Ok(CopyPreparation::Idle);
         };
         self.record_capture(
@@ -238,14 +263,23 @@ where
         &self,
         copy: ReceiverId,
     ) -> Result<Vec<ReplicationEvents>, SenderError> {
+        match self.replicate_pass(copy).await? {
+            ReplicationPass::Idle(events) | ReplicationPass::Progress(events) => Ok(events),
+        }
+    }
+
+    pub(crate) async fn replicate_pass(
+        &self,
+        copy: ReceiverId,
+    ) -> Result<ReplicationPass, SenderError> {
         let lock = self.copy_lock(copy)?;
         let _copy_guard = lock.lock().await;
         let mut events = self.enforce_retention().await?;
         let pieces = match self.prepare(copy).await? {
-            CopyPreparation::Idle => return Ok(events),
+            CopyPreparation::Idle => return Ok(ReplicationPass::Idle(events)),
             CopyPreparation::NeedsSnapshot => {
                 if !events.iter().any(|event|matches!(event,ReplicationEvents::CopyNeedsSnapshot{copy:changed} if *changed==copy)) { events.push(ReplicationEvents::CopyNeedsSnapshot{copy}); }
-                return Ok(events);
+                return Ok(ReplicationPass::Idle(events));
             }
             CopyPreparation::Pieces(pieces) => pieces,
         };
@@ -256,13 +290,15 @@ where
                 part: piece.part.clone(),
             };
             let answer = self.transport.send_piece(copy, piece).await?;
-            let (mut answered, done) = self.answer(copy, &sent, answer).await?;
+            let (mut answered, continuation) = self.answer(copy, &sent, answer).await?;
             events.append(&mut answered);
-            if done {
-                break;
+            match continuation {
+                PieceContinuation::NextPart => {}
+                PieceContinuation::Drain => return Ok(ReplicationPass::Progress(events)),
+                PieceContinuation::Wait => return Ok(ReplicationPass::Idle(events)),
             }
         }
-        Ok(events)
+        Ok(ReplicationPass::Progress(events))
     }
 
     pub(crate) fn copy_lock(
@@ -283,7 +319,7 @@ where
         copy: ReceiverId,
         sent: &SentPiece,
         answer: ReplicationAnswer,
-    ) -> Result<(Vec<ReplicationEvents>, bool), SenderError> {
+    ) -> Result<(Vec<ReplicationEvents>, PieceContinuation), SenderError> {
         let mut control = self.database.control.lock().await;
         let mut connection = self.database.maintenance.acquire().await?;
         let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
@@ -297,8 +333,9 @@ where
             .ok_or(SenderError::Invalid {
                 field: "copy.unknown",
             })?;
+        let needed_snapshot = status.needs_snapshot;
         let mut events = Vec::new();
-        let done = match answer {
+        let continuation = match answer {
             ReplicationAnswer::CopyUnavailable { reason } => {
                 return Err(SenderError::CopyUnavailable { copy, reason });
             }
@@ -317,7 +354,7 @@ where
                     sender_storage::save_copy(&mut transaction, &status).await?;
                     events.push(ReplicationEvents::Acknowledged { copy, through });
                 }
-                true
+                PieceContinuation::Drain
             }
             ReplicationAnswer::PartStaged {
                 transaction,
@@ -334,7 +371,7 @@ where
                         field: "answer.part",
                     });
                 }
-                false
+                PieceContinuation::NextPart
             }
             ReplicationAnswer::Refused(PieceRefusal::Gap { acked }) => {
                 if acked < status.start
@@ -345,13 +382,18 @@ where
                         field: "answer.gap",
                     });
                 }
+                let previous = status.acked;
                 status.acked = acked;
                 if acked < record.retained_after {
                     status.needs_snapshot = true;
                     events.push(ReplicationEvents::CopyNeedsSnapshot { copy });
                 }
                 sender_storage::save_copy(&mut transaction, &status).await?;
-                true
+                if !status.needs_snapshot && acked != previous {
+                    PieceContinuation::Drain
+                } else {
+                    PieceContinuation::Wait
+                }
             }
             ReplicationAnswer::Refused(
                 PieceRefusal::NeedsSnapshot { .. } | PieceRefusal::NotInitialized,
@@ -361,7 +403,7 @@ where
                     sender_storage::save_copy(&mut transaction, &status).await?;
                     events.push(ReplicationEvents::CopyNeedsSnapshot { copy });
                 }
-                true
+                PieceContinuation::Wait
             }
             ReplicationAnswer::Refused(reason @ PieceRefusal::StaleEpoch { newer, ended_at }) => {
                 if status.role != CopyRole::Authoritative {
@@ -417,7 +459,7 @@ where
                             field: "holder.state",
                         })?,
                 ));
-                return Ok((events, true));
+                return Ok((events, PieceContinuation::Wait));
             }
             ReplicationAnswer::Refused(
                 reason @ (PieceRefusal::Retired | PieceRefusal::NotWriter { .. }),
@@ -463,6 +505,9 @@ where
             }
         };
         transaction.commit().await?;
-        Ok((events, done))
+        if status.needs_snapshot != needed_snapshot {
+            self.database.copies_changes.send_replace(());
+        }
+        Ok((events, continuation))
     }
 }

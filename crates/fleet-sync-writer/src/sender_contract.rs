@@ -80,7 +80,10 @@ pub enum Retention {
 #[derive(Clone, Copy, Debug)]
 pub struct SenderOptions {
     pub max_part_items: NonZeroUsize,
+    /// Delay after a failed replication pass.
     pub retry_after: Duration,
+    /// Safety-net check when no capture, authority or copy event arrives.
+    pub idle_recheck: Duration,
     pub retention: Retention,
 }
 
@@ -89,6 +92,7 @@ impl Default for SenderOptions {
         Self {
             max_part_items: NonZeroUsize::MIN.saturating_add(999),
             retry_after: Duration::from_millis(100),
+            idle_recheck: Duration::from_secs(30),
             retention: Retention::UntilAcknowledged,
         }
     }

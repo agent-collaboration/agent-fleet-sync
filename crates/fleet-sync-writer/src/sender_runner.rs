@@ -1,6 +1,6 @@
 use crate::{
     CaptureBookkeeping, PieceAnnotation, ReplicatedSchema, ReplicationEvents, ReplicationSender,
-    ReplicationTransport, SenderError,
+    ReplicationTransport, SenderError, replication_sender::ReplicationPass,
 };
 use fleet_sync_protocol::ReceiverId;
 use std::{collections::BTreeSet, sync::Arc};
@@ -35,7 +35,13 @@ where
                 field: "sender.retry_after",
             });
         }
-        let mut authority_changes = self.database.authority_changes.subscribe();
+        if self.options.idle_recheck.is_zero() {
+            return Err(SenderError::Invalid {
+                field: "sender.idle_recheck",
+            });
+        }
+        let mut authority_changes = self.database.subscribe_authority_changes();
+        let mut copies_changes = self.database.copies_changes.subscribe();
         let mut seen_tails = BTreeSet::new();
         for tail in self.rejected_tails().await? {
             seen_tails.insert(tail.epoch);
@@ -43,13 +49,13 @@ where
         }
         let mut started = BTreeSet::new();
         let mut workers = JoinSet::new();
-        let mut discovery = tokio::time::interval(self.options.retry_after);
         loop {
             if *shutdown.borrow() || events.is_closed() {
                 workers.abort_all();
                 while workers.join_next().await.is_some() {}
                 return Ok(());
             }
+            copies_changes.borrow_and_update();
             for copy in self.copies().await? {
                 if started.insert(copy.copy) {
                     let sender = self.clone();
@@ -60,7 +66,8 @@ where
             }
             tokio::select! {
                 result=shutdown.changed()=>{if result.is_err(){workers.abort_all();while workers.join_next().await.is_some(){}return Ok(());}},
-                _=discovery.tick()=>{},
+                _=tokio::time::sleep(self.options.idle_recheck)=>{},
+                _=copies_changes.changed()=>{},
                 changed=authority_changes.changed()=>{
                     if changed.is_ok() {
                         for tail in self.rejected_tails().await? {
@@ -84,22 +91,37 @@ where
         }
     }
 
-    async fn run_copy(
+    pub(crate) async fn run_copy(
         &self,
         copy: ReceiverId,
         mut shutdown: watch::Receiver<bool>,
         events: mpsc::Sender<Result<ReplicationEvents, CopyFailure>>,
     ) {
         let mut needs_snapshot_reported = false;
+        let mut capture_changes = self.database.subscribe_capture_changes();
+        let mut authority_changes = self.database.subscribe_authority_changes();
+        let mut copies_changes = self.database.copies_changes.subscribe();
         loop {
             if *shutdown.borrow() {
                 return;
             }
+            // Mark seen before checking: a commit during the pass remains unread.
+            capture_changes.borrow_and_update();
+            authority_changes.borrow_and_update();
+            copies_changes.borrow_and_update();
+            #[cfg(test)]
+            self.copy_pass_starts
+                .send_modify(|passes| *passes.entry(copy).or_default() += 1);
             let result = tokio::select! {
-                result=self.replicate_once(copy)=>result,
+                result=self.replicate_pass(copy)=>result,
                 _=wait_for_shutdown(&mut shutdown)=>return,
             };
-            let output = match result {
+            let (reported, delay) = match result {
+                Ok(ReplicationPass::Progress(reported)) => (Ok(reported), CopyDelay::Drain),
+                Ok(ReplicationPass::Idle(reported)) => (Ok(reported), CopyDelay::Idle),
+                Err(error) => (Err(error), CopyDelay::Retry),
+            };
+            let output = match reported {
                 Ok(reported) => reported
                     .into_iter()
                     .filter(|event| match event {
@@ -128,12 +150,35 @@ where
                     _=wait_for_shutdown(&mut shutdown)=>return,
                 }
             }
-            tokio::select! {
-                _=tokio::time::sleep(self.options.retry_after)=>{},
-                _=wait_for_shutdown(&mut shutdown)=>return,
+            #[cfg(test)]
+            self.copy_passes
+                .send_modify(|passes| *passes.entry(copy).or_default() += 1);
+            match delay {
+                CopyDelay::Drain => {}
+                CopyDelay::Idle => {
+                    tokio::select! {
+                        _=capture_changes.changed()=>{},
+                        _=authority_changes.changed()=>{},
+                        _=copies_changes.changed()=>{},
+                        _=tokio::time::sleep(self.options.idle_recheck)=>{},
+                        _=wait_for_shutdown(&mut shutdown)=>return,
+                    }
+                }
+                CopyDelay::Retry => {
+                    tokio::select! {
+                        _=tokio::time::sleep(self.options.retry_after)=>{},
+                        _=wait_for_shutdown(&mut shutdown)=>return,
+                    }
+                }
             }
         }
     }
+}
+
+enum CopyDelay {
+    Drain,
+    Idle,
+    Retry,
 }
 
 async fn wait_for_shutdown(shutdown: &mut watch::Receiver<bool>) {
