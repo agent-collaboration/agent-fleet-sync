@@ -4,6 +4,7 @@ use crate::{
     sender_test_fixture::{SenderFixture, TestResult},
 };
 use fleet_sync_protocol::ReceiverId;
+use futures_util::FutureExt;
 use sqlx_core::{connection::Connection, executor::Executor, query::query, row::Row};
 use sqlx_turso::Turso;
 use std::{collections::BTreeMap, sync::atomic::Ordering, time::Duration};
@@ -52,7 +53,7 @@ async fn idle_copy_checks_only_at_the_safety_net_over_sixty_virtual_seconds() ->
         }
         let window_started = tokio::time::Instant::now();
         tokio::time::advance(Duration::from_millis(29_999)).await;
-        assert!(futures_util::poll!(&mut worker).is_pending());
+        assert!(worker.as_mut().now_or_never().is_none());
         assert_eq!(
             started.borrow().get(&fixture.first),
             Some(&1),
@@ -60,6 +61,12 @@ async fn idle_copy_checks_only_at_the_safety_net_over_sixty_virtual_seconds() ->
         );
         // Cross the deadline explicitly; Tokio rounds timer deadlines to ms ticks.
         tokio::time::advance(Duration::from_millis(2)).await;
+        assert!(worker.as_mut().now_or_never().is_none());
+        assert_eq!(
+            started.borrow().get(&fixture.first),
+            Some(&2),
+            "recheck starts after the deadline without another time advance"
+        );
         tokio::select! {
             () = &mut worker => return Err("worker stopped before its recheck".into()),
             result = wait_for_pass(&mut completed, fixture.first, 2) => result?,
@@ -69,7 +76,7 @@ async fn idle_copy_checks_only_at_the_safety_net_over_sixty_virtual_seconds() ->
             .checked_sub(window_started.elapsed())
             .ok_or("virtual window advanced past sixty seconds")?;
         tokio::time::advance(until_sixty).await;
-        assert!(futures_util::poll!(&mut worker).is_pending());
+        assert!(worker.as_mut().now_or_never().is_none());
         assert!(started.borrow().get(&fixture.first).copied().unwrap_or(0) <= 60 / 30 + 2);
         shutdown.send_replace(true);
         worker.await;
@@ -145,9 +152,9 @@ async fn error_waits_for_retry_after_even_when_change_signals_arrive() -> TestRe
         fixture.database.capture_changes.send_replace(());
         fixture.database.authority_changes.send_replace(());
         fixture.database.copies_changes.send_replace(());
-        assert!(futures_util::poll!(&mut worker).is_pending());
+        assert!(worker.as_mut().now_or_never().is_none());
         tokio::time::advance(Duration::from_millis(99)).await;
-        assert!(futures_util::poll!(&mut worker).is_pending());
+        assert!(worker.as_mut().now_or_never().is_none());
         assert_eq!(
             started.borrow().get(&fixture.first),
             Some(&1),
@@ -155,6 +162,11 @@ async fn error_waits_for_retry_after_even_when_change_signals_arrive() -> TestRe
         );
         assert!(received.try_recv().is_err());
         tokio::time::advance(Duration::from_millis(2)).await;
+        assert!(worker.as_mut().now_or_never().is_none());
+        assert!(
+            started.borrow().get(&fixture.first).copied().unwrap_or(0) >= 2,
+            "retry starts after the deadline without another time advance"
+        );
         let event = tokio::select! {
             () = &mut worker => return Err("worker stopped before retrying".into()),
             result = received.recv() => result.ok_or("runner closed")??,
