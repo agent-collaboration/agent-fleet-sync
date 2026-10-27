@@ -148,7 +148,8 @@ where
                 }
             }
             #[cfg(test)]
-            self.copy_passes.send_modify(|passes| *passes += 1);
+            self.copy_passes
+                .send_modify(|passes| *passes.entry(copy).or_default() += 1);
             match delay {
                 CopyDelay::Drain => {}
                 CopyDelay::Idle => {

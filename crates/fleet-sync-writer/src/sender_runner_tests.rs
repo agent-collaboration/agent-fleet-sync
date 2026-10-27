@@ -3,15 +3,20 @@ use crate::{
     ReplicationEvents, SenderError,
     sender_test_fixture::{SenderFixture, TestResult},
 };
+use fleet_sync_protocol::ReceiverId;
 use sqlx_core::{connection::Connection, executor::Executor, query::query, row::Row};
 use sqlx_turso::Turso;
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{collections::BTreeMap, sync::atomic::Ordering, time::Duration};
 use tokio::sync::{mpsc, watch};
 
-async fn wait_for_pass(passes: &mut watch::Receiver<usize>, target: usize) -> TestResult {
+async fn wait_for_pass(
+    passes: &mut watch::Receiver<BTreeMap<ReceiverId, usize>>,
+    copy: ReceiverId,
+    target: usize,
+) -> TestResult {
     tokio::time::timeout(
         Duration::from_secs(31),
-        passes.wait_for(|count| *count >= target),
+        passes.wait_for(|counts| counts.get(&copy).copied().unwrap_or(0) >= target),
     )
     .await??;
     Ok(())
@@ -39,16 +44,16 @@ async fn idle_copy_checks_only_at_the_safety_net_over_sixty_virtual_seconds() ->
     let sender = fixture.sender.clone();
     let copy = fixture.first;
     let worker = tokio::spawn(async move { sender.run_copy(copy, stopped, events).await });
-    wait_for_pass(&mut passes, 1).await?;
+    wait_for_pass(&mut passes, fixture.first, 1).await?;
     let started = tokio::time::Instant::now();
     for expected in 2..=3 {
-        wait_for_pass(&mut passes, expected).await?;
+        wait_for_pass(&mut passes, fixture.first, expected).await?;
         assert_eq!(
             started.elapsed(),
             Duration::from_secs(30 * (expected as u64 - 1))
         );
     }
-    assert!(*passes.borrow() <= 60 / 30 + 2);
+    assert!(passes.borrow().get(&copy).copied().unwrap_or(0) <= 60 / 30 + 2);
     shutdown.send_replace(true);
     worker.await?;
     fixture.close().await
@@ -65,7 +70,7 @@ async fn committed_capture_wakes_an_idle_copy_before_the_safety_net() -> TestRes
     let sender = fixture.sender.clone();
     let copy = fixture.first;
     let worker = tokio::spawn(async move { sender.run_copy(copy, stopped, events).await });
-    wait_for_pass(&mut passes, 1).await?;
+    wait_for_pass(&mut passes, fixture.first, 1).await?;
     let started = tokio::time::Instant::now();
 
     write_amount(&fixture, 451).await?;
@@ -248,7 +253,7 @@ async fn adding_a_copy_wakes_discovery_without_waiting_for_the_fallback() -> Tes
     let (events, _received) = mpsc::channel(16);
     let mut passes = fixture.sender.copy_passes.subscribe();
     let worker = tokio::spawn(fixture.sender.clone().run(stopped, events));
-    wait_for_pass(&mut passes, 1).await?;
+    wait_for_pass(&mut passes, fixture.first, 1).await?;
     let started = tokio::time::Instant::now();
     fixture
         .sender
@@ -260,7 +265,7 @@ async fn adding_a_copy_wakes_discovery_without_waiting_for_the_fallback() -> Tes
         .await?;
     tokio::time::timeout(
         Duration::from_millis(50),
-        passes.wait_for(|count| *count >= 2),
+        passes.wait_for(|counts| counts.contains_key(&fixture.second)),
     )
     .await??;
     assert!(started.elapsed() < Duration::from_millis(50));
