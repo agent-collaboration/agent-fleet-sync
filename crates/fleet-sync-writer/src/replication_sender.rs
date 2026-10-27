@@ -32,6 +32,8 @@ pub struct ReplicationSender<
     copy_locks: Mutex<BTreeMap<ReceiverId, Arc<tokio::sync::Mutex<()>>>>,
     #[cfg(test)]
     pub(crate) copy_passes: tokio::sync::watch::Sender<BTreeMap<ReceiverId, usize>>,
+    #[cfg(test)]
+    pub(crate) copy_pass_starts: tokio::sync::watch::Sender<BTreeMap<ReceiverId, usize>>,
 }
 
 enum CopyPreparation<A> {
@@ -80,6 +82,8 @@ where
             copy_locks: Mutex::new(BTreeMap::new()),
             #[cfg(test)]
             copy_passes: tokio::sync::watch::channel(BTreeMap::new()).0,
+            #[cfg(test)]
+            copy_pass_starts: tokio::sync::watch::channel(BTreeMap::new()).0,
         }
     }
 

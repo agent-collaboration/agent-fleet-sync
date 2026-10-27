@@ -34,28 +34,46 @@ async fn write_amount(fixture: &SenderFixture, amount: i64) -> TestResult {
 
 #[tokio::test]
 async fn idle_copy_checks_only_at_the_safety_net_over_sixty_virtual_seconds() -> TestResult {
-    // A 100 ms polling loop fails at the very next pass, even with paused time.
     let fixture = SenderFixture::open().await?;
     fixture.migrate_copies().await?;
     tokio::time::pause();
     let (shutdown, stopped) = watch::channel(false);
     let (events, _received) = mpsc::channel(16);
-    let mut passes = fixture.sender.copy_passes.subscribe();
-    let sender = fixture.sender.clone();
-    let copy = fixture.first;
-    let worker = tokio::spawn(async move { sender.run_copy(copy, stopped, events).await });
-    wait_for_pass(&mut passes, fixture.first, 1).await?;
-    let started = tokio::time::Instant::now();
-    for expected in 2..=3 {
-        wait_for_pass(&mut passes, fixture.first, expected).await?;
+    let mut completed = fixture.sender.copy_passes.subscribe();
+    let started = fixture.sender.copy_pass_starts.subscribe();
+    // Drive the worker in this task: each poll is a causal step, so checking
+    // for an early pass never races a separately scheduled worker or DB I/O.
+    {
+        let worker = fixture.sender.run_copy(fixture.first, stopped, events);
+        tokio::pin!(worker);
+        tokio::select! {
+            () = &mut worker => return Err("worker stopped before its idle pass".into()),
+            result = wait_for_pass(&mut completed, fixture.first, 1) => result?,
+        }
+        let window_started = tokio::time::Instant::now();
+        tokio::time::advance(Duration::from_millis(29_999)).await;
+        assert!(futures_util::poll!(&mut worker).is_pending());
         assert_eq!(
-            started.elapsed(),
-            Duration::from_secs(30 * (expected as u64 - 1))
+            started.borrow().get(&fixture.first),
+            Some(&1),
+            "no recheck before idle_recheck"
         );
+        // Cross the deadline explicitly; Tokio rounds timer deadlines to ms ticks.
+        tokio::time::advance(Duration::from_millis(2)).await;
+        tokio::select! {
+            () = &mut worker => return Err("worker stopped before its recheck".into()),
+            result = wait_for_pass(&mut completed, fixture.first, 2) => result?,
+        }
+        assert_eq!(started.borrow().get(&fixture.first), Some(&2));
+        let until_sixty = Duration::from_secs(60)
+            .checked_sub(window_started.elapsed())
+            .ok_or("virtual window advanced past sixty seconds")?;
+        tokio::time::advance(until_sixty).await;
+        assert!(futures_util::poll!(&mut worker).is_pending());
+        assert!(started.borrow().get(&fixture.first).copied().unwrap_or(0) <= 60 / 30 + 2);
+        shutdown.send_replace(true);
+        worker.await;
     }
-    assert!(passes.borrow().get(&copy).copied().unwrap_or(0) <= 60 / 30 + 2);
-    shutdown.send_replace(true);
-    worker.await?;
     fixture.close().await
 }
 
@@ -109,33 +127,43 @@ async fn error_waits_for_retry_after_even_when_change_signals_arrive() -> TestRe
     tokio::time::pause();
     let (shutdown, stopped) = watch::channel(false);
     let (events, mut received) = mpsc::channel(16);
-    let sender = fixture.sender.clone();
-    let copy = fixture.first;
-    let worker = tokio::spawn(async move { sender.run_copy(copy, stopped, events).await });
-    let failure = received
-        .recv()
-        .await
-        .ok_or("runner closed")?
-        .err()
-        .ok_or("bookkeeping did not fail")?;
-    assert!(matches!(failure.error, SenderError::Bookkeeping(_)));
-    let started = tokio::time::Instant::now();
-    fixture.marks.refuse.store(false, Ordering::SeqCst);
-    fixture.database.capture_changes.send_replace(());
-    fixture.database.authority_changes.send_replace(());
-    fixture.database.copies_changes.send_replace(());
-    assert!(
-        tokio::time::timeout(Duration::from_millis(99), received.recv())
-            .await
-            .is_err()
-    );
-    let event = tokio::time::timeout(Duration::from_millis(2), received.recv())
-        .await?
-        .ok_or("runner closed")??;
-    assert!(matches!(event, ReplicationEvents::Acknowledged { .. }));
-    assert_eq!(started.elapsed(), Duration::from_millis(100));
-    shutdown.send_replace(true);
-    worker.await?;
+    let mut completed = fixture.sender.copy_passes.subscribe();
+    let started = fixture.sender.copy_pass_starts.subscribe();
+    {
+        let worker = fixture.sender.run_copy(fixture.first, stopped, events);
+        tokio::pin!(worker);
+        tokio::select! {
+            () = &mut worker => return Err("worker stopped before reporting its error".into()),
+            result = wait_for_pass(&mut completed, fixture.first, 1) => result?,
+        }
+        let failure = received
+            .try_recv()?
+            .err()
+            .ok_or("bookkeeping did not fail")?;
+        assert!(matches!(failure.error, SenderError::Bookkeeping(_)));
+        fixture.marks.refuse.store(false, Ordering::SeqCst);
+        fixture.database.capture_changes.send_replace(());
+        fixture.database.authority_changes.send_replace(());
+        fixture.database.copies_changes.send_replace(());
+        assert!(futures_util::poll!(&mut worker).is_pending());
+        tokio::time::advance(Duration::from_millis(99)).await;
+        assert!(futures_util::poll!(&mut worker).is_pending());
+        assert_eq!(
+            started.borrow().get(&fixture.first),
+            Some(&1),
+            "no retry before retry_after"
+        );
+        assert!(received.try_recv().is_err());
+        tokio::time::advance(Duration::from_millis(2)).await;
+        let event = tokio::select! {
+            () = &mut worker => return Err("worker stopped before retrying".into()),
+            result = received.recv() => result.ok_or("runner closed")??,
+        };
+        assert!(matches!(event, ReplicationEvents::Acknowledged { .. }));
+        assert!(started.borrow().get(&fixture.first).copied().unwrap_or(0) >= 2);
+        shutdown.send_replace(true);
+        worker.await;
+    }
     fixture.close().await
 }
 

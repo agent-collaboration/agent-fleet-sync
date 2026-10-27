@@ -109,6 +109,9 @@ where
             capture_changes.borrow_and_update();
             authority_changes.borrow_and_update();
             copies_changes.borrow_and_update();
+            #[cfg(test)]
+            self.copy_pass_starts
+                .send_modify(|passes| *passes.entry(copy).or_default() += 1);
             let result = tokio::select! {
                 result=self.replicate_pass(copy)=>result,
                 _=wait_for_shutdown(&mut shutdown)=>return,
