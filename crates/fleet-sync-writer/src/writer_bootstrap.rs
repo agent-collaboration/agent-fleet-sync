@@ -359,6 +359,7 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         transaction.commit().await?;
         control.holder = holder;
         self.authority_changes.send_replace(());
+        self.copies_changes.send_replace(());
         Ok(())
     }
 }

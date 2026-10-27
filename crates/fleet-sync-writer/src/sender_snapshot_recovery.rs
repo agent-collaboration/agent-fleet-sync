@@ -60,6 +60,7 @@ where
         status.needs_snapshot = false;
         sender_storage::save_copy(&mut transaction, &status).await?;
         transaction.commit().await?;
+        self.database.copies_changes.send_replace(());
         Ok(status)
     }
 }

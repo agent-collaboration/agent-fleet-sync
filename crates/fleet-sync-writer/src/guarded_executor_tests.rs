@@ -122,6 +122,7 @@ impl WriterFixture {
             &self.writer,
             self.control.clone().lock_owned().await,
             self.clock.clone(),
+            tokio::sync::watch::channel(()).0,
         )
         .await
     }

@@ -57,6 +57,7 @@ pub struct WriteTransaction {
     clock: Arc<dyn Clock>,
     capture_start: u64,
     admitted_epoch: Epoch,
+    capture_changes: tokio::sync::watch::Sender<()>,
 }
 
 impl fmt::Debug for WriteTransaction {
@@ -72,6 +73,7 @@ impl WriteTransaction {
         pool: &Pool<Turso>,
         control: OwnedMutexGuard<WriterControl>,
         clock: Arc<dyn Clock>,
+        capture_changes: tokio::sync::watch::Sender<()>,
     ) -> Result<Self, WriteRefusal> {
         let admitted_epoch = control.admit(clock.now())?;
         let mut transaction = pool
@@ -89,6 +91,7 @@ impl WriteTransaction {
             clock,
             capture_start,
             admitted_epoch,
+            capture_changes,
         })
     }
 
@@ -147,7 +150,9 @@ impl WriteTransaction {
         self.transaction
             .commit()
             .await
-            .map_err(WriteRefusal::from_sqlx)
+            .map_err(WriteRefusal::from_sqlx)?;
+        self.capture_changes.send_replace(());
+        Ok(())
     }
 
     pub async fn rollback(self) -> Result<(), WriteRefusal> {
