@@ -5,7 +5,7 @@ use crate::{
 };
 use fleet_sync_lease::{CurrentLeaseRelation, LeaseHolder, current_lease_relation};
 use fleet_sync_protocol::{
-    DatabaseId, Epoch, GateReason, LeaseRefusal, PeerId, RenewAnswer, SyncTime,
+    DatabaseId, Epoch, GateReason, LeaseRefusal, PeerId, RenewAnswer, RenewResult, SyncTime,
 };
 use serde::{Deserialize, Serialize};
 use sqlx_core::connection::Connection;
@@ -96,6 +96,68 @@ impl AuthorityObservation {
             _ => None,
         }
     }
+    fn request_started(&self) -> Option<SyncTime> {
+        match self {
+            Self::Renewal {
+                request_started, ..
+            } => Some(*request_started),
+            Self::RegistrationRejected { .. } => None,
+        }
+    }
+    fn epochless_refusal(&self) -> bool {
+        matches!(
+            self,
+            Self::Renewal {
+                answer: RenewAnswer::Refused(_),
+                ..
+            }
+        ) && self.epoch().is_none()
+    }
+    fn keeps_existing(
+        &self,
+        existing: &Self,
+        file_epoch: Epoch,
+        latest_started: Option<SyncTime>,
+    ) -> bool {
+        if existing.terminal() {
+            return true;
+        }
+        if self.terminal() {
+            return false;
+        }
+        if existing
+            .epoch()
+            .is_some_and(|old| self.epoch().is_some_and(|new| new < old))
+        {
+            return true;
+        }
+        // A missing epoch cannot erase an already proven fence above this file.
+        if existing.epoch().is_some_and(|old| old > file_epoch) && self.epoch().is_none() {
+            return true;
+        }
+        let known_epoch = existing.epoch().unwrap_or(file_epoch).max(file_epoch);
+        if self.epoch().is_some_and(|new| new > known_epoch) {
+            return false;
+        }
+        // Equal millisecond starts do not order replies. Keep a refusal over
+        // a grant until a strictly later authoritative answer can heal it.
+        match (self.request_started(), latest_started) {
+            (Some(new), Some(old)) => {
+                new < old
+                    || (new == old
+                        && existing.epochless_refusal()
+                        && matches!(
+                            self,
+                            Self::Renewal {
+                                answer: RenewAnswer::Renewed { .. },
+                                ..
+                            }
+                        ))
+            }
+            _ => false,
+        }
+    }
+
     fn epoch(&self) -> Option<Epoch> {
         match self {
             Self::Renewal {
@@ -165,6 +227,37 @@ pub(crate) async fn save_observation(
     let mut record = read_file_record(connection)
         .await?
         .ok_or_else(|| OpenError::corrupt("writer.record"))?;
+    observation.validate_database(record.database)?;
+    let grant = match &record.registration {
+        crate::writer_registration_state::RegistrationState::Granted { grant, .. } => Some(grant),
+        _ => None,
+    };
+    let latest_started = [
+        record
+            .authority
+            .as_ref()
+            .and_then(AuthorityObservation::request_started),
+        grant.map(|grant| grant.request_started),
+    ]
+    .into_iter()
+    .flatten()
+    .max();
+    // An immutable registration receipt remains the sole stored initial grant.
+    // Project it transiently when a delayed observation must leave it intact.
+    let retained = record.authority.clone().or_else(|| {
+        grant.map(|grant| AuthorityObservation::Renewal {
+            answer: RenewAnswer::Renewed {
+                recorded: RenewResult {
+                    epoch: grant.lease.epoch,
+                    expires_at: grant.lease.expires_at,
+                },
+                current: grant.lease.clone(),
+                transfer_in_progress: None,
+                replayed: true,
+            },
+            request_started: grant.request_started,
+        })
+    });
     let ended_at = match &observation {
         AuthorityObservation::Renewal {
             answer: RenewAnswer::Refused(LeaseRefusal::StaleEpoch { epoch_ended_at, .. }),
@@ -200,14 +293,11 @@ pub(crate) async fn save_observation(
             })?;
         }
     }
-    let observation = match record.authority {
-        Some(existing)
-            if existing.terminal()
-                || (!observation.terminal()
-                    && existing.epoch().is_some_and(|epoch| {
-                        observation.epoch().is_none_or(|new| new < epoch)
-                    })) =>
-        {
+    let observation = match retained {
+        Some(existing) if observation.keeps_existing(&existing, record.epoch, latest_started) => {
+            if record.authority.is_none() {
+                return Ok(existing);
+            }
             existing
         }
         _ => observation,
@@ -321,3 +411,11 @@ impl<S: ReplicatedSchema> ReplicatedDatabase<S> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "writer_authority_test.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "writer_authority_order_test.rs"]
+mod ordering_tests;

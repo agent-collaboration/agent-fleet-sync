@@ -144,7 +144,8 @@ impl<H: Host> WriterJournalScope<'_, H> {
                 };
                 let epoch = self.holder_epoch().await?;
                 observation.restore(&mut self.holder, epoch)?;
-                save_observation(self.maintenance.connection, observation).await?;
+                let selected = save_observation(self.maintenance.connection, observation).await?;
+                selected.restore(&mut self.holder, epoch)?;
                 Ok(())
             }
         }
