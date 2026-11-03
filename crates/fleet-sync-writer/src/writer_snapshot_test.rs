@@ -105,7 +105,9 @@ fn assert_complete_snapshot_units_fit(
     limit: usize,
 ) -> TestResult {
     use fleet_sync_protocol::*;
-    let frame = FrameId::new(durable_steps::Uuid::from_u128(1))?;
+    let frame = FrameId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000001,
+    ))?;
     let seeded = SeedPage {
         seed: SeedId {
             generation: u64::MAX,

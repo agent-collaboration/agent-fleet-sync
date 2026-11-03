@@ -106,7 +106,10 @@ impl ReplicationTransport<Protocol> for MeasuredTransport {
         };
         let annotated = piece.annotation.is_some();
         let request = ClientFrame::<Protocol>::Request {
-            frame: FrameId::new(durable_steps::Uuid::from_u128(1)).map_err(unavailable)?,
+            frame: FrameId::new(durable_steps::Uuid::from_u128(
+                0x019eef00000070008000000000000001,
+            ))
+            .map_err(unavailable)?,
             body: OperationRequest::Replication(ReplicationRequest::Piece(piece)),
         };
         let framed = serde_json::to_vec(&request).map_err(unavailable)?;
