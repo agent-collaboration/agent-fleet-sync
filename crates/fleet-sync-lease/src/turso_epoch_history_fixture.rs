@@ -28,7 +28,7 @@ pub(super) async fn move_to(
     from: u64,
     to: u128,
 ) -> TestResult<HolderChangeAnswer> {
-    task_answer::<HolderChangeTask<TestStore, Turso>>(
+    task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         engine,
         &holder_change_request_key(id)?,
         HolderChangeRequest::Move {
@@ -55,7 +55,7 @@ pub(super) async fn takeover(
         },
     )
     .await?;
-    task_answer::<HolderChangeTask<TestStore, Turso>>(
+    task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         engine,
         &holder_change_request_key(id)?,
         HolderChangeRequest::Takeover {

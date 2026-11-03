@@ -67,13 +67,20 @@ async fn restored_registry_reserves_above_the_fresh_previews_copy_fence() -> Tes
         to: peer(2)?,
     };
     let key = holder_change_request_key(transfer(911)?)?;
-    let answer =
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request.clone()).await?;
+    let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        &engine,
+        &key,
+        request.clone(),
+    )
+    .await?;
     assert!(matches!(answer,HolderChangeAnswer::Granted{epoch,..} if epoch == Epoch::new(6)?));
     let calls = host.calls.lock().await.len();
     host.advance();
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request).await?,
+        task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &engine, &key, request
+        )
+        .await?,
         answer
     );
     assert_eq!(host.calls.lock().await.len(), calls);
@@ -125,7 +132,9 @@ async fn fence_not_advanced_repairs_once_from_the_real_copys_proven_fence() -> T
         to: peer(2)?,
     };
     let key = holder_change_request_key(transfer(912)?)?;
-    let drive = task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request);
+    let drive = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        &engine, &key, request,
+    );
     let control = async {
         gate.started.notified().await;
         advance_copy(&host, 1, 5).await?;
@@ -192,7 +201,11 @@ async fn a_second_floor_refusal_keeps_its_reservation_without_granting_or_changi
         to: peer(2)?,
     };
     let key = holder_change_request_key(transfer(913)?)?;
-    let drive = task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request.clone());
+    let drive = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        &engine,
+        &key,
+        request.clone(),
+    );
     let control = async {
         gate.started.notified().await;
         advance_copy(&host, 1, 5).await?;
@@ -228,7 +241,10 @@ async fn a_second_floor_refusal_keeps_its_reservation_without_granting_or_changi
         "1"
     );
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request).await?,
+        task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &engine, &key, request
+        )
+        .await?,
         HolderChangeAnswer::Refused(HolderChangeRefusal::EpochUnprovable)
     );
     assert_eq!(

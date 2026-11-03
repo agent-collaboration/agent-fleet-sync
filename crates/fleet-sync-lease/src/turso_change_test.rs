@@ -14,7 +14,7 @@ fn transfer(value: u128) -> TestResult<TransferId> {
 }
 pub(super) async fn register_first(engine: &TestEngine) -> TestResult {
     let request = registration(201, 1)?;
-    let answer = task_answer::<RegistrationTask<TestStore, Turso>>(
+    let answer = task_answer::<RegistrationTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         engine,
         &lifecycle_request_key(request.attempt)?,
         request,
@@ -38,7 +38,7 @@ async fn claim_grants_the_next_epoch_and_settles_once_after_seed_publication() -
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
     let import = import_request(201, "a")?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(import.attempt)?,
             import.clone()
@@ -52,7 +52,7 @@ async fn claim_grants_the_next_epoch_and_settles_once_after_seed_publication() -
         database: database()?,
         claimant: peer(2)?,
     };
-    let answer = task_answer::<HolderChangeTask<TestStore, Turso>>(
+    let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         &engine,
         &holder_change_request_key(transfer(301)?)?,
         request.clone(),
@@ -62,7 +62,7 @@ async fn claim_grants_the_next_epoch_and_settles_once_after_seed_publication() -
         matches!(answer,HolderChangeAnswer::Granted{epoch,start:actual,..} if epoch==Epoch::new(2)?&&actual==start)
     );
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(
+        task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &holder_change_request_key(transfer(301)?)?,
             request
@@ -87,7 +87,7 @@ async fn claim_grants_the_next_epoch_and_settles_once_after_seed_publication() -
     let calls_before = host.calls.lock().await.len();
     let reimport = import_request(202, "a")?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(reimport.attempt)?,
             reimport
@@ -99,7 +99,7 @@ async fn claim_grants_the_next_epoch_and_settles_once_after_seed_publication() -
     conflicting.attempt = import_request(203, "b")?.attempt;
     conflicting.digest = ImportDigest::of_canonical(&"different")?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(conflicting.attempt)?,
             conflicting.clone()
@@ -111,7 +111,7 @@ async fn claim_grants_the_next_epoch_and_settles_once_after_seed_publication() -
         }
     );
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(import.attempt)?,
             import
@@ -166,7 +166,7 @@ async fn lost_release_answer_replays_one_call_even_past_the_unsent_bound_and_kee
         to: peer(2)?,
     };
     let id = engine
-        .start::<HolderChangeTask<TestStore, Turso>>(
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &holder_change_request_key(transfer(301)?)?,
             request,
         )
@@ -228,7 +228,7 @@ async fn never_sent_move_ends_unreachable_without_fencing_or_changing_holder() -
         to: peer(2)?,
     };
     let id = engine
-        .start::<HolderChangeTask<TestStore, Turso>>(
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &holder_change_request_key(transfer(301)?)?,
             request,
         )
@@ -309,7 +309,7 @@ async fn takeover_refuses_a_moved_preview_then_new_preview_uses_a_later_reserved
         to: peer(2)?,
     };
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(
+        task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &holder_change_request_key(transfer(301)?)?,
             first
@@ -334,7 +334,7 @@ async fn takeover_refuses_a_moved_preview_then_new_preview_uses_a_later_reserved
         to: peer(2)?,
     };
     assert!(
-        matches!(task_answer::<HolderChangeTask<TestStore,Turso>>(&engine,&holder_change_request_key(transfer(302)?)?,second).await?,HolderChangeAnswer::Granted{epoch,start,..} if epoch==Epoch::new(3)?&&start==cutoff)
+        matches!(task_answer::<HolderChangeTask<TestStore,Turso, crate::NoLeaseChangeHook>>(&engine,&holder_change_request_key(transfer(302)?)?,second).await?,HolderChangeAnswer::Granted{epoch,start,..} if epoch==Epoch::new(3)?&&start==cutoff)
     );
     assert!(
         host.calls

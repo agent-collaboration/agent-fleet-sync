@@ -22,11 +22,19 @@ async fn move_refuses_just_past_renewal_age_without_calling_the_holder() -> Test
     let mut configuration = config()?;
     configuration.move_needs_renewal_within = Some(Duration::from_secs(1800));
     let mut engine = TestEngine::new(Arc::clone(&store), Arc::clone(&host));
-    engine.register(RegistrationTask::<TestStore, Turso>::new(configuration))?;
-    engine.register(HolderChangeTask::<TestStore, Turso>::new(
-        configuration,
-        host.clone(),
-    ))?;
+    engine.register(
+        RegistrationTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
+            configuration,
+            std::sync::Arc::new(crate::NoLeaseChangeHook),
+        ),
+    )?;
+    engine.register(
+        HolderChangeTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
+            configuration,
+            host.clone(),
+            std::sync::Arc::new(crate::NoLeaseChangeHook),
+        ),
+    )?;
     register_first(&engine).await?;
     let calls = host.calls.lock().await.len();
     let lease = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
@@ -44,12 +52,20 @@ async fn move_refuses_just_past_renewal_age_without_calling_the_holder() -> Test
         last_renewed_at: SyncTime::from_unix_millis(1000),
     });
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request.clone()).await?,
+        task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &engine,
+            &key,
+            request.clone()
+        )
+        .await?,
         expected
     );
     host.advance();
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request).await?,
+        task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &engine, &key, request
+        )
+        .await?,
         expected
     );
     assert_eq!(host.calls.lock().await.len(), calls);
@@ -86,11 +102,19 @@ async fn move_admits_just_inside_and_exactly_at_the_renewal_age_bound() -> TestR
         let mut configuration = config()?;
         configuration.move_needs_renewal_within = Some(Duration::from_secs(1800));
         let mut engine = TestEngine::new(Arc::clone(&store), Arc::clone(&host));
-        engine.register(RegistrationTask::<TestStore, Turso>::new(configuration))?;
-        engine.register(HolderChangeTask::<TestStore, Turso>::new(
-            configuration,
-            host.clone(),
-        ))?;
+        engine.register(
+            RegistrationTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
+                configuration,
+                std::sync::Arc::new(crate::NoLeaseChangeHook),
+            ),
+        )?;
+        engine.register(
+            HolderChangeTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
+                configuration,
+                host.clone(),
+                std::sync::Arc::new(crate::NoLeaseChangeHook),
+            ),
+        )?;
         register_first(&engine).await?;
         host.now.store(now, Ordering::SeqCst);
         let attempt = TransferId::new(Uuid::from_u128(0x019eef000000700080000000000009c6))?;
@@ -101,7 +125,7 @@ async fn move_admits_just_inside_and_exactly_at_the_renewal_age_bound() -> TestR
             from_epoch: Epoch::new(1)?,
             to: peer(2)?,
         };
-        let answer = task_answer::<HolderChangeTask<TestStore, Turso>>(
+        let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &holder_change_request_key(attempt)?,
             request,

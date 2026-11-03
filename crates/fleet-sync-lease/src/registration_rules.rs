@@ -13,13 +13,15 @@ use sqlx_core::{
 };
 
 /// The copy is created before the registry grants its first lease.
-pub async fn register<C, D>(
+pub async fn register<C, D, H>(
     ctx: &mut C,
     request: &Registration,
     config: &RegistryConfig,
+    hook: std::sync::Arc<H>,
 ) -> Result<RegistrationAnswer, LeaseError>
 where
     C: OperationContext,
+    for<'t> H: crate::LeaseChangeHook<<C::Store as AtomicStore>::Scope<'t>>,
     D: Database,
     for<'t> <C::Store as AtomicStore>::Scope<'t>: TransactionScope<Database = D>,
     D::Arguments: IntoArguments<D>,
@@ -178,6 +180,9 @@ where
     Ok(ctx
         .local(step("register")?, move |scope| {
             Box::pin(async move {
+                let before = crate::registry_snapshot(scope, request.database)
+                    .await
+                    .map_err(step_error)?;
                 let mut storage = RegistryStorage(scope);
                 let mut attempt = storage
                     .lifecycle(request.attempt)
@@ -278,6 +283,14 @@ where
                 };
                 attempt.outcome = Some(LifecycleOutcome::Registration(answer.clone()));
                 storage.save_lifecycle(&attempt).await.map_err(step_error)?;
+                crate::lease_change_hook::project_lease_change(
+                    storage.0,
+                    request.database,
+                    before,
+                    hook.as_ref(),
+                )
+                .await
+                .map_err(step_error)?;
                 Ok(answer)
             })
         })

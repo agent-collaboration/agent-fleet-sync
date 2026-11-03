@@ -160,7 +160,7 @@ async fn move_and_takeover_reasons_survive_reopen_and_bind_replay_content() -> T
         changed_reason_has_no_effect(&reopened, &request, &host).await?;
         let calls = host.calls.lock().await.len();
         assert_eq!(
-            task_answer::<HolderChangeTask<TestStore, Turso>>(
+            task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                 &resumed,
                 &holder_change_request_key(id)?,
                 request,
@@ -237,7 +237,7 @@ async fn machine_claim_record_has_no_reason_after_real_grant_and_reopen() -> Tes
     let running = engine(Arc::clone(&store), Arc::clone(&host))?;
     let import = import_request(4303, "a")?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &running,
             &lifecycle_request_key(import.attempt)?,
             import,
@@ -247,7 +247,7 @@ async fn machine_claim_record_has_no_reason_after_real_grant_and_reopen() -> Tes
     );
     crate::turso_copy_fixture::seed_import(&host).await?;
     let id = attempt(4304)?;
-    let answer = task_answer::<HolderChangeTask<TestStore, Turso>>(
+    let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         &running,
         &holder_change_request_key(id)?,
         HolderChangeRequest::Claim {

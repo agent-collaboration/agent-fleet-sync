@@ -36,7 +36,8 @@ async fn registry_snapshot_renewal_and_its_attempt_receipt_roll_back_with_the_re
                         &LeasePolicy {
                             lease_duration: Duration::from_millis(2000),
                             renew_interval: Duration::from_millis(500)
-                        }
+                        },
+                        &crate::NoLeaseChangeHook
                     )
                     .await
                     .map_err(storage)?,
@@ -101,7 +102,7 @@ async fn registry_snapshot_lifecycle_and_holder_mutators_rollback_then_commit_on
             "claim" | "retiring" | "retired" => {
                 let request = import_request(4201, "a")?;
                 assert_eq!(
-                    task_answer::<ImportTask<TestStore, Turso>>(
+                    task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                         &setup,
                         &lifecycle_request_key(request.attempt)?,
                         request
@@ -116,7 +117,7 @@ async fn registry_snapshot_lifecycle_and_holder_mutators_rollback_then_commit_on
         if mutation == "retired" {
             host.retire_unreachable.store(true, Ordering::SeqCst);
             setup
-                .start::<RetirementTask<TestStore, Turso>>(
+                .start::<RetirementTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                     &lifecycle_request_key(retire_request.attempt)?,
                     retire_request.clone(),
                 )
@@ -172,7 +173,7 @@ async fn registry_snapshot_lifecycle_and_holder_mutators_rollback_then_commit_on
         match mutation {
             "registration" => {
                 let _ = faulty
-                    .start::<RegistrationTask<RollbackRegistryStore, Turso>>(
+                    .start::<RegistrationTask<RollbackRegistryStore, Turso, crate::NoLeaseChangeHook>>(
                         &lifecycle_request_key(registration.attempt)?,
                         registration.clone(),
                     )
@@ -180,7 +181,7 @@ async fn registry_snapshot_lifecycle_and_holder_mutators_rollback_then_commit_on
             }
             "import" => {
                 let _ = faulty
-                    .start::<ImportTask<RollbackRegistryStore, Turso>>(
+                    .start::<ImportTask<RollbackRegistryStore, Turso, crate::NoLeaseChangeHook>>(
                         &lifecycle_request_key(import.attempt)?,
                         import.clone(),
                     )
@@ -188,7 +189,7 @@ async fn registry_snapshot_lifecycle_and_holder_mutators_rollback_then_commit_on
             }
             "retiring" => {
                 let _ = faulty
-                    .start::<RetirementTask<RollbackRegistryStore, Turso>>(
+                    .start::<RetirementTask<RollbackRegistryStore, Turso, crate::NoLeaseChangeHook>>(
                         &lifecycle_request_key(retire_request.attempt)?,
                         retire_request.clone(),
                     )

@@ -99,9 +99,12 @@ async fn typed_release_refusals_replay_without_fencing_or_changing_the_lease() -
             to: peer(2)?,
         };
         let key = holder_change_request_key(attempt)?;
-        let first =
-            task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request.clone())
-                .await?;
+        let first = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &engine,
+            &key,
+            request.clone(),
+        )
+        .await?;
         assert_eq!(first, HolderChangeAnswer::Refused(expected.clone()));
         assert_eq!(serde_json::to_value(&first)?, expected_wire);
         assert_eq!(
@@ -122,9 +125,12 @@ async fn typed_release_refusals_replay_without_fencing_or_changing_the_lease() -
             },
         ));
         host.advance();
-        let repeated =
-            task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request.clone())
-                .await?;
+        let repeated = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &engine,
+            &key,
+            request.clone(),
+        )
+        .await?;
         assert_eq!(repeated, HolderChangeAnswer::Refused(expected));
         assert_eq!(serde_json::to_value(repeated)?, expected_wire);
         assert_eq!(
@@ -188,8 +194,12 @@ async fn an_already_held_claim_replays_its_recorded_holder_after_takeover_and_re
     };
     let key = holder_change_request_key(attempt)?;
     let expected = serde_json::json!({"kind":"refused","value":{"kind":"alreadyHeld","value":{"holder":peer(1)?.to_string()}}});
-    let refused =
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&running, &key, claim.clone()).await?;
+    let refused = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        &running,
+        &key,
+        claim.clone(),
+    )
+    .await?;
     assert_eq!(serde_json::to_value(&refused)?, expected);
     let recorded = scalar(&store, "SELECT outcome AS value FROM _fleet_sync_transfers").await?;
     assert_eq!(
@@ -212,7 +222,7 @@ async fn an_already_held_claim_replays_its_recorded_holder_after_takeover_and_re
         preview,
         to: peer(3)?,
     };
-    let answer = task_answer::<HolderChangeTask<TestStore, Turso>>(
+    let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         &running,
         &holder_change_request_key(takeover_attempt)?,
         takeover,
@@ -226,8 +236,12 @@ async fn an_already_held_claim_replays_its_recorded_holder_after_takeover_and_re
         current.get("holder"),
         Some(&serde_json::json!(peer(3)?.to_string()))
     );
-    let replay =
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&running, &key, claim.clone()).await?;
+    let replay = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        &running,
+        &key,
+        claim.clone(),
+    )
+    .await?;
     assert_eq!(serde_json::to_value(replay)?, expected);
     assert_eq!(
         serde_json::to_value(canonical_answer(&store, &claim).await?)?,
@@ -241,7 +255,10 @@ async fn an_already_held_claim_replays_its_recorded_holder_after_takeover_and_re
         expected
     );
     let resumed = engine(reopened, host)?;
-    let replay = task_answer::<HolderChangeTask<TestStore, Turso>>(&resumed, &key, claim).await?;
+    let replay = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        &resumed, &key, claim,
+    )
+    .await?;
     assert_eq!(serde_json::to_value(replay)?, expected);
     Ok(())
 }
@@ -270,7 +287,10 @@ async fn released_final_position_waits_for_the_real_copy_then_grants_once() -> T
     };
     let key = holder_change_request_key(attempt)?;
     let id = engine
-        .start::<HolderChangeTask<TestStore, Turso>>(&key, request.clone())
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &key,
+            request.clone(),
+        )
         .await?;
     assert!(matches!(
         engine.status(&id).await?.state,
@@ -287,14 +307,21 @@ async fn released_final_position_waits_for_the_real_copy_then_grants_once() -> T
     assert_eq!(push_rows(&host, 9).await?, final_position);
     host.advance();
     assert_eq!(engine.drive_due().await?.completed, vec![id]);
-    let answer =
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request.clone()).await?;
+    let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        &engine,
+        &key,
+        request.clone(),
+    )
+    .await?;
     assert!(
         matches!(answer,HolderChangeAnswer::Granted{epoch,start,..} if epoch==Epoch::new(2)? && start==final_position)
     );
     host.advance();
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request).await?,
+        task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &engine, &key, request
+        )
+        .await?,
         answer
     );
     let calls = host

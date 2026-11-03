@@ -177,7 +177,7 @@ async fn epoch_holder_preserves_the_historical_grant_after_a_real_move_and_store
     );
     host.now.store(1500, Ordering::SeqCst);
     let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000300))?;
-    let answer = task_answer::<HolderChangeTask<TestStore, Turso>>(
+    let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         &engine,
         &holder_change_request_key(attempt)?,
         HolderChangeRequest::Move {

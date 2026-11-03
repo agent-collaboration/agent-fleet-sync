@@ -23,7 +23,12 @@ async fn registry_snapshot_registration_and_import_replays_preserve_bytes_then_c
     let imported = import_request(4100, "a")?;
     let key = lifecycle_request_key(imported.attempt)?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(&engine, &key, imported.clone()).await?,
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &engine,
+            &key,
+            imported.clone()
+        )
+        .await?,
         ImportAnswer::Imported
     );
     let first = required_snapshot(&store).await?;
@@ -37,12 +42,15 @@ async fn registry_snapshot_registration_and_import_replays_preserve_bytes_then_c
     assert_eq!(first.grant, None);
     host.now.store(1200, Ordering::SeqCst);
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(&engine, &key, imported).await?,
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &engine, &key, imported
+        )
+        .await?,
         ImportAnswer::Imported
     );
     let same = import_request(4101, "a")?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(same.attempt)?,
             same
@@ -63,7 +71,7 @@ async fn registry_snapshot_registration_and_import_replays_preserve_bytes_then_c
         claimant: peer(2)?,
     };
     assert!(
-        matches!(task_answer::<HolderChangeTask<TestStore,Turso>>(&engine,&holder_change_request_key(id)?,request).await?,HolderChangeAnswer::Granted {epoch,start,..} if epoch==Epoch::new(2)? && start==position)
+        matches!(task_answer::<HolderChangeTask<TestStore,Turso, crate::NoLeaseChangeHook>>(&engine,&holder_change_request_key(id)?,request).await?,HolderChangeAnswer::Granted {epoch,start,..} if epoch==Epoch::new(2)? && start==position)
     );
     let claimed = required_snapshot(&store).await?;
     assert_revision(&claimed, 2, 1, 1500);
@@ -96,7 +104,7 @@ async fn registry_snapshot_registration_replay_and_another_same_writer_attempt_d
     for identity in [201, 4103] {
         let request = registration(identity, 1)?;
         assert!(matches!(
-            task_answer::<RegistrationTask<TestStore, Turso>>(
+            task_answer::<RegistrationTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                 &engine,
                 &lifecycle_request_key(request.attempt)?,
                 request
@@ -118,7 +126,7 @@ async fn registry_snapshot_retiring_and_retired_survive_reopen_and_only_repair_e
     let store = open_store(&path, Arc::clone(&host), true).await?;
     let running = engine(Arc::clone(&store), Arc::clone(&host))?;
     let import = import_request(4104, "a")?;
-    task_answer::<ImportTask<TestStore, Turso>>(
+    task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         &running,
         &lifecycle_request_key(import.attempt)?,
         import,
@@ -135,7 +143,7 @@ async fn registry_snapshot_retiring_and_retired_survive_reopen_and_only_repair_e
         expect_acked: position,
     };
     let operation = running
-        .start::<RetirementTask<TestStore, Turso>>(
+        .start::<RetirementTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &lifecycle_request_key(request.attempt)?,
             request.clone(),
         )
@@ -189,7 +197,7 @@ async fn registry_snapshot_retiring_and_retired_survive_reopen_and_only_repair_e
     assert_eq!(ids.0, vec![database()?]);
     assert!(ids.1.is_empty());
     assert!(matches!(
-        task_answer::<RetirementTask<TestStore, Turso>>(
+        task_answer::<RetirementTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &resumed,
             &lifecycle_request_key(request.attempt)?,
             request

@@ -81,7 +81,7 @@ async fn superseded_move_finishes_after_reopen_without_resending_its_unanswered_
             result = tokio::time::timeout(Duration::from_secs(5), observed.notified()) => result?,
         }
         drop(drive);
-        let answer = task_answer::<HolderChangeTask<TestStore, Turso>>(
+        let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &holder_change_request_key(takeover_id)?,
             HolderChangeRequest::Takeover {
@@ -198,7 +198,10 @@ async fn dispatched_old_fence_and_takeover_interleave_without_two_grants_or_epoc
         let new_finished = tokio::sync::Notify::new();
         let old_drive = async {
             let result = engine
-                .start::<HolderChangeTask<TestStore, Turso>>(&old_key, old_request)
+                .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+                    &old_key,
+                    old_request,
+                )
                 .await;
             old_finished.notify_one();
             result
@@ -206,7 +209,10 @@ async fn dispatched_old_fence_and_takeover_interleave_without_two_grants_or_epoc
         let new_drive = async {
             old_gate.started.notified().await;
             let result = engine
-                .start::<HolderChangeTask<TestStore, Turso>>(&new_key, new_request)
+                .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+                    &new_key,
+                    new_request,
+                )
                 .await;
             new_finished.notify_one();
             result
@@ -263,12 +269,13 @@ async fn dispatched_old_fence_and_takeover_interleave_without_two_grants_or_epoc
                 preview,
                 to: peer(3)?,
             };
-            let answer = task_answer::<HolderChangeTask<TestStore, Turso>>(
-                &engine,
-                &holder_change_request_key(transfer(703)?)?,
-                request,
-            )
-            .await?;
+            let answer =
+                task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+                    &engine,
+                    &holder_change_request_key(transfer(703)?)?,
+                    request,
+                )
+                .await?;
             assert!(
                 matches!(answer, HolderChangeAnswer::Granted { epoch, .. } if epoch == Epoch::new(4)?)
             );

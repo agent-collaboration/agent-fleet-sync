@@ -66,7 +66,7 @@ async fn cancellation_follow_up_admission_and_parent_finish_roll_back_in_one_tra
     let id = attempt(2901)?;
     host.lose_release.store(true, Ordering::SeqCst);
     let operation = engine
-        .start::<HolderChangeTask<TestStore, Turso>>(
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &holder_change_request_key(id)?,
             move_request(id)?,
         )
@@ -79,9 +79,14 @@ async fn cancellation_follow_up_admission_and_parent_finish_roll_back_in_one_tra
         fail: AtomicBool::new(true),
     });
     let mut faulty = Engine::new(fault.clone(), host.clone());
-    faulty.register(HolderChangeTask::<RollbackFinishStore, Turso>::new(
+    faulty.register(HolderChangeTask::<
+        RollbackFinishStore,
+        Turso,
+        crate::NoLeaseChangeHook,
+    >::new(
         config()?,
         host.clone(),
+        std::sync::Arc::new(crate::NoLeaseChangeHook),
     ))?;
     host.advance();
     let _report = faulty.drive_due().await;
@@ -194,7 +199,7 @@ async fn stored_phase_history_rejects_regression_overflow_and_outcome_mismatch()
         host.lose_release.store(true, Ordering::SeqCst);
         let id = attempt(2903)?;
         engine
-            .start::<HolderChangeTask<TestStore, Turso>>(
+            .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                 &holder_change_request_key(id)?,
                 move_request(id)?,
             )

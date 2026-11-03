@@ -11,21 +11,24 @@ use sqlx_core::{
 use std::marker::PhantomData;
 
 /// Register this task on the registry engine and admit it with lifecycle_request_key.
-pub struct RegistrationTask<S, D> {
+pub struct RegistrationTask<S, D, H> {
     config: RegistryConfig,
+    hook: std::sync::Arc<H>,
     store: PhantomData<fn() -> (S, D)>,
 }
-impl<S, D> RegistrationTask<S, D> {
-    pub const fn new(config: RegistryConfig) -> Self {
+impl<S, D, H> RegistrationTask<S, D, H> {
+    pub const fn new(config: RegistryConfig, hook: std::sync::Arc<H>) -> Self {
         Self {
             config,
+            hook,
             store: PhantomData,
         }
     }
 }
-impl<S, D> Task for RegistrationTask<S, D>
+impl<S, D, H> Task for RegistrationTask<S, D, H>
 where
     S: AtomicStore,
+    for<'t> H: crate::LeaseChangeHook<S::Scope<'t>>,
     D: Database,
     for<'t> S::Scope<'t>: TransactionScope<Database = D>,
     D::Arguments: IntoArguments<D>,
@@ -43,9 +46,14 @@ where
         ctx: &mut C,
         request: &Registration,
     ) -> Result<RegistrationAnswer, OperationFailure> {
-        register::<C, D>(ctx, request, &self.config)
-            .await
-            .map_err(Into::into)
+        register::<C, D, H>(
+            ctx,
+            request,
+            &self.config,
+            std::sync::Arc::clone(&self.hook),
+        )
+        .await
+        .map_err(Into::into)
     }
     fn on_failed<'s, 't>(
         &'s self,

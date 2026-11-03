@@ -21,7 +21,7 @@ async fn claim_replays_reservation_and_fence_without_a_second_epoch_or_settlemen
         let running = engine(Arc::clone(&store), Arc::clone(&host))?;
         let import = import_request(201, "a")?;
         assert_eq!(
-            task_answer::<ImportTask<TestStore, Turso>>(
+            task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                 &running,
                 &lifecycle_request_key(import.attempt)?,
                 import
@@ -46,7 +46,10 @@ async fn claim_replays_reservation_and_fence_without_a_second_epoch_or_settlemen
         };
         let key = holder_change_request_key(attempt)?;
         let id = running
-            .start::<HolderChangeTask<TestStore, Turso>>(&key, request.clone())
+            .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+                &key,
+                request.clone(),
+            )
             .await?;
         assert!(matches!(
             running.status(&id).await?.state,
@@ -69,13 +72,19 @@ async fn claim_replays_reservation_and_fence_without_a_second_epoch_or_settlemen
         let store = open_store(&path, Arc::clone(&host), false).await?;
         let resumed = engine(Arc::clone(&store), Arc::clone(&host))?;
         assert_eq!(resumed.drive_due().await?.completed, vec![id]);
-        let answer =
-            task_answer::<HolderChangeTask<TestStore, Turso>>(&resumed, &key, request.clone())
-                .await?;
+        let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &resumed,
+            &key,
+            request.clone(),
+        )
+        .await?;
         assert!(matches!(answer,HolderChangeAnswer::Granted{epoch,..} if epoch==Epoch::new(2)?));
         host.advance();
         assert_eq!(
-            task_answer::<HolderChangeTask<TestStore, Turso>>(&resumed, &key, request).await?,
+            task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+                &resumed, &key, request
+            )
+            .await?,
             answer
         );
         assert_eq!(host.gate.settlement_count().await?, "1");
@@ -129,7 +138,7 @@ async fn an_unseeded_copy_keeps_its_claim_pending_then_completes_the_same_attemp
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
     let import = import_request(201, "a")?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(import.attempt)?,
             import
@@ -145,7 +154,10 @@ async fn an_unseeded_copy_keeps_its_claim_pending_then_completes_the_same_attemp
     };
     let key = holder_change_request_key(attempt)?;
     let operation = engine
-        .start::<HolderChangeTask<TestStore, Turso>>(&key, request.clone())
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &key,
+            request.clone(),
+        )
         .await?;
     let before = crate::turso_workflow_tests::view(&store, attempt).await?;
     assert!(
@@ -190,17 +202,27 @@ async fn an_unseeded_copy_keeps_its_claim_pending_then_completes_the_same_attemp
     assert_eq!(resumed.drive_due().await?.completed, vec![operation]);
     assert_eq!(
         resumed
-            .start::<HolderChangeTask<TestStore, Turso>>(&key, request.clone())
+            .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+                &key,
+                request.clone()
+            )
             .await?,
         operation
     );
-    let answer =
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&resumed, &key, request.clone()).await?;
+    let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        &resumed,
+        &key,
+        request.clone(),
+    )
+    .await?;
     assert!(
         matches!(answer, HolderChangeAnswer::Granted { epoch, start, .. } if epoch == Epoch::new(2)? && start == position)
     );
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&resumed, &key, request).await?,
+        task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &resumed, &key, request
+        )
+        .await?,
         answer
     );
     assert_eq!(host.gate.settlement_count().await?, "1");
@@ -262,7 +284,7 @@ async fn claim_repairs_above_a_restored_imported_copys_fence_before_granting() -
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
     let import = import_request(201, "a")?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(import.attempt)?,
             import
@@ -298,7 +320,7 @@ async fn claim_repairs_above_a_restored_imported_copys_fence_before_granting() -
         database: database()?,
         claimant: peer(2)?,
     };
-    let answer = task_answer::<HolderChangeTask<TestStore, Turso>>(
+    let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         &engine,
         &holder_change_request_key(attempt)?,
         request,

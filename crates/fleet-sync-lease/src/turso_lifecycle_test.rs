@@ -23,7 +23,7 @@ async fn import_entry(
     ) {
         return Ok(ImportAnswer::Retired);
     }
-    task_answer::<ImportTask<TestStore, Turso>>(
+    task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         engine,
         &lifecycle_request_key(request.attempt)?,
         request,
@@ -44,14 +44,21 @@ async fn register_creates_copy_before_grant_and_replay_never_issues_another_epoc
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
     let request = registration(201, 1)?;
     let key = lifecycle_request_key(request.attempt)?;
-    let first =
-        task_answer::<RegistrationTask<TestStore, Turso>>(&engine, &key, request.clone()).await?;
+    let first = task_answer::<RegistrationTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        &engine,
+        &key,
+        request.clone(),
+    )
+    .await?;
     assert!(
         matches!(first,RegistrationAnswer::Registered{lease:LeaseStatus{epoch,holder,..},..} if epoch==Epoch::new(1)?&&holder==peer(1)?)
     );
     let calls = host.calls.lock().await.len();
     assert_eq!(
-        task_answer::<RegistrationTask<TestStore, Turso>>(&engine, &key, request).await?,
+        task_answer::<RegistrationTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &engine, &key, request
+        )
+        .await?,
         first
     );
     assert_eq!(host.calls.lock().await.len(), calls);
@@ -78,7 +85,7 @@ async fn failed_registration_leaves_no_grant_and_original_creation_prevents_a_di
     let first_engine = engine(Arc::clone(&store), Arc::clone(&host))?;
     let offered = registration(201, 1)?;
     let id = first_engine
-        .start::<RegistrationTask<TestStore, Turso>>(
+        .start::<RegistrationTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &lifecycle_request_key(offered.attempt)?,
             offered.clone(),
         )
@@ -101,9 +108,14 @@ async fn failed_registration_leaves_no_grant_and_original_creation_prevents_a_di
     host.advance();
     let store = open_store(&path, Arc::clone(&host), false).await?;
     let mut mismatch = TestEngine::new(Arc::clone(&store), Arc::clone(&host));
-    mismatch.register(VersionedTask::<_, 2>(
-        RegistrationTask::<TestStore, Turso>::new(config()?),
-    ))?;
+    mismatch.register(VersionedTask::<_, 2>(RegistrationTask::<
+        TestStore,
+        Turso,
+        crate::NoLeaseChangeHook,
+    >::new(
+        config()?,
+        std::sync::Arc::new(crate::NoLeaseChangeHook),
+    )))?;
     assert_eq!(mismatch.drive_due().await?.failed.len(), 1);
     assert!(matches!(
         mismatch.status(&id).await?.state,
@@ -121,7 +133,7 @@ async fn failed_registration_leaves_no_grant_and_original_creation_prevents_a_di
     let normal = engine(Arc::clone(&store), Arc::clone(&host))?;
     let changed = registration(202, 2)?;
     assert_eq!(
-        task_answer::<RegistrationTask<TestStore, Turso>>(
+        task_answer::<RegistrationTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &normal,
             &lifecycle_request_key(changed.attempt)?,
             changed
@@ -133,7 +145,7 @@ async fn failed_registration_leaves_no_grant_and_original_creation_prevents_a_di
     );
     let same = registration(203, 1)?;
     assert!(
-        matches!(task_answer::<RegistrationTask<TestStore,Turso>>(&normal,&lifecycle_request_key(same.attempt)?,same).await?,RegistrationAnswer::Registered{lease:LeaseStatus{epoch,..},..} if epoch==Epoch::new(1)?)
+        matches!(task_answer::<RegistrationTask<TestStore,Turso, crate::NoLeaseChangeHook>>(&normal,&lifecycle_request_key(same.attempt)?,same).await?,RegistrationAnswer::Registered{lease:LeaseStatus{epoch,..},..} if epoch==Epoch::new(1)?)
     );
     Ok(())
 }
@@ -153,7 +165,7 @@ async fn refused_registration_changes_no_copy_or_authority_and_a_new_attempt_can
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
     let offered = registration(201, 1)?;
     assert!(matches!(
-        task_answer::<RegistrationTask<TestStore, Turso>>(
+        task_answer::<RegistrationTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(offered.attempt)?,
             offered
@@ -173,7 +185,7 @@ async fn refused_registration_changes_no_copy_or_authority_and_a_new_attempt_can
     host.gate.reject_registration.store(false, Ordering::SeqCst);
     let offered = registration(202, 1)?;
     assert!(matches!(
-        task_answer::<RegistrationTask<TestStore, Turso>>(
+        task_answer::<RegistrationTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(offered.attempt)?,
             offered
@@ -229,7 +241,7 @@ async fn import_repeats_and_conflicts_then_retirement_precedes_cached_engine_ans
         expect_acked: expected,
     };
     assert!(matches!(
-        task_answer::<RetirementTask<TestStore, Turso>>(
+        task_answer::<RetirementTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(request.attempt)?,
             request
@@ -245,7 +257,7 @@ async fn import_repeats_and_conflicts_then_retirement_precedes_cached_engine_ans
         expect_acked: expected,
     };
     assert!(matches!(
-        task_answer::<RetirementTask<TestStore, Turso>>(
+        task_answer::<RetirementTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(request.attempt)?,
             request

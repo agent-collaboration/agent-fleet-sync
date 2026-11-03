@@ -44,15 +44,22 @@ async fn grant_and_replay(
         } => (*attempt, *claimant),
     };
     let key = holder_change_request_key(attempt)?;
-    let answer =
-        task_answer::<HolderChangeTask<TestStore, Turso>>(engine, &key, request.clone()).await?;
+    let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        engine,
+        &key,
+        request.clone(),
+    )
+    .await?;
     assert!(
         matches!(answer,HolderChangeAnswer::Granted { epoch: actual, start: position, .. } if actual==Epoch::new(epoch)? && position==start)
     );
     let calls = host.calls.lock().await.len();
     host.advance();
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(engine, &key, request).await?,
+        task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            engine, &key, request
+        )
+        .await?,
         answer
     );
     assert_eq!(host.calls.lock().await.len(), calls);
@@ -137,7 +144,7 @@ async fn claim_then_clean_move_keeps_seed_rows_and_the_predecessor_epoch_positio
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
     let import = import_request(201, "a")?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(import.attempt)?,
             import
@@ -225,7 +232,7 @@ async fn a_release_from_a_future_epoch_still_fails_before_acknowledgement_or_fen
     });
     let calls = host.calls.lock().await.len();
     let id = engine
-        .start::<HolderChangeTask<TestStore, Turso>>(
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &holder_change_request_key(transfer(2401)?)?,
             movement(2401, 1, 2)?,
         )

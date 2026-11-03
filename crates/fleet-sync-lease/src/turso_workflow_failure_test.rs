@@ -12,7 +12,7 @@ use std::sync::atomic::Ordering;
 
 async fn import_copy(engine: &TestEngine) -> TestResult {
     let import = import_request(201, "a")?;
-    task_answer::<ImportTask<TestStore, Turso>>(
+    task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         engine,
         &lifecycle_request_key(import.attempt)?,
         import,
@@ -39,7 +39,10 @@ async fn refused_claim_with_unanswered_settle_reports_owed_from_the_wrapped_rese
         claimant: peer(2)?,
     };
     engine
-        .start::<HolderChangeTask<TestStore, Turso>>(&holder_change_request_key(id)?, request)
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &holder_change_request_key(id)?,
+            request,
+        )
         .await?;
     let record = view(&store, id).await?;
     assert_eq!(
@@ -67,7 +70,7 @@ async fn version_failed_withdrawal_stays_cancelling_records_failure_and_can_be_s
         let old = attempt(3002)?;
         host.lose_release.store(true, Ordering::SeqCst);
         engine
-            .start::<HolderChangeTask<TestStore, Turso>>(
+            .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                 &holder_change_request_key(old)?,
                 move_request(old)?,
             )
@@ -138,7 +141,7 @@ async fn version_failed_withdrawal_stays_cancelling_records_failure_and_can_be_s
             to: peer(3)?,
         };
         assert!(matches!(
-            task_answer::<HolderChangeTask<TestStore, Turso>>(
+            task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                 &engine,
                 &holder_change_request_key(new)?,
                 request
@@ -170,7 +173,7 @@ async fn version_failed_settlement_keeps_granted_and_owed_with_the_child_failure
     host.settlement_unreachable.store(true, Ordering::SeqCst);
     let id = attempt(3004)?;
     engine
-        .start::<HolderChangeTask<TestStore, Turso>>(
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &holder_change_request_key(id)?,
             HolderChangeRequest::Claim {
                 attempt: id,
@@ -181,9 +184,15 @@ async fn version_failed_settlement_keeps_granted_and_owed_with_the_child_failure
         .await?;
     let granted = view(&store, id).await?.outcome;
     let mut mismatch = TestEngine::new(store.clone(), host.clone());
-    mismatch.register(VersionedTask::<_, 2>(
-        HolderChangeTask::<TestStore, Turso>::new(config()?, host.clone()),
-    ))?;
+    mismatch.register(VersionedTask::<_, 2>(HolderChangeTask::<
+        TestStore,
+        Turso,
+        crate::NoLeaseChangeHook,
+    >::new(
+        config()?,
+        host.clone(),
+        std::sync::Arc::new(crate::NoLeaseChangeHook),
+    )))?;
     host.advance();
     assert_eq!(mismatch.drive_due().await?.failed.len(), 1);
     let mut child_mismatch = TestEngine::new(store.clone(), host.clone());
@@ -222,7 +231,7 @@ async fn admin_view_rejects_unwrapped_or_malformed_saved_call_answers() -> TestR
         host.settlement_unreachable.store(true, Ordering::SeqCst);
         let id = attempt(3005)?;
         engine
-            .start::<HolderChangeTask<TestStore, Turso>>(
+            .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                 &holder_change_request_key(id)?,
                 HolderChangeRequest::Claim {
                     attempt: id,
@@ -270,7 +279,7 @@ async fn cancelled_claim_failure_survives_reopen_while_a_same_version_settlement
         host.settlement_unreachable.store(true, Ordering::SeqCst);
         let id = attempt(3006)?;
         engine
-            .start::<HolderChangeTask<TestStore, Turso>>(
+            .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                 &holder_change_request_key(id)?,
                 HolderChangeRequest::Claim {
                     attempt: id,

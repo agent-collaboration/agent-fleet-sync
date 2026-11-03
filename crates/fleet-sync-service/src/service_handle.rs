@@ -74,7 +74,7 @@ impl<
         }
         let key = lifecycle_request_key(request.attempt).map_err(ServiceError::rule)?;
         self.state
-            .execute_registry::<ImportTask<ServiceObject, Turso>>(key, request)
+            .execute_registry::<ImportTask<ServiceObject, Turso, fleet_sync_lease::NoLeaseChangeHook>>(key, request)
             .await
     }
     pub async fn seed_import(
@@ -102,7 +102,7 @@ impl<
         }
         let key = lifecycle_request_key(request.attempt).map_err(ServiceError::rule)?;
         self.state
-            .execute_registry::<RetirementTask<ServiceObject, Turso>>(key, request)
+            .execute_registry::<RetirementTask<ServiceObject, Turso, fleet_sync_lease::NoLeaseChangeHook>>(key, request)
             .await
     }
     pub async fn preview_takeover(

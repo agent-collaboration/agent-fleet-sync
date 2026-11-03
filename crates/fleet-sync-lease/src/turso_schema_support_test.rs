@@ -183,7 +183,7 @@ async fn missing_report_is_refused_even_for_schema_zero_then_a_known_zero_target
         preview,
         to: peer(99)?,
     };
-    task_answer::<HolderChangeTask<TestStore, Turso>>(
+    task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         &running,
         &holder_change_request_key(attempt)?,
         change.clone(),
@@ -209,7 +209,7 @@ async fn missing_report_is_refused_even_for_schema_zero_then_a_known_zero_target
         preview,
         to: peer(99)?,
     };
-    task_answer::<HolderChangeTask<TestStore, Turso>>(
+    task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         &running,
         &holder_change_request_key(attempt)?,
         change.clone(),

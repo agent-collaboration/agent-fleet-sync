@@ -10,21 +10,24 @@ use sqlx_core::{
 };
 use std::marker::PhantomData;
 
-pub struct ImportTask<S, D> {
+pub struct ImportTask<S, D, H> {
     config: RegistryConfig,
+    hook: std::sync::Arc<H>,
     store: PhantomData<fn() -> (S, D)>,
 }
-impl<S, D> ImportTask<S, D> {
-    pub const fn new(config: RegistryConfig) -> Self {
+impl<S, D, H> ImportTask<S, D, H> {
+    pub const fn new(config: RegistryConfig, hook: std::sync::Arc<H>) -> Self {
         Self {
             config,
+            hook,
             store: PhantomData,
         }
     }
 }
-impl<S, D> Task for ImportTask<S, D>
+impl<S, D, H> Task for ImportTask<S, D, H>
 where
     S: AtomicStore,
+    for<'t> H: crate::LeaseChangeHook<S::Scope<'t>>,
     D: Database,
     for<'t> S::Scope<'t>: TransactionScope<Database = D>,
     D::Arguments: IntoArguments<D>,
@@ -42,9 +45,14 @@ where
         ctx: &mut C,
         request: &Import,
     ) -> Result<ImportAnswer, OperationFailure> {
-        import::<C, D>(ctx, request, &self.config)
-            .await
-            .map_err(Into::into)
+        import::<C, D, H>(
+            ctx,
+            request,
+            &self.config,
+            std::sync::Arc::clone(&self.hook),
+        )
+        .await
+        .map_err(Into::into)
     }
     fn on_failed<'s, 't>(
         &'s self,

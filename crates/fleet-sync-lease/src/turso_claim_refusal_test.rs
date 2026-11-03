@@ -27,7 +27,7 @@ fn request() -> TestResult<HolderChangeRequest> {
 async fn prepare(engine: &TestEngine, host: &Arc<TestHost>) -> TestResult {
     let import = import_request(201, "a")?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             engine,
             &lifecycle_request_key(import.attempt)?,
             import
@@ -139,7 +139,12 @@ async fn retired_copy_status_settles_a_reserved_claim_without_granting() -> Test
     retire_copy(&host).await?;
     let key = holder_change_request_key(attempt()?)?;
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request()?).await?,
+        task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &engine,
+            &key,
+            request()?
+        )
+        .await?,
         HolderChangeAnswer::Refused(HolderChangeRefusal::Retired)
     );
     assert_settled(&host, &store, HolderChangeRefusal::Retired).await?;
@@ -166,8 +171,11 @@ async fn retired_and_moved_copies_after_status_settle_the_reserved_claim() -> Te
             .insert(attempt()?, Arc::clone(&gate));
         let key = holder_change_request_key(attempt()?)?;
         let offered = request()?;
-        let drive =
-            task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, offered.clone());
+        let drive = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &engine,
+            &key,
+            offered.clone(),
+        );
         let control = async {
             gate.started.notified().await;
             match change {
@@ -196,7 +204,10 @@ async fn retired_and_moved_copies_after_status_settle_the_reserved_claim() -> Te
         let calls = host.calls.lock().await.len();
         host.advance();
         assert_eq!(
-            task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, offered).await?,
+            task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+                &engine, &key, offered
+            )
+            .await?,
             HolderChangeAnswer::Refused(refusal)
         );
         assert_eq!(host.calls.lock().await.len(), calls);
@@ -228,7 +239,11 @@ async fn a_second_floor_refusal_settles_claim_epoch_unprovable_without_reusing_t
         .insert(attempt()?, Arc::clone(&gate));
     let key = holder_change_request_key(attempt()?)?;
     let offered = request()?;
-    let drive = task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, offered.clone());
+    let drive = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        &engine,
+        &key,
+        offered.clone(),
+    );
     let control = async {
         gate.started.notified().await;
         advance_copy(&host, 5).await?;
@@ -255,7 +270,10 @@ async fn a_second_floor_refusal_settles_claim_epoch_unprovable_without_reusing_t
     let calls = host.calls.lock().await.len();
     host.advance();
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, offered).await?,
+        task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &engine, &key, offered
+        )
+        .await?,
         HolderChangeAnswer::Refused(HolderChangeRefusal::EpochUnprovable)
     );
     assert_eq!(host.calls.lock().await.len(), calls);
@@ -277,7 +295,10 @@ async fn a_copy_missing_after_status_keeps_the_claim_pending_until_seed_repair()
         .insert(attempt()?, gate.clone());
     let key = holder_change_request_key(attempt()?)?;
     let offered = request()?;
-    let drive = running.start::<HolderChangeTask<TestStore, Turso>>(&key, offered.clone());
+    let drive = running.start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        &key,
+        offered.clone(),
+    );
     let control = async {
         gate.started.notified().await;
         let mut copies = host.copies.lock().await;
@@ -360,17 +381,27 @@ async fn a_copy_missing_after_status_keeps_the_claim_pending_until_seed_repair()
     assert_eq!(resumed.drive_due().await?.completed, vec![operation]);
     assert_eq!(
         resumed
-            .start::<HolderChangeTask<TestStore, Turso>>(&key, offered.clone())
+            .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+                &key,
+                offered.clone()
+            )
             .await?,
         operation
     );
-    let answer =
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&resumed, &key, offered.clone()).await?;
+    let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        &resumed,
+        &key,
+        offered.clone(),
+    )
+    .await?;
     assert!(
         matches!(answer, HolderChangeAnswer::Granted { epoch, start, .. } if epoch == Epoch::new(2)? && start == position)
     );
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(&resumed, &key, offered).await?,
+        task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &resumed, &key, offered
+        )
+        .await?,
         answer
     );
     assert_eq!(host.gate.settlement_count().await?, "1");

@@ -139,7 +139,7 @@ async fn registry_snapshot_open_move_renews_old_epoch_but_release_reservation_an
     });
     let id = attempt(4005)?;
     let operation = engine
-        .start::<HolderChangeTask<TestStore, Turso>>(
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &holder_change_request_key(id)?,
             move_request(id)?,
         )
@@ -259,7 +259,7 @@ async fn registry_snapshot_corrupt_revisions_fail_closed_and_exhaustion_changes_
             let authority_before=(authority_before.try_get::<String,_>("lease")?,authority_before.try_get::<String,_>("attempts")?);
             if corruption=="exhausted" {
                 let request=RenewRequest {attempt:import_request(4009,"a").map_err(storage)?.attempt,database:database().map_err(storage)?,epoch:Epoch::new(1).map_err(storage)?};
-                let answer=renew(scope,&request,&peer(1).map_err(storage)?,SyncTime::from_unix_millis(1500),&config().map_err(storage)?.lease).await;
+                let answer=renew(scope,&request,&peer(1).map_err(storage)?,SyncTime::from_unix_millis(1500),&config().map_err(storage)?.lease, &crate::NoLeaseChangeHook).await;
                 assert!(matches!(answer,Err(LeaseError::RevisionExhausted { .. })));
             } else {
                 assert!(matches!(registry_snapshot(scope,database().map_err(storage)?).await,Err(LeaseError::Corrupt { .. })),"accepted {corruption}");

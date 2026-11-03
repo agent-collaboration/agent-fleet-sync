@@ -20,8 +20,10 @@ mod workflow_values;
 pub use fleet_sync_protocol::ActorRef;
 pub use workflow_values::*;
 mod epoch_history;
+mod lease_change_hook;
 mod registry_contract;
 pub use epoch_history::{EpochEnd, EpochHistoryEntry, EpochHistoryPage, epoch_history};
+pub use lease_change_hook::{LeaseChange, LeaseChangeHook, NoLeaseChangeHook};
 mod registry_reads;
 mod registry_records;
 mod registry_snapshot;
@@ -31,6 +33,7 @@ pub use registry_snapshot::{
 };
 mod schema_support_rules;
 #[cfg(test)]
+#[path = "turso_schema_support_test.rs"]
 mod turso_schema_support_tests;
 pub use registry_reads::{EpochGrant, database_ids, epoch_holder};
 pub use schema_support_rules::{accepted_schema_support, report_schema_support};
@@ -49,6 +52,7 @@ mod renew_rules;
 pub use renew_rules::{database_lifecycle, lease_status, renew};
 
 #[cfg(test)]
+#[path = "turso_renew_test.rs"]
 mod turso_renew_tests;
 
 mod call_targets;
@@ -97,6 +101,7 @@ pub use settle_reservation_task::SettleReservationTask;
 #[cfg(test)]
 mod turso_epoch_history_fixture;
 #[cfg(test)]
+#[path = "turso_epoch_history_test.rs"]
 mod turso_epoch_history_tests;
 #[cfg(test)]
 mod turso_registry_copy;
@@ -107,13 +112,17 @@ mod turso_registry_gates;
 #[cfg(test)]
 mod turso_registry_snapshot_fixture;
 #[cfg(test)]
+#[path = "turso_registry_snapshot_lifecycle_test.rs"]
 mod turso_registry_snapshot_lifecycle_tests;
 #[cfg(test)]
+#[path = "turso_registry_snapshot_rollback_test.rs"]
 mod turso_registry_snapshot_rollback_tests;
 #[cfg(test)]
+#[path = "turso_registry_snapshot_test.rs"]
 mod turso_registry_snapshot_tests;
 
 #[cfg(test)]
+#[path = "turso_lifecycle_test.rs"]
 mod turso_lifecycle_tests;
 
 pub use change_completion::holder_change_answer;
@@ -121,41 +130,57 @@ pub use change_completion::holder_change_answer;
 mod turso_copy_fixture;
 
 #[cfg(test)]
+#[path = "turso_change_race_test.rs"]
 mod turso_change_race_tests;
 #[cfg(test)]
+#[path = "turso_change_test.rs"]
 mod turso_change_tests;
 #[cfg(test)]
+#[path = "turso_epoch_proof_test.rs"]
 mod turso_epoch_proof_tests;
 #[cfg(test)]
+#[path = "turso_floor_repair_test.rs"]
 mod turso_floor_repair_tests;
 
 #[cfg(test)]
+#[path = "turso_claim_recovery_test.rs"]
 mod turso_claim_recovery_tests;
 #[cfg(test)]
+#[path = "turso_claim_refusal_test.rs"]
 mod turso_claim_refusal_tests;
 #[cfg(test)]
+#[path = "turso_claim_replay_test.rs"]
 mod turso_claim_replay_tests;
 #[cfg(test)]
+#[path = "turso_holder_change_reason_test.rs"]
 mod turso_holder_change_reason_tests;
 #[cfg(test)]
+#[path = "turso_idle_move_test.rs"]
 mod turso_idle_move_tests;
 #[cfg(test)]
+#[path = "turso_move_refusal_test.rs"]
 mod turso_move_refusal_tests;
 #[cfg(test)]
+#[path = "turso_registry_integrity_test.rs"]
 mod turso_registry_integrity_tests;
 #[cfg(test)]
+#[path = "turso_registry_read_test.rs"]
 mod turso_registry_read_tests;
 #[cfg(test)]
+#[path = "turso_retirement_recovery_test.rs"]
 mod turso_retirement_recovery_tests;
 #[cfg(test)]
+#[path = "turso_stale_holder_test.rs"]
 mod turso_stale_holder_tests;
 #[cfg(test)]
+#[path = "turso_workflow_test.rs"]
 mod turso_workflow_tests;
 
 mod transfer_admission;
 pub use transfer_admission::{admit_holder_change, cancel_holder_change};
 mod holder_change_view;
 #[cfg(test)]
+#[path = "turso_copy_retry_test.rs"]
 mod turso_copy_retry_tests;
 pub use holder_change_view::holder_change_view;
 
@@ -166,10 +191,13 @@ mod transfer_cancellation;
 pub use holder_change_cancel_task::HolderChangeCancelTask;
 
 #[cfg(test)]
+#[path = "turso_workflow_race_test.rs"]
 mod turso_workflow_race_tests;
 
 #[cfg(test)]
+#[path = "turso_workflow_storage_test.rs"]
 mod turso_workflow_storage_tests;
 
 #[cfg(test)]
+#[path = "turso_workflow_failure_test.rs"]
 mod turso_workflow_failure_tests;

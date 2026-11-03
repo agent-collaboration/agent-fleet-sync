@@ -110,6 +110,7 @@ async fn renewal_replay_never_extends_expiry_and_an_expired_current_holder_can_r
         &holder(1)?,
         now(100),
         &policy(),
+        &crate::NoLeaseChangeHook,
     )
     .await?;
     assert!(
@@ -124,6 +125,7 @@ async fn renewal_replay_never_extends_expiry_and_an_expired_current_holder_can_r
             &holder(1)?,
             now(100 + elapsed),
             &policy(),
+            &crate::NoLeaseChangeHook,
         )
         .await?;
         assert!(
@@ -138,6 +140,7 @@ async fn renewal_replay_never_extends_expiry_and_an_expired_current_holder_can_r
         &holder(1)?,
         now(1000),
         &policy(),
+        &crate::NoLeaseChangeHook,
     )
     .await?;
     assert!(
@@ -157,6 +160,7 @@ async fn replay_preserves_recorded_answer_but_returns_current_lease_after_later_
         &holder(1)?,
         now(100),
         &policy(),
+        &crate::NoLeaseChangeHook,
     )
     .await?;
     assert!(
@@ -168,6 +172,7 @@ async fn replay_preserves_recorded_answer_but_returns_current_lease_after_later_
         &holder(1)?,
         now(200),
         &policy(),
+        &crate::NoLeaseChangeHook,
     )
     .await?;
     assert!(
@@ -179,6 +184,7 @@ async fn replay_preserves_recorded_answer_but_returns_current_lease_after_later_
         &holder(1)?,
         now(250),
         &policy(),
+        &crate::NoLeaseChangeHook,
     )
     .await?;
     assert!(
@@ -216,6 +222,7 @@ async fn replay_preserves_recorded_answer_but_returns_current_lease_after_later_
         &holder(1)?,
         now(270),
         &policy(),
+        &crate::NoLeaseChangeHook,
     )
     .await?;
     assert!(
@@ -227,7 +234,8 @@ async fn replay_preserves_recorded_answer_but_returns_current_lease_after_later_
             &request(12, 1)?,
             &holder(1)?,
             now(270),
-            &policy()
+            &policy(),
+            &crate::NoLeaseChangeHook
         )
         .await?,
         RenewAnswer::Refused(LeaseRefusal::StaleEpoch {
@@ -275,7 +283,7 @@ async fn open_transfer_does_not_stop_renewal_and_retired_marker_precedes_saved_a
         ))
         .await?;
     assert!(
-        matches!(renew(&mut scope,&request(10,1)?,&holder(1)?,now(210),&policy()).await?,RenewAnswer::Renewed{transfer_in_progress:Some(current),current:LeaseStatus{state:LeaseState::Held,..},..} if current==transfer)
+        matches!(renew(&mut scope,&request(10,1)?,&holder(1)?,now(210),&policy(), &crate::NoLeaseChangeHook).await?,RenewAnswer::Renewed{transfer_in_progress:Some(current),current:LeaseStatus{state:LeaseState::Held,..},..} if current==transfer)
     );
     assert!(matches!(
         lease_status(&mut scope, database()?, now(410)).await?,
@@ -297,7 +305,8 @@ async fn open_transfer_does_not_stop_renewal_and_retired_marker_precedes_saved_a
             &request(10, 1)?,
             &holder(1)?,
             now(510),
-            &policy()
+            &policy(),
+            &crate::NoLeaseChangeHook
         )
         .await?,
         RenewAnswer::Refused(LeaseRefusal::Retired)
@@ -316,6 +325,7 @@ async fn changed_renewal_identity_is_an_error_and_cannot_extend_the_lease() -> T
         &holder(1)?,
         now(100),
         &policy(),
+        &crate::NoLeaseChangeHook,
     )
     .await?;
     assert!(matches!(
@@ -324,7 +334,8 @@ async fn changed_renewal_identity_is_an_error_and_cannot_extend_the_lease() -> T
             &request(10, 2)?,
             &holder(1)?,
             now(200),
-            &policy()
+            &policy(),
+            &crate::NoLeaseChangeHook
         )
         .await,
         Err(LeaseError::InvalidInput { .. })

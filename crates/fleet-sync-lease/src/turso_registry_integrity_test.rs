@@ -93,7 +93,7 @@ async fn import_replays_the_copy_before_publishing_registry_state_after_lost_ans
     let key = lifecycle_request_key(request.attempt)?;
     host.lose_create.store(true, Ordering::SeqCst);
     let id = running
-        .start::<ImportTask<TestStore, Turso>>(&key, request.clone())
+        .start::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(&key, request.clone())
         .await?;
     assert!(matches!(
         running.status(&id).await?.state,
@@ -122,12 +122,15 @@ async fn import_replays_the_copy_before_publishing_registry_state_after_lost_ans
     let resumed = engine(Arc::clone(&store), Arc::clone(&host))?;
     assert_eq!(resumed.drive_due().await?.completed, vec![id]);
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(&resumed, &key, request).await?,
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &resumed, &key, request
+        )
+        .await?,
         ImportAnswer::Imported
     );
     let next = import_request(202, "a")?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &resumed,
             &lifecycle_request_key(next.attempt)?,
             next
@@ -165,7 +168,7 @@ async fn stored_database_identity_mismatch_is_not_treated_as_an_import_replay() 
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
     let request = import_request(201, "a")?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(request.attempt)?,
             request
@@ -201,7 +204,10 @@ async fn stored_database_identity_mismatch_is_not_treated_as_an_import_replay() 
         .await?;
     let offered = import_request(202, "a")?;
     let id = engine
-        .start::<ImportTask<TestStore, Turso>>(&lifecycle_request_key(offered.attempt)?, offered)
+        .start::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &lifecycle_request_key(offered.attempt)?,
+            offered,
+        )
         .await?;
     assert!(matches!(
         engine.status(&id).await?.state,
@@ -242,11 +248,14 @@ async fn a_pending_move_blocks_another_move_and_renewal_returns_fresh_authority_
         to: peer(2)?,
     };
     let id = engine
-        .start::<HolderChangeTask<TestStore, Turso>>(&holder_change_request_key(attempt)?, request)
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &holder_change_request_key(attempt)?,
+            request,
+        )
         .await?;
     let other = TransferId::new(Uuid::from_u128(0x019eef0000007000800000000000076e))?;
     assert_eq!(
-        task_answer::<HolderChangeTask<TestStore, Turso>>(
+        task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &holder_change_request_key(other)?,
             HolderChangeRequest::Move {
@@ -280,6 +289,7 @@ async fn a_pending_move_blocks_another_move_and_renewal_returns_fresh_authority_
                     &holder,
                     SyncTime::from_unix_millis(1000),
                     &policy,
+                    &crate::NoLeaseChangeHook,
                 )
                 .await
                 .map_err(storage)
@@ -307,6 +317,7 @@ async fn a_pending_move_blocks_another_move_and_renewal_returns_fresh_authority_
                     &holder,
                     SyncTime::from_unix_millis(1_001_000),
                     &policy,
+                    &crate::NoLeaseChangeHook,
                 )
                 .await
                 .map_err(storage)

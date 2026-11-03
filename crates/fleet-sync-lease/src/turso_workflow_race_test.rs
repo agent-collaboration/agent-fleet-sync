@@ -15,7 +15,7 @@ use std::sync::atomic::Ordering;
 
 struct CheckpointTask {
     fencing: bool,
-    inner: HolderChangeTask<TestStore, Turso>,
+    inner: HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>,
 }
 impl Task for CheckpointTask {
     const KIND: &'static str = "fleet-sync.holder-change";
@@ -115,7 +115,11 @@ async fn cancel_and_before_fence_commit_in_both_orders_without_reopening_cancell
         let mut checkpoint = TestEngine::new(store.clone(), host.clone());
         checkpoint.register(CheckpointTask {
             fencing: false,
-            inner: HolderChangeTask::new(config()?, host.clone()),
+            inner: HolderChangeTask::new(
+                config()?,
+                host.clone(),
+                std::sync::Arc::new(crate::NoLeaseChangeHook),
+            ),
         })?;
         checkpoint.drive_due().await?;
         assert_eq!(view(&store, id).await?.phase, HolderChangePhase::Requested);
@@ -128,7 +132,11 @@ async fn cancel_and_before_fence_commit_in_both_orders_without_reopening_cancell
         let mut checkpoint = TestEngine::new(store.clone(), host.clone());
         checkpoint.register(CheckpointTask {
             fencing: true,
-            inner: HolderChangeTask::new(config()?, host.clone()),
+            inner: HolderChangeTask::new(
+                config()?,
+                host.clone(),
+                std::sync::Arc::new(crate::NoLeaseChangeHook),
+            ),
         })?;
         host.advance();
         checkpoint.drive_due().await?;
@@ -175,7 +183,7 @@ async fn cancel_and_before_fence_commit_in_both_orders_without_reopening_cancell
             ));
             let history = ended.history;
             engine
-                .start::<HolderChangeTask<TestStore, Turso>>(
+                .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                     &holder_change_request_key(id)?,
                     request,
                 )
@@ -197,7 +205,7 @@ async fn takeover_supersedes_a_cancelling_move_and_its_withdrawal_task_stops() -
     host.lose_release.store(true, Ordering::SeqCst);
     host.withdrawal_unreachable.store(true, Ordering::SeqCst);
     engine
-        .start::<HolderChangeTask<TestStore, Turso>>(
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &holder_change_request_key(old)?,
             move_request(old)?,
         )
@@ -337,7 +345,10 @@ async fn fencing_stays_closed_to_cancel_during_repair_second_dispatch_and_replay
         1
     );
     engine
-        .start::<HolderChangeTask<TestStore, Turso>>(&holder_change_request_key(id)?, request)
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &holder_change_request_key(id)?,
+            request,
+        )
         .await?;
     assert_eq!(view(&store, id).await?.history, ended.history);
     Ok(())

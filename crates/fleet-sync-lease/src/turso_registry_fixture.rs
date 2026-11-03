@@ -352,14 +352,32 @@ pub(super) async fn open_store(
 }
 pub(super) fn engine(store: Arc<TestStore>, host: Arc<TestHost>) -> TestResult<TestEngine> {
     let mut engine = TestEngine::new(store, Arc::clone(&host));
-    engine.register(RegistrationTask::<TestStore, Turso>::new(config()?))?;
-    engine.register(ImportTask::<TestStore, Turso>::new(config()?))?;
-    engine.register(RetirementTask::<TestStore, Turso>::new(config()?))?;
+    engine.register(
+        RegistrationTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
+            config()?,
+            std::sync::Arc::new(crate::NoLeaseChangeHook),
+        ),
+    )?;
+    engine.register(
+        ImportTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
+            config()?,
+            std::sync::Arc::new(crate::NoLeaseChangeHook),
+        ),
+    )?;
+    engine.register(
+        RetirementTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
+            config()?,
+            std::sync::Arc::new(crate::NoLeaseChangeHook),
+        ),
+    )?;
     engine.register(PreviewTakeoverTask::<TestStore, Turso>::new(config()?))?;
-    engine.register(HolderChangeTask::<TestStore, Turso>::new(
-        config()?,
-        host.clone(),
-    ))?;
+    engine.register(
+        HolderChangeTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
+            config()?,
+            host.clone(),
+            std::sync::Arc::new(crate::NoLeaseChangeHook),
+        ),
+    )?;
     engine.register(HolderChangeCancelTask::<TestStore, Turso>::new(
         config()?,
         host,

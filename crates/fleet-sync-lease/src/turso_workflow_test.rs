@@ -169,7 +169,7 @@ async fn move_cancellation_withdraws_release_from_both_pending_holder_and_pendin
             host.lose_release.store(true, Ordering::SeqCst);
         }
         let operation = engine
-            .start::<HolderChangeTask<TestStore, Turso>>(
+            .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                 &holder_change_request_key(id)?,
                 move_request(id)?,
             )
@@ -270,7 +270,7 @@ async fn move_cancellation_withdraws_release_from_both_pending_holder_and_pendin
         );
         let history = ended.history.clone();
         resumed
-            .start::<HolderChangeTask<TestStore, Turso>>(
+            .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                 &holder_change_request_key(id)?,
                 move_request(id)?,
             )
@@ -288,7 +288,7 @@ async fn claim_cancellation_decides_outcome_while_its_gate_settlement_stays_owed
         let store = open_store(&directory.path().join("registry.db"), host.clone(), true).await?;
         let engine = engine(store.clone(), host.clone())?;
         let import = import_request(201, "a")?;
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(import.attempt)?,
             import,
@@ -305,7 +305,10 @@ async fn claim_cancellation_decides_outcome_while_its_gate_settlement_stays_owed
             claimant: peer(2)?,
         };
         engine
-            .start::<HolderChangeTask<TestStore, Turso>>(&holder_change_request_key(id)?, request)
+            .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+                &holder_change_request_key(id)?,
+                request,
+            )
             .await?;
         assert_eq!(
             view(&store, id).await?.phase,

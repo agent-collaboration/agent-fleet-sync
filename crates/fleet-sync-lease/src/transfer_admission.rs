@@ -23,7 +23,10 @@ where
 {
     let id = crate::change_checks::attempt(request);
     let admitted = scope
-        .admit::<HolderChangeTask<S, D>>(&holder_change_request_key(id)?, request)
+        .admit::<HolderChangeTask<S, D, crate::NoLeaseChangeHook>>(
+            &holder_change_request_key(id)?,
+            request,
+        )
         .await
         .map_err(|error| LeaseError::InvalidInput {
             field: error.to_string(),

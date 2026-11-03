@@ -145,15 +145,17 @@ where
 }
 
 /// Grant and its immutable transfer outcome share one transaction with both history entries.
-pub(crate) async fn grant<C, D>(
+pub(crate) async fn grant<C, D, H>(
     ctx: &mut C,
     request: &HolderChangeRequest,
     fenced: FenceResult,
     expect: FenceExpectation,
     config: &RegistryConfig,
+    hook: std::sync::Arc<H>,
 ) -> Result<HolderChangeAnswer, LeaseError>
 where
     C: OperationContext,
+    for<'t> H: crate::LeaseChangeHook<<C::Store as AtomicStore>::Scope<'t>>,
     D: Database,
     for<'t> <C::Store as AtomicStore>::Scope<'t>: TransactionScope<Database = D>,
     D::Arguments: IntoArguments<D>,
@@ -177,8 +179,11 @@ where
                 {
                     return Ok(answer);
                 }
-                let mut storage = RegistryStorage(scope);
                 let database = database(&request);
+                let before = crate::registry_snapshot(scope, database)
+                    .await
+                    .map_err(step_error)?;
+                let mut storage = RegistryStorage(scope);
                 let mut transfer = storage
                     .transfer(attempt(&request))
                     .await
@@ -323,6 +328,14 @@ where
                     .enter(crate::HolderChangePhase::Ended, now)
                     .map_err(step_error)?;
                 storage.save_transfer(&transfer).await.map_err(step_error)?;
+                crate::lease_change_hook::project_lease_change(
+                    storage.0,
+                    database,
+                    before,
+                    hook.as_ref(),
+                )
+                .await
+                .map_err(step_error)?;
                 Ok(answer)
             })
         })

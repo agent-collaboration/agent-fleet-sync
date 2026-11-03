@@ -43,13 +43,15 @@ fn existing_import(record: DatabaseRecord, request: &Import) -> ImportAnswer {
 }
 
 /// Create an unheld epoch-one copy, then reserve its database identity for the offered import.
-pub async fn import<C, D>(
+pub async fn import<C, D, H>(
     ctx: &mut C,
     request: &Import,
     config: &RegistryConfig,
+    hook: std::sync::Arc<H>,
 ) -> Result<ImportAnswer, LeaseError>
 where
     C: OperationContext,
+    for<'t> H: crate::LeaseChangeHook<<C::Store as AtomicStore>::Scope<'t>>,
     D: Database,
     for<'t> <C::Store as AtomicStore>::Scope<'t>: TransactionScope<Database = D>,
     D::Arguments: IntoArguments<D>,
@@ -136,6 +138,9 @@ where
     Ok(ctx
         .local(step("reserve")?, move |scope| {
             Box::pin(async move {
+                let before = crate::registry_snapshot(scope, request.database)
+                    .await
+                    .map_err(step_error)?;
                 let mut storage = RegistryStorage(scope);
                 let mut attempt = storage
                     .lifecycle(request.attempt)
@@ -189,6 +194,14 @@ where
                 };
                 attempt.outcome = Some(LifecycleOutcome::Import(answer.clone()));
                 storage.save_lifecycle(&attempt).await.map_err(step_error)?;
+                crate::lease_change_hook::project_lease_change(
+                    storage.0,
+                    request.database,
+                    before,
+                    hook.as_ref(),
+                )
+                .await
+                .map_err(step_error)?;
                 Ok(answer)
             })
         })

@@ -14,7 +14,7 @@ fn transfer() -> TestResult<TransferId> {
 async fn prepare(store: &Arc<TestStore>, host: &Arc<TestHost>) -> TestResult {
     let engine = engine(Arc::clone(store), Arc::clone(host))?;
     let offered = import_request(201, "a")?;
-    if task_answer::<ImportTask<TestStore, Turso>>(
+    if task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         &engine,
         &lifecycle_request_key(offered.attempt)?,
         offered,
@@ -29,9 +29,15 @@ async fn prepare(store: &Arc<TestStore>, host: &Arc<TestHost>) -> TestResult {
 }
 async fn changed_version(store: Arc<TestStore>, host: Arc<TestHost>) -> TestResult<TestEngine> {
     let mut engine = TestEngine::new(store, Arc::clone(&host));
-    engine.register(VersionedTask::<_, 2>(
-        HolderChangeTask::<TestStore, Turso>::new(config()?, host),
-    ))?;
+    engine.register(VersionedTask::<_, 2>(HolderChangeTask::<
+        TestStore,
+        Turso,
+        crate::NoLeaseChangeHook,
+    >::new(
+        config()?,
+        host,
+        std::sync::Arc::new(crate::NoLeaseChangeHook),
+    )))?;
     engine.register(SettleReservationTask::<TestStore>::new())?;
     Ok(engine)
 }
@@ -51,7 +57,7 @@ async fn version_failure_before_grant_records_failed_and_settles_reserved_claim_
         claimant: peer(2)?,
     };
     let id = running
-        .start::<HolderChangeTask<TestStore, Turso>>(
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &holder_change_request_key(transfer()?)?,
             request.clone(),
         )
@@ -121,7 +127,7 @@ async fn version_failure_after_committed_grant_preserves_granted_and_settles_it_
             claimant: peer(2)?,
         };
         let id = running
-            .start::<HolderChangeTask<TestStore, Turso>>(
+            .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                 &holder_change_request_key(transfer()?)?,
                 request.clone(),
             )
@@ -239,16 +245,19 @@ async fn schema_refusal_after_reservation_is_settled_and_a_gate_refusal_has_no_s
                 })
             })
             .await?;
-        engine.register(HolderChangeTask::<TestStore, Turso>::new(
-            policy,
-            host.clone(),
-        ))?;
+        engine.register(
+            HolderChangeTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
+                policy,
+                host.clone(),
+                std::sync::Arc::new(crate::NoLeaseChangeHook),
+            ),
+        )?;
         let request = HolderChangeRequest::Claim {
             attempt: transfer()?,
             database: database()?,
             claimant: peer(2)?,
         };
-        let answer = task_answer::<HolderChangeTask<TestStore, Turso>>(
+        let answer = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &holder_change_request_key(transfer()?)?,
             request,

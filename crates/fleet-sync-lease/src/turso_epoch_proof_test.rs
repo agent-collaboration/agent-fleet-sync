@@ -29,7 +29,7 @@ async fn move_holder(
     let attempt = TransferId::new(Uuid::from_u128(
         (attempt) | 0x019eef00000070008000000000000000,
     ))?;
-    task_answer::<HolderChangeTask<TestStore, Turso>>(
+    task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         engine,
         &holder_change_request_key(attempt)?,
         HolderChangeRequest::Move {

@@ -13,7 +13,7 @@ use std::sync::{Arc, atomic::Ordering};
 async fn imported(engine: &TestEngine, host: &Arc<TestHost>) -> TestResult<Retirement> {
     let import = import_request(201, "a")?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             engine,
             &lifecycle_request_key(import.attempt)?,
             import
@@ -59,7 +59,7 @@ async fn failed_retirement_keeps_its_seal_and_a_new_attempt_finishes_the_real_co
     let request = imported(&running, &host).await?;
     host.retire_unreachable.store(true, Ordering::SeqCst);
     let id = running
-        .start::<RetirementTask<TestStore, Turso>>(
+        .start::<RetirementTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &lifecycle_request_key(request.attempt)?,
             request.clone(),
         )
@@ -79,9 +79,14 @@ async fn failed_retirement_keeps_its_seal_and_a_new_attempt_finishes_the_real_co
     host.advance();
     let store = open_store(&path, Arc::clone(&host), false).await?;
     let mut changed = TestEngine::new(Arc::clone(&store), Arc::clone(&host));
-    changed.register(VersionedTask::<_, 2>(
-        RetirementTask::<TestStore, Turso>::new(config()?),
-    ))?;
+    changed.register(VersionedTask::<_, 2>(RetirementTask::<
+        TestStore,
+        Turso,
+        crate::NoLeaseChangeHook,
+    >::new(
+        config()?,
+        std::sync::Arc::new(crate::NoLeaseChangeHook),
+    )))?;
     assert_eq!(changed.drive_due().await?.failed.len(), 1);
     assert_eq!(
         lifecycle(&store).await?,
@@ -94,7 +99,7 @@ async fn failed_retirement_keeps_its_seal_and_a_new_attempt_finishes_the_real_co
     let mut next = request;
     next.attempt = import_request(203, "a")?.attempt;
     assert!(matches!(
-        task_answer::<RetirementTask<TestStore, Turso>>(
+        task_answer::<RetirementTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &resumed,
             &lifecycle_request_key(next.attempt)?,
             next
@@ -132,7 +137,7 @@ async fn lost_copy_retirement_answer_replays_the_same_call_without_rewriting_its
     host.lose_retire.store(true, Ordering::SeqCst);
     let key = lifecycle_request_key(request.attempt)?;
     let id = running
-        .start::<RetirementTask<TestStore, Turso>>(&key, request.clone())
+        .start::<RetirementTask<TestStore, Turso, crate::NoLeaseChangeHook>>(&key, request.clone())
         .await?;
     assert!(matches!(
         running.status(&id).await?.state,
@@ -146,7 +151,10 @@ async fn lost_copy_retirement_answer_replays_the_same_call_without_rewriting_its
     let resumed = engine(Arc::clone(&store), Arc::clone(&host))?;
     assert_eq!(resumed.drive_due().await?.completed, vec![id]);
     assert!(matches!(
-        task_answer::<RetirementTask<TestStore, Turso>>(&resumed, &key, request).await?,
+        task_answer::<RetirementTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+            &resumed, &key, request
+        )
+        .await?,
         RetirementAnswer::Retired { .. }
     ));
     assert_eq!(before, marker(&host).await?);
@@ -183,7 +191,7 @@ async fn an_expired_lease_still_prevents_retirement() -> TestResult {
         expect_acked: ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(0)),
     };
     assert_eq!(
-        task_answer::<RetirementTask<TestStore, Turso>>(
+        task_answer::<RetirementTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(request.attempt)?,
             request

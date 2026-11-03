@@ -32,7 +32,7 @@ async fn claim_ack_wait_and_fence_keep_pending_history_then_resume_the_same_atte
         let id = attempt(4000 + index as u128)?;
         let request = if index == 0 {
             let import = import_request(4010, "a")?;
-            task_answer::<ImportTask<TestStore, Turso>>(
+            task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                 &running,
                 &lifecycle_request_key(import.attempt)?,
                 import,
@@ -50,7 +50,7 @@ async fn claim_ack_wait_and_fence_keep_pending_history_then_resume_the_same_atte
         };
         *host.copy_no_effect.lock().await = Some(target);
         let operation = running
-            .start::<HolderChangeTask<TestStore, Turso>>(
+            .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
                 &holder_change_request_key(id)?,
                 request.clone(),
             )
@@ -114,10 +114,10 @@ async fn claim_ack_wait_and_fence_keep_pending_history_then_resume_the_same_atte
             .await?,
             reservation
         );
-        let replayed: HolderChangeAnswer = task_answer::<HolderChangeTask<TestStore, Turso>>(
-            &resumed,
-            &holder_change_request_key(id)?,
-            request,
+        let replayed: HolderChangeAnswer = task_answer::<
+            HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>,
+        >(
+            &resumed, &holder_change_request_key(id)?, request
         )
         .await?;
         assert_eq!(Some(replayed), after.outcome);

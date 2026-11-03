@@ -93,7 +93,9 @@ async fn history_skips_a_real_repaired_reservation_and_preserves_frozen_paging()
         to: peer(2)?,
     };
     let key = holder_change_request_key(id)?;
-    let drive = task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &key, request);
+    let drive = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
+        &engine, &key, request,
+    );
     let control = async {
         gate.started.notified().await;
         advance_copy(&host, 1, 9).await?;
@@ -164,7 +166,7 @@ async fn history_never_invents_imported_unheld_epochs_and_can_read_an_open_grant
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
     let request = import_request(3006, "a")?;
     assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso>>(
+        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &engine,
             &lifecycle_request_key(request.attempt)?,
             request
@@ -176,7 +178,7 @@ async fn history_never_invents_imported_unheld_epochs_and_can_read_an_open_grant
     let position = crate::turso_copy_fixture::seed_import(&host).await?;
     let id = attempt(3007)?;
     assert!(
-        matches!(task_answer::<HolderChangeTask<TestStore, Turso>>(&engine, &holder_change_request_key(id)?, HolderChangeRequest::Claim { attempt: id, database: database()?, claimant: peer(2)? }).await?, HolderChangeAnswer::Granted { epoch, start, .. } if epoch == Epoch::new(2)? && start == position)
+        matches!(task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(&engine, &holder_change_request_key(id)?, HolderChangeRequest::Claim { attempt: id, database: database()?, claimant: peer(2)? }).await?, HolderChangeAnswer::Granted { epoch, start, .. } if epoch == Epoch::new(2)? && start == position)
     );
     let history = page(&store, None, 3, 4).await??;
     assert_eq!(
@@ -204,7 +206,7 @@ async fn history_cancelled_release_is_not_a_permanent_end_or_an_actual_grant() -
     });
     let id = attempt(3008)?;
     let operation = engine
-        .start::<HolderChangeTask<TestStore, Turso>>(
+        .start::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
             &holder_change_request_key(id)?,
             crate::turso_workflow_tests::move_request(id)?,
         )
