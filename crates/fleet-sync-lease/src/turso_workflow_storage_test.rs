@@ -208,49 +208,14 @@ async fn stored_phase_history_rejects_regression_overflow_and_outcome_mismatch()
             .transaction(move |scope| {
                 Box::pin(async move {
                     use durable_steps::storage::TransactionScope;
-                    let mut record = crate::registry_storage::RegistryStorage(scope)
-                        .transfer(id)
-                        .await
-                        .map_err(storage)?
-                        .ok_or_else(|| storage("transfer missing"))?;
                     match corruption {
-                        "regression" => record.phase_history.push(PhaseEntry {
-                            phase: HolderChangePhase::Requested,
-                            entered_at: SyncTime::from_unix_millis(1001),
-                        }),
-                        "overflow" => {
-                            record.phase_history = vec![
-                                PhaseEntry {
-                                    phase: HolderChangePhase::Releasing,
-                                    entered_at: SyncTime::from_unix_millis(1000)
-                                };
-                                9
-                            ]
-                        }
-                        _ => {
-                            record.outcome = Some(HolderChangeAnswer::Granted {
-                                epoch: Epoch::new(2).map_err(storage)?,
-                                expires_at: SyncTime::from_unix_millis(3000),
-                                start: ReplicationPosition::new(
-                                    Epoch::new(1).map_err(storage)?,
-                                    CommitSequence::new(0),
-                                ),
-                            })
-                        }
+                        "regression"=> {sqlx_core::query::query::<Turso>("INSERT INTO _fleet_sync_transfer_phase_history(attempt,position,phase_kind,entered_at) VALUES(?1,(SELECT max(position)+1 FROM _fleet_sync_transfer_phase_history WHERE attempt=?1),'requested',1001)").bind(id.to_string()).execute(scope.executor()).await?;},
+                        "overflow"=> {
+                            sqlx_core::query::query::<Turso>("DELETE FROM _fleet_sync_transfer_phase_history WHERE attempt=?1").bind(id.to_string()).execute(scope.executor()).await?;
+                            for position in 0..9 {sqlx_core::query::query::<Turso>("INSERT INTO _fleet_sync_transfer_phase_history(attempt,position,phase_kind,entered_at) VALUES(?1,?2,'requested',1000)").bind(id.to_string()).bind(position).execute(scope.executor()).await?;}
+                        },
+                        _=> {sqlx_core::query::query::<Turso>("UPDATE _fleet_sync_transfers SET outcome_kind='granted',granted_epoch='2',granted_expires_at=3000,granted_start_epoch='1',granted_start_sequence='0'").execute(scope.executor()).await?;},
                     }
-                    sqlx_core::query::query::<Turso>(
-                        "UPDATE _fleet_sync_transfers SET phase_history=?,outcome=?",
-                    )
-                    .bind(serde_json::to_string(&record.phase_history).map_err(storage)?)
-                    .bind(
-                        record
-                            .outcome
-                            .map(|value| serde_json::to_string(&value))
-                            .transpose()
-                            .map_err(storage)?,
-                    )
-                    .execute(scope.executor())
-                    .await?;
                     Ok(())
                 })
             })
@@ -282,7 +247,7 @@ async fn admin_read_rejects_an_admission_bound_to_another_operation() -> TestRes
         use sqlx_core::row::Row;
         let other=sqlx_core::query::query::<Turso>("SELECT operation_id FROM _fleet_sync_operations WHERE kind='fleet-sync.register'").fetch_one(scope.executor()).await?;
         let other=other.try_get::<String,_>("operation_id")?;
-        sqlx_core::query::query::<Turso>("UPDATE _fleet_sync_transfer_admissions SET operation=?").bind(serde_json::to_string(&other).map_err(storage)?).execute(scope.executor()).await?;
+        sqlx_core::query::query::<Turso>("UPDATE _fleet_sync_transfer_admissions SET operation=?").bind(other).execute(scope.executor()).await?;
         Ok(())
     })).await?;
     let error = store

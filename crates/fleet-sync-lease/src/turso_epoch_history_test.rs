@@ -240,13 +240,13 @@ async fn history_refuses_corrupt_rows_or_successor_evidence_without_changing_the
     let (_, store, engine) = registered(directory.path()).await?;
     move_to(&engine, attempt(3009)?, 1, 2).await?;
     for sql in [
-        "UPDATE _fleet_sync_epoch_history SET record='not JSON' WHERE epoch='1'",
+        "UPDATE _fleet_sync_epoch_history SET holder='not UUIDv7' WHERE epoch='1'",
         "UPDATE _fleet_sync_epoch_history SET epoch='01' WHERE epoch='1'",
         "UPDATE _fleet_sync_epoch_history SET epoch='18446744073709551616' WHERE epoch='1'",
         "UPDATE _fleet_sync_epoch_history SET epoch='2x' WHERE epoch='1'",
         "DELETE FROM _fleet_sync_epoch_history WHERE epoch='2'",
-        "UPDATE _fleet_sync_transfers SET outcome='null'",
-        "UPDATE _fleet_sync_transfers SET phase_history='[]'",
+        "UPDATE _fleet_sync_transfers SET outcome_kind=NULL",
+        "DELETE FROM _fleet_sync_transfer_phase_history",
     ] {
         let error = store
             .transaction(move |scope| {

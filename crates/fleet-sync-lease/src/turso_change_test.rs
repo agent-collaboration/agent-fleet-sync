@@ -81,9 +81,9 @@ async fn claim_grants_the_next_epoch_and_settles_once_after_seed_publication() -
         scalar(&store, "SELECT epoch AS value FROM _fleet_sync_epoch_floor").await?,
         "2"
     );
-    let lease_before = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
+    let lease_before = scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?;
     let database_before =
-        scalar(&store, "SELECT record AS value FROM _fleet_sync_databases").await?;
+        scalar(&store, "SELECT json_array(database,lifecycle_kind,origin_kind,origin_epoch,origin_sequence,import_digest,retiring_attempt,retired_at,revision_epoch,revision_change,changed_at,created_at,updated_at) AS value FROM _fleet_sync_databases").await?;
     let calls_before = host.calls.lock().await.len();
     let reimport = import_request(202, "a")?;
     assert_eq!(
@@ -132,11 +132,11 @@ async fn claim_grants_the_next_epoch_and_settles_once_after_seed_publication() -
         "1"
     );
     assert_eq!(
-        scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
+        scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?,
         lease_before
     );
     assert_eq!(
-        scalar(&store, "SELECT record AS value FROM _fleet_sync_databases").await?,
+        scalar(&store, "SELECT json_array(database,lifecycle_kind,origin_kind,origin_epoch,origin_sequence,import_digest,retiring_attempt,retired_at,revision_epoch,revision_change,changed_at,created_at,updated_at) AS value FROM _fleet_sync_databases").await?,
         database_before
     );
     assert_eq!(host.calls.lock().await.len(), calls_before);

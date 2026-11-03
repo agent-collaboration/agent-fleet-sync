@@ -36,15 +36,15 @@ async fn admit(
 async fn admission_and_journal_rows(store: &TestStore) -> TestResult<Vec<String>> {
     Ok(store.transaction(|scope| Box::pin(async move {
         sqlx_core::query::query::<Turso>(
-            "SELECT 'admission:' || json_array(attempt,operation,request,requested_by,admitted_at,follow_up,target_schema) AS value FROM _fleet_sync_transfer_admissions
+            "SELECT 'admission:' || json_array(attempt,operation,request_kind,database,from_epoch,to_peer,claimant,reason,preview_token,preview_fence,preview_acked_epoch,preview_acked_sequence,preview_holder,preview_last_seen,requested_by,admitted_at,target_schema_max_version,follow_up,created_at,updated_at) AS value FROM _fleet_sync_transfer_admissions
              UNION ALL SELECT 'operation:' || json_array(operation_id,kind,kind_version,request_key,hex(input),hex(input_digest),state,hex(result),failure,finished_at,next_attempt_at,attempt,drive_token,drive_until) FROM _fleet_sync_operations
              UNION ALL SELECT 'step:' || json_array(operation_id,position,step_name,kind,intent,hex(output),first_attempt_at,may_have_reached) FROM _fleet_sync_steps
-             UNION ALL SELECT 'database:' || json_array(database,record) FROM _fleet_sync_databases
-             UNION ALL SELECT 'cancel:' || json_array(attempt,record) FROM _fleet_sync_transfer_cancels
-             UNION ALL SELECT 'lifecycle:' || json_array(attempt,database,intent,outcome) FROM _fleet_sync_lifecycle_attempts
-             UNION ALL SELECT 'preview:' || json_array(token,database,record) FROM _fleet_sync_takeover_previews
-             UNION ALL SELECT 'renewal:' || json_array(database,attempt,record) FROM _fleet_sync_renewal_attempts
-             UNION ALL SELECT 'support:' || json_array(peer,record) FROM _fleet_sync_schema_support
+             UNION ALL SELECT 'database:' || json_array(database,lifecycle_kind,origin_kind,origin_epoch,origin_sequence,import_digest,retiring_attempt,retired_at,revision_epoch,revision_change,changed_at,created_at,updated_at) FROM _fleet_sync_databases
+             UNION ALL SELECT 'cancel:' || json_array(attempt,cancelled_by,reason,cancelled_at,created_at,updated_at) FROM _fleet_sync_transfer_cancels
+             UNION ALL SELECT 'lifecycle:' || json_array(attempt,database,intent_kind,writer,origin_kind,origin_epoch,origin_sequence,import_digest,expect_fence,expect_acked_epoch,expect_acked_sequence,outcome_kind,answer_kind,failure_reason,lease_database,lease_holder,lease_state,lease_epoch,lease_expires_at,lease_remaining_ms,replayed,refusal_kind,gate_code,gate_detail,current_epoch,existing_digest,offered_digest,retired_at,mismatch_fence,mismatch_acked_epoch,mismatch_acked_sequence,created_at,updated_at) FROM _fleet_sync_lifecycle_attempts
+             UNION ALL SELECT 'preview:' || json_array(token,database,fence,acked_epoch,acked_sequence,holder,last_seen,created_at,updated_at) FROM _fleet_sync_takeover_previews
+             UNION ALL SELECT 'renewal:' || json_array(id,database,attempt,request_epoch,holder,answer_kind,recorded_epoch,recorded_expires_at,current_database,current_holder,current_state,current_epoch,current_expires_at,current_remaining_ms,transfer_in_progress,replayed,refusal_kind,refusal_current_epoch,refusal_ended_epoch,refusal_ended_sequence,created_at,updated_at) FROM _fleet_sync_renewal_attempts
+             UNION ALL SELECT 'support:' || json_array(peer,session_id,attach_seq,max_version,created_at,updated_at) FROM _fleet_sync_schema_support
              ORDER BY value"
         ).fetch_all(scope.executor()).await?.into_iter()
             .map(|row| row.try_get("value").map_err(storage)).collect()

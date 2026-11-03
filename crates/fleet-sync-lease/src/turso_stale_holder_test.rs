@@ -37,7 +37,7 @@ async fn move_refuses_just_past_renewal_age_without_calling_the_holder() -> Test
     )?;
     register_first(&engine).await?;
     let calls = host.calls.lock().await.len();
-    let lease = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
+    let lease = scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?;
     host.now.store(1_801_001, Ordering::SeqCst);
     let attempt = TransferId::new(Uuid::from_u128(0x019eef000000700080000000000009c5))?;
     let request = HolderChangeRequest::Move {
@@ -70,7 +70,7 @@ async fn move_refuses_just_past_renewal_age_without_calling_the_holder() -> Test
     );
     assert_eq!(host.calls.lock().await.len(), calls);
     assert_eq!(
-        scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
+        scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?,
         lease
     );
     assert_eq!(

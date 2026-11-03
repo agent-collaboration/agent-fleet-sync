@@ -94,7 +94,7 @@ async fn version_failure_before_grant_records_failed_and_settles_reserved_claim_
         })
         .await?;
     assert!(matches!(answer, Some(HolderChangeAnswer::Failed { .. })));
-    assert_eq!(scalar(&store,"SELECT CAST(count(*) AS TEXT) AS value FROM _fleet_sync_transfers WHERE outcome IS NULL").await?,"0");
+    assert_eq!(scalar(&store,"SELECT CAST(count(*) AS TEXT) AS value FROM _fleet_sync_transfers WHERE outcome_kind IS NULL").await?,"0");
     assert_eq!(
         scalar(
             &store,

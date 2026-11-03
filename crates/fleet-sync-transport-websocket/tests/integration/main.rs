@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic_in_result_fn)]
-#[path = "support/opening_revocation.rs"]
+#[path = "../support/opening_revocation.rs"]
 mod opening_revocation;
+#[path = "../support/mod.rs"]
 mod support;
 use fleet_sync_protocol::*;
 use fleet_sync_session::*;

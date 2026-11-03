@@ -1,85 +1,10 @@
 //! Registry identity and in-progress transfer guards through the real operation host.
 #![allow(clippy::panic_in_result_fn)]
 use crate::{turso_change_tests::register_first, turso_registry_fixture::*, *};
-use durable_steps::storage::TransactionScope;
 use durable_steps::{AtomicStore, OperationState, Uuid};
 use fleet_sync_protocol::*;
 use sqlx_turso::Turso;
 use std::sync::{Arc, atomic::Ordering};
-
-#[tokio::test]
-async fn stored_preview_token_is_validated_before_a_registry_read_returns_it() -> TestResult {
-    use crate::{registry_records::PreviewRecord, registry_storage::RegistryStorage};
-    let directory = tempfile::tempdir()?;
-    let host = TestHost::open(directory.path(), false).await?;
-    let store = open_store(&directory.path().join("registry.db"), host, true).await?;
-    let token = PreviewToken::new("019eef00-0000-7000-8000-000000000011")?;
-    let record = PreviewRecord {
-        database: database()?,
-        preview: TakeoverPreview {
-            token: token.clone(),
-            fence: Epoch::new(1)?,
-            acked: ReplicationPosition::new(Epoch::new(1)?, CommitSequence::new(0)),
-            holder: peer(1)?,
-            last_seen: None,
-        },
-    };
-    let saving = record.clone();
-    store
-        .transaction(move |scope| {
-            Box::pin(async move {
-                RegistryStorage(scope)
-                    .save_preview(&saving)
-                    .await
-                    .map_err(storage)
-            })
-        })
-        .await?;
-    let reading = token.clone();
-    let decoded = store
-        .transaction(move |scope| {
-            Box::pin(async move {
-                RegistryStorage(scope)
-                    .preview(&reading)
-                    .await
-                    .map_err(storage)
-            })
-        })
-        .await?;
-    assert_eq!(decoded, Some(record.clone()));
-    let mut corrupt = serde_json::to_value(record)?;
-    *corrupt
-        .get_mut("preview")
-        .and_then(|preview| preview.get_mut("token"))
-        .ok_or("missing preview token")? =
-        serde_json::json!("019eef00-0000-4000-8000-000000000011");
-    let corrupt = serde_json::to_string(&corrupt)?;
-    store
-        .transaction(move |scope| {
-            Box::pin(async move {
-                sqlx_core::query::query::<Turso>(
-                    "UPDATE _fleet_sync_takeover_previews SET record=?",
-                )
-                .bind(corrupt)
-                .execute(scope.executor())
-                .await?;
-                Ok(())
-            })
-        })
-        .await?;
-    let result = store
-        .transaction(move |scope| {
-            Box::pin(async move {
-                RegistryStorage(scope)
-                    .preview(&token)
-                    .await
-                    .map_err(storage)
-            })
-        })
-        .await;
-    assert!(result.is_err());
-    Ok(())
-}
 
 #[tokio::test]
 async fn import_replays_the_copy_before_publishing_registry_state_after_lost_answer() -> TestResult
@@ -152,76 +77,6 @@ async fn import_replays_the_copy_before_publishing_registry_state_after_lost_ans
         .collect::<Vec<_>>();
     assert_eq!(calls.len(), 2);
     assert_eq!(calls.first(), calls.last());
-    Ok(())
-}
-
-#[tokio::test]
-async fn stored_database_identity_mismatch_is_not_treated_as_an_import_replay() -> TestResult {
-    let directory = tempfile::tempdir()?;
-    let host = TestHost::open(directory.path(), false).await?;
-    let store = open_store(
-        &directory.path().join("registry.db"),
-        Arc::clone(&host),
-        true,
-    )
-    .await?;
-    let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
-    let request = import_request(201, "a")?;
-    assert_eq!(
-        task_answer::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
-            &engine,
-            &lifecycle_request_key(request.attempt)?,
-            request
-        )
-        .await?,
-        ImportAnswer::Imported
-    );
-    let original = scalar(&store, "SELECT record AS value FROM _fleet_sync_databases").await?;
-    let mut record: serde_json::Value = serde_json::from_str(&original)?;
-    let object = record.as_object_mut().ok_or("database object")?;
-    object.insert(
-        "database".into(),
-        serde_json::to_value(DatabaseId::new(Uuid::from_u128(
-            0x019eef0000007000800000000000076c,
-        ))?)?,
-    );
-    let changed = serde_json::to_string(&record)?;
-    let database = database()?;
-    store
-        .transaction(move |scope| {
-            Box::pin(async move {
-                sqlx_core::query::query::<Turso>("UPDATE _fleet_sync_databases SET record=?")
-                    .bind(changed)
-                    .execute(scope.executor())
-                    .await?;
-                assert!(matches!(
-                    database_lifecycle(scope, database).await,
-                    Err(LeaseError::Corrupt { .. })
-                ));
-                Ok(())
-            })
-        })
-        .await?;
-    let offered = import_request(202, "a")?;
-    let id = engine
-        .start::<ImportTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
-            &lifecycle_request_key(offered.attempt)?,
-            offered,
-        )
-        .await?;
-    assert!(matches!(
-        engine.status(&id).await?.state,
-        OperationState::Failed { .. }
-    ));
-    assert_eq!(
-        host.calls
-            .lock()
-            .await
-            .iter()
-            .filter(|(kind, _)| kind == "fleet-sync.copy-create")
-            .count(),
-        1
-    );
     Ok(())
 }
 

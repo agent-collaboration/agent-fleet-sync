@@ -1,1 +1,1 @@
-SELECT peer, session_id, record FROM _fleet_sync_sessions WHERE peer = ? ORDER BY session_id
+SELECT peer,session_id,state_kind,connection_id,CAST(detached_since AS TEXT) AS detached_since,end_reason,notice_head FROM _fleet_sync_sessions WHERE peer=?1 ORDER BY session_id

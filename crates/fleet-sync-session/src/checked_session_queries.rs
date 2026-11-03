@@ -11,7 +11,11 @@ use sqlx_core::{
 pub(crate) struct StoredSessionRow {
     pub peer: Option<String>,
     pub session_id: Option<String>,
-    pub record: Option<String>,
+    pub state_kind: Option<String>,
+    pub connection_id: Option<String>,
+    pub detached_since: Option<String>,
+    pub end_reason: Option<String>,
+    pub notice_head: Option<String>,
 }
 pub(crate) fn load_session<S>(
     scope: &mut S,
@@ -38,7 +42,11 @@ where
                 Ok(StoredSessionRow {
                     peer: row.try_get("peer")?,
                     session_id: row.try_get("session_id")?,
-                    record: row.try_get("record")?,
+                    state_kind: row.try_get("state_kind")?,
+                    connection_id: row.try_get("connection_id")?,
+                    detached_since: row.try_get("detached_since")?,
+                    end_reason: row.try_get("end_reason")?,
+                    notice_head: row.try_get("notice_head")?,
                 })
             })
             .transpose()
@@ -67,7 +75,11 @@ where
                 Ok(StoredSessionRow {
                     peer: row.try_get("peer")?,
                     session_id: row.try_get("session_id")?,
-                    record: row.try_get("record")?,
+                    state_kind: row.try_get("state_kind")?,
+                    connection_id: row.try_get("connection_id")?,
+                    detached_since: row.try_get("detached_since")?,
+                    end_reason: row.try_get("end_reason")?,
+                    notice_head: row.try_get("notice_head")?,
                 })
             })
             .collect()
@@ -125,7 +137,9 @@ where
 #[derive(Debug)]
 pub(crate) struct StoredNoticeRow {
     pub position: Option<String>,
-    pub body: Option<String>,
+    pub notice_kind: Option<String>,
+    pub database_id: Option<String>,
+    pub consumer_body: Option<String>,
 }
 pub(crate) fn notices_after<S>(
     scope: &mut S,
@@ -151,7 +165,9 @@ where
             .map(|row| {
                 Ok(StoredNoticeRow {
                     position: row.try_get("position")?,
-                    body: row.try_get("body")?,
+                    notice_kind: row.try_get("notice_kind")?,
+                    database_id: row.try_get("database_id")?,
+                    consumer_body: row.try_get("consumer_body")?,
                 })
             })
             .collect()

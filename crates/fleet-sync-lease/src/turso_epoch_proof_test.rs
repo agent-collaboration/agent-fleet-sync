@@ -61,7 +61,7 @@ async fn missing_or_exhausted_floor_refuses_without_changing_authority_or_callin
         let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
         register_first(&engine).await?;
         execute_fixture_sql(&store, damage).await?;
-        let lease = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
+        let lease = scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?;
         let calls = host.calls.lock().await.len();
 
         assert_eq!(
@@ -70,7 +70,7 @@ async fn missing_or_exhausted_floor_refuses_without_changing_authority_or_callin
         );
         assert_eq!(host.calls.lock().await.len(), calls);
         assert_eq!(
-            scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
+            scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?,
             lease
         );
         assert_eq!(
@@ -113,7 +113,7 @@ async fn floor_behind_the_current_lease_cannot_reuse_a_previously_granted_epoch(
         matches!(move_holder(&engine, 2001, 1, 2).await?, HolderChangeAnswer::Granted { epoch, .. } if epoch==Epoch::new(2)?)
     );
     execute_fixture_sql(&store, "UPDATE _fleet_sync_epoch_floor SET epoch='1'").await?;
-    let lease = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
+    let lease = scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?;
     let calls = host.calls.lock().await.len();
 
     assert_eq!(
@@ -126,7 +126,7 @@ async fn floor_behind_the_current_lease_cannot_reuse_a_previously_granted_epoch(
         "1"
     );
     assert_eq!(
-        scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
+        scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?,
         lease
     );
     assert_eq!(

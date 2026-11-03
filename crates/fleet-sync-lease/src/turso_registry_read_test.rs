@@ -6,6 +6,7 @@ use crate::{
 };
 use durable_steps::{AtomicStore, Uuid, storage::TransactionScope};
 use fleet_sync_protocol::*;
+use sqlx_core::row::Row;
 use sqlx_turso::Turso;
 use std::sync::Arc;
 
@@ -140,7 +141,7 @@ async fn history_records(store: &TestStore) -> TestResult<Vec<String>> {
         .transaction(|scope| {
             Box::pin(async move {
                 sqlx_core::query::query::<Turso>(
-                    "SELECT record FROM _fleet_sync_epoch_history ORDER BY database,epoch",
+                    "SELECT json_array(id,database,epoch,holder,granted_at,ended_epoch,ended_sequence,created_at,updated_at) AS record FROM _fleet_sync_epoch_history ORDER BY database,epoch",
                 )
                 .fetch_all(scope.executor())
                 .await?
@@ -206,7 +207,7 @@ async fn epoch_holder_preserves_the_historical_grant_after_a_real_move_and_store
         ended_at: None,
     };
     let records_before = history_records(&store).await?;
-    let lease_before = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
+    let lease_before = scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?;
     let calls_before = host.calls.lock().await.len();
     for _ in 0..2 {
         assert_eq!(historical_grant(&store, 1).await?, Some(historical.clone()));
@@ -215,7 +216,7 @@ async fn epoch_holder_preserves_the_historical_grant_after_a_real_move_and_store
     }
     assert_eq!(history_records(&store).await?, records_before);
     assert_eq!(
-        scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
+        scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?,
         lease_before
     );
     assert_eq!(host.calls.lock().await.len(), calls_before);
@@ -229,74 +230,28 @@ async fn epoch_holder_preserves_the_historical_grant_after_a_real_move_and_store
 }
 
 #[tokio::test]
-async fn epoch_holder_returns_typed_corruption_without_repairing_or_guessing_a_holder() -> TestResult
-{
+async fn typed_history_invalid_uuid_counter_and_future_end_fail_without_repair() -> TestResult {
     let directory = tempfile::tempdir()?;
     let host = TestHost::open(directory.path(), false).await?;
-    let store = open_store(
-        &directory.path().join("registry.db"),
-        Arc::clone(&host),
-        true,
-    )
-    .await?;
-    let engine = engine(Arc::clone(&store), host)?;
+    let store = open_store(&directory.path().join("registry.db"), host.clone(), true).await?;
+    let engine = engine(store.clone(), host)?;
     register_first(&engine).await?;
-    let original = history_records(&store)
-        .await?
-        .pop()
-        .ok_or("missing original grant")?;
-    for corruption in ["malformed", "database", "epoch", "holder", "future end"] {
-        let mut damaged: serde_json::Value = serde_json::from_str(&original)?;
-        match corruption {
-            "database" => {
-                damaged["database"] = serde_json::json!(DatabaseId::new(Uuid::from_u128(
-                    0x019eef00000070008000000000000400
-                ))?)
-            }
-            "epoch" => damaged["epoch"] = serde_json::json!(2),
-            "holder" => {
-                damaged["holder"] = serde_json::json!("019eef00-0000-4000-8000-000000000001")
-            }
-            "future end" => {
-                damaged["ended_at"] = serde_json::to_value(ReplicationPosition::new(
-                    Epoch::new(2)?,
-                    fleet_sync_protocol::CommitSequence::new(1),
-                ))?
-            }
-            _ => {}
-        }
-        let damaged = if corruption == "malformed" {
-            "invalid JSON".to_owned()
-        } else {
-            serde_json::to_string(&damaged)?
-        };
-        let expected = damaged.clone();
-        store
-            .transaction(move |scope| {
-                Box::pin(async move {
-                    sqlx_core::query::query::<Turso>(
-                        "UPDATE _fleet_sync_epoch_history SET record=?1",
-                    )
-                    .bind(damaged)
-                    .execute(scope.executor())
-                    .await?;
-                    assert!(
-                        matches!(
-                            epoch_holder(
-                                scope,
-                                database().map_err(storage)?,
-                                Epoch::new(1).map_err(storage)?
-                            )
-                            .await,
-                            Err(LeaseError::Corrupt { .. })
-                        ),
-                        "accepted corrupt history: {corruption}"
-                    );
-                    Ok(())
-                })
-            })
-            .await?;
-        assert_eq!(history_records(&store).await?, [expected]);
+    let original = history_records(&store).await?;
+    for statement in [
+        "UPDATE _fleet_sync_epoch_history SET holder='019eef00-0000-4000-8000-000000000001'",
+        "UPDATE _fleet_sync_epoch_history SET ended_epoch='1x',ended_sequence='0'",
+        "UPDATE _fleet_sync_epoch_history SET ended_epoch='2',ended_sequence='1'",
+    ] {
+        let result=store.transaction(move|scope|Box::pin(async move {
+            sqlx_core::query::query::<Turso>(statement).execute(scope.executor()).await?;
+            let before=sqlx_core::query::query::<Turso>("SELECT json_array(id,database,epoch,holder,granted_at,ended_epoch,ended_sequence,created_at,updated_at) AS value FROM _fleet_sync_epoch_history").fetch_one(scope.executor()).await?.try_get::<String,_>("value")?;
+            assert!(matches!(epoch_holder(scope,database().map_err(storage)?,Epoch::new(1).map_err(storage)?).await,Err(LeaseError::Corrupt {..})),"accepted {statement}");
+            let after=sqlx_core::query::query::<Turso>("SELECT json_array(id,database,epoch,holder,granted_at,ended_epoch,ended_sequence,created_at,updated_at) AS value FROM _fleet_sync_epoch_history").fetch_one(scope.executor()).await?.try_get::<String,_>("value")?;
+            assert_eq!(after,before);
+            Err::<(),_>(storage("rollback typed history corruption probe"))
+        })).await;
+        assert!(result.is_err());
+        assert_eq!(history_records(&store).await?, original);
     }
     Ok(())
 }

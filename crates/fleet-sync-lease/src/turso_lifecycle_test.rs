@@ -121,7 +121,7 @@ async fn failed_registration_leaves_no_grant_and_original_creation_prevents_a_di
         mismatch.status(&id).await?.state,
         OperationState::Failed { .. }
     ));
-    assert_eq!(scalar(&store,"SELECT CAST(count(*) AS TEXT) AS value FROM _fleet_sync_lifecycle_attempts WHERE outcome IS NULL").await?,"0");
+    assert_eq!(scalar(&store,"SELECT CAST(count(*) AS TEXT) AS value FROM _fleet_sync_lifecycle_attempts WHERE outcome_kind IS NULL").await?,"0");
     assert_eq!(
         scalar(
             &store,

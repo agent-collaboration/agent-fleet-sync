@@ -85,3 +85,5 @@ mod per_item_local_checkpoint;
 
 #[path = "../support/local_cancellation.rs"]
 mod cancellation_support;
+
+mod retention_replay;

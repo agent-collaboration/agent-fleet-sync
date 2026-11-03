@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-queries.json": "0eec4e7bc0ac0b9c5d59858c1b4f0a14c998b0cf4ff17a7c9ba7e1742fc8e52a",
+    "checked-queries.json": "3edd3e6b8e1065db7d40e3a0f72e5fe4b610abfd3812dc29e31e96ff732bbcab",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -58,51 +58,99 @@
     "migrations/0002_holder_workflow.sql": "c8e78248390133b284dba3cab7e55213ffdb2159f2e5b5f8762027cda866638c",
     "migrations/0003_cleanup_failure.sql": "8d3ed5a29f57e9dfd651e0a55fb1aeab485eb0aed13f89c410b67d771671543e",
     "migrations/0004_schema_support.sql": "090cab7906d98b119a8ea39f289f09542b66d8094282d932a7ba126723bab29d",
-    "sql/active_lifecycle.sql": "64bc3b0185802ec8bbea6de02e9c919033177065c9bf7858eaac9e53db149ced",
-    "sql/active_transfer.sql": "711e0495b2393baee1bf9fc39d5f317cff66818abb443c968937c5dfc6fed44b",
-    "sql/read_database.sql": "a4bbb901cb140530037a78b7523f4809e40cb4b1c191f12044bbd449dfb94573",
-    "sql/read_databases.sql": "03df15dee14d8a8d04e27aaac5a692d219df917f94144d6319795e172749205b",
+    "migrations/0005_typed_registry_core.sql": "1717d784907813241edf9574b2e5288313bf80688f6fdd00e1103da13e5efdaf",
+    "migrations/0006_typed_registry_workflows.sql": "561bfaeab84011dec358d488e05584a15ef34cd95d59b95f2559a22c5d921569",
+    "sql/read_database.sql": "21d430cbc42e867f60f8ee5d279337a0debee28b6dc5efb1dabbc7d8ca831b48",
+    "sql/read_databases.sql": "1d9cb88667eff90ef88f3ead9de2d3f33d80978228b82deb7aa569664c9ccfc5",
     "sql/read_floor.sql": "ae9cfc61011a959ed812863fef30b179195e1515349fc13c6ffc3a03449adf9c",
-    "sql/read_history.sql": "d8ffe715ed13f4527185a81e60e55e99d44225c42df99347d33eca9d10118c57",
-    "sql/read_history_page.sql": "a42ac1fa2eb396cb83d5d26d3842b4ad2ed316c0359488ef64c5bfa3c696c377",
-    "sql/read_history_successor.sql": "866f6dd480037ceb2cbef7da4d135bcaa23c329f0c947afb0aecb4ba7fb6eb42",
-    "sql/read_history_transfer.sql": "b695cf5442790676deac94f7d29a817f417201077269c24430ef45d5d28ca514",
-    "sql/read_invalid_history_epoch.sql": "bd872dfc2bc18215f206a4451b6f6f7372ea02b4f342b85933643e2a16501570",
-    "sql/read_lease.sql": "d58a0d085190d36f4f8e42da1809fb09c9d7f1be916765ab1b6d34750b79f138",
-    "sql/read_lifecycle.sql": "e2b8fd8ab65e8b824f84d0af28659249c4d53d52f07b50635245bdaec32d690d",
-    "sql/read_preview.sql": "03783b07995797fdc8c3cce98c5aba00bd174e16f572b43f9bbd6c7641b162ab",
-    "sql/read_renewal.sql": "b642f0498c8a5da61fa27928c70c88bc43aa716ceb4562a24b7270cd79571dcc",
-    "sql/read_schema_support.sql": "78320ce76cd00a9a392d8fa41718b797f3ba750da4a5472d1083887332683ce2",
-    "sql/read_transfer.sql": "4aa2feb88a6e1312bec57cc68f72fb47a56445d6fdfe16215bf6bcd1c184120a",
-    "sql/read_transfer_admission.sql": "e13a01d5f890007269f7cf6ae87c1aaa400b156d9e473b7d536e6675e0c1810f",
-    "sql/read_transfer_cancel.sql": "556023f2ca49edd322eeb595d45ccdef3a8f5ed8d28df5e9afd340960a050f6a",
-    "sql/repair_transfer_epoch.sql": "ed1c291c5575c97d9aa5494a98d8476a7d5df0e2f4de0e06917ee881b0f40257",
-    "sql/write_cleanup_failure.sql": "2ef6902d104efd81b649f0ba5115ac007a202bf9ed30199bde62538a1adf213e",
-    "sql/write_database.sql": "f8755bcccae7ac8d48e3a6cc358c9d770d5dde979968deaab3027b48c1b4b644",
-    "sql/write_floor.sql": "95b08bb73896095a54e86b1b9aa0022b13c7069e2971ae3cd184b472a2f3ce03",
-    "sql/write_history.sql": "13c58c2ebd6bef8dffed52fadf717b8f9102434576d9c0251fc995ed94a2f9dd",
-    "sql/write_lease.sql": "db1e2823b9cb4fefbf39b483b7acee673e390b0f0db3f8a52eecebb5207583f0",
-    "sql/write_lifecycle.sql": "605edb5321dc5f6aea118bb1ffb025419258e83aac3cafcafeecbdb0f1751121",
-    "sql/write_preview.sql": "3394d8da7cef6adb1f85433dfd713e70a7e41a2132b8eeeb98815744b251f28a",
-    "sql/write_renewal.sql": "c24b06a98fc0e0d1542af9d711fad9a1e9be335d85a0853114383947b4d69e4e",
-    "sql/write_schema_support.sql": "34a722434ed22e91f4849e9e2ab7101579b47d0eb1a4e9d2a4e44384717f3735",
-    "sql/write_transfer.sql": "4ed30617f4e77451d8eac4eea3880bd8b253be03bb1c10fa6a8048e85a9305c1",
-    "sql/write_transfer_admission.sql": "26539f752f6fb4227902e809e5468d53ded1e0763bd91cb24df5fffb0b1019b4",
-    "sql/write_transfer_cancel.sql": "e87289aae5156cf989da4748122eebec5e417d67c9d641e1e994ca75f6860975",
-    "src/checked_queries.rs": "f1b6863bf51b51f615d7e47d31a4119fbbcda40b4387c2768d875ec17a93809b"
+    "sql/read_lease.sql": "22d1b6d997c9742159455749c72dbd6a879e2ef8a686dd4bb72570d7185f97fd",
+    "sql/write_database.sql": "431720344f6f0aa89657041cf7baf311591a05b1cb6a6d00e83fa496d0ca5f73",
+    "sql/write_floor.sql": "a7889f944e7491ad4655cb8cb9f6d4c135352bc43b2e5f94bb9603c970182a82",
+    "sql/write_lease.sql": "d1203a452e6c8e91222970ca851ea177e6d5cf1b14a4776d8107be1cafdddd44",
+    "src/checked_queries/registry.rs": "16cbc34d38a2c6250a51e8e6268500869af0dff5ec5112ed17bbfb4cd5103c80"
   },
-  "queries_digest": "24071cf19051a6c8965de348efa40b1cba39c0c0a0e32cec96f6518f7f240011",
+  "queries_digest": "f46cced335e2ef2086796a03585d898dc047ba39700de1fdfa0a88e2e07dcbce",
   "queries": [
     {
       "name": "read_database",
       "bind_slots": 1,
       "columns": [
         {
-          "name": "record",
+          "name": "database",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "driver"
+        },
+        {
+          "name": "lifecycle_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "origin_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "origin_epoch",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "origin_sequence",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "import_digest",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "retiring_attempt",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "retired_at",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "revision_epoch",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "revision_change",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "changed_at",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
         }
       ]
     },
@@ -118,11 +166,74 @@
           "type_source": "driver"
         },
         {
-          "name": "record",
+          "name": "lifecycle_kind",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "driver"
+        },
+        {
+          "name": "origin_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "origin_epoch",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "origin_sequence",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "import_digest",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "retiring_attempt",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "retired_at",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "revision_epoch",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "revision_change",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "changed_at",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
         }
       ]
     },
@@ -136,11 +247,39 @@
       "bind_slots": 1,
       "columns": [
         {
-          "name": "record",
+          "name": "database",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "driver"
+        },
+        {
+          "name": "holder",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "epoch",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "expires_at",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "last_renewed_at",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
         }
       ]
     },
@@ -166,371 +305,6 @@
       "name": "write_floor",
       "bind_slots": 2,
       "columns": []
-    },
-    {
-      "name": "read_renewal",
-      "bind_slots": 2,
-      "columns": [
-        {
-          "name": "record",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "write_renewal",
-      "bind_slots": 3,
-      "columns": []
-    },
-    {
-      "name": "read_history",
-      "bind_slots": 2,
-      "columns": [
-        {
-          "name": "record",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "write_history",
-      "bind_slots": 3,
-      "columns": []
-    },
-    {
-      "name": "read_transfer",
-      "bind_slots": 1,
-      "columns": [
-        {
-          "name": "intent",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "outcome",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "phase",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "phase_history",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "cleanup_failed",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "write_transfer",
-      "bind_slots": 6,
-      "columns": []
-    },
-    {
-      "name": "read_lifecycle",
-      "bind_slots": 1,
-      "columns": [
-        {
-          "name": "intent",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "outcome",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "write_lifecycle",
-      "bind_slots": 4,
-      "columns": []
-    },
-    {
-      "name": "active_transfer",
-      "bind_slots": 1,
-      "columns": [
-        {
-          "name": "attempt",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "intent",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "outcome",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "phase",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "phase_history",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "cleanup_failed",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "read_preview",
-      "bind_slots": 1,
-      "columns": [
-        {
-          "name": "record",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "write_preview",
-      "bind_slots": 3,
-      "columns": []
-    },
-    {
-      "name": "active_lifecycle",
-      "bind_slots": 1,
-      "columns": [
-        {
-          "name": "intent",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "outcome",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "repair_transfer_epoch",
-      "bind_slots": 2,
-      "columns": []
-    },
-    {
-      "name": "read_transfer_admission",
-      "bind_slots": 1,
-      "columns": [
-        {
-          "name": "operation",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "request",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "requested_by",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "admitted_at",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "target_schema",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "follow_up",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "write_transfer_admission",
-      "bind_slots": 7,
-      "columns": []
-    },
-    {
-      "name": "read_transfer_cancel",
-      "bind_slots": 1,
-      "columns": [
-        {
-          "name": "record",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "write_transfer_cancel",
-      "bind_slots": 2,
-      "columns": []
-    },
-    {
-      "name": "write_cleanup_failure",
-      "bind_slots": 2,
-      "columns": []
-    },
-    {
-      "name": "read_schema_support",
-      "bind_slots": 1,
-      "columns": [
-        {
-          "name": "peer",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "record",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "write_schema_support",
-      "bind_slots": 2,
-      "columns": []
-    },
-    {
-      "name": "read_history_page",
-      "bind_slots": 4,
-      "columns": [
-        {
-          "name": "epoch",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "record",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "read_history_successor",
-      "bind_slots": 2,
-      "columns": [
-        {
-          "name": "epoch",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "record",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "read_invalid_history_epoch",
-      "bind_slots": 1,
-      "columns": [
-        {
-          "name": "epoch",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "read_history_transfer",
-      "bind_slots": 2,
-      "columns": [
-        {
-          "name": "attempt",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
     }
   ]
 }

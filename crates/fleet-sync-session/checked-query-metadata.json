@@ -56,16 +56,17 @@
     "generator:workspace/rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "migrations/202610160001_sessions.sql": "38e23c99919f90090a58c4bb014e6b61a18e258de229f1811170417939434098",
     "migrations/202610180001_attach_sequence.sql": "d148ad2bf049f8967fc64bb0857dec33d3e17fdc3846c0a983ace549b8902793",
-    "sql/load_session.sql": "3976945246644abe63295b1afc2d4df9f1d00c6e9a16ced9234c01beebffb127",
-    "sql/notices_after.sql": "2c87f19171767130f09f90cefa18f8506a29ea3f8770442dca691bac8b704b32",
+    "migrations/202611030001_typed_session_records.sql": "fc5371214bf7fc72e1eadf559623d700420c46990f7a7507c8e84b5ab263fc0c",
+    "sql/load_session.sql": "94fb0281eb769c3eabb4cc8e91d7aab21052b1badb1c83dcce46f940ade56495",
+    "sql/notices_after.sql": "4ca18ed8b13274e810f8ea3262972b87e809b539b4c4f787ea70d5d7682dadc9",
     "sql/read_attach_sequence.sql": "8361a634d4bb9b5ff7d1925f2d9808e864f2292e4c66ab45eadc6ca2cd630020",
-    "sql/save_notice.sql": "c260896db1543927f71d0f9fe662a40acaf06a1b3e9e550f587a246294edd9e0",
-    "sql/save_session.sql": "193290a1ea39afc86c8e66035efe513567977a5939eb86dc1ef26b7cbecdfdac",
-    "sql/sessions_for_peer.sql": "9118d5207d643f8ed3fcc717f476daba7e9084833791d80f190506b4aaf5443d",
-    "sql/write_attach_sequence.sql": "b49c137758976ee97ef3380607e5149ca9ca15a2df694c1ce7c75dceb1fb8bfe",
-    "src/checked_session_queries.rs": "e3d10874216b6845bb3ea4fa95978a2945c197017516c4c1ce653b84acf0c04c"
+    "sql/save_notice.sql": "cc675a0210daa5a374a031b6622e477181058cfefc6b0edb25e385d38fb95b49",
+    "sql/save_session.sql": "bd13854079812a17fab32d084dede146357111637efb79dd74fcc3a3d61656a7",
+    "sql/sessions_for_peer.sql": "d7abb19c5483a759e2a484f07f07c23b400a9fcedda1224988859833530825ac",
+    "sql/write_attach_sequence.sql": "0ac8f4f4af17dd4f50d045138863dee3de00aa26012bfb27e99bf481f25976e2",
+    "src/checked_session_queries.rs": "c5fd135c7109ca791b2317f8c3a7d2b640684aff62a84675c3d1d2aff8cfd242"
   },
-  "queries_digest": "1a0a2b9f8a9536a0632d2a033c43402e469368b71fdc587c2e00c97a82343b1b",
+  "queries_digest": "f6b728de3b7a417ca66ca5beaf082506a35179cbba477d18aeb216780a52956d",
   "queries": [
     {
       "name": "load_session",
@@ -86,7 +87,35 @@
           "type_source": "driver"
         },
         {
-          "name": "record",
+          "name": "state_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "connection_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "detached_since",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "end_reason",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "notice_head",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -113,7 +142,35 @@
           "type_source": "driver"
         },
         {
-          "name": "record",
+          "name": "state_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "connection_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "detached_since",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "end_reason",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "notice_head",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -143,7 +200,21 @@
           "type_source": "driver"
         },
         {
-          "name": "body",
+          "name": "notice_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "database_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "consumer_body",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,

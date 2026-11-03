@@ -1,1 +1,1 @@
-UPDATE _fleet_sync_transfers SET cleanup_failed=?1 WHERE attempt=?2 AND cleanup_failed IS NULL AND outcome IS NULL
+UPDATE _fleet_sync_transfers SET cleanup_failure_reason=json_extract(?1,'$.reason'),cleanup_failed_at=json_extract(?1,'$.at'),updated_at=(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER)) WHERE attempt=?2 AND cleanup_failure_reason IS NULL AND outcome_kind IS NULL

@@ -1,8 +1,9 @@
 //! Registry-owned transfer state; journal execution remains in durable-steps.
+use crate::transfer_row::TransferFacts;
 use crate::{
     checked_queries,
     registry_records::*,
-    registry_storage::{RegistryStorage, decode, encode},
+    registry_storage::{RegistryStorage, encode},
     *,
 };
 use durable_steps::storage::TransactionScope;
@@ -31,17 +32,7 @@ where
         else {
             return Ok(None);
         };
-        let record = TransferAdmission {
-            operation: decode(row.operation, "holder-change operation")?,
-            request: decode(row.request, "holder-change request")?,
-            requested_by: decode(row.requested_by, "holder-change requester")?,
-            admitted_at: decode(row.admitted_at, "holder-change admission time")?,
-            target_schema: decode(row.target_schema, "holder-change target schema")?,
-            follow_up: row
-                .follow_up
-                .map(|value| decode(Some(value), "holder-change follow-up"))
-                .transpose()?,
-        };
+        let record = row.admission_record()?;
         if crate::change_checks::attempt(&record.request) != id
             || record.operation.as_uuid().is_nil()
             || record.follow_up.is_some_and(|operation| {
@@ -92,7 +83,7 @@ where
     ) -> Result<Option<CancelRecord>, LeaseError> {
         checked_queries::read_transfer_cancel(self.0, id.as_uuid().to_string())
             .await?
-            .map(|row| decode(row.record, "holder-change cancel"))
+            .map(|row| row.cancel_record(id))
             .transpose()
     }
     pub(crate) async fn save_cancel(
@@ -107,11 +98,7 @@ where
     async fn transfer_row(
         &mut self,
         id: TransferId,
-        intent: Option<String>,
-        outcome: Option<String>,
-        phase: Option<String>,
-        history: Option<String>,
-        cleanup_failed: Option<String>,
+        facts: TransferFacts,
     ) -> Result<TransferRecord, LeaseError> {
         let admission = self
             .admission(id)
@@ -119,20 +106,36 @@ where
             .ok_or_else(|| LeaseError::Corrupt {
                 field: "transfer admission missing".into(),
             })?;
+        let intent = TransferIntent {
+            request: admission.request,
+            new_epoch: facts.new_epoch,
+            target_schema: admission.target_schema,
+        };
+        if facts.attempt != id || facts.database != intent.database() {
+            return Err(LeaseError::Corrupt {
+                field: "transfer identity".into(),
+            });
+        }
+        let rows = checked_queries::read_phase_history(self.0, id.to_string()).await?;
+        let mut phase_history = Vec::with_capacity(rows.len());
+        for (index, row) in rows.into_iter().enumerate() {
+            let (position, entry) = row.phase_entry()?;
+            if position
+                != u64::try_from(index)
+                    .map_err(|_| crate::registry_row::corrupt_column("phase history position"))?
+            {
+                return Err(crate::registry_row::corrupt_column(
+                    "holder-change phase history",
+                ));
+            }
+            phase_history.push(entry);
+        }
         let record = TransferRecord {
-            intent: TransferIntent {
-                request: admission.request,
-                new_epoch: decode(intent, "transfer reservation")?,
-                target_schema: admission.target_schema,
-            },
-            outcome: outcome
-                .map(|value| decode(Some(value), "transfer outcome"))
-                .transpose()?,
-            phase: decode(phase, "holder-change phase")?,
-            phase_history: decode(history, "holder-change phase history")?,
-            cleanup_failed: cleanup_failed
-                .map(|value| decode(Some(value), "holder-change cleanup failure"))
-                .transpose()?,
+            intent,
+            outcome: facts.outcome,
+            phase: facts.phase,
+            phase_history,
+            cleanup_failed: facts.cleanup_failed,
         };
         record.validate()?;
         Ok(record)
@@ -145,16 +148,7 @@ where
         else {
             return Ok(None);
         };
-        self.transfer_row(
-            id,
-            row.intent,
-            row.outcome,
-            row.phase,
-            row.phase_history,
-            row.cleanup_failed,
-        )
-        .await
-        .map(Some)
+        self.transfer_row(id, row.transfer_facts()?).await.map(Some)
     }
     pub(crate) async fn active_transfer(
         &mut self,
@@ -165,20 +159,8 @@ where
         else {
             return Ok(None);
         };
-        let id = decode(
-            row.attempt.map(|value| format!("\"{value}\"")),
-            "active transfer attempt",
-        )?;
-        let record = self
-            .transfer_row(
-                id,
-                row.intent,
-                row.outcome,
-                row.phase,
-                row.phase_history,
-                row.cleanup_failed,
-            )
-            .await?;
+        let facts = row.transfer_facts()?;
+        let record = self.transfer_row(facts.attempt, facts).await?;
         if record.intent.database() != database || record.outcome.is_some() {
             return Err(LeaseError::Corrupt {
                 field: "active transfer".into(),
@@ -223,6 +205,11 @@ where
             encode(&record.intent.new_epoch)?,
             record.outcome.as_ref().map(encode).transpose()?,
             encode(&record.phase)?,
+        )
+        .await?;
+        checked_queries::write_phase_history(
+            self.0,
+            id.to_string(),
             encode(&record.phase_history)?,
         )
         .await?;
@@ -287,3 +274,11 @@ where
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "transfer_storage_test.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "transfer_storage_migration_test.rs"]
+mod migration_tests;

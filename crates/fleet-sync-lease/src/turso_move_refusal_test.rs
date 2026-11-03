@@ -88,7 +88,7 @@ async fn typed_release_refusals_replay_without_fencing_or_changing_the_lease() -
         .await?;
         let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
         register_first(&engine).await?;
-        let lease = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
+        let lease = scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?;
         *host.release_answer.lock().await = Some(ReleaseAnswer::ReleaseRefused(release));
         let attempt = TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000641))?;
         let request = HolderChangeRequest::Move {
@@ -138,7 +138,7 @@ async fn typed_release_refusals_replay_without_fencing_or_changing_the_lease() -
             expected_wire
         );
         assert_eq!(
-            scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
+            scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?,
             lease
         );
         assert_eq!(
@@ -201,11 +201,14 @@ async fn an_already_held_claim_replays_its_recorded_holder_after_takeover_and_re
     )
     .await?;
     assert_eq!(serde_json::to_value(&refused)?, expected);
-    let recorded = scalar(&store, "SELECT outcome AS value FROM _fleet_sync_transfers").await?;
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&recorded)?,
-        expected
-    );
+    let request = claim.clone();
+    let recorded = store
+        .transaction(move |scope| {
+            Box::pin(async move { holder_change_answer(scope, &request).await.map_err(storage) })
+        })
+        .await?
+        .ok_or("missing recorded refusal")?;
+    assert_eq!(serde_json::to_value(recorded)?, expected);
     let preview = task_answer::<PreviewTakeoverTask<TestStore, Turso>>(
         &running,
         &durable_steps::RequestKey::new("refused-claim-takeover")?,
@@ -229,12 +232,9 @@ async fn an_already_held_claim_replays_its_recorded_holder_after_takeover_and_re
     )
     .await?;
     assert!(matches!(answer, HolderChangeAnswer::Granted { .. }));
-    let current: serde_json::Value = serde_json::from_str(
-        &scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
-    )?;
     assert_eq!(
-        current.get("holder"),
-        Some(&serde_json::json!(peer(3)?.to_string()))
+        scalar(&store, "SELECT holder AS value FROM _fleet_sync_leases").await?,
+        peer(3)?.to_string()
     );
     let replay = task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         &running,

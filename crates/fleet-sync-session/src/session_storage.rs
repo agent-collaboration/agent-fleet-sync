@@ -18,17 +18,56 @@ fn corrupt(field: &str) -> StoreError {
 fn required(value: Option<String>, field: &str) -> Result<String, StoreError> {
     value.ok_or_else(|| corrupt(field))
 }
-fn decode_session(row: checked::StoredSessionRow) -> Result<SessionRecord, StoreError> {
-    let peer = required(row.peer, "peer")?;
-    let session_id = required(row.session_id, "session_id")?;
-    let record: SessionRecord =
-        serde_json::from_str(&required(row.record, "record")?).map_err(|_| corrupt("record"))?;
-    if peer != record.peer.as_uuid().to_string()
-        || session_id != record.session_id.as_uuid().to_string()
-    {
-        return Err(corrupt("session key"));
+fn canonical_counter(text: String, field: &str) -> Result<u64, StoreError> {
+    let value = text.parse::<u64>().map_err(|_| corrupt(field))?;
+    if value.to_string() != text {
+        return Err(corrupt(field));
     }
-    Ok(record)
+    Ok(value)
+}
+fn decode_session(row: checked::StoredSessionRow) -> Result<SessionRecord, StoreError> {
+    let peer = PeerId::try_from(required(row.peer, "peer")?).map_err(|_| corrupt("peer"))?;
+    let session_id = SessionId::try_from(required(row.session_id, "session id")?)
+        .map_err(|_| corrupt("session id"))?;
+    let state = match (
+        row.state_kind.as_deref(),
+        row.connection_id,
+        row.detached_since,
+        row.end_reason,
+    ) {
+        (Some("active"), Some(connection), None, None) => SessionState::Active {
+            connection: ConnectionId::try_from(connection)
+                .map_err(|_| corrupt("session connection"))?,
+        },
+        (Some("detached"), None, Some(since), None) => {
+            let milliseconds = since
+                .parse::<i64>()
+                .map_err(|_| corrupt("session detached time"))?;
+            if milliseconds.to_string() != since {
+                return Err(corrupt("session detached time"));
+            }
+            SessionState::Detached {
+                since: SyncTime::from_unix_millis(milliseconds),
+            }
+        }
+        (Some("ended"), None, None, Some(reason)) => SessionState::Ended {
+            reason: match reason.as_str() {
+                "newSession" => EndReason::NewSession,
+                "peerRevoked" => EndReason::PeerRevoked,
+                _ => return Err(corrupt("session end reason")),
+            },
+        },
+        _ => return Err(corrupt("session state")),
+    };
+    Ok(SessionRecord {
+        peer,
+        session_id,
+        state,
+        notice_head: NoticePosition::new(canonical_counter(
+            required(row.notice_head, "notice head")?,
+            "notice head",
+        )?),
+    })
 }
 pub(crate) async fn next_attach_sequence<S>(
     scope: &mut S,
@@ -172,8 +211,19 @@ where
         if position == 0 || decimal != position.to_string() {
             return Err(corrupt("notice position"));
         }
-        let body = serde_json::from_str(&required(row.body, "notice body")?)
-            .map_err(|_| corrupt("notice body"))?;
+        let body = match (
+            row.notice_kind.as_deref(),
+            row.database_id,
+            row.consumer_body,
+        ) {
+            (Some("leaseChanged"), Some(database), None) => Notice::LeaseChanged {
+                database: DatabaseId::try_from(database).map_err(|_| corrupt("notice database"))?,
+            },
+            (Some("consumer"), None, Some(body)) => Notice::Consumer(
+                serde_json::from_str(&body).map_err(|_| corrupt("consumer notice"))?,
+            ),
+            _ => return Err(corrupt("notice body")),
+        };
         if position > after.value() {
             notices.push(StoredNotice {
                 position: NoticePosition::new(position),
@@ -183,3 +233,7 @@ where
     }
     Ok(notices)
 }
+
+#[cfg(test)]
+#[path = "session_storage_test.rs"]
+mod tests;

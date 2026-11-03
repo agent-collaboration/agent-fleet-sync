@@ -338,7 +338,11 @@ async fn a_copy_missing_after_status_keeps_the_claim_pending_until_seed_repair()
         "0"
     );
     let floor = scalar(&store, "SELECT epoch AS value FROM _fleet_sync_epoch_floor").await?;
-    let reservation = scalar(&store, "SELECT intent AS value FROM _fleet_sync_transfers").await?;
+    let reservation = scalar(
+        &store,
+        "SELECT new_epoch AS value FROM _fleet_sync_transfers",
+    )
+    .await?;
     drop(running);
     drop(store);
     let reopened = open_store(&registry_path, host.clone(), false).await?;
@@ -422,7 +426,7 @@ async fn a_copy_missing_after_status_keeps_the_claim_pending_until_seed_repair()
     assert_eq!(
         scalar(
             &reopened,
-            "SELECT intent AS value FROM _fleet_sync_transfers"
+            "SELECT new_epoch AS value FROM _fleet_sync_transfers"
         )
         .await?,
         reservation

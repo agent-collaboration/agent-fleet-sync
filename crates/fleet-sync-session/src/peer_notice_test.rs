@@ -9,6 +9,7 @@ use uuid::Uuid;
 struct NoticeProtocol;
 #[derive(Serialize, Deserialize)]
 struct NoticePayload {
+    database: String,
     message: String,
 }
 impl ConsumerProtocol for NoticeProtocol {
@@ -46,8 +47,8 @@ async fn commit_and_reopen(scope: SqlScope) -> SqlScope {
 
 async fn stored_rows(scope: &mut SqlScope) -> Vec<String> {
     sqlx_core::query::query::<Turso>(
-        "SELECT 'session:' || json_array(peer,session_id,record) AS value FROM _fleet_sync_sessions
-         UNION ALL SELECT 'notice:' || json_array(peer,session_id,position,body) FROM _fleet_sync_notices
+        "SELECT 'session:' || json_array(id,peer,session_id,state_kind,connection_id,detached_since,end_reason,notice_head,created_at,updated_at) AS value FROM _fleet_sync_sessions
+         UNION ALL SELECT 'notice:' || json_array(id,peer,session_id,position,notice_kind,database_id,consumer_body,created_at,updated_at) FROM _fleet_sync_notices
          ORDER BY value"
     ).fetch_all(scope.executor()).await.unwrap().into_iter()
         .map(|row| row.try_get("value").unwrap()).collect()
@@ -66,6 +67,7 @@ async fn committed_peer_notice_has_the_attached_frame_without_clone_bounds() {
         &mut scope,
         &key.peer,
         Notice::Consumer(NoticePayload {
+            database: "opaque consumer database field".into(),
             message: "a rejected tail is available".into(),
         }),
     )
@@ -79,7 +81,7 @@ async fn committed_peer_notice_has_the_attached_frame_without_clone_bounds() {
         .unwrap();
     assert_eq!(history.len(), 1);
     assert!(matches!(&history.first().unwrap().body,
-        Notice::Consumer(payload) if payload.message == "a rejected tail is available"));
+        Notice::Consumer(payload) if payload.message == "a rejected tail is available" && payload.database == "opaque consumer database field"));
     assert_eq!(effects.len(), 1);
     let SessionEffect::Send {
         connection: target,
@@ -102,6 +104,7 @@ async fn committed_peer_notice_has_the_attached_frame_without_clone_bounds() {
             &mut scope,
             &key.peer,
             Notice::Consumer(NoticePayload {
+                database: "opaque consumer database field".into(),
                 message: "retained while detached".into()
             }),
         )
@@ -116,7 +119,7 @@ async fn committed_peer_notice_has_the_attached_frame_without_clone_bounds() {
         .unwrap();
     assert_eq!(history.len(), 2);
     assert!(matches!(&history.last().unwrap().body,
-        Notice::Consumer(payload) if payload.message == "retained while detached"));
+        Notice::Consumer(payload) if payload.message == "retained while detached" && payload.database == "opaque consumer database field"));
 }
 
 #[tokio::test]

@@ -180,7 +180,11 @@ async fn an_unseeded_copy_keeps_its_claim_pending_then_completes_the_same_attemp
         "0"
     );
     let floor = scalar(&store, "SELECT epoch AS value FROM _fleet_sync_epoch_floor").await?;
-    let reservation = scalar(&store, "SELECT intent AS value FROM _fleet_sync_transfers").await?;
+    let reservation = scalar(
+        &store,
+        "SELECT new_epoch AS value FROM _fleet_sync_transfers",
+    )
+    .await?;
     assert_eq!(floor, "2");
     assert!(
         host.calls
@@ -243,7 +247,7 @@ async fn an_unseeded_copy_keeps_its_claim_pending_then_completes_the_same_attemp
     assert_eq!(
         scalar(
             &reopened,
-            "SELECT intent AS value FROM _fleet_sync_transfers"
+            "SELECT new_epoch AS value FROM _fleet_sync_transfers"
         )
         .await?,
         reservation

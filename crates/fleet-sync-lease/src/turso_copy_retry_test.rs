@@ -69,8 +69,11 @@ async fn claim_ack_wait_and_fence_keep_pending_history_then_resume_the_same_atte
         ));
         let epoch_floor =
             scalar(&store, "SELECT epoch AS value FROM _fleet_sync_epoch_floor").await?;
-        let reservation =
-            scalar(&store, "SELECT intent AS value FROM _fleet_sync_transfers").await?;
+        let reservation = scalar(
+            &store,
+            "SELECT new_epoch AS value FROM _fleet_sync_transfers",
+        )
+        .await?;
         assert_eq!(host.gate.settlement_count().await?, "0");
         drop(running);
         drop(store);
@@ -109,7 +112,7 @@ async fn claim_ack_wait_and_fence_keep_pending_history_then_resume_the_same_atte
         assert_eq!(
             scalar(
                 &reopened,
-                "SELECT intent AS value FROM _fleet_sync_transfers"
+                "SELECT new_epoch AS value FROM _fleet_sync_transfers"
             )
             .await?,
             reservation

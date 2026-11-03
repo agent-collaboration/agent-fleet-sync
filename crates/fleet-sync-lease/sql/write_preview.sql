@@ -1,1 +1,1 @@
-INSERT INTO _fleet_sync_takeover_previews(token,database,record) VALUES(?1,?2,?3)
+INSERT INTO _fleet_sync_takeover_previews(token,database,fence,acked_epoch,acked_sequence,holder,last_seen) VALUES(?1,?2,NULLIF(?3 -> '$.preview.fence','null'),NULLIF(?3 -> '$.preview.acked.epoch','null'),NULLIF(?3 -> '$.preview.acked.sequence','null'),json_extract(?3,'$.preview.holder'),json_extract(?3,'$.preview.lastSeen'))

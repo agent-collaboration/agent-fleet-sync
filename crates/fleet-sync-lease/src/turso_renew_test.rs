@@ -50,17 +50,9 @@ fn policy() -> LeasePolicy {
 async fn setup() -> TestResult<TursoConnection> {
     let mut connection = TursoConnectOptions::new().connect().await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
-    sqlx_core::raw_sql::raw_sql(concat!(
-        include_str!("../migrations/0001_registry_rules.sql"),
-        "\n",
-        include_str!("../migrations/0002_holder_workflow.sql"),
-        "\n",
-        include_str!("../migrations/0003_cleanup_failure.sql"),
-        "\n",
-        include_str!("../migrations/0004_schema_support.sql")
-    ))
-    .execute(&mut *transaction)
-    .await?;
+    LEASE_MIGRATOR
+        .run_direct(None, &mut *transaction, false)
+        .await?;
     let mut scope = TursoScope(&mut transaction);
     let database = database()?;
     RegistryStorage(&mut scope)

@@ -201,3 +201,9 @@ mod turso_workflow_storage_tests;
 #[cfg(test)]
 #[path = "turso_workflow_failure_test.rs"]
 mod turso_workflow_failure_tests;
+
+mod admission_row;
+mod lifecycle_row;
+mod registry_row;
+mod renewal_row;
+mod transfer_row;

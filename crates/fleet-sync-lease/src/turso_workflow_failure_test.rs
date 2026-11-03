@@ -82,7 +82,7 @@ async fn version_failed_withdrawal_stays_cancelling_records_failure_and_can_be_s
             host.withdrawal_unreachable.store(true, Ordering::SeqCst);
             engine.drive_due().await?;
         }
-        let lease = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
+        let lease = scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?;
         let mut mismatch = TestEngine::new(store.clone(), host.clone());
         mismatch.register(VersionedTask::<_, 2>(HolderChangeCancelTask::<
             TestStore,
@@ -95,7 +95,7 @@ async fn version_failed_withdrawal_stays_cancelling_records_failure_and_can_be_s
         let failed = view(&store, old).await?;
         assert_eq!(failed.phase, HolderChangePhase::Cancelling);
         assert_eq!(
-            scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
+            scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?,
             lease
         );
         assert_eq!(
@@ -117,7 +117,7 @@ async fn version_failed_withdrawal_stays_cancelling_records_failure_and_can_be_s
         );
         let cleanup = scalar(
             &store,
-            "SELECT cleanup_failed AS value FROM _fleet_sync_transfers",
+            "SELECT json_object('reason',cleanup_failure_reason,'at',cleanup_failed_at) AS value FROM _fleet_sync_transfers",
         )
         .await?;
         assert_eq!(
@@ -155,7 +155,7 @@ async fn version_failed_withdrawal_stays_cancelling_records_failure_and_can_be_s
                 HolderChangeRefusal::Superseded { by: new }
             ))
         );
-        assert_eq!(scalar(&store,"SELECT CAST(count(*) AS TEXT) AS value FROM _fleet_sync_transfers WHERE outcome IS NULL").await?,"0");
+        assert_eq!(scalar(&store,"SELECT CAST(count(*) AS TEXT) AS value FROM _fleet_sync_transfers WHERE outcome_kind IS NULL").await?,"0");
     }
     Ok(())
 }

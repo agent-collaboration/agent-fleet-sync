@@ -226,7 +226,7 @@ async fn a_release_from_a_future_epoch_still_fails_before_acknowledgement_or_fen
     .await?;
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
     register_first(&engine).await?;
-    let lease = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
+    let lease = scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?;
     *host.release_answer.lock().await = Some(ReleaseAnswer::Released {
         final_position: ReplicationPosition::new(Epoch::new(2)?, CommitSequence::new(0)),
     });
@@ -242,7 +242,7 @@ async fn a_release_from_a_future_epoch_still_fails_before_acknowledgement_or_fen
     );
     assert_eq!(host.calls.lock().await.len(), calls + 1);
     assert_eq!(
-        scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
+        scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?,
         lease
     );
     assert_eq!(

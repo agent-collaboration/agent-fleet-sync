@@ -179,7 +179,7 @@ async fn a_second_floor_refusal_keeps_its_reservation_without_granting_or_changi
     .await?;
     let engine = engine(Arc::clone(&store), Arc::clone(&host))?;
     register_first(&engine).await?;
-    let original_lease = scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?;
+    let original_lease = scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?;
     let preview = task_answer::<PreviewTakeoverTask<TestStore, Turso>>(
         &engine,
         &RequestKey::new("moving-copy")?,
@@ -229,7 +229,7 @@ async fn a_second_floor_refusal_keeps_its_reservation_without_granting_or_changi
         "6"
     );
     assert_eq!(
-        scalar(&store, "SELECT record AS value FROM _fleet_sync_leases").await?,
+        scalar(&store, "SELECT json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) AS value FROM _fleet_sync_leases").await?,
         original_lease
     );
     assert_eq!(
