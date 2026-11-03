@@ -5,6 +5,7 @@ pub mod interleaving;
 pub mod legacy_submitters;
 pub mod network;
 pub mod publication_network;
+pub mod publication_order;
 pub mod push_checkpoint;
 pub mod push_expiry;
 pub mod sender_binding;

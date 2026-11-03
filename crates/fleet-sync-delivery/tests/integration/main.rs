@@ -105,3 +105,5 @@ mod surrogate_status;
 mod scoped_binding_backfill;
 mod scoped_binding_recovery;
 mod scoped_binding_reopen;
+
+mod publication_order;

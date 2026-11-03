@@ -72,7 +72,7 @@
     "sql/read_status_revision.sql": "9d556746add7d74606f2e33d917cffb6b817280db3cfbf2a52b3f2f0761e6777",
     "sql/read_status_state.sql": "39d4054384b4bfbd3a235640c23a583b2159d7d1c6ec6e267959462eb92df4c8",
     "sql/retire_publication.sql": "ecd99d1485755640fc1af9137dd39673e407175e48663dd09c80607e9d802129",
-    "sql/write_publication.sql": "0b4bb2a000523ee25c02299d2e1ede6079582e8537325db3450d9c696335bebc",
+    "sql/write_publication.sql": "923c218299916ca4371cabe46a20292a15796e41edea1ada07cab7afeabd7fdc",
     "sql/write_status_event.sql": "e9f2de91548abf9163d74161bef731f60256d2bbdfd3ff0ffc1fbefa187575b2",
     "sql/write_status_state.sql": "5d211a71131c9f77107482683b434349ce12451a196ddef878f001e71572bd5a",
     "src/checked_queries/status.rs": "609464dc37ca326745c458038905f98311f4adf0f4560624c042756a2df5c0db"
