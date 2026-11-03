@@ -25,7 +25,7 @@ fn call() -> Value {
     json!({"operation":"019eef00-0000-7000-8000-000000000003","step":"delivery"})
 }
 
-// The oracle is decision 47's eight request bodies, not a production encoder.
+// Literal wire contracts are the oracle, including the required Settle claim.
 #[test]
 fn all_eight_delivery_request_bodies_cross_the_operation_envelope() {
     let requests = [
@@ -40,7 +40,7 @@ fn all_eight_delivery_request_bodies_cross_the_operation_envelope() {
         json!({"kind":"statusFetch","value":{"call":call(),"after":7,"limit":4}}),
         json!({"kind":"query","value":{"call":call(),"mailbox":PEER,"items":[ITEM]}}),
         json!({"kind":"retire","value":{"call":call(),"mailbox":PEER,"items":[ITEM]}}),
-        json!({"kind":"settle","value":{"call":call(),"mailbox":PEER,"item":ITEM,"digest":"0b7f9c7c2a2a8e71b3220266466dd262a878ca97fae28786dbbe6686b8964da0"}}),
+        json!({"kind":"settle","value":{"call":call(),"mailbox":PEER,"submitter":{"kind":"machine","value":PEER},"item":ITEM,"digest":"0b7f9c7c2a2a8e71b3220266466dd262a878ca97fae28786dbbe6686b8964da0"}}),
     ];
     let mut failures = Vec::new();
     for request in requests {

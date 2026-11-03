@@ -28,6 +28,13 @@ impl<
         request: DeliveryRequest<P::Delivery>,
     ) -> Result<DeliveryAnswer<P::Delivery>, ServiceError> {
         let limits = self.delivery_limits()?;
+        if let DeliveryRequest::Settle { submitter, .. } = &request
+            && *submitter != Submitter::Machine(peer)
+        {
+            return Ok(DeliveryAnswer::MailboxUnavailable {
+                reason: DeliveryRefusal::NotSubmitter,
+            });
+        }
         if let DeliveryRequest::StatusFetch { after, limit, .. } = request {
             let owner = self
                 .delivery_owner(DeliveryObject::Status(

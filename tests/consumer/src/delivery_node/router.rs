@@ -80,6 +80,7 @@ impl CallRouter for NodeRouter {
                             .link
                             .request(DeliveryRequest::Settle {
                                 call,
+                                submitter: Submitter::Machine(state.owner),
                                 mailbox: target.mailbox,
                                 item: reference.item,
                                 digest: reference.digest,

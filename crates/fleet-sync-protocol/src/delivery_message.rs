@@ -58,6 +58,8 @@ pub enum DeliveryRequest<D: DeliveryTypes = NoDelivery> {
     Settle {
         call: CallId,
         mailbox: PeerId,
+        /// Independent owner claim; the host authorizes it before settlement.
+        submitter: Submitter,
         item: ItemId,
         digest: ItemDigest,
     },
@@ -312,3 +314,7 @@ pub enum StatusPublicationResult {
     Applied,
     Refused { reason: DeliveryRefusal },
 }
+
+#[cfg(test)]
+#[path = "delivery_settle_test.rs"]
+mod tests;

@@ -107,3 +107,5 @@ mod scoped_binding_recovery;
 mod scoped_binding_reopen;
 
 mod publication_order;
+
+mod settle_claims;
