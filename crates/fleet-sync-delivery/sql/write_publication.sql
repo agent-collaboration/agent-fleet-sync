@@ -1,1 +1,1 @@
-INSERT INTO _fleet_sync_status_owed(item_id,target,version,record) VALUES(?1,?2,CAST(?3 AS INTEGER),?4) ON CONFLICT(item_id,target) DO UPDATE SET version=excluded.version,record=excluded.record;
+INSERT INTO _fleet_sync_status_owed(item_id,target,version,record,machine_id) VALUES(?1,?2,CAST(?3 AS INTEGER),?4,COALESCE(json_extract(?2,'$.value.sender'),json_extract(?2,'$.value.peer'))) ON CONFLICT(item_id,target) DO UPDATE SET version=excluded.version,record=excluded.record,machine_id=excluded.machine_id;

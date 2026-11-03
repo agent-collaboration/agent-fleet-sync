@@ -37,7 +37,11 @@ where
         }
     })?;
     let version = integer(row.version, row.version_class, "owed publication version")?;
-    if publication.item != reference.item || publication.version.value() != version || version == 0
+    if publication.item != reference.item
+        || publication.version.value() != version
+        || version == 0
+        || row.machine_id.as_deref()
+            != Some(reference.target.machine().as_uuid().to_string().as_str())
     {
         return Err(DeliveryError::Corrupt {
             field: "owed publication identity",
@@ -106,6 +110,11 @@ where
         })?;
         let target: PublicationTarget<D::StatusRoute> =
             decode(Some(encoded_target.clone()), "owed publication target")?;
+        if row.machine_id.as_deref() != Some(target.machine().as_uuid().to_string().as_str()) {
+            return Err(DeliveryError::Corrupt {
+                field: "owed publication machine",
+            });
+        }
         crate::delivery_sizes::check_status_route::<D>(target.route()).map_err(|_| {
             DeliveryError::Corrupt {
                 field: "stored publication route bounds",

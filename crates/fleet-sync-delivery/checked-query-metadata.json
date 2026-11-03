@@ -58,6 +58,7 @@
     "migrations/0002_mailbox_deadlines.sql": "7e60b848a3c73c0b05b139d1822225a631b1b79a0ea4d497646fdeb4f708d031",
     "migrations/0003_inbox_accounting.sql": "9ed7336cbc35834049b9c6b2f86e90a3b331f99b8e0791f86ce2cdfa7d7727f2",
     "migrations/0004_typed_delivery_records.sql": "cc12ce0550a54b81f5e45ccadfcd8f66311ea39cf46bd7cc1ef2308c26ecd5b4",
+    "migrations/0005_scoped_status_streams.sql": "13c1f3b8fd48474da5c476d58f5a3970959752cab34164446dc9319a7710aeb2",
     "sql/drop_controls.sql": "37e074f9a266324cd8eef8b207bc8e8bb6ac7b0faa6d5fcf79c5d186b9aae07b",
     "sql/list_mail_items.sql": "de89ac4abdbd3b49171534d051a5daee465ae6a3e4ccb5806389920f9d9945e5",
     "sql/read_controls.sql": "51a98073d59c7dafeb77cfb9ca1f893dc87990856ad51e76bff28b57219a28a4",

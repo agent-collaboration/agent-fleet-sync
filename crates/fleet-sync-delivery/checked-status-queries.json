@@ -9,7 +9,13 @@
       "name": "read_status_state",
       "sql": "sql/read_status_state.sql",
       "result": "optional",
-      "parameters": [],
+      "parameters": [
+        {
+          "name": "machine_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
       "row": "StoredStatusStateRow"
     },
     {
@@ -19,6 +25,11 @@
       "parameters": [
         {
           "name": "record",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "machine_id",
           "kind": "text",
           "nullable": false
         }
@@ -115,6 +126,11 @@
           "name": "record",
           "kind": "text",
           "nullable": false
+        },
+        {
+          "name": "machine_id",
+          "kind": "text",
+          "nullable": false
         }
       ]
     },
@@ -132,6 +148,11 @@
           "name": "limit",
           "kind": "text",
           "nullable": false
+        },
+        {
+          "name": "machine_id",
+          "kind": "text",
+          "nullable": false
         }
       ],
       "row": "StoredStatusEventRow"
@@ -143,6 +164,11 @@
       "parameters": [
         {
           "name": "through",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "machine_id",
           "kind": "text",
           "nullable": false
         }
@@ -160,6 +186,11 @@
         },
         {
           "name": "version",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "machine_id",
           "kind": "text",
           "nullable": false
         }

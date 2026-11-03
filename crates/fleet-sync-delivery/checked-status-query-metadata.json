@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-status-queries.json": "4bfb376a5fc4c7608788a752cd7ea71f87a95916ee2e2f4397a39b656b72f49e",
+    "checked-status-queries.json": "0b0554778b30e91dce3c4fe019a7cc3762494783b72654c30b0cad20302441c9",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -58,23 +58,24 @@
     "migrations/0002_mailbox_deadlines.sql": "7e60b848a3c73c0b05b139d1822225a631b1b79a0ea4d497646fdeb4f708d031",
     "migrations/0003_inbox_accounting.sql": "9ed7336cbc35834049b9c6b2f86e90a3b331f99b8e0791f86ce2cdfa7d7727f2",
     "migrations/0004_typed_delivery_records.sql": "cc12ce0550a54b81f5e45ccadfcd8f66311ea39cf46bd7cc1ef2308c26ecd5b4",
-    "sql/drop_status_events.sql": "67368fc80d890f924620c11fc2f37034aae4e2ae6f3fdb96da3a53309b1b787f",
-    "sql/list_publications.sql": "04cd43b6ca532ff467ef144b6595551bd47b4354f8bc8548c8d1441dceb8b6ef",
-    "sql/read_publication.sql": "82c900c3301bbd4e2c52fbce657e49d17d171dbe261bf3e912ed7d9eab39ee0e",
-    "sql/read_status_events.sql": "f74ebf67717f336c614566c34122d322be2de1351b35c6176631150b4e758244",
-    "sql/read_status_revision.sql": "2423b279039d8010760daa87de0c1ec8478607f28d2756832e90f83e54cc0105",
-    "sql/read_status_state.sql": "62202558532ed540c0bd80ab8d80c95d82c8da701ab85487498a04b5a7fd11b2",
+    "migrations/0005_scoped_status_streams.sql": "13c1f3b8fd48474da5c476d58f5a3970959752cab34164446dc9319a7710aeb2",
+    "sql/drop_status_events.sql": "1633bac5444ed52132c16822ab2a65a6e2ac2ae055b0fad2851f13811108c7b5",
+    "sql/list_publications.sql": "1fe3bcc3fc041cdf2a14b00c07d18bdf3ec94ec01073e087eecba1a34b6f548b",
+    "sql/read_publication.sql": "bf769c4e03c536080ac6a29555e53647990c683af0e466d46662d363050ed08e",
+    "sql/read_status_events.sql": "e55619fa9a60df550b4dbb3370871338cbf0e76caf700d73d63f7c670b4fd0b9",
+    "sql/read_status_revision.sql": "ddb4bafc7459e0266cdd35119b942094003e644540ac51533f7b234ccb6be2c1",
+    "sql/read_status_state.sql": "d96d6586ace5ccb5a668d8b292f0fcd15ed086fec53fb0855038fb1b20e2520d",
     "sql/retire_publication.sql": "ea356b4b367c756111561167ac3e5e86fa3e62e66ba557b869fec8fa6bbcdb1d",
-    "sql/write_publication.sql": "81f8bdc7ab119c2884a5e054109d1dc261ee0cf5aca2289e006cc0492285fcf4",
-    "sql/write_status_event.sql": "37e7153541748530abb38d98a4563e1a9c0fc9987976ae39160b7b858d76777a",
-    "sql/write_status_state.sql": "006017160514f16c0d1474ea57fa358214d56479e1294cb08d98d7af4d3267e9",
-    "src/checked_queries/status.rs": "9cbb521675cd6cf9bd6381a216b539444ff25e0d88284225bafef62e0f3428da"
+    "sql/write_publication.sql": "b0b5d5fee96f8b77b176aa0aea0941be0a80476b302e99f1fa92bffa2036b1a2",
+    "sql/write_status_event.sql": "d363d28fc02e62304c4b6fd87c1d41c754cbe5dcd19d89748016a533128db44f",
+    "sql/write_status_state.sql": "80f346b1b6ba2bd10fc8a9996a407799a4fa4d9995ea3b46ceb306cd81d2c0a5",
+    "src/checked_queries/status.rs": "0e6781ad10965e836856c2a97cfda7dbe6b78f13dc21a1af64afb7ff2f670bd2"
   },
-  "queries_digest": "7ccc42cd7df840a6773aba6e450078b528f2e808855a33fd57106419d3281ad3",
+  "queries_digest": "4870a23c24eac8c732cf28da2f5e0c4c94841539721135b35053a43cc5229129",
   "queries": [
     {
       "name": "read_status_state",
-      "bind_slots": 0,
+      "bind_slots": 1,
       "columns": [
         {
           "name": "record",
@@ -87,13 +88,20 @@
     },
     {
       "name": "write_status_state",
-      "bind_slots": 1,
+      "bind_slots": 2,
       "columns": []
     },
     {
       "name": "read_publication",
       "bind_slots": 2,
       "columns": [
+        {
+          "name": "machine_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
         {
           "name": "version_class",
           "sql_type": "TEXT",
@@ -129,13 +137,20 @@
     },
     {
       "name": "write_status_event",
-      "bind_slots": 4,
+      "bind_slots": 5,
       "columns": []
     },
     {
       "name": "read_status_events",
-      "bind_slots": 2,
+      "bind_slots": 3,
       "columns": [
+        {
+          "name": "machine_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
         {
           "name": "item_id",
           "sql_type": "TEXT",
@@ -182,13 +197,20 @@
     },
     {
       "name": "drop_status_events",
-      "bind_slots": 1,
+      "bind_slots": 2,
       "columns": []
     },
     {
       "name": "read_status_revision",
-      "bind_slots": 2,
+      "bind_slots": 3,
       "columns": [
+        {
+          "name": "machine_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
         {
           "name": "item_id",
           "sql_type": "TEXT",
@@ -237,6 +259,13 @@
       "name": "list_publications",
       "bind_slots": 0,
       "columns": [
+        {
+          "name": "machine_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
         {
           "name": "item_id",
           "sql_type": "TEXT",

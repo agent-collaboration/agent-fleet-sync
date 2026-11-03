@@ -91,11 +91,25 @@ pub async fn stopped_node_row(
         .create_if_missing(false)
         .connect()
         .await?;
-    let sql = if outbox {
-        "SELECT record,payload_bytes FROM _fleet_sync_outbox_items WHERE item_id=?1"
-    } else {
-        "SELECT record,CAST(report_seq AS TEXT) AS payload_bytes FROM _fleet_sync_reports WHERE item_id=?1"
-    };
+    if outbox {
+        let row = sqlx_core::query::query::<sqlx_turso::Turso>(
+            "SELECT item_id,digest,status_kind,CAST(status_version AS TEXT) AS status_version,CAST(last_report_seq AS TEXT) AS last_report_seq,CAST(payload_bytes AS TEXT) AS payload_bytes FROM _fleet_sync_outbox_items WHERE item_id=?1",
+        )
+        .bind(item.as_uuid().to_string())
+        .fetch_one(&mut db)
+        .await?;
+        let record = serde_json::json!({
+            "item_id":row.try_get::<String,_>("item_id")?,
+            "digest":row.try_get::<Option<String>,_>("digest")?,
+            "status_kind":row.try_get::<Option<String>,_>("status_kind")?,
+            "status_version":row.try_get::<Option<String>,_>("status_version")?,
+            "last_report_seq":row.try_get::<String,_>("last_report_seq")?,
+        });
+        let bytes: String = row.try_get("payload_bytes")?;
+        db.close().await?;
+        return Ok(serde_json::json!({"record":record,"bytes":bytes}));
+    }
+    let sql = "SELECT record,CAST(report_seq AS TEXT) AS payload_bytes FROM _fleet_sync_reports WHERE item_id=?1";
     let row = sqlx_core::query::query::<sqlx_turso::Turso>(sql)
         .bind(item.as_uuid().to_string())
         .fetch_one(&mut db)

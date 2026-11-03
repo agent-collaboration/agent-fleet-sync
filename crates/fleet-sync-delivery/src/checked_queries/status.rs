@@ -13,18 +13,21 @@ pub(crate) struct StoredStatusStateRow {
 }
 pub(crate) fn read_status_state<S>(
     scope: &mut S,
+    machine_id: String,
 ) -> impl std::future::Future<Output = Result<Option<StoredStatusStateRow>, sqlx_core::Error>> + Send
 where
     S: TransactionScope,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
     for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
 {
     async move {
         let statement = query::<S::Database>(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/sql/read_status_state.sql"
-        )));
+        )))
+        .bind(machine_id);
         let row = statement.fetch_optional(scope.executor()).await?;
         row.as_ref()
             .map(|row| {
@@ -38,6 +41,7 @@ where
 pub(crate) fn write_status_state<S>(
     scope: &mut S,
     record: String,
+    machine_id: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -49,7 +53,8 @@ where
             env!("CARGO_MANIFEST_DIR"),
             "/sql/write_status_state.sql"
         )))
-        .bind(record);
+        .bind(record)
+        .bind(machine_id);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -57,6 +62,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct StoredPublicationRow {
+    pub machine_id: Option<String>,
     pub version_class: Option<String>,
     pub version: Option<String>,
     pub record: Option<String>,
@@ -84,6 +90,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredPublicationRow {
+                    machine_id: row.try_get("machine_id")?,
                     version_class: row.try_get("version_class")?,
                     version: row.try_get("version")?,
                     record: row.try_get("record")?,
@@ -146,6 +153,7 @@ pub(crate) fn write_status_event<S>(
     item_id: String,
     version: String,
     record: String,
+    machine_id: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -160,7 +168,8 @@ where
         .bind(cursor)
         .bind(item_id)
         .bind(version)
-        .bind(record);
+        .bind(record)
+        .bind(machine_id);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -168,6 +177,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct StoredStatusEventRow {
+    pub machine_id: Option<String>,
     pub item_id: Option<String>,
     pub version_class: Option<String>,
     pub version: Option<String>,
@@ -179,6 +189,7 @@ pub(crate) fn read_status_events<S>(
     scope: &mut S,
     after: String,
     limit: String,
+    machine_id: String,
 ) -> impl std::future::Future<Output = Result<Vec<StoredStatusEventRow>, sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -193,11 +204,13 @@ where
             "/sql/read_status_events.sql"
         )))
         .bind(after)
-        .bind(limit);
+        .bind(limit)
+        .bind(machine_id);
         let rows = statement.fetch_all(scope.executor()).await?;
         rows.iter()
             .map(|row| {
                 Ok(StoredStatusEventRow {
+                    machine_id: row.try_get("machine_id")?,
                     item_id: row.try_get("item_id")?,
                     version_class: row.try_get("version_class")?,
                     version: row.try_get("version")?,
@@ -212,6 +225,7 @@ where
 pub(crate) fn drop_status_events<S>(
     scope: &mut S,
     through: String,
+    machine_id: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -223,7 +237,8 @@ where
             env!("CARGO_MANIFEST_DIR"),
             "/sql/drop_status_events.sql"
         )))
-        .bind(through);
+        .bind(through)
+        .bind(machine_id);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -232,6 +247,7 @@ pub(crate) fn read_status_revision<S>(
     scope: &mut S,
     item_id: String,
     version: String,
+    machine_id: String,
 ) -> impl std::future::Future<Output = Result<Option<StoredStatusEventRow>, sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -246,11 +262,13 @@ where
             "/sql/read_status_revision.sql"
         )))
         .bind(item_id)
-        .bind(version);
+        .bind(version)
+        .bind(machine_id);
         let row = statement.fetch_optional(scope.executor()).await?;
         row.as_ref()
             .map(|row| {
                 Ok(StoredStatusEventRow {
+                    machine_id: row.try_get("machine_id")?,
                     item_id: row.try_get("item_id")?,
                     version_class: row.try_get("version_class")?,
                     version: row.try_get("version")?,
@@ -265,6 +283,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct StoredOwedPublicationRow {
+    pub machine_id: Option<String>,
     pub item_id: Option<String>,
     pub target: Option<String>,
     pub version_class: Option<String>,
@@ -289,6 +308,7 @@ where
         rows.iter()
             .map(|row| {
                 Ok(StoredOwedPublicationRow {
+                    machine_id: row.try_get("machine_id")?,
                     item_id: row.try_get("item_id")?,
                     target: row.try_get("target")?,
                     version_class: row.try_get("version_class")?,

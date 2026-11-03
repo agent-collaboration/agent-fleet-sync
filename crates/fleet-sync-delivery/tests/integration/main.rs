@@ -2,6 +2,7 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+mod scoped_status;
 mod typed_custody;
 
 mod accounting_integrity;

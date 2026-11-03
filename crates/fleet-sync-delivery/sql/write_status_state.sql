@@ -1,1 +1,1 @@
-INSERT INTO _fleet_sync_status_state(singleton,record) VALUES(1,?1) ON CONFLICT(singleton) DO UPDATE SET record=excluded.record;
+INSERT INTO _fleet_sync_status_state(machine_id,record) VALUES(?2,?1) ON CONFLICT(machine_id) DO UPDATE SET record=excluded.record;

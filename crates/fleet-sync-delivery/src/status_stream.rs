@@ -20,6 +20,12 @@ pub enum PublicationTarget<R> {
     Peer { peer: PeerId, route: R },
 }
 impl<R> PublicationTarget<R> {
+    pub(crate) const fn machine(&self) -> PeerId {
+        match self {
+            Self::StatusStream { sender, .. } => *sender,
+            Self::Peer { peer, .. } => *peer,
+        }
+    }
     pub(crate) const fn route(&self) -> &R {
         match self {
             Self::StatusStream { route, .. } | Self::Peer { route, .. } => route,
@@ -89,18 +95,19 @@ where
     }
     async fn state(&mut self) -> Result<StreamState<D::StatusRoute>, DeliveryError> {
         crate::delivery_sizes::check_status_route::<D>(&self.owner_route)?;
-        let state: StreamState<D::StatusRoute> = match queries::read_status_state(self.scope)
-            .await
-            .map_err(sql_error)?
-        {
-            Some(row) => decode(row.record, "status stream state")?,
-            None => StreamState {
-                sender: self.sender,
-                owner_route: self.owner_route.clone(),
-                head: StatusCursor::new(0),
-                floor: StatusCursor::new(0),
-            },
-        };
+        let state: StreamState<D::StatusRoute> =
+            match queries::read_status_state(self.scope, self.sender.as_uuid().to_string())
+                .await
+                .map_err(sql_error)?
+            {
+                Some(row) => decode(row.record, "status stream state")?,
+                None => StreamState {
+                    sender: self.sender,
+                    owner_route: self.owner_route.clone(),
+                    head: StatusCursor::new(0),
+                    floor: StatusCursor::new(0),
+                },
+            };
         crate::delivery_sizes::check_status_route::<D>(&state.owner_route).map_err(|_| {
             DeliveryError::Corrupt {
                 field: "stored stream route bounds",
@@ -123,6 +130,7 @@ where
     ) -> Result<StatusEvent<D::Acceptance>, DeliveryError> {
         let event: StatusEvent<D::Acceptance> = decode(row.record, "status stream event")?;
         if event.cursor.value() == 0
+            || row.machine_id.as_deref() != Some(self.sender.as_uuid().to_string().as_str())
             || event.version.value() == 0
             || event.status.rank() == 0
             || row.item_id.as_deref() != Some(item_key(event.item).as_str())
@@ -158,6 +166,7 @@ where
             self.scope,
             item_key(publication.item),
             publication.version.value().to_string(),
+            self.sender.as_uuid().to_string(),
         )
         .await
         .map_err(sql_error)?
@@ -197,6 +206,7 @@ where
             item_key(event.item),
             event.version.value().to_string(),
             encode(&event)?,
+            self.sender.as_uuid().to_string(),
         )
         .await
         .map_err(sql_error)?;
@@ -214,9 +224,13 @@ where
         .await
         .map_err(sql_error)?;
         state.head = cursor;
-        queries::write_status_state(self.scope, encode(&state)?)
-            .await
-            .map_err(sql_error)?;
+        queries::write_status_state(
+            self.scope,
+            encode(&state)?,
+            self.sender.as_uuid().to_string(),
+        )
+        .await
+        .map_err(sql_error)?;
         Ok((
             event,
             Some(PublicationRef {
@@ -236,13 +250,21 @@ where
             return Ok(StatusAckResult::Refused { head: state.head });
         }
         if through > state.floor {
-            queries::drop_status_events(self.scope, through.value().to_string())
-                .await
-                .map_err(sql_error)?;
+            queries::drop_status_events(
+                self.scope,
+                through.value().to_string(),
+                self.sender.as_uuid().to_string(),
+            )
+            .await
+            .map_err(sql_error)?;
             state.floor = through;
-            queries::write_status_state(self.scope, encode(&state)?)
-                .await
-                .map_err(sql_error)?;
+            queries::write_status_state(
+                self.scope,
+                encode(&state)?,
+                self.sender.as_uuid().to_string(),
+            )
+            .await
+            .map_err(sql_error)?;
         }
         Ok(StatusAckResult::Acknowledged { floor: state.floor })
     }
@@ -263,6 +285,7 @@ where
             self.scope,
             after.max(state.floor).value().to_string(),
             limit.to_string(),
+            self.sender.as_uuid().to_string(),
         )
         .await
         .map_err(sql_error)?;
