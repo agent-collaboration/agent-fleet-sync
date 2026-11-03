@@ -263,7 +263,8 @@ impl<S: JournalQueries> JournalStorage for S {
     }
     async fn save_step(&mut self, step: StepRecord, token: Uuid) -> Result<(), StoreError> {
         self.check_token(step.operation, token).await?;
-        self.upsert_step(StoredStepRow::encode(step)?).await
+        let id = self.new_id();
+        self.upsert_step(StoredStepRow::encode(step, id)?).await
     }
     async fn step_count(&mut self, id: OperationId) -> Result<u64, StoreError> {
         u64::try_from(self.count_steps(id.as_uuid().to_string()).await?)

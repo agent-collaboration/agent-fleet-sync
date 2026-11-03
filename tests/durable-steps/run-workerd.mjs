@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { randomUUID, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import assert from "node:assert/strict";
 
 const stateRoot = await mkdtemp(join(tmpdir(), "2026-10-durable-steps-workerd-"));
@@ -19,8 +19,8 @@ function options(name) {
   };
 }
 try {
-  for (const path of ["/suite", "/reborrow", "/alarm-atomic", "/alarm-concurrent"]) {
-    const runtime = new Miniflare(options(randomUUID()));
+  for (const path of ["/suite", "/metadata-upgrade", "/reborrow", "/alarm-atomic", "/alarm-concurrent"]) {
+    const runtime = new Miniflare(options(randomBytes(16).toString("hex")));
     try {
       await runtime.ready;
       const response = await runtime.dispatchFetch(`http://steps.local${path}`, { signal: AbortSignal.timeout(15_000) });
@@ -28,6 +28,11 @@ try {
       console.log(JSON.stringify({ path, status: response.status, body }));
       assert.equal(response.status, 200);
       if (path === "/suite") assert.equal(JSON.parse(body).length, 20);
+      else if (path === "/metadata-upgrade") assert.deepEqual(JSON.parse(body), [
+        "v1 history and metadata survive upgrade",
+        "repeat bootstrap preserves row ids",
+        "saved local effect replays once",
+      ]);
       else if (path === "/reborrow") assert.deepEqual(JSON.parse(body), [
         "SQL and journal share parent commit and rollback",
         "parent and view share the observed arbitration owner",
@@ -52,7 +57,7 @@ try {
       else assert.ok(Number(JSON.parse(body)) > Date.now());
     } finally { await runtime.dispose(); }
   }
-  const retryName = randomUUID();
+  const retryName = randomBytes(16).toString("hex");
   let retryRuntime = new Miniflare(options(retryName));
   let retryOperation;
   try {
@@ -69,7 +74,7 @@ try {
     assert.equal(finished.status, 200, body);
     console.log(JSON.stringify({ journey: "NoEffect_actual_runtime_reopen", body }));
   } finally { await retryRuntime.dispose(); }
-  const name = randomUUID();
+  const name = randomBytes(16).toString("hex");
   let runtime = new Miniflare(options(name));
   try {
     await runtime.ready;

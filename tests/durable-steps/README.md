@@ -19,6 +19,10 @@ The last tree must contain no Tokio. The `turso` adapter deliberately enables To
 
 `TursoScope::new(&mut transaction, &host)` borrows the caller's connection without owning its transaction. `migrate_journal(&mut connection)` installs the journal on that same connection; the caller supplies the surrounding migration transaction. The borrowed-scope test commits and rolls back an admitted operation with a business row through one caller-owned connection.
 
+Journal schema version 2 keeps the UUIDv7 operation primary key and adds UUIDv7 row keys to steps and schema records. Their former composite/version keys remain unique. All journal tables have `created_at` and `updated_at` in Unix milliseconds; task writes use the host clock and preserve row identity and creation time on updates. The upgrade preserves saved task and call bytes, using the earliest saved call attempt, terminal time or pending deadline as the operation's best recorded creation time, and migration time when none exists. Native SQLx receipts gain the same metadata in their existing bootstrap; the DO keeps its three journal tables without adding migration receipts. Permanent native tests and the DO `/metadata-upgrade` fixture exercise frozen v1 history, repeated bootstrap and replay through the real adapters.
+
+The native upgrade crash test waits for a child to finish migration writes inside its caller's uncommitted transaction, then kills and joins that child. Reopening must recover the v1 schema, receipt and saved history before retrying the upgrade and replay. This checkpoint precedes the upgrade commit; the eight process-recovery cuts below exercise later task execution. A premature commit deliberately added inside the migrator makes the upgrade crash test fail because the new schema survives.
+
 `ReborrowScope` is an optional capability of `TursoStore`, `TokioObject` and `DurableObjectStore`. `S::reborrow(parent)` lends a shorter view while exclusively borrowing the parent. It retains the existing transaction, journal, host and wake owner; it does not begin or finish a transaction. Existing `AtomicStore` implementations and callbacks need no change. The real-store reborrow cases read the parent's uncommitted SQL and journal identity through the view, read view writes back through the parent, then check committed and rolled-back SQL and admissions. The Tokio object test also exercises its delegating implementation on its actual file transaction.
 
 ## Native process recovery
@@ -82,7 +86,7 @@ The product migration and fixture migrations seed a fresh native Turso database 
 
 ```sh
 cargo run --locked -p sqlx-turso --example seed_native_schema -- tmp/durable-steps-schema.db crates/durable-steps/migrations crates/durable-steps/tests/conformance/migrations
-SQLX_OFFLINE=false SQLX_OFFLINE_DIR="$PWD/crates/durable-steps/.sqlx" DATABASE_URL="turso://$PWD/tmp/durable-steps-schema.db" cargo check -p durable-steps --all-targets --features turso
+SQLX_OFFLINE=false SQLX_OFFLINE_DIR="$PWD/crates/durable-steps/.sqlx" DATABASE_URL="turso://$PWD/tmp/durable-steps-schema.db" cargo check -j 1 -p durable-steps --all-targets --features turso
 node tests/durable-steps/check-query-metadata.mjs
 ```
 

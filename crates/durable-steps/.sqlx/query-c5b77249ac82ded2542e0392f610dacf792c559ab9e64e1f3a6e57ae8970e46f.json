@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "UPDATE _fleet_sync_operations\nSET updated_at = ?, state = ?, result = ?, failure = ?, finished_at = ?, input = ?, next_attempt_at = ?, attempt = ?, drive_token = ?, drive_until = ?\nWHERE operation_id = ? AND drive_token IS ?\n",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "c5b77249ac82ded2542e0392f610dacf792c559ab9e64e1f3a6e57ae8970e46f"
+}

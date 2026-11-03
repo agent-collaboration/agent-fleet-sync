@@ -7,6 +7,10 @@ mod call_execution;
 mod canonical_payload;
 #[cfg(feature = "durable-object")]
 pub mod durable_object_store;
+#[cfg(any(feature = "turso", feature = "durable-object"))]
+mod journal_schema;
+#[cfg(feature = "turso")]
+mod native_journal_metadata;
 mod operation_context;
 mod operation_contract;
 mod operation_engine;

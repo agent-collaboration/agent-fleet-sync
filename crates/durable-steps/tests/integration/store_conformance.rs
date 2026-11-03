@@ -1,6 +1,6 @@
 #![allow(clippy::panic_in_result_fn, clippy::panic)]
 
-mod support;
+use crate::support;
 
 use durable_steps::{
     AtomicStore, CallReplay, DriveLease, JournalScope, OperationContext, OperationFailure,
@@ -56,7 +56,7 @@ async fn engine_schema_records_its_explicit_integer_version()
         .iter()
         .map(|row| row.try_get::<i64, _>("version"))
         .collect::<Result<Vec<_>, _>>()?;
-    assert_eq!(versions, vec![1]);
+    assert_eq!(versions, vec![2]);
     Ok(())
 }
 

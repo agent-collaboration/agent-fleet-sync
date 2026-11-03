@@ -49,15 +49,22 @@ impl<H: Host> DurableObjectStore<H> {
                 .fetch_all(&transaction).await?;
             if tables.is_empty() {
                 (&transaction).execute(include_str!("../migrations/0001_durable_steps.sql")).await?;
+                (&transaction).execute(include_str!("../migrations/0002_journal_metadata.sql")).await?;
             } else if tables.iter().any(|row| row.name == "_fleet_sync_schema") {
                 let versions: Vec<JournalVersion> = query_as::<Do, _>("SELECT version FROM _fleet_sync_schema")
                     .fetch_all(&transaction).await?;
-                if versions.len() != 1 || versions.first().is_none_or(|row| row.version != 1) {
+                if versions.len() != 1 || versions.first().is_none_or(|row| !matches!(row.version,1|2)) {
                     return Err(StoreError::Corrupt { field: "schema_version".into(), message: "unsupported journal schema".into() });
+                }
+                if versions.first().is_some_and(|row|row.version==1) {
+                    (&transaction).execute(include_str!("../migrations/0002_journal_metadata.sql")).await?;
                 }
             } else {
                 return Err(StoreError::Corrupt { field: "schema_version".into(), message: "unregistered existing journal tables".into() });
             }
+            let metadata = query_as::<Do,crate::journal_schema::JournalMetadataRow>("SELECT version,CASE WHEN typeof(id)='text' THEN id END AS id FROM _fleet_sync_schema")
+                .fetch_all(&transaction).await?;
+            crate::journal_schema::validate_schema(&metadata)?;
             Ok(())
         }).await
     }
@@ -179,6 +186,7 @@ impl<H: Host> JournalQueries for DurableObjectScope<'_, H> {
         )
     }
     async fn insert_operation(&mut self, row: StoredOperationRow) -> Result<(), StoreError> {
+        let now = self.host.now().unix_millis();
         query::<Do>(include_str!("../queries/insert_operation.sql"))
             .bind(row.operation_id)
             .bind(row.kind)
@@ -194,6 +202,8 @@ impl<H: Host> JournalQueries for DurableObjectScope<'_, H> {
             .bind(row.attempt)
             .bind(row.drive_token)
             .bind(row.drive_until)
+            .bind(now)
+            .bind(now)
             .execute(self.transaction)
             .await?;
         Ok(())
@@ -203,7 +213,9 @@ impl<H: Host> JournalQueries for DurableObjectScope<'_, H> {
         row: StoredOperationRow,
         token: Option<String>,
     ) -> Result<bool, StoreError> {
+        let now = self.host.now().unix_millis();
         let result = query::<Do>(include_str!("../queries/update_operation.sql"))
+            .bind(now)
             .bind(row.state)
             .bind(row.result)
             .bind(row.failure)
@@ -245,7 +257,11 @@ impl<H: Host> JournalQueries for DurableObjectScope<'_, H> {
         )
     }
     async fn upsert_step(&mut self, row: StoredStepRow) -> Result<(), StoreError> {
+        let now = self.host.now().unix_millis();
         query::<Do>(include_str!("../queries/upsert_step.sql"))
+            .bind(row.id)
+            .bind(now)
+            .bind(now)
             .bind(row.operation_id)
             .bind(row.position)
             .bind(row.step_name)

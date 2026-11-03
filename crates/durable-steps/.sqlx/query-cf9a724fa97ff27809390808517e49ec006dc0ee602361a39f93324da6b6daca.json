@@ -1,0 +1,10 @@
+{
+  "db_name": "Turso",
+  "query": "INSERT INTO _fleet_sync_steps(id, created_at, updated_at, operation_id, position, step_name, kind, intent, output, first_attempt_at, may_have_reached)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\nON CONFLICT(operation_id, position) DO UPDATE SET\n    updated_at = excluded.updated_at, step_name = excluded.step_name, kind = excluded.kind, intent = excluded.intent, output = excluded.output, first_attempt_at = excluded.first_attempt_at, may_have_reached = excluded.may_have_reached\n",
+  "describe": {
+    "columns": [],
+    "parameters": null,
+    "nullable": []
+  },
+  "hash": "cf9a724fa97ff27809390808517e49ec006dc0ee602361a39f93324da6b6daca"
+}

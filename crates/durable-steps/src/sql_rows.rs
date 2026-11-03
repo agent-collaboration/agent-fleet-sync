@@ -200,6 +200,8 @@ impl StoredOperationRow {
 
 #[derive(sqlx::FromRow)]
 pub(crate) struct StoredStepRow {
+    #[sqlx(rename = "id?: String")]
+    pub id: Option<String>,
     #[sqlx(rename = "operation_id!")]
     pub operation_id: String,
     #[sqlx(rename = "position!: i64")]
@@ -224,7 +226,10 @@ struct StoredCallIntent {
     retry_reason: Option<crate::CallRetryReason>,
 }
 impl StoredStepRow {
-    pub fn encode(step: StepRecord) -> Result<Self, StoreError> {
+    pub fn encode(step: StepRecord, id: Uuid) -> Result<Self, StoreError> {
+        if !runtime_primitives::uuid_v7(id) {
+            return Err(corrupt("step.id", "host did not mint a UUIDv7"));
+        }
         let (kind, call, output) = match step.state {
             StepState::Local { output } => ("local", None, Some(output)),
             StepState::CallPending { intent, attempt } => {
@@ -253,6 +258,7 @@ impl StoredStepRow {
             ),
         };
         Ok(Self {
+            id: Some(id.to_string()),
             operation_id: step.operation.as_uuid().to_string(),
             position: i64::try_from(step.position).map_err(StoreError::backend)?,
             step_name: step.name.into(),
@@ -267,6 +273,19 @@ impl StoredStepRow {
 impl TryFrom<StoredStepRow> for StepRecord {
     type Error = StoreError;
     fn try_from(row: StoredStepRow) -> Result<Self, StoreError> {
+        if !row
+            .id
+            .as_deref()
+            .is_some_and(runtime_primitives::canonical_uuid_v7)
+        {
+            return Err(corrupt(
+                "step.id",
+                format!(
+                    "operation {} position {} has an invalid UUIDv7 row id",
+                    row.operation_id, row.position
+                ),
+            ));
+        }
         let state = match (
             row.kind.as_str(),
             row.intent,

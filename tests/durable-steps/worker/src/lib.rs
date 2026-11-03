@@ -1,6 +1,8 @@
 mod alarm_cases;
 #[path = "../../../../crates/durable-steps/tests/conformance/mod.rs"]
 mod conformance;
+#[path = "../tests/integration/journal_metadata.rs"]
+mod journal_metadata;
 #[path = "../../journey_task.rs"]
 mod journey_task;
 mod journey_worker;
@@ -83,6 +85,13 @@ impl DurableObject for StepsObject {
         }
     }
     async fn fetch(&self, request: Request) -> worker::Result<Response> {
+        if request.path() == "/metadata-upgrade" {
+            return Response::from_json(
+                &journal_metadata::run(&self.state, self.store.clone(), self.host.clone())
+                    .await
+                    .map_err(worker_error)?,
+            );
+        }
         self.store.migrate().await.map_err(worker_error)?;
         self.store.transaction(|scope| Box::pin(async move {
             scope.executor().execute(include_str!("../../../../crates/durable-steps/tests/conformance/migrations/1000_business.sql")).await?;
