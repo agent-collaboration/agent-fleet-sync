@@ -11,7 +11,12 @@
       "result": "optional",
       "parameters": [
         {
-          "name": "machine_id",
+          "name": "submitter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "submitter_id",
           "kind": "text",
           "nullable": false
         }
@@ -29,7 +34,12 @@
           "nullable": false
         },
         {
-          "name": "machine_id",
+          "name": "submitter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "submitter_id",
           "kind": "text",
           "nullable": false
         },
@@ -148,7 +158,12 @@
           "nullable": false
         },
         {
-          "name": "machine_id",
+          "name": "submitter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "submitter_id",
           "kind": "text",
           "nullable": false
         },
@@ -180,7 +195,12 @@
           "nullable": false
         },
         {
-          "name": "machine_id",
+          "name": "submitter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "submitter_id",
           "kind": "text",
           "nullable": false
         }
@@ -198,7 +218,12 @@
           "nullable": false
         },
         {
-          "name": "machine_id",
+          "name": "submitter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "submitter_id",
           "kind": "text",
           "nullable": false
         }
@@ -220,7 +245,12 @@
           "nullable": false
         },
         {
-          "name": "machine_id",
+          "name": "submitter_kind",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "submitter_id",
           "kind": "text",
           "nullable": false
         }
@@ -232,7 +262,7 @@
       "sql": "sql/list_publications.sql",
       "result": "many",
       "parameters": [],
-      "row": "StoredOwedPublicationRow"
+      "row": "StoredPublicationRow"
     }
   ]
 }

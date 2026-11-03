@@ -24,7 +24,7 @@ async fn custody_rows(store: &TestStore) -> Vec<String> {
         sqlx_core::query::query::<Turso>(
             "SELECT 'state:' || json_array(singleton,record) AS value FROM _fleet_sync_mail_state
              UNION ALL SELECT 'mail:' || json_array(item_id,stream,seq,live,capacity_slot,payload_bytes,settlement_bytes,record) FROM _fleet_sync_mail_items
-             UNION ALL SELECT 'owed:' || json_array(item_id,target_kind,machine_id,status_route,version,status_kind,status_acceptance,cancel_outcome) FROM _fleet_sync_status_owed
+             UNION ALL SELECT 'owed:' || json_array(item_id,target_kind,submitter_kind,submitter_id,status_route,version,status_kind,status_acceptance,cancel_outcome) FROM _fleet_sync_status_owed
              ORDER BY value"
         ).fetch_all(scope.executor()).await?.into_iter()
             .map(|row| row.try_get("value").map_err(StoreError::backend)).collect()

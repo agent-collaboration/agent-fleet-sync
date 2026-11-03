@@ -42,7 +42,7 @@ async fn mailbox_pass<D: DeliveryTypes>(
 ) -> Result<(), PassFailure> {
     let host = owner.object.host();
     owner
-        .ensure_schema()
+        .ensure_schema::<D>()
         .await
         .map_err(|error| PassFailure::operational("migration", error))?;
     let now = host.now();

@@ -2,15 +2,15 @@
 ALTER TABLE _fleet_sync_status_state RENAME TO _fleet_sync_status_state_json;
 CREATE TABLE _fleet_sync_status_state (id TEXT NOT NULL PRIMARY KEY DEFAULT (printf('%08x-%04x-7%03x-%04x-%012x',CAST(unixepoch('subsec')*1000 AS INTEGER)>>16,CAST(unixepoch('subsec')*1000 AS INTEGER)&65535,random()&4095,(random()&16383)|32768,random()&281474976710655)),
     created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER)),
-    updated_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER)),machine_id TEXT NOT NULL UNIQUE,owner_route TEXT NOT NULL,head INTEGER NOT NULL,floor INTEGER NOT NULL);
-INSERT INTO _fleet_sync_status_state(machine_id,owner_route,head,floor) SELECT machine_id,record -> '$.ownerRoute',json_extract(record,'$.head'),json_extract(record,'$.floor') FROM _fleet_sync_status_state_json;
+    updated_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER)),submitter_kind TEXT NOT NULL,submitter_id TEXT NOT NULL,owner_route TEXT NOT NULL,head INTEGER NOT NULL,floor INTEGER NOT NULL,UNIQUE(submitter_kind,submitter_id));
+INSERT INTO _fleet_sync_status_state(submitter_kind,submitter_id,owner_route,head,floor) SELECT submitter_kind,submitter_id,record -> '$.ownerRoute',json_extract(record,'$.head'),json_extract(record,'$.floor') FROM _fleet_sync_status_state_json;
 DROP TABLE _fleet_sync_status_state_json;
 ALTER TABLE _fleet_sync_status_events RENAME TO _fleet_sync_status_events_json;
 CREATE TABLE _fleet_sync_status_events (
     id TEXT NOT NULL PRIMARY KEY DEFAULT (printf('%08x-%04x-7%03x-%04x-%012x',CAST(unixepoch('subsec')*1000 AS INTEGER)>>16,CAST(unixepoch('subsec')*1000 AS INTEGER)&65535,random()&4095,(random()&16383)|32768,random()&281474976710655)),
     created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER)),
     updated_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER)),
-    machine_id TEXT NOT NULL,
+    submitter_kind TEXT NOT NULL,submitter_id TEXT NOT NULL,
     cursor INTEGER NOT NULL,
     item_id TEXT NOT NULL,
     version INTEGER NOT NULL,
@@ -24,10 +24,10 @@ CREATE TABLE _fleet_sync_status_events (
     refusal_item_id TEXT,
     cancel_outcome TEXT,
     cancel_too_late_at TEXT,
-    UNIQUE(machine_id,cursor),UNIQUE(machine_id,item_id,version)
+    UNIQUE(submitter_kind,submitter_id,cursor),UNIQUE(submitter_kind,submitter_id,item_id,version)
 );
-INSERT INTO _fleet_sync_status_events (machine_id,cursor,item_id,version,status_kind,status_acceptance,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,cancel_outcome,cancel_too_late_at)
-SELECT machine_id,
+INSERT INTO _fleet_sync_status_events (submitter_kind,submitter_id,cursor,item_id,version,status_kind,status_acceptance,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,cancel_outcome,cancel_too_late_at)
+SELECT submitter_kind,submitter_id,
        cursor,
        item_id,
        version,
@@ -47,7 +47,7 @@ CREATE TABLE _fleet_sync_status_owed (
     id TEXT NOT NULL PRIMARY KEY DEFAULT (printf('%08x-%04x-7%03x-%04x-%012x',CAST(unixepoch('subsec')*1000 AS INTEGER)>>16,CAST(unixepoch('subsec')*1000 AS INTEGER)&65535,random()&4095,(random()&16383)|32768,random()&281474976710655)),
     created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER)),
     updated_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER)),
-    machine_id TEXT NOT NULL,
+    submitter_kind TEXT NOT NULL,submitter_id TEXT NOT NULL,
     item_id TEXT NOT NULL,
     target_kind TEXT NOT NULL,
     status_route TEXT NOT NULL,
@@ -62,10 +62,10 @@ CREATE TABLE _fleet_sync_status_owed (
     refusal_item_id TEXT,
     cancel_outcome TEXT,
     cancel_too_late_at TEXT,
-    UNIQUE(item_id,target_kind,machine_id,status_route)
+    UNIQUE(item_id,target_kind,submitter_kind,submitter_id,status_route)
 );
-INSERT INTO _fleet_sync_status_owed (machine_id,item_id,target_kind,status_route,version,status_kind,status_acceptance,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,cancel_outcome,cancel_too_late_at)
-SELECT machine_id,
+INSERT INTO _fleet_sync_status_owed (submitter_kind,submitter_id,item_id,target_kind,status_route,version,status_kind,status_acceptance,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,cancel_outcome,cancel_too_late_at)
+SELECT submitter_kind,submitter_id,
        item_id,
        json_extract(target,'$.kind'),
        target -> '$.value.route',

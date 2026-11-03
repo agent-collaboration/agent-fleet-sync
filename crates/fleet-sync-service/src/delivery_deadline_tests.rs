@@ -17,6 +17,9 @@ impl DeliveryTypes for Mail {
     const MAX_STATUS_ROUTE_BYTES: u32 = 128;
     const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
     type Sender = String;
+    fn submitter(_: &Self::Sender) -> Submitter {
+        Submitter::Machine(peer(2).unwrap())
+    }
     type Address = String;
     type Body = String;
     type Acceptance = String;
@@ -103,7 +106,7 @@ async fn mailbox_later_wake_publishes_while_an_earlier_publication_is_held() -> 
         10_000_000,
         minimum_settlement_allowance::<Mail>()?,
     )?;
-    owner.ensure_schema().await?;
+    owner.ensure_schema::<Mail>().await?;
     submit(&owner, limits, item(1)?).await?;
     let (shutdown, stopped) = watch::channel(false);
     let running = {

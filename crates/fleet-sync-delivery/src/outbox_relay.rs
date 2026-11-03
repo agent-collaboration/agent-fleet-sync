@@ -25,7 +25,7 @@ where
     )]
     pub fn submit_relay<'call, TPush, TRetention>(
         &'call mut self,
-        submitter: PeerId,
+        submitter: crate::Submitter,
         item: DeliveryEnvelope<D>,
         relay: PeerId,
         route: D::StatusRoute,
@@ -39,6 +39,11 @@ where
         TPush: Task<Input = PushInput>,
     {
         async move {
+            if submitter != D::submitter(item.sender()) {
+                return Ok(SubmitResult::Refused {
+                    reason: DeliveryRefusal::NotSubmitter,
+                });
+            }
             crate::delivery_sizes::check_status_route::<D>(&route)?;
             let reference = DeliveryItemRef {
                 item: item.id(),
@@ -113,14 +118,20 @@ where
     pub async fn resolve_push(
         &mut self,
         reference: &DeliveryItemRef,
-    ) -> Result<Option<DeliveryEnvelope<D>>, DeliveryError> {
+    ) -> Result<Option<crate::ResolvedPush<D>>, DeliveryError> {
         let Some(record) = self.load(reference.item).await? else {
             return Ok(None);
         };
         if record.header.digest != reference.digest.as_str() {
             return Err(DeliveryError::DigestMismatch);
         }
-        Ok(record.payload)
+        let Some(item) = record.payload else {
+            return Ok(None);
+        };
+        let submitter = record.header.submitter.ok_or(DeliveryError::Corrupt {
+            field: "push custody submitter",
+        })?;
+        Ok(Some(crate::ResolvedPush { submitter, item }))
     }
 
     #[expect(

@@ -16,6 +16,9 @@ impl DeliveryTypes for OptedTypes {
     const PER_ITEM_SETTLEMENT: bool = true;
     type Body = String;
     type Sender = String;
+    fn submitter(sender: &Self::Sender) -> Submitter {
+        crate::support::sender_submitter(sender)
+    }
     type Address = String;
     type Acceptance = Acceptance;
     type LocalObservation = ();
@@ -209,7 +212,7 @@ async fn v020_budget_checkpoint_reopens_and_completes_with_identical_fetch_ident
                     let output: Vec<u8> = row.try_get("output")?;
                     assert_eq!(
                         serde_json::from_slice::<serde_json::Value>(&output).unwrap(),
-                        if legacy_prefix || !opted_in {serde_json::json!([1, 93_513])} else {serde_json::json!({"stream":"items","after":0,"maxItems":10,"maxBytes":100_000,"inboxRoomBytes":100_000})}
+                        if legacy_prefix || !opted_in {serde_json::json!([1, 93_297])} else {serde_json::json!({"stream":"items","after":0,"maxItems":10,"maxBytes":100_000,"inboxRoomBytes":100_000})}
                     );
                     Ok(output)
                 })

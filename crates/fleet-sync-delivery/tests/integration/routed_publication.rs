@@ -16,10 +16,18 @@ async fn stream_events(fixture: &Fixture, sender: PeerId, route: &str) -> serde_
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let events = StatusStream::<_, TestTypes>::new(scope, sender, route)
-                    .fetch(sender, StatusCursor::new(0), 20)
-                    .await
-                    .map_err(storage_error)?;
+                let events = StatusStream::<_, TestTypes>::new(
+                    scope,
+                    fleet_sync_delivery::Submitter::Machine(sender),
+                    route,
+                )
+                .fetch(
+                    fleet_sync_delivery::Submitter::Machine(sender),
+                    StatusCursor::new(0),
+                    20,
+                )
+                .await
+                .map_err(storage_error)?;
                 Ok(serde_json::to_value(events).unwrap())
             })
         })
@@ -58,7 +66,12 @@ async fn held_old_publish_keeps_its_route_and_stream_restart_delivers_both_froze
                     return Err(durable_steps::StoreError::backend("fixture item"));
                 };
                 Outbox::<_, TestTypes>::new(scope, limits())
-                    .enqueue(item, peer(3), peer(1), SyncTime::from_unix_millis(0))
+                    .enqueue(
+                        item,
+                        peer(3),
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
+                        SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?;
                 Ok(())
@@ -140,7 +153,7 @@ async fn held_old_publish_keeps_its_route_and_stream_restart_delivers_both_froze
                     item: item_id(1),
                     version: StatusVersion::new(2),
                     target: PublicationTarget::StatusStream {
-                        sender: peer(3),
+                        sender: fleet_sync_delivery::Submitter::Machine(peer(3)),
                         route: SUCCESSOR_ROUTE.to_owned(),
                     },
                 };

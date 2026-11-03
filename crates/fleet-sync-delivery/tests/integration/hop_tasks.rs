@@ -234,7 +234,12 @@ async fn header_loss_before_first_gate_reconciles_same_digest_conflict_and_unkno
                     };
                     assert!(matches!(
                         Outbox::<_, TestTypes>::new(scope, limits())
-                            .enqueue(item, peer(3), peer(1), SyncTime::from_unix_millis(0))
+                            .enqueue(
+                                item,
+                                peer(3),
+                                fleet_sync_delivery::Submitter::Machine(peer(1)),
+                                SyncTime::from_unix_millis(0)
+                            )
                             .await
                             .map_err(storage_error)?,
                         OutboxAdmission::Refused {

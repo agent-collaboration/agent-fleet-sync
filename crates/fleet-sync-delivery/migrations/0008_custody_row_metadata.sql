@@ -8,9 +8,12 @@ CREATE TABLE _fleet_sync_outbox_items (
     payload TEXT,
     capacity_slot INTEGER NOT NULL CHECK (capacity_slot IN (0,1)),
     record_kind TEXT NOT NULL,
+    consumer_sender TEXT,
+    legacy_read_only INTEGER NOT NULL DEFAULT 0 CHECK (legacy_read_only IN (0,1)),
     digest TEXT,
     relay_machine_id TEXT,
-    submitter_machine_id TEXT,
+    submitter_kind TEXT,
+    submitter_id TEXT,
     recipient_machine_id TEXT,
     valid_until INTEGER,
     status_kind TEXT,
@@ -37,7 +40,7 @@ CREATE TABLE _fleet_sync_outbox_items (
     status_route TEXT,
     updated_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER))
 );
-INSERT INTO _fleet_sync_outbox_items (item_id,live,payload_bytes,settlement_charge_bytes,payload,capacity_slot,record_kind,digest,relay_machine_id,submitter_machine_id,recipient_machine_id,valid_until,status_kind,status_sequence,status_acceptance,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,status_version,last_report_seq,submit_attempted,cancel_outcome,cancel_too_late_at,cancel_target_item_id,acceptance_bound,settlement_bytes,failure_kind,created_at,admitted_at,handed_off_at,status_route,updated_at) SELECT item_id,live,payload_bytes,settlement_charge_bytes,payload,capacity_slot,record_kind,digest,relay_machine_id,submitter_machine_id,recipient_machine_id,valid_until,status_kind,status_sequence,status_acceptance,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,status_version,last_report_seq,submit_attempted,cancel_outcome,cancel_too_late_at,cancel_target_item_id,acceptance_bound,settlement_bytes,failure_kind,created_at,admitted_at,handed_off_at,status_route,coalesce(handed_off_at,admitted_at,created_at) FROM _fleet_sync_outbox_items_metadata_upgrade;
+INSERT INTO _fleet_sync_outbox_items (item_id,live,payload_bytes,settlement_charge_bytes,payload,capacity_slot,record_kind,consumer_sender,legacy_read_only,digest,relay_machine_id,submitter_kind,submitter_id,recipient_machine_id,valid_until,status_kind,status_sequence,status_acceptance,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,status_version,last_report_seq,submit_attempted,cancel_outcome,cancel_too_late_at,cancel_target_item_id,acceptance_bound,settlement_bytes,failure_kind,created_at,admitted_at,handed_off_at,status_route,updated_at) SELECT item_id,live,payload_bytes,settlement_charge_bytes,payload,capacity_slot,record_kind,consumer_sender,legacy_read_only,digest,relay_machine_id,submitter_kind,submitter_id,recipient_machine_id,valid_until,status_kind,status_sequence,status_acceptance,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,status_version,last_report_seq,submit_attempted,cancel_outcome,cancel_too_late_at,cancel_target_item_id,acceptance_bound,settlement_bytes,failure_kind,created_at,admitted_at,handed_off_at,status_route,coalesce(handed_off_at,admitted_at,created_at) FROM _fleet_sync_outbox_items_metadata_upgrade;
 DROP TABLE _fleet_sync_outbox_items_metadata_upgrade;
 ALTER TABLE _fleet_sync_inbox_items RENAME TO _fleet_sync_inbox_items_metadata_upgrade;
 CREATE TABLE _fleet_sync_inbox_items (
@@ -47,7 +50,10 @@ CREATE TABLE _fleet_sync_inbox_items (
     settlement_charge_bytes INTEGER NOT NULL,
     payload TEXT,
     digest TEXT NOT NULL,
-    sender TEXT NOT NULL,
+    consumer_sender TEXT,
+    submitter_kind TEXT,
+    submitter_id TEXT,
+    legacy_read_only INTEGER NOT NULL DEFAULT 0 CHECK (legacy_read_only IN (0,1)),
     recipient_machine_id TEXT NOT NULL,
     recipient_address TEXT NOT NULL,
     relay_machine_id TEXT,
@@ -77,7 +83,7 @@ CREATE TABLE _fleet_sync_inbox_items (
     delivered_at INTEGER,
     updated_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER))
 );
-INSERT INTO _fleet_sync_inbox_items (item_id,live,payload_bytes,settlement_charge_bytes,payload,digest,sender,recipient_machine_id,recipient_address,relay_machine_id,cancel_target_item_id,valid_until,stream,route,progress,attempt,not_before,outcome_kind,outcome_acceptance,outcome_cancel_item_id,outcome_too_late_at,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,report_seq,acceptance_bound,settlement_bytes,release_requested,created_at,accepted_at,delivered_at,updated_at) SELECT item_id,live,payload_bytes,settlement_charge_bytes,payload,digest,sender,recipient_machine_id,recipient_address,relay_machine_id,cancel_target_item_id,valid_until,stream,route,progress,attempt,not_before,outcome_kind,outcome_acceptance,outcome_cancel_item_id,outcome_too_late_at,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,report_seq,acceptance_bound,settlement_bytes,release_requested,created_at,accepted_at,delivered_at,coalesce(delivered_at,accepted_at,created_at) FROM _fleet_sync_inbox_items_metadata_upgrade;
+INSERT INTO _fleet_sync_inbox_items (item_id,live,payload_bytes,settlement_charge_bytes,payload,digest,consumer_sender,submitter_kind,submitter_id,legacy_read_only,recipient_machine_id,recipient_address,relay_machine_id,cancel_target_item_id,valid_until,stream,route,progress,attempt,not_before,outcome_kind,outcome_acceptance,outcome_cancel_item_id,outcome_too_late_at,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,report_seq,acceptance_bound,settlement_bytes,release_requested,created_at,accepted_at,delivered_at,updated_at) SELECT item_id,live,payload_bytes,settlement_charge_bytes,payload,digest,consumer_sender,submitter_kind,submitter_id,legacy_read_only,recipient_machine_id,recipient_address,relay_machine_id,cancel_target_item_id,valid_until,stream,route,progress,attempt,not_before,outcome_kind,outcome_acceptance,outcome_cancel_item_id,outcome_too_late_at,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,report_seq,acceptance_bound,settlement_bytes,release_requested,created_at,accepted_at,delivered_at,coalesce(delivered_at,accepted_at,created_at) FROM _fleet_sync_inbox_items_metadata_upgrade;
 DROP TABLE _fleet_sync_inbox_items_metadata_upgrade;
 CREATE INDEX _fleet_sync_inbox_accounting ON _fleet_sync_inbox_items(live,payload_bytes,settlement_charge_bytes);
 ALTER TABLE _fleet_sync_outbox_cancel_links RENAME TO _fleet_sync_outbox_cancel_links_metadata_upgrade;

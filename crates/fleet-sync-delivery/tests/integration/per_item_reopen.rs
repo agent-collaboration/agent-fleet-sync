@@ -162,7 +162,12 @@ async fn recovered_outbox_reopens_with_explicit_and_legacy_bounds() {
                         mailbox: peer(2),
                     };
                     Outbox::<_, VariableTypes>::new(scope, limits)
-                        .enqueue(item, peer(3), peer(1), SyncTime::from_unix_millis(0))
+                        .enqueue(
+                            item,
+                            peer(3),
+                            fleet_sync_delivery::Submitter::Machine(peer(1)),
+                            SyncTime::from_unix_millis(0),
+                        )
                         .await
                         .map_err(storage_error)?;
                     Outbox::<_, VariableTypes>::new(scope, limits)

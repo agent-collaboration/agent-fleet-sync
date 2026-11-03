@@ -99,6 +99,7 @@ where
         now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let mut header = match self.header_state(item).await {
+            Ok(Some(OutboxHeaderState::Legacy { .. })) => return Ok(()),
             Ok(Some(OutboxHeaderState::Item(header))) => header,
             Ok(_) | Err(DeliveryError::Corrupt { .. }) => return Ok(()),
             Err(error) => return Err(error),
@@ -194,6 +195,16 @@ where
                 version: record.version,
                 cancel: record.cancel,
             },
+            Some(OutboxHeaderState::Legacy {
+                status,
+                version,
+                cancel,
+                ..
+            }) => OutboxStatusState::Known {
+                status,
+                version,
+                cancel,
+            },
             Some(OutboxHeaderState::Unresolvable { kind, .. }) => OutboxStatusState::Known {
                 status: DeliveryStatus::Refused {
                     reason: DeliveryRefusal::ProcessingFailed { kind },
@@ -216,6 +227,7 @@ where
             return Ok(());
         }
         match self.recovery_header(item).await {
+            Ok(Some(OutboxHeaderState::Legacy { .. })) => {}
             Ok(Some(OutboxHeaderState::Item(mut header))) => {
                 if !header.status.is_terminal() {
                     header.status = DeliveryStatus::Refused {
@@ -360,7 +372,7 @@ where
         else {
             return Ok(None);
         };
-        let state = crate::outbox_storage::decode_header(&row)?;
+        let state = crate::outbox_storage::decode_header::<D>(&row)?;
         let live = integer(row.live, row.live_class, "outbox live flag")?;
         let slot = integer(
             row.capacity_slot,
@@ -416,6 +428,9 @@ where
             OutboxHeaderState::Unresolvable { .. } => {
                 live == 0 && slot == 0 && bytes == 0 && settlement == 0 && row.payload.is_none()
             }
+            OutboxHeaderState::Legacy { .. } => {
+                live <= 1 && slot <= 1 && bytes == 0 && row.payload.is_none()
+            }
         };
         if !valid || row.item_id.as_deref() != Some(item_key(item).as_str()) {
             return Err(DeliveryError::Corrupt {
@@ -434,7 +449,7 @@ where
         else {
             return Ok(None);
         };
-        crate::outbox_storage::decode_header(&row).map(Some)
+        crate::outbox_storage::decode_header::<D>(&row).map(Some)
     }
     pub(crate) async fn load(
         &mut self,
@@ -446,10 +461,15 @@ where
         else {
             return Ok(None);
         };
-        let state = crate::outbox_storage::decode_header(&row)?;
+        let state = crate::outbox_storage::decode_header::<D>(&row)?;
         let header = match state {
             OutboxHeaderState::Item(header) => header,
             OutboxHeaderState::Recovered(_) => return Err(DeliveryError::CustodyMissing),
+            OutboxHeaderState::Legacy { .. } => {
+                return Err(DeliveryError::Refused {
+                    reason: DeliveryRefusal::NotSubmitter,
+                });
+            }
             OutboxHeaderState::Unresolvable { kind, .. } => {
                 return Err(DeliveryError::ProcessingFailed { kind });
             }

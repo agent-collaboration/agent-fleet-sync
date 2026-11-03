@@ -2,15 +2,17 @@ use fleet_sync_protocol::*;
 use serde_json::json;
 
 const ITEM: &str = "01900000-0000-7000-8000-000000000001";
+const SENDER: &str = "019eef00-0000-7000-8000-000000000001";
 const PEER: &str = "019eef00-0000-7000-8000-000000000002";
 const FRAME: &str = "019eef00-0000-7000-8000-000000000004";
-const DIGEST: &str = "bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b";
+const DIGEST: &str = "0b7f9c7c2a2a8e71b3220266466dd262a878ca97fae28786dbbe6686b8964da0";
 
 #[test]
 fn push_server_frame_and_all_client_receipts_match_literal_contracts() {
     let wire = json!({"kind":"request","value":{"frame":FRAME,"body":{"kind":"crate","value":{"kind":"push","value":{
         "call":{"operation":"019eef00-0000-7000-8000-000000000003","step":"push"},
-        "item":{"kind":"item","value":{"id":ITEM,"sender":null,"recipient":{"peer":PEER,"address":null},"validUntil":null,"body":null,"digest":DIGEST}}
+        "submitter":{"kind":"machine","value":SENDER},
+        "item":{"kind":"item","value":{"id":ITEM,"sender":{"kind":"machine","value":SENDER},"recipient":{"peer":PEER,"address":null},"validUntil":null,"body":null,"digest":DIGEST}}
     }}}}});
     let frame: ServerFrame = serde_json::from_value(wire.clone()).unwrap();
     assert!(

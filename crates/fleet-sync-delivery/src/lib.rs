@@ -9,6 +9,7 @@ mod custody_fixture;
 /// Delivery tables applied in the host's migration transaction.
 pub static DELIVERY_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
+mod backfill_state;
 #[expect(
     clippy::too_many_arguments,
     reason = "generated SQL functions bind each checked parameter"
@@ -41,6 +42,9 @@ mod status_publication;
 mod status_row;
 mod status_stream;
 mod stored_outcome;
+mod submitter;
+mod submitter_backfill;
+pub use submitter_backfill::backfill_submitters;
 mod task_support;
 
 pub use delivery_contract::*;
@@ -59,7 +63,7 @@ pub use mailbox_failure::{
 };
 pub use mailbox_rules::Mailbox;
 pub use outbox_record::{
-    OutboxAdmission, OutboxStatus, OutboxStatusState, ResolvedSubmit, SubmitInput,
+    OutboxAdmission, OutboxStatus, OutboxStatusState, ResolvedPush, ResolvedSubmit, SubmitInput,
 };
 pub use outbox_rules::Outbox;
 pub use status_publication::{admit_publications, resolve_publication, retire_publication};

@@ -15,7 +15,7 @@ async fn owed_publication_refuses_a_stored_non_v7_peer_before_admitting_a_task()
             .submit(peer(1), item(1, "body"), SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None)
             .await.map_err(storage_error)?;
         let target = serde_json::json!({"kind":"peer","value":{"peer":"019eef00-0000-4000-8000-000000000001"}}).to_string();
-        sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_status_owed SET machine_id=COALESCE(json_extract(?1,'$.value.sender'),json_extract(?1,'$.value.peer')),target_kind=json_extract(?1,'$.kind'),status_route=COALESCE(?1 -> '$.value.route',status_route)")
+        sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_status_owed SET submitter_kind='machine',submitter_id=COALESCE(json_extract(?1,'$.value.sender'),json_extract(?1,'$.value.peer')),target_kind=json_extract(?1,'$.kind'),status_route=COALESCE(?1 -> '$.value.route',status_route)")
             .bind(target).execute(scope.executor()).await?;
         let result = admit_publications::<_, TestTypes, PublishTask>(scope).await;
         assert!(matches!(result, Err(DeliveryError::Corrupt { .. })));
@@ -52,7 +52,7 @@ async fn an_old_publication_completion_cannot_retire_a_newer_owed_revision() {
         item: item_id(1),
         version: StatusVersion::new(1),
         target: PublicationTarget::StatusStream {
-            sender: peer(1),
+            sender: fleet_sync_delivery::Submitter::Machine(peer(1)),
             route: "fixture-route".into(),
         },
     };

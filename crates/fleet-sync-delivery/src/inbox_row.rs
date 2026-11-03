@@ -7,6 +7,23 @@ use fleet_sync_protocol::*;
 pub(crate) fn decode_header<D: DeliveryTypes>(
     row: &StoredInboxRow,
 ) -> Result<InboxHeader<D>, DeliveryError> {
+    let legacy = stored_bool(
+        row.legacy_read_only.clone(),
+        row.legacy_read_only_class.clone(),
+        "legacy inbox",
+    )?;
+    let source = crate::submitter::checked_sender::<D>(
+        row.submitter_kind.clone(),
+        row.submitter_id.clone(),
+        row.consumer_sender.as_deref(),
+        if legacy {
+            crate::submitter::SourceRetention::Legacy
+        } else {
+            crate::submitter::SourceRetention::Item
+        },
+        "_fleet_sync_inbox_items",
+        row.item_id.as_deref().unwrap_or("<missing>"),
+    )?;
     let refusal = || RefusalFields {
         kind: row.refusal_kind.clone(),
         code: row.refusal_code.clone(),
@@ -84,7 +101,9 @@ pub(crate) fn decode_header<D: DeliveryTypes>(
     Ok(InboxHeader {
         id: stored_enum(row.item_id.clone(), "inbox item id")?,
         digest: required(row.digest.clone(), "inbox digest")?,
-        sender: decode(row.sender.clone(), "inbox sender")?,
+        sender: source.consumer,
+        submitter: source.submitter,
+        legacy_read_only: legacy,
         recipient: Recipient {
             peer: stored_enum(row.recipient_machine_id.clone(), "inbox recipient")?,
             address: decode(row.recipient_address.clone(), "inbox address")?,

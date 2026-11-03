@@ -25,7 +25,11 @@ async fn status_fetch_keeps_numeric_cursor_order_across_both_decimal_boundaries(
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut stream = StatusStream::<_, TestTypes>::new(scope, peer(1), "route".into());
+                let mut stream = StatusStream::<_, TestTypes>::new(
+                    scope,
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    "route".into(),
+                );
                 for identity in 1..=COUNT {
                     stream
                         .append(
@@ -41,7 +45,11 @@ async fn status_fetch_keeps_numeric_cursor_order_across_both_decimal_boundaries(
                         .map_err(storage_error)?;
                 }
                 let result = stream
-                    .fetch(peer(1), StatusCursor::new(0), 101)
+                    .fetch(
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
+                        StatusCursor::new(0),
+                        101,
+                    )
                     .await
                     .map_err(storage_error)?;
                 assert_eq!(

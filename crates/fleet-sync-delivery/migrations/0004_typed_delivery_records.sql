@@ -8,9 +8,12 @@ CREATE TABLE _fleet_sync_outbox_items (
     payload TEXT,
     capacity_slot INTEGER NOT NULL CHECK (capacity_slot IN (0,1)),
     record_kind TEXT NOT NULL,
+    consumer_sender TEXT,
+    legacy_read_only INTEGER NOT NULL DEFAULT 0 CHECK (legacy_read_only IN (0,1)),
     digest TEXT,
     relay_machine_id TEXT,
-    submitter_machine_id TEXT,
+    submitter_kind TEXT,
+    submitter_id TEXT,
     recipient_machine_id TEXT,
     valid_until INTEGER,
     status_kind TEXT,
@@ -52,7 +55,7 @@ UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+in
 UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,10,1))-1;
 UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,11,1))-1;
 UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,12,1))-1;
-INSERT INTO _fleet_sync_outbox_items (item_id, live, payload_bytes, settlement_charge_bytes, payload, capacity_slot, record_kind, digest, relay_machine_id, submitter_machine_id, recipient_machine_id, valid_until, status_kind, status_sequence, status_acceptance, refusal_kind, refusal_code, refusal_failure, refusal_size_field, refusal_digest, refusal_item_id, status_version, last_report_seq, submit_attempted, cancel_outcome, cancel_too_late_at, cancel_target_item_id, acceptance_bound, settlement_bytes, failure_kind, created_at, admitted_at, handed_off_at)
+INSERT INTO _fleet_sync_outbox_items (item_id, live, payload_bytes, settlement_charge_bytes, payload, capacity_slot, record_kind, consumer_sender, digest, relay_machine_id, submitter_kind,submitter_id, recipient_machine_id, valid_until, status_kind, status_sequence, status_acceptance, refusal_kind, refusal_code, refusal_failure, refusal_size_field, refusal_digest, refusal_item_id, status_version, last_report_seq, submit_attempted, cancel_outcome, cancel_too_late_at, cancel_target_item_id, acceptance_bound, settlement_bytes, failure_kind, created_at, admitted_at, handed_off_at)
 SELECT item_id,
        live,
        payload_bytes,
@@ -60,9 +63,11 @@ SELECT item_id,
        payload,
        capacity_slot,
        json_extract(record, '$.kind'),
+       CASE WHEN json_valid(payload) THEN payload -> '$.value.sender' END,
        json_extract(record, '$.value.digest'),
        json_extract(record, '$.value.relay'),
-       json_extract(record, '$.value.submitter'),
+       json_extract(record, '$.value.submitter.kind'),
+       json_extract(record, '$.value.submitter.value'),
        json_extract(record, '$.value.recipient'),
        json_extract(record, '$.value.validUntil'),
        json_extract(record, '$.value.status.kind'),
@@ -95,7 +100,10 @@ CREATE TABLE _fleet_sync_inbox_items (
     settlement_charge_bytes INTEGER NOT NULL,
     payload TEXT,
     digest TEXT NOT NULL,
-    sender TEXT NOT NULL,
+    consumer_sender TEXT,
+    submitter_kind TEXT,
+    submitter_id TEXT,
+    legacy_read_only INTEGER NOT NULL DEFAULT 0 CHECK (legacy_read_only IN (0,1)),
     recipient_machine_id TEXT NOT NULL,
     recipient_address TEXT NOT NULL,
     relay_machine_id TEXT,
@@ -141,7 +149,7 @@ UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+ins
 UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,10,1))-1;
 UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,11,1))-1;
 UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,12,1))-1;
-INSERT INTO _fleet_sync_inbox_items (item_id, live, payload_bytes, settlement_charge_bytes, payload, digest, sender, recipient_machine_id, recipient_address, relay_machine_id, cancel_target_item_id, valid_until, stream, route, progress, attempt, not_before, outcome_kind, outcome_acceptance, outcome_cancel_item_id, outcome_too_late_at, refusal_kind, refusal_code, refusal_failure, refusal_size_field, refusal_digest, refusal_item_id, report_seq, acceptance_bound, settlement_bytes, release_requested, created_at, accepted_at, delivered_at)
+INSERT INTO _fleet_sync_inbox_items (item_id, live, payload_bytes, settlement_charge_bytes, payload, digest, consumer_sender, submitter_kind, submitter_id, recipient_machine_id, recipient_address, relay_machine_id, cancel_target_item_id, valid_until, stream, route, progress, attempt, not_before, outcome_kind, outcome_acceptance, outcome_cancel_item_id, outcome_too_late_at, refusal_kind, refusal_code, refusal_failure, refusal_size_field, refusal_digest, refusal_item_id, report_seq, acceptance_bound, settlement_bytes, release_requested, created_at, accepted_at, delivered_at)
 SELECT item_id,
        live,
        payload_bytes,
@@ -149,6 +157,8 @@ SELECT item_id,
        payload,
        json_extract(record, '$.digest'),
        record -> '$.sender',
+       NULL,
+       NULL,
        json_extract(record, '$.recipient.peer'),
        record -> '$.recipient.address',
        json_extract(record, '$.relay'),

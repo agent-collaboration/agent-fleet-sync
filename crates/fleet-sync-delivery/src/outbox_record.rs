@@ -8,7 +8,9 @@ pub(crate) struct OutboxHeader<A> {
     pub id: ItemId,
     pub digest: String,
     pub relay: PeerId,
-    pub submitter: Option<PeerId>,
+    pub submitter: Option<crate::Submitter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consumer_sender: Option<String>,
     pub created_at: SyncTime,
     pub admitted_at: Option<SyncTime>,
     pub handed_off_at: Option<SyncTime>,
@@ -73,6 +75,13 @@ pub(crate) enum OutboxHeaderState<A> {
         item: ItemId,
         kind: DeliveryFailureKind,
     },
+    Legacy {
+        item: ItemId,
+        digest: Option<ItemDigest>,
+        status: DeliveryStatus<A>,
+        version: StatusVersion,
+        cancel: Option<CancelResult>,
+    },
 }
 
 pub(crate) struct OutboxRecord<D: DeliveryTypes> {
@@ -82,11 +91,22 @@ pub(crate) struct OutboxRecord<D: DeliveryTypes> {
 impl<D: DeliveryTypes> OutboxRecord<D> {
     pub fn validate(&self) -> Result<(), DeliveryError> {
         self.header.validate()?;
+        let owner = self.header.submitter;
+        let source = crate::submitter::checked_sender::<D>(
+            owner.map(|owner| crate::submitter::kind(owner).to_owned()),
+            owner.map(crate::submitter::id),
+            self.header.consumer_sender.as_deref(),
+            crate::submitter::SourceRetention::Item,
+            "_fleet_sync_outbox_items",
+            &self.header.id.as_uuid().to_string(),
+        )?;
         if let Some(payload) = &self.payload
             && (payload.id() != self.header.id
                 || payload.digest().as_str() != self.header.digest
                 || payload.recipient().peer != self.header.recipient
                 || payload.valid_until() != self.header.valid_until
+                || crate::status_stream::canonical_encode(&source.consumer)?
+                    != crate::status_stream::canonical_encode(&Some(payload.sender()))?
                 || self.header.cancel_target
                     != match payload {
                         DeliveryEnvelope::Item(_) => None,
@@ -110,6 +130,13 @@ impl<D: DeliveryTypes> OutboxRecord<D> {
 #[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
 pub struct ResolvedSubmit<D: DeliveryTypes> {
     pub relay: PeerId,
+    pub item: DeliveryEnvelope<D>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
+pub struct ResolvedPush<D: DeliveryTypes> {
+    pub submitter: Submitter,
     pub item: DeliveryEnvelope<D>,
 }
 
@@ -192,7 +219,7 @@ impl SubmitInput {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct RecoveredOutbox<A> {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub submitter: Option<PeerId>,
+    pub submitter: Option<crate::Submitter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acceptance_bound: Option<u32>,
     pub item: ItemId,

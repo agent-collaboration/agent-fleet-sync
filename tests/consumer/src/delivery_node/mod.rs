@@ -304,7 +304,7 @@ impl NodeState {
                                 .enqueue_and_admit::<SubmitTask, RecordRemoval>(
                                     item,
                                     relay,
-                                    config.owner,
+                                    Submitter::Machine(config.owner),
                                     now,
                                 )
                                 .await
@@ -338,7 +338,7 @@ impl NodeState {
                                 .enqueue_cancel_and_admit::<SubmitTask, RecordRemoval, _>(
                                     cancel,
                                     relay,
-                                    config.owner,
+                                    Submitter::Machine(config.owner),
                                     now,
                                     &consumer::NodeConsumer(Weak::new()),
                                 )
@@ -491,8 +491,9 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
             host.clone(),
         )
         .await?;
+    let now = object.host().now();
     object
-        .transaction(|scope| {
+        .transaction(move |scope| {
             Box::pin(async move {
                 let mut migrations =
                     Migrator::with_migrations(MIGRATIONS.iter().cloned().collect::<Vec<_>>());
@@ -500,7 +501,14 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
                 migrations
                     .run_direct(None, scope.executor(), false)
                     .await
-                    .map_err(StoreError::backend)
+                    .map_err(StoreError::backend)?;
+                backfill_submitters::<SampleDelivery, _>(scope, now)
+                    .await
+                    .map_err(StoreError::backend)?;
+                admit_existing_record_removals::<_, RecordRemoval>(scope, now)
+                    .await
+                    .map_err(StoreError::backend)?;
+                Ok(())
             })
         })
         .await?;

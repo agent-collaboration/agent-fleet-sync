@@ -30,9 +30,9 @@ fn call() -> Value {
 fn all_eight_delivery_request_bodies_cross_the_operation_envelope() {
     let requests = [
         json!({"kind":"submit","value":{"call":call(),"item":{"kind":"item","value":{
-            "id":ITEM,"sender":null,"recipient":{"peer":PEER,"address":null},
+            "id":ITEM,"sender":{"kind":"machine","value":"019eef00-0000-7000-8000-000000000001"},"recipient":{"peer":PEER,"address":null},
             "validUntil":null,"body":null,
-            "digest":"bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b"
+            "digest":"0b7f9c7c2a2a8e71b3220266466dd262a878ca97fae28786dbbe6686b8964da0"
         }}}}),
         json!({"kind":"fetch","value":{"call":call(),"stream":"items","after":0,"maxItems":4,"maxBytes":4096}}),
         json!({"kind":"received","value":{"call":call(),"stream":"controls","through":9}}),
@@ -40,7 +40,7 @@ fn all_eight_delivery_request_bodies_cross_the_operation_envelope() {
         json!({"kind":"statusFetch","value":{"call":call(),"after":7,"limit":4}}),
         json!({"kind":"query","value":{"call":call(),"mailbox":PEER,"items":[ITEM]}}),
         json!({"kind":"retire","value":{"call":call(),"mailbox":PEER,"items":[ITEM]}}),
-        json!({"kind":"settle","value":{"call":call(),"mailbox":PEER,"item":ITEM,"digest":"bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b"}}),
+        json!({"kind":"settle","value":{"call":call(),"mailbox":PEER,"item":ITEM,"digest":"0b7f9c7c2a2a8e71b3220266466dd262a878ca97fae28786dbbe6686b8964da0"}}),
     ];
     let mut failures = Vec::new();
     for request in requests {
@@ -61,12 +61,12 @@ fn all_eight_delivery_answers_preserve_their_typed_bodies() {
         json!({"kind":"received","value":{"stream":"controls","releasedThrough":2}}),
         json!({"kind":"report","value":{"kind":"ack","value":{"reportSeq":2}}}),
         json!({"kind":"statusFetch","value":{"events":[{"cursor":5,"item":ITEM,"status":{"kind":"held"},"version":3,"cancel":null}],"through":5}}),
-        json!({"kind":"query","value":{"statuses":[{"item":ITEM,"state":{"kind":"known","value":{"digest":"bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b","status":{"kind":"held"},"version":3,"cancel":null}}}]}}),
+        json!({"kind":"query","value":{"statuses":[{"item":ITEM,"state":{"kind":"known","value":{"digest":"0b7f9c7c2a2a8e71b3220266466dd262a878ca97fae28786dbbe6686b8964da0","status":{"kind":"held"},"version":3,"cancel":null}}}]}}),
         json!({"kind":"retire","value":{"retired":[ITEM],"unknown":[],"notCurrentTarget":[]}}),
         json!({"kind":"retire","value":{"retired":[],"unknown":[],"notCurrentTarget":[ITEM]}}),
         json!({"kind":"settle","value":{"kind":"settled","value":{"reason":"custodyUnresolvable","version":1}}}),
         json!({"kind":"settle","value":{"kind":"replayed","value":{"status":{"kind":"held"},"version":3,"cancel":null}}}),
-        json!({"kind":"settle","value":{"kind":"itemConflict","value":{"existing":"bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b"}}}),
+        json!({"kind":"settle","value":{"kind":"itemConflict","value":{"existing":"0b7f9c7c2a2a8e71b3220266466dd262a878ca97fae28786dbbe6686b8964da0"}}}),
     ];
     let mut failures = Vec::new();
     for answer in answers {
@@ -94,8 +94,8 @@ fn status_publication_crosses_the_server_call_with_its_version() {
 #[test]
 fn submit_cannot_choose_another_peers_status_stream() {
     let wire = json!({"kind":"delivery","value":{"kind":"submit","value":{"call":call(),"item":{"kind":"item","value":{
-        "id":ITEM,"sender":null,"recipient":{"peer":PEER,"address":null},"validUntil":null,"body":null,
-        "digest":"bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b"
+        "id":ITEM,"sender":{"kind":"machine","value":"019eef00-0000-7000-8000-000000000001"},"recipient":{"peer":PEER,"address":null},"validUntil":null,"body":null,
+        "digest":"0b7f9c7c2a2a8e71b3220266466dd262a878ca97fae28786dbbe6686b8964da0"
     }},"statusTarget":PEER}}});
     assert!(serde_json::from_value::<OperationRequest>(wire).is_err());
 }
@@ -143,7 +143,7 @@ fn processing_failure_kinds_are_closed_on_the_wire() {
 
 #[test]
 fn delivery_header_preserves_identity_and_rejects_a_body() {
-    let header = json!({"id":ITEM,"sender":null,"recipient":{"peer":PEER,"address":null},"validUntil":null,"digest":"bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b"});
+    let header = json!({"id":ITEM,"sender":{"kind":"machine","value":"019eef00-0000-7000-8000-000000000001"},"recipient":{"peer":PEER,"address":null},"validUntil":null,"digest":"0b7f9c7c2a2a8e71b3220266466dd262a878ca97fae28786dbbe6686b8964da0"});
     let decoded: fleet_sync_protocol::DeliveryHeader<fleet_sync_protocol::NoDelivery> =
         serde_json::from_value(header.clone()).unwrap();
     assert_eq!(serde_json::to_value(decoded).unwrap(), header);

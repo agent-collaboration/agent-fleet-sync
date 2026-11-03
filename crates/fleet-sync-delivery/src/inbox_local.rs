@@ -259,7 +259,7 @@ where
             }
             // Compact local originals have no live charge, even when their header
             // retains the old settlement allowance. Only a live reserve can pay.
-            if original.header.compact_local() {
+            if original.header.compacts_payload() {
                 0
             } else {
                 let charge = u32::try_from(size).map_err(|_| DeliveryError::Corrupt {

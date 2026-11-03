@@ -28,7 +28,11 @@ async fn admit(
                 let envelope = DeliveryEnvelope::Item(
                     DeliveryItem::<TestTypes>::new(
                         item_id(identity),
-                        "sender".into(),
+                        if submitter == 1 {
+                            "sender".to_owned()
+                        } else {
+                            owned_sender(Submitter::Machine(peer(submitter)), "session")
+                        },
                         Recipient {
                             peer: peer(recipient),
                             address: "inbox".into(),
@@ -40,7 +44,7 @@ async fn admit(
                 );
                 Outbox::<_, TestTypes>::new(scope, limits())
                     .submit_relay::<PushTask, RecordRemoval>(
-                        peer(submitter),
+                        fleet_sync_delivery::Submitter::Machine(peer(submitter)),
                         envelope,
                         peer(9),
                         format!("route-{submitter}"),
@@ -56,7 +60,7 @@ async fn admit(
 
 async fn snapshot(store: &TestStore) -> Vec<String> {
     store.transaction(|scope|Box::pin(async move {
-        query::<Turso>("SELECT json_array(item_id,digest,status_kind,status_version,last_report_seq,payload,handed_off_at,updated_at) AS state FROM _fleet_sync_outbox_items UNION ALL SELECT json_array(item_id,target_kind,status_route,version,status_kind,status_acceptance,cancel_outcome,machine_id) AS state FROM _fleet_sync_status_owed UNION ALL SELECT json_array(machine_id,cursor,item_id,version,status_kind,status_acceptance,cancel_outcome) AS state FROM _fleet_sync_status_events ORDER BY state")
+        query::<Turso>("SELECT json_array(item_id,digest,status_kind,status_version,last_report_seq,payload,handed_off_at,updated_at) AS state FROM _fleet_sync_outbox_items UNION ALL SELECT json_array(item_id,target_kind,status_route,version,status_kind,status_acceptance,cancel_outcome,submitter_kind,submitter_id) AS state FROM _fleet_sync_status_owed UNION ALL SELECT json_array(submitter_kind,submitter_id,cursor,item_id,version,status_kind,status_acceptance,cancel_outcome) AS state FROM _fleet_sync_status_events ORDER BY state")
             .fetch_all(scope.executor()).await?.iter().map(|row|row.try_get("state")).collect::<Result<Vec<_>,_>>().map_err(StoreError::backend)
     })).await.unwrap()
 }
@@ -72,7 +76,7 @@ async fn receipt(
             item: item_id(identity),
             digest: DeliveryItem::<TestTypes>::new(
                 item_id(identity),
-                "sender".into(),
+                owned_sender(Submitter::Machine(peer(3)), "session"),
                 Recipient {
                     peer: peer(3),
                     address: "inbox".into(),
@@ -244,7 +248,12 @@ async fn rolled_back_next_holder_acceptance_keeps_content_and_receipt_release_is
                     return Err(StoreError::backend("original"));
                 };
                 Outbox::<_, TestTypes>::new(scope, limits())
-                    .enqueue(original, peer(9), peer(1), SyncTime::from_unix_millis(10))
+                    .enqueue(
+                        original,
+                        peer(9),
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
+                        SyncTime::from_unix_millis(10),
+                    )
                     .await
                     .map_err(storage_error)?;
                 Ok(())
@@ -258,7 +267,7 @@ async fn rolled_back_next_holder_acceptance_keeps_content_and_receipt_release_is
             Box::pin(async move {
                 Outbox::<_, TestTypes>::new(scope, limits())
                     .submit_relay::<PushTask, RecordRemoval>(
-                        peer(1),
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
                         item(1, "body-a"),
                         peer(9),
                         "route-1".into(),
@@ -317,7 +326,7 @@ async fn rolled_back_next_holder_acceptance_keeps_content_and_receipt_release_is
         .transaction(|scope| {
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .accept_push::<DeliverTask,super::support::network::ReportTask,RecordRemoval,_>(
+                    .accept_push::<DeliverTask,super::support::network::ReportTask,RecordRemoval,_>(fleet_sync_delivery::Submitter::Machine(peer(1)),
                         item(1, "body-a"),
                         peer(9),
                         &TestConsumer,
@@ -336,7 +345,7 @@ async fn rolled_back_next_holder_acceptance_keeps_content_and_receipt_release_is
         .transaction(|scope| {
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .accept_push::<DeliverTask,super::support::network::ReportTask,RecordRemoval,_>(
+                    .accept_push::<DeliverTask,super::support::network::ReportTask,RecordRemoval,_>(fleet_sync_delivery::Submitter::Machine(peer(1)),
                         item(1, "body-a"),
                         peer(9),
                         &TestConsumer,

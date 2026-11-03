@@ -21,7 +21,12 @@ async fn report_sequence_and_cancel_identity_survive_real_release_and_reopen() {
                 };
                 let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
                 outbox
-                    .enqueue(original, peer(9), peer(1), SyncTime::from_unix_millis(10))
+                    .enqueue(
+                        original,
+                        peer(9),
+                        crate::Submitter::Machine(peer(1)),
+                        SyncTime::from_unix_millis(10),
+                    )
                     .await
                     .map_err(storage_error)?;
                 let Some(OutboxHeaderState::Item(mut header)) = outbox
@@ -48,7 +53,7 @@ async fn report_sequence_and_cancel_identity_survive_real_release_and_reopen() {
                     .enqueue_cancel(
                         control,
                         peer(9),
-                        peer(1),
+                        crate::Submitter::Machine(peer(1)),
                         SyncTime::from_unix_millis(12),
                         &TestConsumer,
                     )

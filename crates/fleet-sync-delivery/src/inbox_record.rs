@@ -46,7 +46,10 @@ impl<A> InboxProgress<A> {
 pub(crate) struct InboxHeader<D: DeliveryTypes> {
     pub id: ItemId,
     pub digest: String,
-    pub sender: D::Sender,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender: Option<D::Sender>,
+    pub submitter: Option<Submitter>,
+    pub legacy_read_only: bool,
     pub recipient: Recipient<D::Address>,
     pub relay: Option<PeerId>,
     pub created_at: SyncTime,
@@ -76,9 +79,8 @@ pub(crate) enum InboxRoute {
     Relayed,
 }
 impl<D: DeliveryTypes> InboxHeader<D> {
-    pub fn compact_local(&self) -> bool {
-        matches!(self.route, InboxRoute::Local)
-            && matches!(self.progress, InboxProgress::Final { .. })
+    pub fn compacts_payload(&self) -> bool {
+        matches!(self.progress, InboxProgress::Final { .. })
     }
     pub fn delivery_header(&self) -> Result<DeliveryHeader<D>, DeliveryError> {
         let digest =
@@ -87,13 +89,37 @@ impl<D: DeliveryTypes> InboxHeader<D> {
             })?;
         crate::custody_record::delivery_header::<D>(
             self.id,
-            &self.sender,
+            self.sender.as_ref().ok_or(DeliveryError::CorruptRow {
+                table: "_fleet_sync_inbox_items",
+                key: self.id.as_uuid().to_string(),
+                field: "consumer_sender",
+            })?,
             &self.recipient,
             self.valid_until,
             &digest,
         )
     }
     pub fn validate(&self, owner: PeerId) -> Result<(), DeliveryError> {
+        let invalid = |field| DeliveryError::CorruptRow {
+            table: "_fleet_sync_inbox_items",
+            key: self.id.as_uuid().to_string(),
+            field,
+        };
+        if self.legacy_read_only {
+            if self.sender.is_some()
+                || self.submitter.is_some()
+                || !matches!(
+                    self.progress,
+                    InboxProgress::Final { .. } | InboxProgress::Control { .. }
+                )
+            {
+                return Err(invalid("legacy custody"));
+            }
+        } else if self.sender.as_ref().map(D::submitter) != self.submitter
+            || self.submitter.is_none()
+        {
+            return Err(invalid("submitter"));
+        }
         if self.created_at != crate::custody_record::created_at(self.id) {
             return Err(DeliveryError::Corrupt {
                 field: "inbox creation time",
@@ -166,7 +192,9 @@ impl<D: DeliveryTypes> InboxRecord<D> {
             header: InboxHeader {
                 id: payload.id(),
                 digest: payload.digest().as_str().into(),
-                sender: crate::custody_record::copy_wire(payload.sender())?,
+                sender: Some(crate::custody_record::copy_wire(payload.sender())?),
+                submitter: Some(D::submitter(payload.sender())),
+                legacy_read_only: false,
                 recipient: crate::custody_record::copy_wire(payload.recipient())?,
                 relay: None,
                 created_at: crate::custody_record::created_at(payload.id()),
@@ -192,7 +220,8 @@ impl<D: DeliveryTypes> InboxRecord<D> {
         self.header.validate(owner)?;
         match &self.payload {
             Some(payload) => {
-                if self.header.id != payload.id()
+                if self.header.legacy_read_only
+                    || self.header.id != payload.id()
                     || self.header.digest != payload.digest().as_str()
                     || self.header.recipient.peer != payload.recipient().peer
                     || self.header.valid_until != payload.valid_until()
@@ -203,7 +232,7 @@ impl<D: DeliveryTypes> InboxRecord<D> {
                             DeliveryEnvelope::Cancel(cancel) => Some(cancel.target()),
                         }
                     || crate::status_stream::canonical_encode(&self.header.sender)?
-                        != crate::status_stream::canonical_encode(payload.sender())?
+                        != crate::status_stream::canonical_encode(&Some(payload.sender()))?
                     || crate::status_stream::canonical_encode(&self.header.recipient)?
                         != crate::status_stream::canonical_encode(payload.recipient())?
                 {
@@ -213,7 +242,8 @@ impl<D: DeliveryTypes> InboxRecord<D> {
                 }
             }
             None => {
-                if !self.header.compact_local()
+                if !self.header.legacy_read_only
+                    && !self.header.compacts_payload()
                     && !matches!(
                         self.header.progress,
                         InboxProgress::Final {

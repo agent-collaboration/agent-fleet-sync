@@ -53,9 +53,12 @@ pub async fn startup(store: &TestStore) -> usize {
     store
         .transaction(|scope| {
             Box::pin(async move {
-                admit_existing_record_removals::<_, RecordRemoval>(scope)
-                    .await
-                    .map_err(storage_error)
+                admit_existing_record_removals::<_, RecordRemoval>(
+                    scope,
+                    SyncTime::from_unix_millis(START),
+                )
+                .await
+                .map_err(storage_error)
             })
         })
         .await

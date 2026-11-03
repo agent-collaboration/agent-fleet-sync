@@ -104,7 +104,7 @@ impl TestNetwork {
                                     if fleet_push {
                                         return Outbox::<_, TestTypes>::new(scope, limits())
                                             .submit_relay::<PushTask, RecordRemoval>(
-                                                peer(1),
+                                                fleet_sync_delivery::Submitter::Machine(peer(1)),
                                                 resolved.item,
                                                 peer(3),
                                                 "fixture-route".into(),
@@ -151,7 +151,9 @@ impl TestNetwork {
                                         if fleet_push {
                                             return Outbox::<_, TestTypes>::new(scope, limits())
                                                 .relay_settle::<RecordRemoval>(
-                                                    peer(1),
+                                                    fleet_sync_delivery::Submitter::Machine(peer(
+                                                        1,
+                                                    )),
                                                     reference.item,
                                                     reference.digest,
                                                     now,
@@ -199,7 +201,8 @@ impl TestNetwork {
                         Box::pin(async move {
                             Inbox::<_, TestTypes>::new(scope, target.recipient, limits())
                                 .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
-                                    envelope,
+                                    envelope.submitter,
+                                    envelope.item,
                                     peer(3),
                                     &TestConsumer,
                                     now,
@@ -359,8 +362,8 @@ impl TestNetwork {
                 let publication: StatusPublication<Acceptance> =
                     serde_json::from_value(request).unwrap();
                 self.publications
-                    .dispatch(target.target, publication, call)
-                    .await;
+                    .dispatch(target.target, publication, call, now)
+                    .await?;
                 if self.lose_publication.swap(false, Ordering::SeqCst) {
                     return Err(CallFailure::AnswerLost);
                 }
@@ -483,7 +486,7 @@ impl NetworkFixture {
                         .enqueue_and_admit::<SubmitTask, RecordRemoval>(
                             item,
                             peer(3),
-                            peer(1),
+                            fleet_sync_delivery::Submitter::Machine(peer(1)),
                             SyncTime::from_unix_millis(0),
                         )
                         .await

@@ -27,6 +27,11 @@ fn sender_record<A>(
             cancel: header.cancel,
         },
         OutboxHeaderState::Recovered(record) => record,
+        OutboxHeaderState::Legacy { .. } => {
+            return Err(DeliveryError::Refused {
+                reason: DeliveryRefusal::NotSubmitter,
+            });
+        }
         OutboxHeaderState::Unresolvable { item, kind } => RecoveredOutbox {
             submitter: None,
             acceptance_bound: None,
@@ -50,10 +55,45 @@ where
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
+    /// Read the recorded owner for host authorization, without authorizing a caller.
+    pub async fn relay_submitter(
+        &mut self,
+        item: ItemId,
+    ) -> Result<Option<crate::Submitter>, DeliveryError> {
+        let Some(row) =
+            crate::checked_queries::read_relay_submitter(self.scope, item.as_uuid().to_string())
+                .await
+                .map_err(crate::custody_record::sql_error)?
+        else {
+            return Ok(None);
+        };
+        let legacy = crate::stored_outcome::stored_bool(
+            row.legacy_read_only,
+            row.legacy_read_only_class,
+            "legacy relay",
+        )?;
+        let retention = if legacy {
+            crate::submitter::SourceRetention::Legacy
+        } else if row.record_kind.as_deref() == Some("item") {
+            crate::submitter::SourceRetention::Item
+        } else {
+            crate::submitter::SourceRetention::Negative
+        };
+        Ok(crate::submitter::checked_sender::<D>(
+            row.submitter_kind,
+            row.submitter_id,
+            row.consumer_sender.as_deref(),
+            retention,
+            "_fleet_sync_outbox_items",
+            &item.as_uuid().to_string(),
+        )?
+        .submitter)
+    }
+
     /// Read one item and its stored digest for its authenticated submitter, including released content.
     pub async fn relay_query(
         &mut self,
-        submitter: PeerId,
+        submitter: crate::Submitter,
         item: ItemId,
     ) -> Result<ItemStatus<D::Acceptance>, DeliveryError> {
         let Some(state) = self.header_state(item).await? else {
@@ -79,7 +119,7 @@ where
                 record.version,
                 record.cancel,
             ),
-            OutboxHeaderState::Unresolvable { .. } => {
+            OutboxHeaderState::Unresolvable { .. } | OutboxHeaderState::Legacy { .. } => {
                 return Err(DeliveryError::Refused {
                     reason: DeliveryRefusal::NotSubmitter,
                 });
@@ -108,7 +148,7 @@ where
     )]
     pub fn relay_settle<'call, TRetention>(
         &'call mut self,
-        submitter: PeerId,
+        submitter: crate::Submitter,
         item: ItemId,
         digest: ItemDigest,
         now: SyncTime,

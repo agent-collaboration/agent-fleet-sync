@@ -9,10 +9,14 @@ mod pushed_inbox;
 mod record_retention;
 mod relay_outbox;
 mod relay_sender_authority;
+mod relayed_capacity;
 mod row_metadata;
 mod schema_index_lineage;
 mod scoped_status;
+mod submitter_backfill;
 mod typed_custody;
+mod typed_submitter;
+mod typed_submitter_upgrade;
 
 mod accounting_integrity;
 

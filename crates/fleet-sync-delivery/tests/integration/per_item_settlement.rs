@@ -21,7 +21,7 @@ async fn ordinary_admission_uses_small_bound_while_large_kind_reserves_global() 
                             .enqueue(
                                 variable_item(identity, "small"),
                                 peer(3),
-                                peer(1),
+                                fleet_sync_delivery::Submitter::Machine(peer(1)),
                                 SyncTime::from_unix_millis(0)
                             )
                             .await
@@ -47,7 +47,7 @@ async fn ordinary_admission_uses_small_bound_while_large_kind_reserves_global() 
                         .enqueue(
                             variable_item(4, "large"),
                             peer(3),
-                            peer(1),
+                            fleet_sync_delivery::Submitter::Machine(peer(1)),
                             SyncTime::from_unix_millis(0)
                         )
                         .await
@@ -90,7 +90,7 @@ async fn invalid_body_bound_is_refused_before_any_custody_write() {
                         .enqueue(
                             variable_item(1, "invalid"),
                             peer(3),
-                            peer(1),
+                            fleet_sync_delivery::Submitter::Machine(peer(1)),
                             SyncTime::from_unix_millis(0)
                         )
                         .await,
@@ -133,7 +133,7 @@ async fn stored_bound_rejects_oversized_acceptance_after_sender_and_relay_releas
                     .enqueue(
                         variable_item(1, "small"),
                         peer(3),
-                        peer(1),
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
                         SyncTime::from_unix_millis(0),
                     )
                     .await
@@ -311,7 +311,7 @@ async fn per_item_bound_survives_reopen_and_legacy_absence_uses_global() {
                         .enqueue(
                             variable_item(identity, "small"),
                             peer(3),
-                            peer(1),
+                            fleet_sync_delivery::Submitter::Machine(peer(1)),
                             SyncTime::from_unix_millis(0),
                         )
                         .await
@@ -471,14 +471,14 @@ async fn cancel_consumes_original_small_reserve_without_global_charge() {
     let fixture = Fixture::new().await;
     fixture.store.transaction(|scope| Box::pin(async move {
         let limits=variable_limits(50_000);
-        Outbox::<_,VariableTypes>::new(scope,limits).enqueue(variable_item(1,"small"), peer(3), peer(1), SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
+        Outbox::<_,VariableTypes>::new(scope,limits).enqueue(variable_item(1,"small"), peer(3), fleet_sync_delivery::Submitter::Machine(peer(1)), SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).submit(peer(1),DeliveryEnvelope::Item(variable_item(1,"small")),now(),"route".into(),None).await.map_err(storage_error)?;
         for owner in ["outbox","mail"] {
             let query=if owner=="outbox" { "SELECT settlement_bytes FROM _fleet_sync_outbox_items" } else { "SELECT settlement_bytes FROM _fleet_sync_mail_items" };
             let before=sqlx_core::query::query::<sqlx_turso::Turso>(query).fetch_one(scope.executor()).await?.try_get::<i64,_>("settlement_bytes")?;
             let control=DeliveryCancel::<VariableTypes>::new(item_id(2),"sender".into(),Recipient {peer:peer(2),address:"inbox".into()},None,CancelBody { target:item_id(1) }).unwrap();
             let charge=serde_json::to_vec(&DeliveryEnvelope::Cancel(DeliveryCancel::<VariableTypes>::new(item_id(2),"sender".into(),Recipient {peer:peer(2),address:"inbox".into()},None,CancelBody { target:item_id(1) }).unwrap())).unwrap().len() as i64;
-            if owner=="outbox" { assert!(matches!(Outbox::<_,VariableTypes>::new(scope,limits).enqueue_cancel(control, peer(3), peer(1), SyncTime::from_unix_millis(0), &VariableConsumer).await.map_err(storage_error)?,OutboxAdmission::Queued { .. })); }
+            if owner=="outbox" { assert!(matches!(Outbox::<_,VariableTypes>::new(scope,limits).enqueue_cancel(control, peer(3), fleet_sync_delivery::Submitter::Machine(peer(1)), SyncTime::from_unix_millis(0), &VariableConsumer).await.map_err(storage_error)?,OutboxAdmission::Queued { .. })); }
             else { assert!(matches!(Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).submit(peer(1),DeliveryEnvelope::Cancel(control),now(),"route".into(),None).await.map_err(storage_error)?,SubmitResult::Accepted { .. })); }
             let query=if owner=="outbox" { include_str!("../support/sql/read_outbox_headers.sql") } else { "SELECT settlement_bytes,record FROM _fleet_sync_mail_items ORDER BY item_id" };
             let rows=sqlx_core::query::query::<sqlx_turso::Turso>(query).fetch_all(scope.executor()).await?;

@@ -47,6 +47,7 @@ fn declared_indexes() -> Vec<IndexDefinition> {
             "_fleet_sync_mail_cancel_links",
             &[&["target"], &["cancel_item"]],
         ),
+        ("_fleet_sync_delivery_backfills", &[&["id"], &["name"]]),
         ("_fleet_sync_delivery_receipts", &[&["call_id"]]),
         ("_fleet_sync_outbox_items", &[&["item_id"]]),
         ("_fleet_sync_inbox_items", &[&["item_id"]]),
@@ -61,20 +62,29 @@ fn declared_indexes() -> Vec<IndexDefinition> {
         ),
         ("_fleet_sync_inbox_state", &[&["singleton"], &["id"]]),
         ("_fleet_sync_outbox_status", &[&["id"], &["singleton"]]),
-        ("_fleet_sync_status_state", &[&["id"], &["machine_id"]]),
+        (
+            "_fleet_sync_status_state",
+            &[&["id"], &["submitter_kind", "submitter_id"]],
+        ),
         (
             "_fleet_sync_status_events",
             &[
                 &["id"],
-                &["machine_id", "cursor"],
-                &["machine_id", "item_id", "version"],
+                &["submitter_kind", "submitter_id", "cursor"],
+                &["submitter_kind", "submitter_id", "item_id", "version"],
             ],
         ),
         (
             "_fleet_sync_status_owed",
             &[
                 &["id"],
-                &["item_id", "target_kind", "machine_id", "status_route"],
+                &[
+                    "item_id",
+                    "target_kind",
+                    "submitter_kind",
+                    "submitter_id",
+                    "status_route",
+                ],
             ],
         ),
     ];
@@ -118,10 +128,14 @@ fn declared_indexes() -> Vec<IndexDefinition> {
             "CREATE INDEX _fleet_sync_inbox_accounting ON _fleet_sync_inbox_items(live,payload_bytes,settlement_charge_bytes)",
         ),
         (
-            "_fleet_sync_status_owed_machine",
+            "_fleet_sync_status_owed_submitter",
             "_fleet_sync_status_owed",
-            vec![Some("machine_id"), Some("item_id")],
-            "CREATE INDEX _fleet_sync_status_owed_machine ON _fleet_sync_status_owed(machine_id, item_id)",
+            vec![
+                Some("submitter_kind"),
+                Some("submitter_id"),
+                Some("item_id"),
+            ],
+            "CREATE INDEX _fleet_sync_status_owed_submitter ON _fleet_sync_status_owed(submitter_kind, submitter_id, item_id)",
         ),
     ] {
         indexes.push(IndexDefinition {

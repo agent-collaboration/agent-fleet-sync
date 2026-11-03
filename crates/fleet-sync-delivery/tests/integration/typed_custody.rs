@@ -84,7 +84,7 @@ async fn released_outbox_retains_deadline_identity_reserve_and_timestamps_after_
                         .enqueue(
                             original,
                             peer(9),
-                            peer(1),
+                            fleet_sync_delivery::Submitter::Machine(peer(1)),
                             SyncTime::from_unix_millis(1_718_000_000_011),
                         )
                         .await
@@ -128,7 +128,7 @@ async fn released_outbox_retains_deadline_identity_reserve_and_timestamps_after_
         let row = query::<sqlx_turso::Turso>("SELECT * FROM _fleet_sync_outbox_items WHERE item_id=?1")
             .bind(item_id(71).as_uuid().to_string()).fetch_one(scope.executor()).await?;
         assert!(row.try_get::<Option<String>, _>("payload")?.is_none());
-        assert_eq!(row.try_get::<String, _>("submitter_machine_id")?, peer(1).as_uuid().to_string());
+        assert_eq!(row.try_get::<String, _>("submitter_id")?, peer(1).as_uuid().to_string());
         assert_eq!(row.try_get::<String, _>("recipient_machine_id")?, peer(2).as_uuid().to_string());
         assert_eq!(row.try_get::<i64, _>("created_at")?, 1_717_986_918_400);
         assert_eq!(row.try_get::<i64, _>("admitted_at")?, 1_718_000_000_011);
@@ -179,6 +179,7 @@ async fn typed_upgrade_preserves_existing_custody_and_marks_unknown_historical_t
         assert!(row.try_get::<Option<i64>,_>("admitted_at")?.is_none());
         assert!(row.try_get::<Option<i64>,_>("handed_off_at")?.is_none());
         assert_eq!(row.try_get::<i64,_>("last_report_seq")?,0);
+        assert_eq!(backfill_submitters::<TestTypes,_>(scope,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,1);
         let resolved = Outbox::<_,TestTypes>::new(scope,limits()).resolve_submit(&DeliveryItemRef { item:item_id(100), digest:item(100,"migrated content").digest().clone() })
             .await.map_err(storage_error)?;
         assert_eq!(serde_json::to_string(&resolved.item).unwrap(),serde_json::to_string(&item(100,"migrated content")).unwrap());

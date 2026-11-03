@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-status-queries.json": "78ab818ba1cbbce2f3ae844dfe39df4baa8cb43e2e64f4078fed123eb9e6bf10",
+    "checked-status-queries.json": "47a2ba50ed981a7447cceff94369a8213216ac6edfebe9206a49b0fa6f85c89c",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -57,30 +57,31 @@
     "migrations/0001_delivery_custody.sql": "1c480b530973dadd80a9fb388bb2d55428470e7d57d24cdce8973be7e93ef8d2",
     "migrations/0002_mailbox_deadlines.sql": "7e60b848a3c73c0b05b139d1822225a631b1b79a0ea4d497646fdeb4f708d031",
     "migrations/0003_inbox_accounting.sql": "9ed7336cbc35834049b9c6b2f86e90a3b331f99b8e0791f86ce2cdfa7d7727f2",
-    "migrations/0004_typed_delivery_records.sql": "ddeb5f6329ecbfcd45a665e58fadfdc7255c4e2b3482d0315823bc181396f7ac",
-    "migrations/0005_scoped_status_streams.sql": "13c1f3b8fd48474da5c476d58f5a3970959752cab34164446dc9319a7710aeb2",
+    "migrations/0004_typed_delivery_records.sql": "bbb16c5498b214cf0bafeaddc89da69a11c46c68c7e0d084b7432e9d222fb0d9",
+    "migrations/0005_scoped_status_streams.sql": "2aaa42a96197d5ccbaf5f97e6c38f59d2753aa9be1f3fa28614d865bbf3e7527",
     "migrations/0006_relay_outbox.sql": "e8c83482fc2aed0d38728368d5ce83883aab87b9702749c87c15227ca749197b",
-    "migrations/0007_typed_status_records.sql": "4c70dc4937768e826bda02ce2d1f943ba558a6230623c2c24d5a9bd8743e6b55",
-    "migrations/0008_custody_row_metadata.sql": "6c4e3065dbfac2910d17b6b85c459eca2372f96cadca5f797c21a39076959058",
+    "migrations/0007_typed_status_records.sql": "b60e8f18a37c6d6fb0da37cd03331a4ed51dbb5be2654b4eb486cd1b9fe797cc",
+    "migrations/0008_custody_row_metadata.sql": "850c5dad0a0108ca199161aa688c431af8dd6164878088430a66218fafde0f82",
     "migrations/0009_typed_report_records.sql": "c0e2513ebbaee9d5dddd9142dca9502993d64acaa9be10a37f0392b6d137b5fc",
-    "migrations/0010_restore_status_owed_machine_index.sql": "f28c4e8e1a9a3cc45e8245fb6a20ede57e92a2f95b032fbd882fd2d5ecd03311",
-    "sql/drop_status_events.sql": "1633bac5444ed52132c16822ab2a65a6e2ac2ae055b0fad2851f13811108c7b5",
-    "sql/list_publications.sql": "2f542afff87dd3eae09ba3e0d6fbec2692327e9cd899dbeafba958c08f85bcd7",
-    "sql/read_publication.sql": "44d2202d4aa31d34083e2ffea7719da101e77286f95c4b6cd99d3441a6ec2719",
-    "sql/read_status_events.sql": "5c425eb1939d4599ac924fd296a9b1ef143ea6cc56f8fda81572854c72b5ffe3",
-    "sql/read_status_revision.sql": "d0af0959dd3d61d5a6794ba73d8d3a77b9abaf38b383fd9856692bc74c175958",
-    "sql/read_status_state.sql": "f4abbfd62d58254db2fa5de1ea43735898dc9941b6296057cc48cadc4af071d8",
-    "sql/retire_publication.sql": "0c7270c86d3c19b42380056503f2f0981a30c0f5205be8e802d37adafc620c1a",
-    "sql/write_publication.sql": "f01389120bf8009dd12cd949c4a24845c8f0568360b61fdf437cdd3cc0984cfd",
-    "sql/write_status_event.sql": "cf007991d5581c4062555579bc20de9c210f8959b9e29f3ac91ce956eaced36f",
-    "sql/write_status_state.sql": "b809d57c1e99ca3e1ca6b5c186836e13d68c27bef55acf0393742085f68c76eb",
-    "src/checked_queries/status.rs": "b2ff8a72790ea6b18f10db0ed5bb96e9b5c580008004ffea417870b61b4a36c7"
+    "migrations/0010_restore_status_owed_machine_index.sql": "0d5e0879dfcf320b8b0d37b16ff28e7974cf0d504f76aa93c7124b4d773173aa",
+    "migrations/0011_delivery_backfill_markers.sql": "f1b81fb66ae8f5ef044238710f0dbda7dc44253019637a8587e71e82a2129f9a",
+    "sql/drop_status_events.sql": "3b833bedc849ea589df325a459e8ce0b8e77a343e5be31c9320b71f08fc56eab",
+    "sql/list_publications.sql": "52a4fa62dc2f9ae407a8b0f027da0bb613524781446eabea3b46919897541b42",
+    "sql/read_publication.sql": "a618e546bfebe5449de8f768986a72bfdcef5ed0aabf6031f5a70d8676aab612",
+    "sql/read_status_events.sql": "52c7571e5c14f646cb4fc560241be66181ec570caad999bc81397cab33028211",
+    "sql/read_status_revision.sql": "9d556746add7d74606f2e33d917cffb6b817280db3cfbf2a52b3f2f0761e6777",
+    "sql/read_status_state.sql": "39d4054384b4bfbd3a235640c23a583b2159d7d1c6ec6e267959462eb92df4c8",
+    "sql/retire_publication.sql": "ecd99d1485755640fc1af9137dd39673e407175e48663dd09c80607e9d802129",
+    "sql/write_publication.sql": "0b4bb2a000523ee25c02299d2e1ede6079582e8537325db3450d9c696335bebc",
+    "sql/write_status_event.sql": "e9f2de91548abf9163d74161bef731f60256d2bbdfd3ff0ffc1fbefa187575b2",
+    "sql/write_status_state.sql": "5d211a71131c9f77107482683b434349ce12451a196ddef878f001e71572bd5a",
+    "src/checked_queries/status.rs": "609464dc37ca326745c458038905f98311f4adf0f4560624c042756a2df5c0db"
   },
-  "queries_digest": "14e4b6dc234f4f0f1bcc86079f572abb04f034c01d7c7a1ad70ee29b70af65c1",
+  "queries_digest": "6179bc76d27e8d8e70b633915fc601a17b90da30d34009f995973730801b4fad",
   "queries": [
     {
       "name": "read_status_state",
-      "bind_slots": 1,
+      "bind_slots": 2,
       "columns": [
         {
           "name": "id",
@@ -90,7 +91,14 @@
           "type_source": "cast"
         },
         {
-          "name": "machine_id",
+          "name": "submitter_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "submitter_id",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -135,7 +143,7 @@
     },
     {
       "name": "write_status_state",
-      "bind_slots": 4,
+      "bind_slots": 5,
       "columns": []
     },
     {
@@ -150,7 +158,14 @@
           "type_source": "cast"
         },
         {
-          "name": "machine_id",
+          "name": "submitter_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "submitter_id",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -248,11 +263,18 @@
           "type_source": "driver"
         },
         {
-          "name": "target",
+          "name": "target_kind",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
-          "type_source": "cast"
+          "type_source": "driver"
+        },
+        {
+          "name": "status_route",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
         }
       ]
     },
@@ -268,12 +290,12 @@
     },
     {
       "name": "write_status_event",
-      "bind_slots": 7,
+      "bind_slots": 8,
       "columns": []
     },
     {
       "name": "read_status_events",
-      "bind_slots": 3,
+      "bind_slots": 4,
       "columns": [
         {
           "name": "id",
@@ -283,7 +305,14 @@
           "type_source": "cast"
         },
         {
-          "name": "machine_id",
+          "name": "submitter_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "submitter_id",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -398,12 +427,12 @@
     },
     {
       "name": "drop_status_events",
-      "bind_slots": 2,
+      "bind_slots": 3,
       "columns": []
     },
     {
       "name": "read_status_revision",
-      "bind_slots": 3,
+      "bind_slots": 4,
       "columns": [
         {
           "name": "id",
@@ -413,7 +442,14 @@
           "type_source": "cast"
         },
         {
-          "name": "machine_id",
+          "name": "submitter_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "submitter_id",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -538,7 +574,14 @@
           "type_source": "cast"
         },
         {
-          "name": "machine_id",
+          "name": "submitter_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "submitter_id",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -636,11 +679,18 @@
           "type_source": "driver"
         },
         {
-          "name": "target",
+          "name": "target_kind",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
-          "type_source": "cast"
+          "type_source": "driver"
+        },
+        {
+          "name": "status_route",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
         }
       ]
     }

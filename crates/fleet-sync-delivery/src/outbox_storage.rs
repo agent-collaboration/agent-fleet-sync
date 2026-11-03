@@ -3,20 +3,50 @@ use crate::{
     stored_outcome::*,
 };
 use fleet_sync_protocol::*;
-use serde::de::DeserializeOwned;
 
 #[cfg(test)]
 #[path = "outbox_storage_test.rs"]
 mod tests;
 
-pub(crate) fn decode_header<A: DeserializeOwned>(
+pub(crate) fn decode_header<D: DeliveryTypes>(
     row: &StoredOutboxRow,
-) -> Result<OutboxHeaderState<A>, DeliveryError> {
+) -> Result<OutboxHeaderState<D::Acceptance>, DeliveryError> {
     let id: ItemId = stored_enum(row.item_id.clone(), "outbox item id")?;
+    let legacy = stored_bool(
+        row.legacy_read_only.clone(),
+        row.legacy_read_only_class.clone(),
+        "legacy outbox",
+    )?;
+    let retention = if legacy {
+        crate::submitter::SourceRetention::Legacy
+    } else if row.record_kind.as_deref() == Some("item") {
+        crate::submitter::SourceRetention::Item
+    } else {
+        crate::submitter::SourceRetention::Negative
+    };
+    let sender = crate::submitter::checked_sender::<D>(
+        row.submitter_kind.clone(),
+        row.submitter_id.clone(),
+        row.consumer_sender.as_deref(),
+        retention,
+        "_fleet_sync_outbox_items",
+        &id.as_uuid().to_string(),
+    )?;
+
     if row.record_kind.as_deref() == Some("unresolvable") {
-        return Ok(OutboxHeaderState::Unresolvable {
-            item: id,
-            kind: stored_enum(row.failure_kind.clone(), "outbox failure")?,
+        let kind = stored_enum(row.failure_kind.clone(), "outbox failure")?;
+        return Ok(if legacy {
+            OutboxHeaderState::Legacy {
+                item: id,
+                digest: None,
+                status: DeliveryStatus::Refused {
+                    reason: DeliveryRefusal::ProcessingFailed { kind },
+                },
+                version: StatusVersion::new(0),
+                cancel: None,
+            }
+        } else {
+            OutboxHeaderState::Unresolvable { item: id, kind }
         });
     }
     let status = stored_status(
@@ -53,13 +83,26 @@ pub(crate) fn decode_header<A: DeserializeOwned>(
         field: "outbox acceptance bound",
     })?;
     let digest = required(row.digest.clone(), "outbox digest")?;
+    if legacy {
+        if row.payload.is_some() || status.rank() == 0 {
+            return Err(DeliveryError::CorruptRow {
+                table: "_fleet_sync_outbox_items",
+                key: id.as_uuid().to_string(),
+                field: "legacy custody",
+            });
+        }
+        return Ok(OutboxHeaderState::Legacy {
+            item: id,
+            digest: Some(stored_enum(Some(digest), "legacy digest")?),
+            status,
+            version,
+            cancel,
+        });
+    }
+
     match row.record_kind.as_deref() {
         Some("recovered") => Ok(OutboxHeaderState::Recovered(RecoveredOutbox {
-            submitter: row
-                .submitter_machine_id
-                .clone()
-                .map(|value| stored_enum(Some(value), "outbox submitter"))
-                .transpose()?,
+            submitter: sender.submitter,
             acceptance_bound,
             item: id,
             digest: stored_enum(Some(digest), "outbox digest")?,
@@ -72,11 +115,8 @@ pub(crate) fn decode_header<A: DeserializeOwned>(
             digest,
             status_route: row.status_route.clone(),
             relay: stored_enum(row.relay_machine_id.clone(), "outbox relay")?,
-            submitter: row
-                .submitter_machine_id
-                .clone()
-                .map(|value| stored_enum(Some(value), "outbox submitter"))
-                .transpose()?,
+            submitter: sender.submitter,
+            consumer_sender: row.consumer_sender.clone(),
             recipient: stored_enum(row.recipient_machine_id.clone(), "outbox recipient")?,
             created_at: stored_time(
                 row.created_at.clone(),

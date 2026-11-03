@@ -22,7 +22,7 @@ async fn admit(store: &TestStore, caller: u128, identity: u64) -> SubmitResult<A
             Box::pin(async move {
                 Outbox::<_, TestTypes>::new(scope, limits())
                     .submit_relay::<PushTask, RecordRemoval>(
-                        peer(caller),
+                        fleet_sync_delivery::Submitter::Machine(peer(caller)),
                         item(identity, "owned body"),
                         peer(3),
                         "fixture-route".into(),
@@ -41,7 +41,7 @@ async fn settle(store: &TestStore, caller: u128, identity: u64) -> SettleResult<
             Box::pin(async move {
                 Outbox::<_, TestTypes>::new(scope, limits())
                     .relay_settle::<RecordRemoval>(
-                        peer(caller),
+                        fleet_sync_delivery::Submitter::Machine(peer(caller)),
                         item_id(identity),
                         digest(identity),
                         now(),
@@ -55,7 +55,7 @@ async fn settle(store: &TestStore, caller: u128, identity: u64) -> SettleResult<
 }
 async fn snapshot(store: &TestStore) -> Vec<String> {
     store.transaction(|scope|Box::pin(async move {
-        Ok(query::<Turso>("SELECT json_array(item_id,digest,submitter_machine_id,record_kind,status_kind,status_version,cancel_outcome,payload,updated_at) AS state FROM _fleet_sync_outbox_items ORDER BY item_id")
+        Ok(query::<Turso>("SELECT json_array(item_id,digest,submitter_kind,submitter_id,record_kind,status_kind,status_version,cancel_outcome,payload,updated_at) AS state FROM _fleet_sync_outbox_items ORDER BY item_id")
             .fetch_all(scope.executor()).await?.iter().map(|row|row.try_get("state")).collect::<Result<_,_>>()?)
     })).await.unwrap()
 }
@@ -102,7 +102,7 @@ async fn query_and_settle_keep_submitter_authority_after_content_release() {
                 Box::pin(async move {
                     let mut relay = Outbox::<_, TestTypes>::new(scope, limits());
                     let owned = relay
-                        .relay_query(peer(1), item_id(1))
+                        .relay_query(fleet_sync_delivery::Submitter::Machine(peer(1)), item_id(1))
                         .await
                         .map_err(storage_error)?;
                     assert!(matches!(
@@ -126,28 +126,48 @@ async fn query_and_settle_keep_submitter_authority_after_content_release() {
                             ) && released
                     );
                     assert!(matches!(
-                        relay.relay_query(peer(9), item_id(1)).await,
+                        relay
+                            .relay_query(
+                                fleet_sync_delivery::Submitter::Machine(peer(9)),
+                                item_id(1)
+                            )
+                            .await,
                         Err(DeliveryError::Refused {
                             reason: DeliveryRefusal::NotSubmitter
                         })
                     ));
                     assert!(matches!(
                         relay
-                            .relay_settle::<RecordRemoval>(peer(9), item_id(1), digest(1), now())
+                            .relay_settle::<RecordRemoval>(
+                                fleet_sync_delivery::Submitter::Machine(peer(9)),
+                                item_id(1),
+                                digest(1),
+                                now()
+                            )
                             .await
                             .map_err(storage_error)?,
                         SettleResult::ItemConflict { .. }
                     ));
                     assert!(matches!(
                         relay
-                            .relay_settle::<RecordRemoval>(peer(1), item_id(1), digest(2), now())
+                            .relay_settle::<RecordRemoval>(
+                                fleet_sync_delivery::Submitter::Machine(peer(1)),
+                                item_id(1),
+                                digest(2),
+                                now()
+                            )
                             .await
                             .map_err(storage_error)?,
                         SettleResult::ItemConflict { .. }
                     ));
                     assert!(matches!(
                         relay
-                            .relay_settle::<RecordRemoval>(peer(1), item_id(1), digest(1), now())
+                            .relay_settle::<RecordRemoval>(
+                                fleet_sync_delivery::Submitter::Machine(peer(1)),
+                                item_id(1),
+                                digest(1),
+                                now()
+                            )
                             .await
                             .map_err(storage_error)?,
                         SettleResult::Replayed { .. }
@@ -176,7 +196,7 @@ async fn first_absent_settlement_binds_the_caller_and_survives_reopen() {
         .transaction(|scope| {
             Box::pin(async move {
                 let result = Outbox::<_, TestTypes>::new(scope, limits())
-                    .relay_query(peer(9), item_id(1))
+                    .relay_query(fleet_sync_delivery::Submitter::Machine(peer(9)), item_id(1))
                     .await
                     .map_err(storage_error)?;
                 assert!(matches!(result.state, ItemStatusState::Unknown));
@@ -201,7 +221,7 @@ async fn first_absent_settlement_binds_the_caller_and_survives_reopen() {
             Box::pin(async move {
                 let mut relay = Outbox::<_, TestTypes>::new(scope, limits());
                 let owned = relay
-                    .relay_query(peer(1), item_id(1))
+                    .relay_query(fleet_sync_delivery::Submitter::Machine(peer(1)), item_id(1))
                     .await
                     .map_err(storage_error)?;
                 assert!(matches!(
@@ -209,7 +229,9 @@ async fn first_absent_settlement_binds_the_caller_and_survives_reopen() {
                     ItemStatusState::Known { digest: stored, .. } if stored == digest(1)
                 ));
                 assert!(matches!(
-                    relay.relay_query(peer(9), item_id(1)).await,
+                    relay
+                        .relay_query(fleet_sync_delivery::Submitter::Machine(peer(9)), item_id(1))
+                        .await,
                     Err(DeliveryError::Refused {
                         reason: DeliveryRefusal::NotSubmitter
                     })
@@ -222,7 +244,7 @@ async fn first_absent_settlement_binds_the_caller_and_survives_reopen() {
     assert!(matches!(
         admit(&store, 9, 1).await,
         SubmitResult::Refused {
-            reason: DeliveryRefusal::ItemConflict { .. }
+            reason: DeliveryRefusal::NotSubmitter
         }
     ));
     assert!(matches!(
@@ -280,7 +302,10 @@ async fn unbound_recovery_states_bind_once_without_changing_saved_outcomes() {
                 Box::pin(async move {
                     assert!(matches!(
                         Outbox::<_, TestTypes>::new(scope, limits())
-                            .relay_query(peer(1), item_id(identity))
+                            .relay_query(
+                                fleet_sync_delivery::Submitter::Machine(peer(1)),
+                                item_id(identity)
+                            )
                             .await,
                         Err(DeliveryError::Refused {
                             reason: DeliveryRefusal::NotSubmitter
@@ -332,7 +357,12 @@ async fn a_failed_caller_transaction_rolls_back_the_first_submitter_binding() {
         .transaction(|scope| {
             Box::pin(async move {
                 Outbox::<_, TestTypes>::new(scope, limits())
-                    .relay_settle::<RecordRemoval>(peer(1), item_id(1), digest(1), now())
+                    .relay_settle::<RecordRemoval>(
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
+                        item_id(1),
+                        digest(1),
+                        now(),
+                    )
                     .await
                     .map_err(storage_error)?;
                 Err::<(), _>(StoreError::Aborted {
@@ -407,7 +437,7 @@ async fn cancellation_query_and_settlement_replay_the_saved_cancel_result() {
             Box::pin(async move {
                 Outbox::<_, TestTypes>::new(scope, limits())
                     .submit_relay::<PushTask, RecordRemoval>(
-                        peer(1),
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
                         cancel(2, 1),
                         peer(3),
                         "fixture-route".into(),
@@ -442,11 +472,16 @@ async fn cancellation_query_and_settlement_replay_the_saved_cancel_result() {
                     }
                     let digest = cancel(2, 1).digest().clone();
                     let queried = relay
-                        .relay_query(peer(1), item_id(2))
+                        .relay_query(fleet_sync_delivery::Submitter::Machine(peer(1)), item_id(2))
                         .await
                         .map_err(storage_error)?;
                     let settled = relay
-                        .relay_settle::<RecordRemoval>(peer(1), item_id(2), digest, now())
+                        .relay_settle::<RecordRemoval>(
+                            fleet_sync_delivery::Submitter::Machine(peer(1)),
+                            item_id(2),
+                            digest,
+                            now(),
+                        )
                         .await
                         .map_err(storage_error)?;
                     let expected = if completed {
@@ -495,7 +530,12 @@ async fn settlement_at_removal_deadline_cannot_recreate_custody() {
             Box::pin(async move {
                 let deadline = removal_deadline(item_id(1));
                 let result = Outbox::<_, TestTypes>::new(scope, limits())
-                    .relay_settle::<RecordRemoval>(peer(1), item_id(1), digest(1), deadline)
+                    .relay_settle::<RecordRemoval>(
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
+                        item_id(1),
+                        digest(1),
+                        deadline,
+                    )
                     .await;
                 assert!(matches!(
                     result,

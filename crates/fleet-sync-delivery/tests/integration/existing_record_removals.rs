@@ -12,6 +12,7 @@ use fleet_sync_delivery::*;
 use sqlx_core::{
     connection::{ConnectOptions, Connection},
     query::query,
+    row::Row,
 };
 use sqlx_turso::{Turso, TursoConnectOptions};
 use std::{
@@ -20,6 +21,33 @@ use std::{
     time::Duration,
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
+
+#[tokio::test]
+async fn removal_completion_marker_is_stable_and_prevents_later_custody_rescans() {
+    let fixture = legacy_store().await;
+    assert_eq!(startup(&fixture.store).await, 2);
+    let before=fixture.store.transaction(|scope|Box::pin(async move {
+        let marker=query::<Turso>("SELECT id,created_at,updated_at FROM _fleet_sync_delivery_backfills WHERE name='record-removals'").fetch_one(scope.executor()).await?;
+        let id:String=marker.try_get("id")?;
+        ItemId::try_from(id.clone()).map_err(StoreError::backend)?;
+        assert_eq!(marker.try_get::<i64,_>("created_at")?,START);
+        assert_eq!(marker.try_get::<i64,_>("updated_at")?,START);
+        query::<Turso>("UPDATE _fleet_sync_outbox_items SET item_id='broken after completion' WHERE item_id=?1").bind(old_item(70).as_uuid().to_string()).execute(scope.executor()).await?;
+        Ok(id)
+    })).await.unwrap();
+    assert_eq!(
+        startup(&fixture.store).await,
+        0,
+        "a completed startup must not rescan later invalid custody"
+    );
+    fixture.store.transaction(move |scope|Box::pin(async move {
+        let marker=query::<Turso>("SELECT id,created_at,updated_at FROM _fleet_sync_delivery_backfills WHERE name='record-removals'").fetch_one(scope.executor()).await?;
+        assert_eq!(marker.try_get::<String,_>("id")?,before);
+        assert_eq!(marker.try_get::<i64,_>("created_at")?,START);
+        assert_eq!(marker.try_get::<i64,_>("updated_at")?,START);
+        Ok(())
+    })).await.unwrap();
+}
 
 #[tokio::test]
 async fn initial_admission_retry_clears_its_private_token_before_reuse() {
@@ -129,9 +157,13 @@ async fn startup_validates_all_keys_before_admitting_any_removal() {
     let result = fixture
         .store
         .transaction(|scope| {
-            Box::pin(
-                async move { Ok(admit_existing_record_removals::<_, RecordRemoval>(scope).await) },
-            )
+            Box::pin(async move {
+                Ok(admit_existing_record_removals::<_, RecordRemoval>(
+                    scope,
+                    SyncTime::from_unix_millis(START),
+                )
+                .await)
+            })
         })
         .await
         .unwrap();
@@ -178,7 +210,11 @@ async fn startup_backfill_child_checkpoint() -> Result<(), Box<dyn std::error::E
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     let mut real = TursoScope::new(&mut transaction, host.as_ref());
     let mut scope = StartupCheckpointScope { inner: &mut real };
-    admit_existing_record_removals::<_, RecordRemoval>(&mut scope).await?;
+    admit_existing_record_removals::<_, RecordRemoval>(
+        &mut scope,
+        SyncTime::from_unix_millis(START),
+    )
+    .await?;
     Err("startup backfill returned without the causal admission checkpoint".into())
 }
 

@@ -170,7 +170,7 @@ async fn cancelling_an_original_held_before_the_first_submit_withdraws_it_withou
                     .enqueue_cancel_and_admit::<GatedSubmit, RecordRemoval, _>(
                         cancel,
                         peer(3),
-                        peer(1),
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
                         SyncTime::from_unix_millis(0),
                         &GatedConsumer,
                     )

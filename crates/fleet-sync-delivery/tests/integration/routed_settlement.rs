@@ -134,7 +134,7 @@ async fn authoritative_route_bounds_reject_corrupt_mail_publication_and_stream_s
         fixture.store.transaction(move |scope| Box::pin(async move {
             Mailbox::<_, TestTypes>::new(scope, peer(2), limits()).submit(peer(1), item(1, "body"), SyncTime::from_unix_millis(0), "valid".into(), None).await.map_err(storage_error)?;
             let publication = StatusPublication { item:item_id(1), status:DeliveryStatus::Sent, version:StatusVersion::new(1), cancel:None };
-            StatusStream::<_, TestTypes>::new(scope, peer(1), "valid".into()).append(&publication, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
+            StatusStream::<_, TestTypes>::new(scope, fleet_sync_delivery::Submitter::Machine(peer(1)), "valid".into()).append(&publication, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
             let statement = match owner {
                 "mail" => "UPDATE _fleet_sync_mail_items SET record=json_set(record,'$.value.statusTarget.route',?1)",
                 "publication" => "UPDATE _fleet_sync_status_owed SET status_route=json_quote(?1)",
@@ -144,7 +144,7 @@ async fn authoritative_route_bounds_reject_corrupt_mail_publication_and_stream_s
             let result = match owner {
                 "mail" => Mailbox::<_, TestTypes>::new(scope, peer(2), limits()).query(&[item_id(1)]).await.map(|_| ()),
                 "publication" => admit_publications::<_, TestTypes, PublishTask>(scope).await.map(|_| ()),
-                _ => StatusStream::<_, TestTypes>::new(scope, peer(1), "valid".into()).fetch(peer(1), StatusCursor::new(0), 10).await.map(|_| ()),
+                _ => StatusStream::<_, TestTypes>::new(scope, fleet_sync_delivery::Submitter::Machine(peer(1)), "valid".into()).fetch(fleet_sync_delivery::Submitter::Machine(peer(1)), StatusCursor::new(0), 10).await.map(|_| ()),
             };
             assert!(matches!(result, Err(DeliveryError::Corrupt { .. })), "{owner} accepted corrupt route: {result:?}");
             Ok(())

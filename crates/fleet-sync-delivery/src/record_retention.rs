@@ -32,6 +32,7 @@ pub fn item_is_too_old(item: ItemId, now: SyncTime) -> bool {
 )]
 pub fn admit_existing_record_removals<'scope, S, T>(
     scope: &'scope mut S,
+    now: SyncTime,
 ) -> impl std::future::Future<Output = Result<usize, DeliveryError>> + Send + 'scope
 where
     S: TransactionScope + JournalScope + JournalStorage,
@@ -42,6 +43,9 @@ where
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
     async move {
+        if crate::backfill_state::completed(scope, "record-removals").await? {
+            return Ok(0);
+        }
         let rows = queries::read_existing_custody(scope)
             .await
             .map_err(sql_error)?;
@@ -76,6 +80,7 @@ where
         for item in items {
             admitted += usize::from(admit_record_removal_once::<_, T>(scope, item).await?);
         }
+        crate::backfill_state::complete(scope, "record-removals", now).await?;
         Ok(admitted)
     }
 }

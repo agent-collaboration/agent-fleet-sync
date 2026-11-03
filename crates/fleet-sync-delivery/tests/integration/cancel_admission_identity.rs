@@ -38,7 +38,7 @@ async fn enqueue_cancel_at(fixture: &Fixture, id: u64) -> OutboxAdmission<Accept
                     .enqueue_cancel(
                         cancel_body(id),
                         peer(3),
-                        peer(1),
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
                         SyncTime::from_unix_millis(0),
                         &TestConsumer,
                     )
@@ -114,7 +114,12 @@ async fn another_outbox_cancel_names_the_first_and_does_not_take_new_custody() {
                         )
                         .unwrap();
                         Outbox::<_, TestTypes>::new(scope, limits())
-                            .enqueue(original, peer(3), peer(1), SyncTime::from_unix_millis(0))
+                            .enqueue(
+                                original,
+                                peer(3),
+                                fleet_sync_delivery::Submitter::Machine(peer(1)),
+                                SyncTime::from_unix_millis(0),
+                            )
                             .await
                             .map_err(storage_error)?;
                         Ok(())

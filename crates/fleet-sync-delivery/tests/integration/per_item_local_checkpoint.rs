@@ -23,6 +23,9 @@ impl DeliveryTypes for LocalTypes {
     const MAX_STATUS_ROUTE_BYTES: u32 = 64;
     type Body = String;
     type Sender = String;
+    fn submitter(sender: &Self::Sender) -> Submitter {
+        crate::support::sender_submitter(sender)
+    }
     type Address = String;
     type Acceptance = Acceptance;
     type LocalObservation = ();

@@ -95,10 +95,12 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
             largest_size = size;
         }
     }
+    let sender_placeholder = Submitter::Machine(peer);
+    let sender_placeholder_bytes = bytes(&sender_placeholder)?;
     let cancel = DeliveryEnvelope::<NoDelivery>::Cancel(
         DeliveryCancel::new(
             item,
-            (),
+            sender_placeholder,
             Recipient { peer, address: () },
             Some(time),
             CancelBody { target: item },
@@ -106,7 +108,7 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
         .map_err(|error| invalid(Box::new(error)))?,
     );
     let cancel_bytes = bytes(&cancel)?
-        .checked_sub(8)
+        .checked_sub(sender_placeholder_bytes + 4)
         .and_then(|size| size.checked_add(u64::from(D::MAX_SENDER_BYTES)))
         .and_then(|size| size.checked_add(u64::from(D::MAX_ADDRESS_BYTES)))
         .ok_or(DeliveryConfigError::ReserveOverflow)?;
@@ -133,7 +135,8 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
                 id: item,
                 digest: digest.as_str().into(),
                 relay: peer,
-                submitter: Some(peer),
+                submitter: Some(crate::Submitter::Machine(peer)),
+                consumer_sender: Some("\\".repeat(D::MAX_SENDER_BYTES as usize)),
                 created_at: crate::custody_record::created_at(item),
                 admitted_at: Some(time),
                 handed_off_at: Some(time),
@@ -188,7 +191,7 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
         publication = publication.max(with_route::<D>(with_acceptance(
             &(
                 PublicationTarget::StatusStream {
-                    sender: peer,
+                    sender: crate::Submitter::Machine(peer),
                     route: (),
                 },
                 StatusPublication {
@@ -239,7 +242,9 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
                     delivered_at: Some(time),
                     id: item,
                     digest: digest.as_str().into(),
-                    sender: (),
+                    sender: Some(sender_placeholder),
+                    submitter: Some(sender_placeholder),
+                    legacy_read_only: false,
                     recipient: Recipient { peer, address: () },
                     cancel_target: Some(item),
                     valid_until: Some(time),
@@ -257,7 +262,7 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
                 delivered,
                 maximum,
             )?
-            .checked_sub(8)
+            .checked_sub(sender_placeholder_bytes + 4)
             .and_then(|size| size.checked_add(u64::from(D::MAX_SENDER_BYTES)))
             .and_then(|size| size.checked_add(u64::from(D::MAX_ADDRESS_BYTES)))
             .ok_or(DeliveryConfigError::ReserveOverflow)?,

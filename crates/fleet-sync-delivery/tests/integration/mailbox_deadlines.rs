@@ -122,12 +122,19 @@ async fn deadline_scan_is_atomic_leaves_fetched_custody_alone_and_publishes_the_
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let events =
-                    StatusStream::<_, TestTypes>::new(scope, peer(1), "fixture-route".into())
-                        .fetch(peer(1), StatusCursor::new(0), 20)
-                        .await
-                        .map_err(storage_error)?
-                        .events;
+                let events = StatusStream::<_, TestTypes>::new(
+                    scope,
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    "fixture-route".into(),
+                )
+                .fetch(
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    StatusCursor::new(0),
+                    20,
+                )
+                .await
+                .map_err(storage_error)?
+                .events;
                 let due: Vec<_> = events
                     .into_iter()
                     .filter(|event| event.item == item_id(1))

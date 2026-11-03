@@ -1,0 +1,22 @@
+{
+  "migrations": [
+    "migrations"
+  ],
+  "output": "src/checked_queries/outbox.rs",
+  "metadata": "checked-outbox-query-metadata.json",
+  "queries": [
+    {
+      "name": "read_outbox_item",
+      "sql": "sql/read_outbox_item.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredOutboxRow"
+    }
+  ]
+}

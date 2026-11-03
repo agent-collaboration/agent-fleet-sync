@@ -1,5 +1,5 @@
+use crate::status_row::PublicationRow;
 use crate::{DeliveryError, checked_queries as queries, custody_record::*};
-use crate::{status_row::PublicationRow, stored_outcome::stored_enum};
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::*;
 use serde::{Deserialize, Serialize};
@@ -17,19 +17,23 @@ use std::marker::PhantomData;
     deny_unknown_fields
 )]
 pub enum PublicationTarget<R> {
-    StatusStream { sender: PeerId, route: R },
+    StatusStream { sender: crate::Submitter, route: R },
     Peer { peer: PeerId, route: R },
+    Project { project: DatabaseId, route: R },
 }
 impl<R> PublicationTarget<R> {
-    pub(crate) const fn machine(&self) -> PeerId {
+    pub(crate) const fn submitter(&self) -> crate::Submitter {
         match self {
             Self::StatusStream { sender, .. } => *sender,
-            Self::Peer { peer, .. } => *peer,
+            Self::Peer { peer, .. } => crate::Submitter::Machine(*peer),
+            Self::Project { project, .. } => crate::Submitter::Project(*project),
         }
     }
     pub(crate) const fn route(&self) -> &R {
         match self {
-            Self::StatusStream { route, .. } | Self::Peer { route, .. } => route,
+            Self::StatusStream { route, .. }
+            | Self::Peer { route, .. }
+            | Self::Project { route, .. } => route,
         }
     }
 }
@@ -44,7 +48,7 @@ pub struct PublicationRef<R> {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct StreamState<R> {
-    sender: PeerId,
+    sender: crate::Submitter,
     owner_route: R,
     head: StatusCursor,
     floor: StatusCursor,
@@ -52,12 +56,12 @@ struct StreamState<R> {
 
 pub struct StatusStream<'s, S, D: DeliveryTypes> {
     scope: &'s mut S,
-    sender: PeerId,
+    sender: crate::Submitter,
     owner_route: D::StatusRoute,
     payload: PhantomData<fn() -> D>,
 }
 impl<'s, S, D: DeliveryTypes> StatusStream<'s, S, D> {
-    pub fn new(scope: &'s mut S, sender: PeerId, owner_route: D::StatusRoute) -> Self {
+    pub fn new(scope: &'s mut S, sender: crate::Submitter, owner_route: D::StatusRoute) -> Self {
         Self {
             scope,
             sender,
@@ -97,35 +101,49 @@ where
     }
     async fn state(&mut self) -> Result<StreamState<D::StatusRoute>, DeliveryError> {
         crate::delivery_sizes::check_status_route::<D>(&self.owner_route)?;
-        let state: StreamState<D::StatusRoute> =
-            match queries::read_status_state(self.scope, self.sender.as_uuid().to_string())
-                .await
-                .map_err(sql_error)?
-            {
-                Some(row) => {
-                    stored_row_id(&row.id, "_fleet_sync_status_state", self.sender.to_string())?;
-                    StreamState {
-                        sender: stored_enum(row.machine_id, "status stream machine")?,
-                        owner_route: decode(row.owner_route, "status stream route")?,
-                        head: StatusCursor::new(integer(
-                            row.head,
-                            row.head_class,
-                            "status stream head",
-                        )?),
-                        floor: StatusCursor::new(integer(
-                            row.floor,
-                            row.floor_class,
-                            "status stream floor",
-                        )?),
-                    }
+        let state: StreamState<D::StatusRoute> = match queries::read_status_state(
+            self.scope,
+            crate::submitter::kind(self.sender).to_owned(),
+            crate::submitter::id(self.sender),
+        )
+        .await
+        .map_err(sql_error)?
+        {
+            Some(row) => {
+                stored_row_id(
+                    &row.id,
+                    "_fleet_sync_status_state",
+                    format!(
+                        "{}:{}",
+                        crate::submitter::kind(self.sender),
+                        crate::submitter::id(self.sender)
+                    ),
+                )?;
+                StreamState {
+                    sender: crate::submitter::from_columns(row.submitter_kind, row.submitter_id)?
+                        .ok_or(DeliveryError::Corrupt {
+                        field: "status stream submitter",
+                    })?,
+                    owner_route: decode(row.owner_route, "status stream route")?,
+                    head: StatusCursor::new(integer(
+                        row.head,
+                        row.head_class,
+                        "status stream head",
+                    )?),
+                    floor: StatusCursor::new(integer(
+                        row.floor,
+                        row.floor_class,
+                        "status stream floor",
+                    )?),
                 }
-                None => StreamState {
-                    sender: self.sender,
-                    owner_route: self.owner_route.clone(),
-                    head: StatusCursor::new(0),
-                    floor: StatusCursor::new(0),
-                },
-            };
+            }
+            None => StreamState {
+                sender: self.sender,
+                owner_route: self.owner_route.clone(),
+                head: StatusCursor::new(0),
+                floor: StatusCursor::new(0),
+            },
+        };
         crate::delivery_sizes::check_status_route::<D>(&state.owner_route).map_err(|_| {
             DeliveryError::Corrupt {
                 field: "stored stream route bounds",
@@ -159,7 +177,8 @@ where
             cancel: publication.cancel,
         };
         if event.cursor.value() == 0
-            || row.machine_id.as_deref() != Some(self.sender.as_uuid().to_string().as_str())
+            || crate::submitter::from_columns(row.submitter_kind.clone(), row.submitter_id.clone())?
+                != Some(self.sender)
             || event.version.value() == 0
             || event.status.rank() == 0
             || row.item_id.as_deref() != Some(item_key(event.item).as_str())
@@ -196,7 +215,8 @@ where
             self.scope,
             item_key(publication.item),
             publication.version.value().to_string(),
-            self.sender.as_uuid().to_string(),
+            crate::submitter::kind(self.sender).to_owned(),
+            crate::submitter::id(self.sender),
         )
         .await
         .map_err(sql_error)?
@@ -236,15 +256,22 @@ where
             item_key(event.item),
             event.version.value().to_string(),
             encode(&event)?,
-            self.sender.as_uuid().to_string(),
+            crate::submitter::kind(self.sender).to_owned(),
+            crate::submitter::id(self.sender),
             now.unix_millis().to_string(),
             now.unix_millis().to_string(),
         )
         .await
         .map_err(sql_error)?;
-        let target = PublicationTarget::Peer {
-            peer: self.sender,
-            route: state.owner_route.clone(),
+        let target = match self.sender {
+            crate::Submitter::Machine(peer) => PublicationTarget::Peer {
+                peer,
+                route: state.owner_route.clone(),
+            },
+            crate::Submitter::Project(project) => PublicationTarget::Project {
+                project,
+                route: state.owner_route.clone(),
+            },
         };
         queries::write_publication(
             self.scope,
@@ -261,7 +288,8 @@ where
         queries::write_status_state(
             self.scope,
             encode(&state)?,
-            self.sender.as_uuid().to_string(),
+            crate::submitter::kind(self.sender).to_owned(),
+            crate::submitter::id(self.sender),
             now.unix_millis().to_string(),
             now.unix_millis().to_string(),
         )
@@ -290,7 +318,8 @@ where
             queries::drop_status_events(
                 self.scope,
                 through.value().to_string(),
-                self.sender.as_uuid().to_string(),
+                crate::submitter::kind(self.sender).to_owned(),
+                crate::submitter::id(self.sender),
             )
             .await
             .map_err(sql_error)?;
@@ -298,7 +327,8 @@ where
             queries::write_status_state(
                 self.scope,
                 encode(&state)?,
-                self.sender.as_uuid().to_string(),
+                crate::submitter::kind(self.sender).to_owned(),
+                crate::submitter::id(self.sender),
                 now.unix_millis().to_string(),
                 now.unix_millis().to_string(),
             )
@@ -309,7 +339,7 @@ where
     }
     pub async fn fetch(
         &mut self,
-        sender: PeerId,
+        sender: crate::Submitter,
         after: StatusCursor,
         limit: u32,
     ) -> Result<StatusFetchResult<D::Acceptance>, DeliveryError> {
@@ -324,7 +354,8 @@ where
             self.scope,
             after.max(state.floor).value().to_string(),
             limit.to_string(),
-            self.sender.as_uuid().to_string(),
+            crate::submitter::kind(self.sender).to_owned(),
+            crate::submitter::id(self.sender),
         )
         .await
         .map_err(sql_error)?;

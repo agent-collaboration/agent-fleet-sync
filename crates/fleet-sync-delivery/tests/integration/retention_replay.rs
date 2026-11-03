@@ -21,7 +21,7 @@ async fn pending_hop_and_local_tasks_finish_after_removal_without_redispatch_or_
             Box::pin(async move {
                 Outbox::<_, TestTypes>::new(scope, limits())
                     .submit_relay::<PushTask, RecordRemoval>(
-                        peer(1),
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
                         item(1, "pending sender"),
                         peer(3),
                         "route".into(),
@@ -41,6 +41,7 @@ async fn pending_hop_and_local_tasks_finish_after_removal_without_redispatch_or_
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
                     .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
                         item(1, "pending sender"),
                         peer(3),
                         &TestConsumer,
@@ -116,6 +117,7 @@ async fn actual_pending_report_finishes_after_removal_and_reopen_without_recreat
             Box::pin(async move {
                 let admission = Inbox::<_, TestTypes>::new(scope, peer(2), limits())
                     .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
                         item(1, "reported once"),
                         peer(3),
                         &TestConsumer,

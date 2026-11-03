@@ -29,14 +29,22 @@ impl<
     ) -> Result<DeliveryAnswer<P::Delivery>, ServiceError> {
         let limits = self.delivery_limits()?;
         if let DeliveryRequest::StatusFetch { after, limit, .. } = request {
-            let owner = self.delivery_owner(DeliveryObject::Status(peer)).await?;
+            let owner = self
+                .delivery_owner(DeliveryObject::Status(
+                    fleet_sync_protocol::Submitter::Machine(peer),
+                ))
+                .await?;
             return owner
                 .object
                 .rule_transaction(move |scope| {
                     Box::pin(async move {
-                        StatusStream::<_, P::Delivery>::new(scope, peer, route)
-                            .fetch(peer, after, limit)
-                            .await
+                        StatusStream::<_, P::Delivery>::new(
+                            scope,
+                            fleet_sync_protocol::Submitter::Machine(peer),
+                            route,
+                        )
+                        .fetch(fleet_sync_protocol::Submitter::Machine(peer), after, limit)
+                        .await
                     })
                 })
                 .await
@@ -44,15 +52,23 @@ impl<
                 .map_err(ServiceError::rule);
         }
         if let DeliveryRequest::StatusAck { through, .. } = request {
-            let owner = self.delivery_owner(DeliveryObject::Status(peer)).await?;
+            let owner = self
+                .delivery_owner(DeliveryObject::Status(
+                    fleet_sync_protocol::Submitter::Machine(peer),
+                ))
+                .await?;
             let now = owner.object.host().now();
             return owner
                 .object
                 .rule_transaction(move |scope| {
                     Box::pin(async move {
-                        StatusStream::<_, P::Delivery>::new(scope, peer, route)
-                            .acknowledge(through, now)
-                            .await
+                        StatusStream::<_, P::Delivery>::new(
+                            scope,
+                            fleet_sync_protocol::Submitter::Machine(peer),
+                            route,
+                        )
+                        .acknowledge(through, now)
+                        .await
                     })
                 })
                 .await
@@ -89,7 +105,7 @@ impl<
                 reason: DeliveryRefusal::ProcessingFailed { kind },
             });
         }
-        owner.ensure_schema().await.map_err(|error| {
+        owner.ensure_schema::<P::Delivery>().await.map_err(|error| {
             tracing::warn!(?mailbox, phase="migration", %error, "delivery mailbox operation retry");
             ServiceError::from(error)
         })?;

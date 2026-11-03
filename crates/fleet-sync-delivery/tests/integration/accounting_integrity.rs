@@ -48,7 +48,12 @@ async fn admit(
     match hop {
         "outbox" => {
             Outbox::<_, TestTypes>::new(scope, limits())
-                .enqueue(original, peer(3), peer(1), SyncTime::from_unix_millis(0))
+                .enqueue(
+                    original,
+                    peer(3),
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    SyncTime::from_unix_millis(0),
+                )
                 .await?;
         }
         "mailbox" => {

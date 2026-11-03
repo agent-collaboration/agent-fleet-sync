@@ -25,7 +25,7 @@ fn refused_publication() -> PublicationRef<String> {
         item: item_id(1),
         version: StatusVersion::new(2),
         target: PublicationTarget::StatusStream {
-            sender: peer(1),
+            sender: fleet_sync_delivery::Submitter::Machine(peer(1)),
             route: "fixture-route".into(),
         },
     }

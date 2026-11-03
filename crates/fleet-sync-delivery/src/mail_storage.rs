@@ -206,7 +206,7 @@ where
             self.scope,
             item_key(publication.item),
             crate::status_stream::canonical_encode(&crate::PublicationTarget::StatusStream {
-                sender: target.peer,
+                sender: crate::Submitter::Machine(target.peer),
                 route: &target.route,
             })?,
             publication.version.value().to_string(),

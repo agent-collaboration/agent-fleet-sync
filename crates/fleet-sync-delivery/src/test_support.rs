@@ -23,8 +23,16 @@ pub struct DeliveryObservation {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EventObservationKey {
-    machine: crate::PeerId,
+    submitter: crate::Submitter,
     version: crate::StatusVersion,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PublicationObservationKey {
+    target_kind: String,
+    submitter_kind: String,
+    submitter_id: String,
+    route: String,
 }
 /// Call inside the owner's existing transaction; this executes only a SELECT.
 pub async fn snapshot<S, D: DeliveryTypes>(
@@ -59,9 +67,7 @@ where
                     .await
                     .map_err(sql_error)?
                     .ok_or(DeliveryError::CustodyMissing)?;
-                Some(encode(&crate::outbox_storage::decode_header::<
-                    D::Acceptance,
-                >(&row)?)?)
+                Some(encode(&crate::outbox_storage::decode_header::<D>(&row)?)?)
             }
             "inbox" => {
                 let row = checked_queries::read_inbox_item(scope, observation.identity.clone())
@@ -82,9 +88,19 @@ where
                 Some(encode(&crate::report_row::decode_report::<D>(&row)?)?)
             }
             "publication" => {
-                let target = observation.metadata.clone().ok_or(DeliveryError::Corrupt {
-                    field: "inspection publication target",
-                })?;
+                let key: PublicationObservationKey = crate::custody_record::decode(
+                    observation.metadata.clone(),
+                    "inspection publication target",
+                )?;
+                let target: crate::PublicationTarget<D::StatusRoute> =
+                    crate::status_row::stored_publication_target(
+                        Some(key.target_kind),
+                        Some(key.submitter_kind),
+                        Some(key.submitter_id),
+                        Some(key.route),
+                    )?;
+                let target = crate::status_stream::canonical_encode(&target)?;
+                observation.metadata = Some(target.clone());
                 let row =
                     checked_queries::read_publication(scope, observation.identity.clone(), target)
                         .await
@@ -101,7 +117,8 @@ where
                     scope,
                     observation.identity.clone(),
                     key.version.value().to_string(),
-                    key.machine.as_uuid().to_string(),
+                    crate::submitter::kind(key.submitter).to_owned(),
+                    crate::submitter::id(key.submitter),
                 )
                 .await
                 .map_err(sql_error)?

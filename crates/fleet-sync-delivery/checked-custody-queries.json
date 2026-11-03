@@ -6,19 +6,6 @@
   "metadata": "checked-custody-query-metadata.json",
   "queries": [
     {
-      "name": "read_outbox_item",
-      "sql": "sql/read_outbox_item.sql",
-      "result": "optional",
-      "parameters": [
-        {
-          "name": "item_id",
-          "kind": "text",
-          "nullable": false
-        }
-      ],
-      "row": "StoredOutboxRow"
-    },
-    {
       "name": "write_outbox_item",
       "sql": "sql/write_outbox_item.sql",
       "result": "execute",
@@ -139,6 +126,11 @@
           "name": "updated_at",
           "kind": "text",
           "nullable": false
+        },
+        {
+          "name": "consumer_sender",
+          "kind": "text",
+          "nullable": true
         }
       ]
     },

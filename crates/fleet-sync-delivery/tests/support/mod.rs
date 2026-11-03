@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used, dead_code)]
+pub mod backfill_checkpoint_scope;
 pub mod existing_removals;
 pub mod interleaving;
+pub mod legacy_submitters;
 pub mod network;
 pub mod publication_network;
 pub mod startup_checkpoint_scope;
@@ -64,6 +66,9 @@ impl DeliveryTypes for TestTypes {
     const MAX_STATUS_ROUTE_BYTES: u32 = 64;
     type Body = String;
     type Sender = String;
+    fn submitter(sender: &Self::Sender) -> Submitter {
+        sender_submitter(sender)
+    }
     type Address = String;
     type Acceptance = Acceptance;
     type LocalObservation = ();
@@ -262,3 +267,24 @@ pub fn require_local_attempt(
 }
 
 pub mod retention;
+
+// Unqualified fixture addresses belong to machine 1. Explicit addresses retain
+// their complete consumer value while mapping their declared owner.
+pub fn sender_submitter(sender: &str) -> Submitter {
+    if let Some(value) = sender.strip_prefix("p:") {
+        let id = value.split('|').next().unwrap();
+        Submitter::Project(DatabaseId::try_from(id.to_owned()).unwrap())
+    } else if let Some(value) = sender.strip_prefix("m:") {
+        let id = value.split('|').next().unwrap();
+        Submitter::Machine(PeerId::try_from(id.to_owned()).unwrap())
+    } else {
+        Submitter::Machine(peer(1))
+    }
+}
+pub fn owned_sender(owner: Submitter, address: &str) -> String {
+    let kind = match owner {
+        Submitter::Machine(_) => "m",
+        Submitter::Project(_) => "p",
+    };
+    format!("{kind}:{}|{address}", owner.as_uuid())
+}

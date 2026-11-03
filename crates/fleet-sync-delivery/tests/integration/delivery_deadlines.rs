@@ -27,7 +27,7 @@ async fn enqueue_expiring(network: &NetworkFixture, expiry: i64) {
                     .enqueue_and_admit::<SubmitTask, RecordRemoval>(
                         original,
                         peer(3),
-                        peer(1),
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
                         SyncTime::from_unix_millis(0),
                     )
                     .await

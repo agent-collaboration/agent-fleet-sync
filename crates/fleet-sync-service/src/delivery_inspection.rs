@@ -53,7 +53,9 @@ impl<
                     .and_then(|slot| slot.owner.get())
                     .cloned(),
                 owners
-                    .get(&DeliveryObject::Status(origin))
+                    .get(&DeliveryObject::Status(
+                        fleet_sync_protocol::Submitter::Machine(origin),
+                    ))
                     .and_then(|slot| slot.owner.get())
                     .cloned(),
             )

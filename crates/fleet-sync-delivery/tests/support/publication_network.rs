@@ -6,7 +6,9 @@ use std::{
 
 /// Transport addresses are interpreted by this host fixture, never by delivery rules.
 pub struct PublicationRoutes {
-    streams: Mutex<BTreeMap<String, (PeerId, Weak<TestStore>)>>,
+    streams: Mutex<BTreeMap<(Submitter, String), Weak<TestStore>>>,
+    projects: Mutex<BTreeMap<DatabaseId, (PeerId, Weak<TestStore>)>>,
+    pub project_deliveries: Mutex<Vec<(DatabaseId, PeerId)>>,
     peers: Mutex<BTreeMap<String, (PeerId, Weak<TestStore>)>>,
     pub calls: Mutex<Vec<(CallId, PublicationTarget<String>, serde_json::Value)>>,
     pub after_append: Mutex<Option<PublicationBarrier>>,
@@ -21,6 +23,8 @@ impl PublicationRoutes {
         let routes = Self {
             streams: Mutex::new(BTreeMap::new()),
             peers: Mutex::new(BTreeMap::new()),
+            projects: Mutex::new(BTreeMap::new()),
+            project_deliveries: Mutex::new(Vec::new()),
             calls: Mutex::new(Vec::new()),
             after_append: Mutex::new(None),
         };
@@ -34,10 +38,10 @@ impl PublicationRoutes {
         sender: &Arc<TestStore>,
         stream: &Arc<TestStore>,
     ) {
-        self.streams
-            .lock()
-            .unwrap()
-            .insert(route.to_owned(), (owner, Arc::downgrade(stream)));
+        self.streams.lock().unwrap().insert(
+            (Submitter::Machine(owner), route.to_owned()),
+            Arc::downgrade(stream),
+        );
         self.peers
             .lock()
             .unwrap()
@@ -48,7 +52,8 @@ impl PublicationRoutes {
         target: PublicationTarget<String>,
         publication: StatusPublication<Acceptance>,
         call: CallId,
-    ) {
+        now: SyncTime,
+    ) -> Result<StatusPublicationResult, CallFailure> {
         self.calls.lock().unwrap().push((
             call,
             target.clone(),
@@ -58,19 +63,18 @@ impl PublicationRoutes {
             PublicationTarget::StatusStream { sender, route } => {
                 let store = {
                     let endpoints = self.streams.lock().unwrap();
-                    let (owner, store) = endpoints.get(&route).unwrap();
-                    assert_eq!(*owner, sender);
-                    store.upgrade().unwrap()
+                    endpoints
+                        .get(&(sender, route.clone()))
+                        .unwrap()
+                        .upgrade()
+                        .unwrap()
                 };
                 let item = publication.item;
                 store
                     .transaction(move |scope| {
                         Box::pin(async move {
                             StatusStream::<_, TestTypes>::new(scope, sender, route)
-                                .append_and_admit::<network::PublishTask>(
-                                    &publication,
-                                    fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                                )
+                                .append_and_admit::<network::PublishTask>(&publication, now)
                                 .await
                                 .map_err(storage_error)?;
                             Ok(())
@@ -91,6 +95,36 @@ impl PublicationRoutes {
                     barrier.release.notified().await;
                 }
             }
+            PublicationTarget::Project { project, .. } => {
+                let (peer, store) = self
+                    .projects
+                    .lock()
+                    .unwrap()
+                    .get(&project)
+                    .cloned()
+                    .ok_or_else(|| CallFailure::Retryable {
+                        reason: durable_steps::CallRetryReason {
+                            code: "projectHolderUnavailable".into(),
+                            detail: "no current project holder".into(),
+                        },
+                    })?;
+                let store = store.upgrade().unwrap();
+                self.project_deliveries
+                    .lock()
+                    .unwrap()
+                    .push((project, peer));
+                store
+                    .transaction(move |scope| {
+                        Box::pin(async move {
+                            Outbox::<_, TestTypes>::new(scope, limits())
+                                .publish_status(publication, now)
+                                .await
+                                .map_err(storage_error)
+                        })
+                    })
+                    .await
+                    .unwrap();
+            }
             PublicationTarget::Peer { peer, route } => {
                 let store = {
                     let endpoints = self.peers.lock().unwrap();
@@ -102,7 +136,7 @@ impl PublicationRoutes {
                     .transaction(move |scope| {
                         Box::pin(async move {
                             Outbox::<_, TestTypes>::new(scope, limits())
-                                .publish_status(publication, SyncTime::from_unix_millis(0))
+                                .publish_status(publication, now)
                                 .await
                                 .map_err(storage_error)
                         })
@@ -111,5 +145,12 @@ impl PublicationRoutes {
                     .unwrap();
             }
         }
+        Ok(StatusPublicationResult::Applied)
+    }
+    pub fn set_project_holder(&self, project: DatabaseId, holder: PeerId, store: &Arc<TestStore>) {
+        self.projects
+            .lock()
+            .unwrap()
+            .insert(project, (holder, Arc::downgrade(store)));
     }
 }

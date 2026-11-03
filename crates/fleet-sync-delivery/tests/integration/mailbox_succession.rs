@@ -61,7 +61,7 @@ fn status_reference(
         item: item_id(identity),
         version: StatusVersion::new(version),
         target: PublicationTarget::StatusStream {
-            sender: origin,
+            sender: fleet_sync_delivery::Submitter::Machine(origin),
             route: route.to_owned(),
         },
     }

@@ -6,7 +6,7 @@ use sqlx_turso::Turso;
 
 async fn snapshots(store: &TestStore) -> Vec<String> {
     store.transaction(|scope|Box::pin(async move {
-        query::<Turso>("SELECT 'state:' || json_array(id,machine_id,owner_route,head,floor,created_at,updated_at) AS value FROM _fleet_sync_status_state UNION ALL SELECT 'event:' || json_array(id,machine_id,cursor,item_id,version,status_kind,status_acceptance,created_at,updated_at) FROM _fleet_sync_status_events UNION ALL SELECT 'owed:' || json_array(id,item_id,target_kind,machine_id,status_route,version,status_kind,status_acceptance,created_at,updated_at) FROM _fleet_sync_status_owed UNION ALL SELECT 'cursor:' || json_array(id,singleton,cursor,created_at,updated_at) FROM _fleet_sync_outbox_status ORDER BY value").fetch_all(scope.executor()).await?.into_iter().map(|row|row.try_get("value").map_err(StoreError::backend)).collect()
+        query::<Turso>("SELECT 'state:' || json_array(id,submitter_kind,submitter_id,owner_route,head,floor,created_at,updated_at) AS value FROM _fleet_sync_status_state UNION ALL SELECT 'event:' || json_array(id,submitter_kind,submitter_id,cursor,item_id,version,status_kind,status_acceptance,created_at,updated_at) FROM _fleet_sync_status_events UNION ALL SELECT 'owed:' || json_array(id,item_id,target_kind,submitter_kind,submitter_id,status_route,version,status_kind,status_acceptance,created_at,updated_at) FROM _fleet_sync_status_owed UNION ALL SELECT 'cursor:' || json_array(id,singleton,cursor,created_at,updated_at) FROM _fleet_sync_outbox_status ORDER BY value").fetch_all(scope.executor()).await?.into_iter().map(|row|row.try_get("value").map_err(StoreError::backend)).collect()
     })).await.unwrap()
 }
 async fn corrupt_case(kind: &'static str) {
@@ -19,7 +19,12 @@ async fn corrupt_case(kind: &'static str) {
                     return Err(StoreError::backend("item"));
                 };
                 Outbox::<_, TestTypes>::new(scope, limits())
-                    .enqueue(original, peer(9), peer(1), SyncTime::from_unix_millis(0))
+                    .enqueue(
+                        original,
+                        peer(9),
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
+                        SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?;
                 let publication = StatusPublication {
@@ -28,18 +33,29 @@ async fn corrupt_case(kind: &'static str) {
                     status: DeliveryStatus::AtRecipient,
                     cancel: None,
                 };
-                let (_, reference) =
-                    StatusStream::<_, TestTypes>::new(scope, peer(1), "route".into())
-                        .append(
-                            &publication,
-                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                        )
-                        .await
-                        .map_err(storage_error)?;
-                let batch = StatusStream::<_, TestTypes>::new(scope, peer(1), "route".into())
-                    .fetch(peer(1), StatusCursor::new(0), 10)
-                    .await
-                    .map_err(storage_error)?;
+                let (_, reference) = StatusStream::<_, TestTypes>::new(
+                    scope,
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    "route".into(),
+                )
+                .append(
+                    &publication,
+                    fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)?;
+                let batch = StatusStream::<_, TestTypes>::new(
+                    scope,
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    "route".into(),
+                )
+                .fetch(
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    StatusCursor::new(0),
+                    10,
+                )
+                .await
+                .map_err(storage_error)?;
                 Outbox::<_, TestTypes>::new(scope, limits())
                     .apply_status_batch(StatusCursor::new(0), batch, SyncTime::from_unix_millis(1))
                     .await
@@ -64,12 +80,18 @@ async fn corrupt_case(kind: &'static str) {
         .transaction(move |scope| {
             Box::pin(async move {
                 Ok(match kind {
-                    "state" | "event" => {
-                        StatusStream::<_, TestTypes>::new(scope, peer(1), "route".into())
-                            .fetch(peer(1), StatusCursor::new(0), 10)
-                            .await
-                            .is_err()
-                    }
+                    "state" | "event" => StatusStream::<_, TestTypes>::new(
+                        scope,
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
+                        "route".into(),
+                    )
+                    .fetch(
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
+                        StatusCursor::new(0),
+                        10,
+                    )
+                    .await
+                    .is_err(),
                     "owed" => resolve_publication::<_, TestTypes>(scope, reference)
                         .await
                         .is_err(),
@@ -116,13 +138,17 @@ async fn corrupt_surrogate_read_rolls_back_business_write_and_keeps_custody_corr
                     status: DeliveryStatus::AtRecipient,
                     cancel: None,
                 };
-                StatusStream::<_, TestTypes>::new(scope, peer(1), "route".into())
-                    .append(
-                        &publication,
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
+                StatusStream::<_, TestTypes>::new(
+                    scope,
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    "route".into(),
+                )
+                .append(
+                    &publication,
+                    fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)?;
                 query::<Turso>("CREATE TABLE before_corrupt_read(value INTEGER NOT NULL)")
                     .execute(scope.executor())
                     .await?;
@@ -141,10 +167,18 @@ async fn corrupt_surrogate_read_rolls_back_business_write_and_keeps_custody_corr
                 query::<Turso>("INSERT INTO before_corrupt_read VALUES(1)")
                     .execute(scope.executor())
                     .await?;
-                StatusStream::<_, TestTypes>::new(scope, peer(1), "route".into())
-                    .fetch(peer(1), StatusCursor::new(0), 10)
-                    .await
-                    .map_err(delivery_rollback)?;
+                StatusStream::<_, TestTypes>::new(
+                    scope,
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    "route".into(),
+                )
+                .fetch(
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    StatusCursor::new(0),
+                    10,
+                )
+                .await
+                .map_err(delivery_rollback)?;
                 Ok(())
             })
         })

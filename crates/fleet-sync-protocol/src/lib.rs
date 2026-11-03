@@ -32,6 +32,7 @@ mod schema_support_report;
 mod session_frame;
 mod snapshot_manifest;
 mod snapshot_page;
+mod submitter;
 mod transaction_part;
 pub mod unit_budget;
 
@@ -62,6 +63,7 @@ pub use schema_support_report::*;
 pub use session_frame::*;
 pub use snapshot_manifest::*;
 pub use snapshot_page::*;
+pub use submitter::Submitter;
 pub use transaction_part::*;
 
 #[cfg(test)]

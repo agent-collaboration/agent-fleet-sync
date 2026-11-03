@@ -200,11 +200,18 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
             .store
             .transaction(|scope| {
                 Box::pin(async move {
-                    let events =
-                        StatusStream::<_, TestTypes>::new(scope, peer(1), "fixture-route".into())
-                            .fetch(peer(1), StatusCursor::new(0), 100)
-                            .await
-                            .map_err(storage_error)?;
+                    let events = StatusStream::<_, TestTypes>::new(
+                        scope,
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
+                        "fixture-route".into(),
+                    )
+                    .fetch(
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
+                        StatusCursor::new(0),
+                        100,
+                    )
+                    .await
+                    .map_err(storage_error)?;
                     Ok(events
                         .events
                         .into_iter()
@@ -268,6 +275,9 @@ impl DeliveryTypes for UnitAcceptanceTypes {
     const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
     type Body = String;
     type Sender = String;
+    fn submitter(sender: &Self::Sender) -> Submitter {
+        crate::support::sender_submitter(sender)
+    }
     type Address = String;
     type Acceptance = ();
     type StatusRoute = String;

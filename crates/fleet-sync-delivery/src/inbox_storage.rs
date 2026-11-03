@@ -79,7 +79,7 @@ where
         )?;
         if expected.is_some_and(|item| item != record.header.id)
             || row.item_id.as_deref() != Some(item_key(record.header.id).as_str())
-            || live != u64::from(!record.header.compact_local())
+            || live != u64::from(!record.header.compacts_payload())
             || bytes
                 != u64::try_from(
                     record
@@ -91,7 +91,7 @@ where
                 )
                 .map_err(|_| DeliveryError::SequenceExhausted)?
             || settlement
-                != if record.header.compact_local() {
+                != if record.header.compacts_payload() {
                     0
                 } else {
                     u64::from(record.header.settlement_bytes)
@@ -148,8 +148,13 @@ where
         now: SyncTime,
     ) -> Result<(), DeliveryError> {
         header.validate(self.owner)?;
+        if header.legacy_read_only {
+            return Err(DeliveryError::Refused {
+                reason: DeliveryRefusal::NotSubmitter,
+            });
+        }
         // Only the recipient retains the full cancellation header; relay/outbox compacts keep identity/digest/status.
-        let compact = header.compact_local();
+        let compact = header.compacts_payload();
         let payload = if compact { None } else { payload };
         queries::write_inbox_item(
             self.scope,
@@ -161,6 +166,7 @@ where
             payload,
             header.created_at.unix_millis().to_string(),
             now.unix_millis().to_string(),
+            header.sender.as_ref().map(encode).transpose()?,
         )
         .await
         .map_err(sql_error)

@@ -1,4 +1,4 @@
-SELECT CAST(CASE WHEN typeof(id)='text' THEN id END AS TEXT) AS id,machine_id,
+SELECT CAST(CASE WHEN typeof(id)='text' THEN id END AS TEXT) AS id,submitter_kind,submitter_id,
        typeof(cursor) AS cursor_class,CAST(cursor AS TEXT) AS cursor,
        item_id,
        typeof(version) AS version_class,CAST(version AS TEXT) AS version,
@@ -11,4 +11,4 @@ SELECT CAST(CASE WHEN typeof(id)='text' THEN id END AS TEXT) AS id,machine_id,
        refusal_digest,
        refusal_item_id,
        cancel_outcome,
-       cancel_too_late_at FROM _fleet_sync_status_events WHERE machine_id=?3 AND cursor>CAST(?1 AS INTEGER) ORDER BY _fleet_sync_status_events.cursor LIMIT CAST(?2 AS INTEGER);
+       cancel_too_late_at FROM _fleet_sync_status_events WHERE submitter_kind=?3 AND submitter_id=?4 AND cursor>CAST(?1 AS INTEGER) ORDER BY _fleet_sync_status_events.cursor LIMIT CAST(?2 AS INTEGER);

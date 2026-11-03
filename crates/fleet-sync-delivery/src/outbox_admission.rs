@@ -23,7 +23,7 @@ where
         &mut self,
         item: DeliveryItem<D>,
         relay: PeerId,
-        submitter: PeerId,
+        submitter: crate::Submitter,
         now: SyncTime,
     ) -> Result<
         (
@@ -55,7 +55,7 @@ where
         &mut self,
         cancel: DeliveryCancel<D>,
         relay: PeerId,
-        submitter: PeerId,
+        submitter: crate::Submitter,
         now: SyncTime,
         consumer: &C,
     ) -> Result<
@@ -112,9 +112,14 @@ where
         &mut self,
         item: DeliveryItem<D>,
         relay: PeerId,
-        submitter: PeerId,
+        submitter: crate::Submitter,
         now: SyncTime,
     ) -> Result<OutboxAdmission<D::Acceptance>, DeliveryError> {
+        if submitter != D::submitter(item.sender()) {
+            return Ok(OutboxAdmission::Refused {
+                reason: DeliveryRefusal::NotSubmitter,
+            });
+        }
         self.enqueue_envelope(DeliveryEnvelope::Item(item), relay, submitter, now, false)
             .await
     }
@@ -122,7 +127,7 @@ where
         &mut self,
         cancel: DeliveryCancel<D>,
         relay: PeerId,
-        submitter: PeerId,
+        submitter: crate::Submitter,
         now: SyncTime,
         consumer: &C,
     ) -> Result<OutboxAdmission<D::Acceptance>, DeliveryError>
@@ -130,6 +135,11 @@ where
         C: crate::DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        if submitter != D::submitter(cancel.sender()) {
+            return Ok(OutboxAdmission::Refused {
+                reason: DeliveryRefusal::NotSubmitter,
+            });
+        }
         self.limits.validate::<D>()?;
         if crate::item_is_too_old(cancel.id(), now) {
             return Ok(OutboxAdmission::Refused {
@@ -200,12 +210,17 @@ where
     pub(crate) async fn existing_admission(
         &mut self,
         envelope: &DeliveryEnvelope<D>,
-        submitter: PeerId,
+        submitter: crate::Submitter,
     ) -> Result<Option<OutboxAdmission<D::Acceptance>>, DeliveryError> {
         let Some(state) = self.header_state(envelope.id()).await? else {
             return Ok(None);
         };
         let (digest, status, version, owner) = match state {
+            OutboxHeaderState::Legacy { .. } => {
+                return Ok(Some(OutboxAdmission::Refused {
+                    reason: DeliveryRefusal::NotSubmitter,
+                }));
+            }
             OutboxHeaderState::Unresolvable { kind, .. } => {
                 return Err(DeliveryError::ProcessingFailed { kind });
             }
@@ -241,7 +256,7 @@ where
         &mut self,
         envelope: DeliveryEnvelope<D>,
         relay: PeerId,
-        submitter: PeerId,
+        submitter: crate::Submitter,
         now: SyncTime,
         withdrawn: bool,
     ) -> Result<OutboxAdmission<D::Acceptance>, DeliveryError> {
@@ -289,6 +304,11 @@ where
                     }
                     Some(OutboxHeaderState::Unresolvable { kind, .. }) => {
                         return Err(DeliveryError::ProcessingFailed { kind });
+                    }
+                    Some(OutboxHeaderState::Legacy { .. }) => {
+                        return Ok(OutboxAdmission::Refused {
+                            reason: DeliveryRefusal::NotSubmitter,
+                        });
                     }
                     None => {
                         return Err(DeliveryError::Corrupt {
@@ -351,6 +371,7 @@ where
             digest: reference.digest.as_str().to_owned(),
             relay,
             submitter: Some(submitter),
+            consumer_sender: Some(encode(envelope.sender())?),
             created_at: created_at(reference.item),
             admitted_at: Some(now),
             handed_off_at: None,

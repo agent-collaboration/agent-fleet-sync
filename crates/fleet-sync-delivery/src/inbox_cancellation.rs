@@ -80,13 +80,30 @@ where
         let authority = original.delivery_header();
         let outcome = if cancel.header.valid_until.is_some_and(|until| now >= until) {
             ControlOutcome::Expired
+        } else if original.legacy_read_only {
+            ControlOutcome::Refused {
+                reason: DeliveryRefusal::ProcessingFailed {
+                    kind: DeliveryFailureKind::CustodyUnresolvable,
+                },
+            }
         } else if let Err(DeliveryError::Corrupt { .. }) = authority {
             ControlOutcome::Refused {
                 reason: DeliveryRefusal::ProcessingFailed {
                     kind: DeliveryFailureKind::CustodyCorrupt,
                 },
             }
-        } else if !consumer.may_cancel(&cancel.header.sender, &authority?) {
+        } else if !consumer.may_cancel(
+            cancel
+                .header
+                .sender
+                .as_ref()
+                .ok_or(DeliveryError::CorruptRow {
+                    table: "_fleet_sync_inbox_items",
+                    key: cancel.header.id.as_uuid().to_string(),
+                    field: "consumer_sender",
+                })?,
+            &authority?,
+        ) {
             ControlOutcome::Refused {
                 reason: DeliveryRefusal::CancelSenderMismatch,
             }

@@ -10,6 +10,15 @@ impl DeliveryTypes for SampleDelivery {
     const MAX_STATUS_ROUTE_BYTES: u32 = 128;
     type Body = String;
     type Sender = String;
+    fn submitter(_: &Self::Sender) -> fleet_sync_protocol::Submitter {
+        // This sample consumer has one authorized producer, machine 2.
+        match fleet_sync_protocol::PeerId::new(durable_steps::Uuid::from_u128(
+            0x019eef00000070008000000000000002,
+        )) {
+            Ok(peer) => fleet_sync_protocol::Submitter::Machine(peer),
+            Err(error) => panic!("invalid sample producer identity: {error}"),
+        }
+    }
     type Address = String;
     type Acceptance = String;
     type LocalObservation = ();

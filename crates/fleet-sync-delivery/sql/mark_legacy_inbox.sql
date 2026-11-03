@@ -1,0 +1,1 @@
+UPDATE _fleet_sync_inbox_items SET legacy_read_only=1,live=0,payload_bytes=0,settlement_charge_bytes=0,updated_at=CAST(?2 AS INTEGER) WHERE item_id=?1 AND submitter_kind IS NULL AND submitter_id IS NULL AND consumer_sender IS NULL AND payload IS NULL;

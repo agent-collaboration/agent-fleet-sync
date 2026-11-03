@@ -26,6 +26,7 @@ where
     )]
     pub fn accept_push<'call, TAttempt, TReport, TRetention, C>(
         &'call mut self,
+        submitter: Submitter,
         item: DeliveryEnvelope<D>,
         relay: PeerId,
         consumer: &'call C,
@@ -40,6 +41,11 @@ where
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
         async move {
+            if submitter != D::submitter(item.sender()) {
+                return Ok(PushResult::Refused {
+                    reason: DeliveryRefusal::NotSubmitter,
+                });
+            }
             let identity = item.id();
             let (answer, effects) = self.store_push(item, relay, consumer, now).await?;
             if matches!(
@@ -96,6 +102,14 @@ where
             ));
         }
         if let Some(existing) = self.load(item.id()).await? {
+            if existing.header.legacy_read_only {
+                return Ok((
+                    PushResult::Refused {
+                        reason: DeliveryRefusal::NotSubmitter,
+                    },
+                    InboxEffects::default(),
+                ));
+            }
             if existing.header.digest != item.digest().as_str() {
                 let digest = ItemDigest::try_from(existing.header.digest).map_err(|_| {
                     DeliveryError::Corrupt {
@@ -147,7 +161,7 @@ where
             if original.header.cancel_target.is_some() {
                 return Err(DeliveryError::InvalidBatch);
             }
-            if original.header.compact_local() {
+            if original.header.compacts_payload() {
                 0
             } else {
                 original.header.settlement_bytes = original

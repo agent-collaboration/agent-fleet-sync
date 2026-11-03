@@ -19,14 +19,17 @@ async fn append_status_event(fixture: &Fixture, item: u64, version: u64) -> Stat
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let (event, _) =
-                    StatusStream::<_, TestTypes>::new(scope, peer(1), "fixture-route".into())
-                        .append(
-                            &held_publication(item, version),
-                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                        )
-                        .await
-                        .map_err(storage_error)?;
+                let (event, _) = StatusStream::<_, TestTypes>::new(
+                    scope,
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    "fixture-route".into(),
+                )
+                .append(
+                    &held_publication(item, version),
+                    fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)?;
                 Ok(event.cursor)
             })
         })
@@ -39,13 +42,17 @@ async fn acknowledge_events(fixture: &Fixture, through: u64) -> StatusAckResult 
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                StatusStream::<_, TestTypes>::new(scope, peer(1), "fixture-route".into())
-                    .acknowledge(
-                        StatusCursor::new(through),
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)
+                StatusStream::<_, TestTypes>::new(
+                    scope,
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    "fixture-route".into(),
+                )
+                .acknowledge(
+                    StatusCursor::new(through),
+                    fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)
             })
         })
         .await
@@ -60,11 +67,18 @@ async fn fetch_status_event_identities(
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let batch =
-                    StatusStream::<_, TestTypes>::new(scope, peer(1), "fixture-route".into())
-                        .fetch(peer(1), StatusCursor::new(after), 20)
-                        .await
-                        .map_err(storage_error)?;
+                let batch = StatusStream::<_, TestTypes>::new(
+                    scope,
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    "fixture-route".into(),
+                )
+                .fetch(
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    StatusCursor::new(after),
+                    20,
+                )
+                .await
+                .map_err(storage_error)?;
                 Ok(batch
                     .events
                     .into_iter()
@@ -278,11 +292,18 @@ async fn empty_fetch_preserves_the_requested_cursor_when_the_floor_is_higher() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let batch =
-                    StatusStream::<_, TestTypes>::new(scope, peer(1), "fixture-route".into())
-                        .fetch(peer(1), StatusCursor::new(0), 10)
-                        .await
-                        .map_err(storage_error)?;
+                let batch = StatusStream::<_, TestTypes>::new(
+                    scope,
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    "fixture-route".into(),
+                )
+                .fetch(
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    StatusCursor::new(0),
+                    10,
+                )
+                .await
+                .map_err(storage_error)?;
                 assert!(batch.events.is_empty());
                 assert_eq!(batch.through, StatusCursor::new(0));
                 Ok(())
@@ -306,13 +327,16 @@ async fn a_stored_acknowledged_floor_above_head_is_corrupt() {
                 )
                 .execute(scope.executor())
                 .await?;
-                let result =
-                    StatusStream::<_, TestTypes>::new(scope, peer(1), "fixture-route".into())
-                        .acknowledge(
-                            StatusCursor::new(1),
-                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                        )
-                        .await;
+                let result = StatusStream::<_, TestTypes>::new(
+                    scope,
+                    fleet_sync_delivery::Submitter::Machine(peer(1)),
+                    "fixture-route".into(),
+                )
+                .acknowledge(
+                    StatusCursor::new(1),
+                    fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                )
+                .await;
                 assert!(matches!(result, Err(DeliveryError::Corrupt { .. })));
                 Ok(())
             })
