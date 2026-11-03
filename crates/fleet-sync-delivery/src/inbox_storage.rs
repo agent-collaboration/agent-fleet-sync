@@ -103,11 +103,16 @@ where
         }
         Ok(record)
     }
-    pub(crate) async fn save(&mut self, record: &InboxRecord<D>) -> Result<(), DeliveryError> {
+    pub(crate) async fn save(
+        &mut self,
+        record: &InboxRecord<D>,
+        now: SyncTime,
+    ) -> Result<(), DeliveryError> {
         record.validate(self.owner)?;
         self.save_header(
             &record.header,
             record.payload.as_ref().map(encode).transpose()?,
+            now,
         )
         .await
     }
@@ -140,6 +145,7 @@ where
         &mut self,
         header: &InboxHeader<D>,
         payload: Option<String>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         header.validate(self.owner)?;
         // Only the recipient retains the full cancellation header; relay/outbox compacts keep identity/digest/status.
@@ -153,6 +159,8 @@ where
             if compact { 0 } else { header.settlement_bytes }.to_string(),
             encode(header)?,
             payload,
+            header.created_at.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await
         .map_err(sql_error)
@@ -160,12 +168,13 @@ where
     pub(crate) async fn update_header(
         &mut self,
         header: &InboxHeader<D>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let row = queries::read_inbox_item(self.scope, item_key(header.id))
             .await
             .map_err(sql_error)?
             .ok_or(DeliveryError::CustodyMissing)?;
-        self.save_header(header, row.payload).await
+        self.save_header(header, row.payload, now).await
     }
     pub(crate) async fn state(&mut self) -> Result<InboxState, DeliveryError> {
         let state: InboxState = match queries::read_inbox_state(self.scope)
@@ -178,11 +187,20 @@ where
         state.validate(self.owner)?;
         Ok(state)
     }
-    pub(crate) async fn save_state(&mut self, state: &InboxState) -> Result<(), DeliveryError> {
+    pub(crate) async fn save_state(
+        &mut self,
+        state: &InboxState,
+        now: SyncTime,
+    ) -> Result<(), DeliveryError> {
         state.validate(self.owner)?;
-        queries::write_inbox_state(self.scope, encode(state)?)
-            .await
-            .map_err(sql_error)
+        queries::write_inbox_state(
+            self.scope,
+            encode(state)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
+        )
+        .await
+        .map_err(sql_error)
     }
     pub async fn resolve_delivery(
         &mut self,
@@ -273,12 +291,13 @@ where
         outcome: RecipientOutcome<D::Acceptance>,
         consumer: &C,
         observation: Option<&D::LocalObservation>,
+        now: SyncTime,
     ) -> Result<Option<ReportRef>, DeliveryError>
     where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
-        self.record_header_outcome(&mut record.header, outcome, consumer, observation)
+        self.record_header_outcome(&mut record.header, outcome, consumer, observation, now)
             .await
     }
     pub(crate) async fn record_header_outcome<C>(
@@ -287,6 +306,7 @@ where
         outcome: RecipientOutcome<D::Acceptance>,
         consumer: &C,
         observation: Option<&D::LocalObservation>,
+        now: SyncTime,
     ) -> Result<Option<ReportRef>, DeliveryError>
     where
         C: DeliveryConsumer<S>,
@@ -319,6 +339,8 @@ where
             item_key(report.item),
             report.report_seq.value().to_string(),
             encode(&report)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await
         .map_err(sql_error)?;

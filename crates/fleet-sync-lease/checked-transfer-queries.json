@@ -48,6 +48,16 @@
           "name": "phase",
           "kind": "text",
           "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
         }
       ]
     },
@@ -79,6 +89,11 @@
           "name": "attempt",
           "kind": "text",
           "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
         }
       ]
     },
@@ -95,6 +110,11 @@
         },
         {
           "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
           "kind": "text",
           "nullable": false
         }
@@ -126,6 +146,16 @@
         },
         {
           "name": "history",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
           "kind": "text",
           "nullable": false
         }

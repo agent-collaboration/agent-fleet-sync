@@ -114,7 +114,12 @@ async fn legacy_sessions_notices_and_attach_sequences_migrate_without_rounding_f
     );
     assert_eq!(notices.first().unwrap().position.value(), u64::MAX);
     assert!(matches!(
-        next_attach_sequence(&mut scope, key.peer).await,
+        next_attach_sequence(
+            &mut scope,
+            key.peer,
+            fleet_sync_protocol::SyncTime::from_unix_millis(0)
+        )
+        .await,
         Err(SessionError::AttachSequenceExhausted)
     ));
     let row=query::<Turso>("SELECT id,notice_head,state_kind,detached_since,created_at,updated_at FROM _fleet_sync_sessions").fetch_one(scope.executor()).await.unwrap();
@@ -132,7 +137,13 @@ async fn legacy_sessions_notices_and_attach_sequences_migrate_without_rounding_f
         "legacy detached time is the best recorded session time"
     );
     assert!(row.try_get::<i64, _>("updated_at").unwrap() >= created);
-    save_session(&mut scope, &record).await.unwrap();
+    save_session(
+        &mut scope,
+        &record,
+        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+    )
+    .await
+    .unwrap();
     let row = query::<Turso>("SELECT id,created_at FROM _fleet_sync_sessions")
         .fetch_one(scope.executor())
         .await
@@ -167,6 +178,7 @@ async fn typed_session_surrogate_id_refuses_notice_mutation_without_repair() {
             database: DatabaseId::try_from("019eef00-0000-7000-8000-000000000041".to_owned())
                 .unwrap(),
         },
+        fleet_sync_protocol::SyncTime::from_unix_millis(0),
     )
     .await;
     assert!(
@@ -201,6 +213,7 @@ async fn typed_notice_surrogate_id_refuses_history_read_without_repair() {
             database: DatabaseId::try_from("019eef00-0000-7000-8000-000000000041".to_owned())
                 .unwrap(),
         },
+        fleet_sync_protocol::SyncTime::from_unix_millis(0),
     )
     .await
     .unwrap();

@@ -7,7 +7,7 @@ use durable_steps::{
     OperationFailure, OperationId, RequestKey, StepError, StepName,
     storage::{JournalStorage, TransactionScope},
 };
-use fleet_sync_protocol::{FailureCode, RequestId};
+use fleet_sync_protocol::{FailureCode, RequestId, SyncTime};
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
@@ -52,6 +52,7 @@ pub(crate) async fn open_lifecycle<S>(
     scope: &mut S,
     operation: OperationId,
     intent: LifecycleIntent,
+    now: SyncTime,
 ) -> Result<LifecycleAttempt, StepError>
 where
     S: TransactionScope + JournalStorage,
@@ -99,7 +100,10 @@ where
         intent,
         outcome: None,
     };
-    storage.save_lifecycle(&attempt).await.map_err(step_error)?;
+    storage
+        .save_lifecycle(&attempt, now)
+        .await
+        .map_err(step_error)?;
     Ok(attempt)
 }
 
@@ -122,6 +126,7 @@ pub(crate) async fn fail_lifecycle<S>(
     scope: &mut S,
     key: &RequestKey,
     failure: &OperationFailure,
+    now: SyncTime,
 ) -> Result<(), durable_steps::StoreError>
 where
     S: TransactionScope,
@@ -143,7 +148,7 @@ where
             reason: failure_code(failure)?,
         });
         storage
-            .save_lifecycle(&record)
+            .save_lifecycle(&record, now)
             .await
             .map_err(storage_error)?;
     }

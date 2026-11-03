@@ -23,9 +23,13 @@ async fn publish(store: &TestStore, report: ReportSchemaSupport) -> TestResult {
     store
         .transaction(move |scope| {
             Box::pin(async move {
-                report_schema_support(scope, &report)
-                    .await
-                    .map_err(storage)?;
+                report_schema_support(
+                    scope,
+                    &report,
+                    fleet_sync_protocol::SyncTime::from_unix_millis(1000),
+                )
+                .await
+                .map_err(storage)?;
                 Ok(())
             })
         })
@@ -70,7 +74,14 @@ async fn newer_attach_wins_even_when_an_older_report_arrives_late_and_after_reop
     let conflict = report(2, 3, 99)?;
     let refused = store
         .transaction(move |scope| {
-            Box::pin(async move { Ok(report_schema_support(scope, &conflict).await) })
+            Box::pin(async move {
+                Ok(report_schema_support(
+                    scope,
+                    &conflict,
+                    fleet_sync_protocol::SyncTime::from_unix_millis(1000),
+                )
+                .await)
+            })
         })
         .await?;
     assert!(matches!(refused, Err(LeaseError::InvalidInput { .. })));

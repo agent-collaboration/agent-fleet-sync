@@ -45,12 +45,13 @@ impl<
         }
         if let DeliveryRequest::StatusAck { through, .. } = request {
             let owner = self.delivery_owner(DeliveryObject::Status(peer)).await?;
+            let now = owner.object.host().now();
             return owner
                 .object
                 .rule_transaction(move |scope| {
                     Box::pin(async move {
                         StatusStream::<_, P::Delivery>::new(scope, peer, route)
-                            .acknowledge(through)
+                            .acknowledge(through, now)
                             .await
                     })
                 })
@@ -130,7 +131,7 @@ impl<
                                 mailbox.received(peer, stream, through, now).await?,
                             ),
                             DeliveryRequest::Report { report, .. } => {
-                                DeliveryAnswer::Report(mailbox.report(peer, report).await?)
+                                DeliveryAnswer::Report(mailbox.report(peer, report, now).await?)
                             }
                             DeliveryRequest::Query { items, .. } => {
                                 DeliveryAnswer::Query(mailbox.query(&items).await?)

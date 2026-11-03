@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-status-queries.json": "0b0554778b30e91dce3c4fe019a7cc3762494783b72654c30b0cad20302441c9",
+    "checked-status-queries.json": "78ab818ba1cbbce2f3ae844dfe39df4baa8cb43e2e64f4078fed123eb9e6bf10",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -63,6 +63,7 @@
     "migrations/0007_typed_status_records.sql": "61b3c59edcd380af6c47ce818e21434584c356d5e788c62ab9d059c0e4ac78cb",
     "migrations/0008_custody_row_metadata.sql": "69b8ef89f3d94604d0cda7f28541251ef23874740e51f952408d9c7b9b0cd01c",
     "migrations/0009_typed_report_records.sql": "2b55df57eb4fead5ef43986aba8f66414ed0e9bbc07a0a291a971e802b35c2be",
+    "migrations/0010_restore_status_owed_machine_index.sql": "f28c4e8e1a9a3cc45e8245fb6a20ede57e92a2f95b032fbd882fd2d5ecd03311",
     "sql/drop_status_events.sql": "1633bac5444ed52132c16822ab2a65a6e2ac2ae055b0fad2851f13811108c7b5",
     "sql/list_publications.sql": "2f542afff87dd3eae09ba3e0d6fbec2692327e9cd899dbeafba958c08f85bcd7",
     "sql/read_publication.sql": "44d2202d4aa31d34083e2ffea7719da101e77286f95c4b6cd99d3441a6ec2719",
@@ -70,12 +71,12 @@
     "sql/read_status_revision.sql": "d0af0959dd3d61d5a6794ba73d8d3a77b9abaf38b383fd9856692bc74c175958",
     "sql/read_status_state.sql": "f4abbfd62d58254db2fa5de1ea43735898dc9941b6296057cc48cadc4af071d8",
     "sql/retire_publication.sql": "0c7270c86d3c19b42380056503f2f0981a30c0f5205be8e802d37adafc620c1a",
-    "sql/write_publication.sql": "2c38cd3154c7148ebed398e4a57a7d9a029c4f65ee02bdd9f04d612086ca3a9d",
-    "sql/write_status_event.sql": "f362fc52e93d32eabd49248a4b46414e604026a343bceae50e8cd23d05a1c03d",
-    "sql/write_status_state.sql": "9c03a170e2900f84b4594a127855f8602dd043ba79cd767b5052f7c6061fbf21",
-    "src/checked_queries/status.rs": "c1519c2e5072166a5bfa6d26bafb98418c23dd244ba97fd4439f9fc44cc1aa4f"
+    "sql/write_publication.sql": "f01389120bf8009dd12cd949c4a24845c8f0568360b61fdf437cdd3cc0984cfd",
+    "sql/write_status_event.sql": "cf007991d5581c4062555579bc20de9c210f8959b9e29f3ac91ce956eaced36f",
+    "sql/write_status_state.sql": "b809d57c1e99ca3e1ca6b5c186836e13d68c27bef55acf0393742085f68c76eb",
+    "src/checked_queries/status.rs": "b2ff8a72790ea6b18f10db0ed5bb96e9b5c580008004ffea417870b61b4a36c7"
   },
-  "queries_digest": "77b82f7f10b800ef1d3269650c9ab5271abc292095570b5f91da40ce45819ee4",
+  "queries_digest": "14e4b6dc234f4f0f1bcc86079f572abb04f034c01d7c7a1ad70ee29b70af65c1",
   "queries": [
     {
       "name": "read_status_state",
@@ -134,7 +135,7 @@
     },
     {
       "name": "write_status_state",
-      "bind_slots": 2,
+      "bind_slots": 4,
       "columns": []
     },
     {
@@ -257,7 +258,7 @@
     },
     {
       "name": "write_publication",
-      "bind_slots": 4,
+      "bind_slots": 6,
       "columns": []
     },
     {
@@ -267,7 +268,7 @@
     },
     {
       "name": "write_status_event",
-      "bind_slots": 5,
+      "bind_slots": 7,
       "columns": []
     },
     {

@@ -65,7 +65,7 @@ where
         && record.intent.new_epoch.is_some();
     if move_owed {
         record.enter(HolderChangePhase::Cancelling, now)?;
-        RegistryStorage(scope).save_transfer(&record).await?;
+        RegistryStorage(scope).save_transfer(&record, now).await?;
         let admitted = scope
             .admit::<HolderChangeCancelTask<S, D>>(&cancel_task_key(id)?, &id)
             .await
@@ -74,15 +74,17 @@ where
             })?;
         let mut admission = admission;
         admission.follow_up = Some(admitted.id());
-        RegistryStorage(scope).save_admission(&admission).await?;
+        RegistryStorage(scope)
+            .save_admission(&admission, now)
+            .await?;
         return Ok(Some(HolderChangeAnswer::Pending { transfer: id }));
     }
     let answer = HolderChangeAnswer::Cancelled { by: cancel.by };
     record.outcome = Some(answer.clone());
     record.enter(HolderChangePhase::Ended, now)?;
-    RegistryStorage(scope).save_transfer(&record).await?;
+    RegistryStorage(scope).save_transfer(&record, now).await?;
     if claim_owed {
-        admit_settlement::<S, D>(scope, id, SettleOutcome::Cancelled).await?;
+        admit_settlement::<S, D>(scope, id, SettleOutcome::Cancelled, now).await?;
     }
     Ok(Some(answer))
 }
@@ -99,6 +101,7 @@ pub(crate) async fn admit_settlement<S, D>(
     scope: &mut S::Scope<'_>,
     id: TransferId,
     outcome: SettleOutcome,
+    now: SyncTime,
 ) -> Result<(), LeaseError>
 where
     S: AtomicStore,
@@ -134,6 +137,8 @@ where
             field: error.to_string(),
         })?;
     admission.follow_up = Some(admitted.id());
-    RegistryStorage(scope).save_admission(&admission).await?;
+    RegistryStorage(scope)
+        .save_admission(&admission, now)
+        .await?;
     Ok(())
 }

@@ -228,7 +228,10 @@ async fn terminal_relayed_original_is_refused_without_mutation() {
             Box::pin(async move {
                 let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
                 let cycle = inbox
-                    .begin_receive(DeliveryStream::Items)
+                    .begin_receive(
+                        DeliveryStream::Items,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?
                     .unwrap();

@@ -49,9 +49,13 @@ where
                         RegistrationRefusal::Retired,
                     )));
                 }
-                let mut attempt =
-                    open_lifecycle(scope, operation, LifecycleIntent::Register(offered.clone()))
-                        .await?;
+                let mut attempt = open_lifecycle(
+                    scope,
+                    operation,
+                    LifecycleIntent::Register(offered.clone()),
+                    now,
+                )
+                .await?;
                 if let Some(outcome) = attempt.outcome {
                     if let Some(error) = saved_failure(&outcome) {
                         return Err(step_error(error));
@@ -97,7 +101,7 @@ where
                 };
                 attempt.outcome = Some(LifecycleOutcome::Registration(answer.clone()));
                 RegistryStorage(scope)
-                    .save_lifecycle(&attempt)
+                    .save_lifecycle(&attempt, now)
                     .await
                     .map_err(step_error)?;
                 Ok(Decision::Answer(answer))
@@ -249,30 +253,36 @@ where
                             expires_at: now.after(policy.lease_duration),
                         };
                         storage
-                            .save_database(&DatabaseRecord::initial(
-                                request.database,
-                                DatabaseLifecycle::Registered {
-                                    origin: request.origin.clone(),
-                                    imported_from: None,
-                                },
-                                epoch,
+                            .save_database(
+                                &DatabaseRecord::initial(
+                                    request.database,
+                                    DatabaseLifecycle::Registered {
+                                        origin: request.origin.clone(),
+                                        imported_from: None,
+                                    },
+                                    epoch,
+                                    now,
+                                ),
                                 now,
-                            ))
+                            )
                             .await
                             .map_err(step_error)?;
                         storage
-                            .save_floor(request.database, epoch)
+                            .save_floor(request.database, epoch, now)
                             .await
                             .map_err(step_error)?;
-                        storage.save_lease(&lease).await.map_err(step_error)?;
+                        storage.save_lease(&lease, now).await.map_err(step_error)?;
                         storage
-                            .save_history(&EpochHistory {
-                                database: request.database,
-                                epoch,
-                                holder: request.writer,
-                                granted_at: now,
-                                ended_at: None,
-                            })
+                            .save_history(
+                                &EpochHistory {
+                                    database: request.database,
+                                    epoch,
+                                    holder: request.writer,
+                                    granted_at: now,
+                                    ended_at: None,
+                                },
+                                now,
+                            )
                             .await
                             .map_err(step_error)?;
                         RegistrationAnswer::Registered {
@@ -282,7 +292,10 @@ where
                     }
                 };
                 attempt.outcome = Some(LifecycleOutcome::Registration(answer.clone()));
-                storage.save_lifecycle(&attempt).await.map_err(step_error)?;
+                storage
+                    .save_lifecycle(&attempt, now)
+                    .await
+                    .map_err(step_error)?;
                 crate::lease_change_hook::project_lease_change(
                     storage.0,
                     request.database,
@@ -313,6 +326,7 @@ where
     for<'row> &'row str: ColumnIndex<D::Row>,
 {
     let request = request.clone();
+    let now = ctx.now();
     Ok(ctx
         .local(step(name)?, move |scope| {
             Box::pin(async move {
@@ -345,7 +359,10 @@ where
                     },
                 );
                 attempt.outcome = Some(LifecycleOutcome::Registration(answer.clone()));
-                storage.save_lifecycle(&attempt).await.map_err(step_error)?;
+                storage
+                    .save_lifecycle(&attempt, now)
+                    .await
+                    .map_err(step_error)?;
                 Ok(answer)
             })
         })

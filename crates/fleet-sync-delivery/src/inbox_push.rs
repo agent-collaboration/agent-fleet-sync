@@ -188,7 +188,7 @@ where
             ));
         }
         if let Some(original) = original {
-            self.save(&original).await?;
+            self.save(&original, now).await?;
         }
         let progress = match &item {
             DeliveryEnvelope::Item(_) => InboxProgress::Pending {
@@ -200,6 +200,8 @@ where
                     self.scope,
                     item_key(cancel.target()),
                     item_key(identity),
+                    now.unix_millis().to_string(),
+                    now.unix_millis().to_string(),
                 )
                 .await
                 .map_err(sql_error)?;
@@ -210,7 +212,7 @@ where
         };
         let mut record = InboxRecord::new(item, InboxRoute::Relayed, progress, reserve, now)?;
         record.header.relay = Some(relay);
-        self.save(&record).await?;
+        self.save(&record, now).await?;
         if let Some(DeliveryEnvelope::Item(item)) = &record.payload {
             consumer.on_received(self.scope, item).await?;
         }

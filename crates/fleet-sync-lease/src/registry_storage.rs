@@ -98,6 +98,7 @@ where
     pub(crate) async fn save_database(
         &mut self,
         record: &DatabaseRecord,
+        now: SyncTime,
     ) -> Result<(), LeaseError> {
         if let Some(existing) = self.database(record.database).await?
             && matches!(existing.lifecycle, DatabaseLifecycle::Retired { .. })
@@ -109,6 +110,8 @@ where
             self.0,
             record.database.as_uuid().to_string(),
             encode(record)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -129,7 +132,11 @@ where
         }
         Ok(Some(record))
     }
-    pub(crate) async fn save_lease(&mut self, record: &RegistryLease) -> Result<(), LeaseError> {
+    pub(crate) async fn save_lease(
+        &mut self,
+        record: &RegistryLease,
+        now: SyncTime,
+    ) -> Result<(), LeaseError> {
         if let Some(previous) = self.lease(record.database).await?
             && (previous.epoch > record.epoch
                 || (previous.epoch == record.epoch && previous.holder != record.holder))
@@ -142,6 +149,8 @@ where
             self.0,
             record.database.as_uuid().to_string(),
             encode(record)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -159,6 +168,7 @@ where
         &mut self,
         database: DatabaseId,
         epoch: Epoch,
+        now: SyncTime,
     ) -> Result<(), LeaseError> {
         if self
             .floor(database)
@@ -173,6 +183,8 @@ where
             self.0,
             database.as_uuid().to_string(),
             epoch.value().to_string(),
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -193,7 +205,11 @@ where
         };
         decode_history(database, epoch, row.history_record()?).map(Some)
     }
-    pub(crate) async fn save_history(&mut self, record: &EpochHistory) -> Result<(), LeaseError> {
+    pub(crate) async fn save_history(
+        &mut self,
+        record: &EpochHistory,
+        now: SyncTime,
+    ) -> Result<(), LeaseError> {
         if let Some(existing) = self.history(record.database, record.epoch).await?
             && (existing.holder != record.holder
                 || existing.granted_at != record.granted_at
@@ -210,6 +226,8 @@ where
             record.database.as_uuid().to_string(),
             record.epoch.value().to_string(),
             encode(record)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -236,7 +254,11 @@ where
         }
         Ok(Some(record))
     }
-    pub(crate) async fn save_renewal(&mut self, record: &RenewalAttempt) -> Result<(), LeaseError> {
+    pub(crate) async fn save_renewal(
+        &mut self,
+        record: &RenewalAttempt,
+        now: SyncTime,
+    ) -> Result<(), LeaseError> {
         if let Some(existing) = self
             .renewal(record.request.database, record.request.attempt)
             .await?
@@ -249,6 +271,8 @@ where
             record.request.database.as_uuid().to_string(),
             record.request.attempt.as_uuid().to_string(),
             encode(record)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -290,6 +314,7 @@ where
     pub(crate) async fn save_lifecycle(
         &mut self,
         record: &LifecycleAttempt,
+        now: SyncTime,
     ) -> Result<(), LeaseError> {
         if let Some(existing) = self.lifecycle(record.intent.attempt()).await?
             && (existing.intent != record.intent
@@ -303,6 +328,8 @@ where
             record.intent.database().as_uuid().to_string(),
             encode(&record.intent)?,
             record.outcome.as_ref().map(encode).transpose()?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -316,7 +343,11 @@ where
             .map(|row| row.preview_record())
             .transpose()
     }
-    pub(crate) async fn save_preview(&mut self, record: &PreviewRecord) -> Result<(), LeaseError> {
+    pub(crate) async fn save_preview(
+        &mut self,
+        record: &PreviewRecord,
+        now: SyncTime,
+    ) -> Result<(), LeaseError> {
         if let Some(existing) = self.preview(&record.preview.token).await? {
             return if existing == *record {
                 Ok(())
@@ -329,6 +360,8 @@ where
             record.preview.token.as_str().to_owned(),
             record.database.as_uuid().to_string(),
             encode(record)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())

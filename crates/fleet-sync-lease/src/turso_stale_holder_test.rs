@@ -25,6 +25,7 @@ async fn move_refuses_just_past_renewal_age_without_calling_the_holder() -> Test
     engine.register(
         RegistrationTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
             configuration,
+            host.clone(),
             std::sync::Arc::new(crate::NoLeaseChangeHook),
         ),
     )?;
@@ -105,6 +106,7 @@ async fn move_admits_just_inside_and_exactly_at_the_renewal_age_bound() -> TestR
         engine.register(
             RegistrationTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
                 configuration,
+                host.clone(),
                 std::sync::Arc::new(crate::NoLeaseChangeHook),
             ),
         )?;

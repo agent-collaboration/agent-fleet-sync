@@ -111,6 +111,7 @@ async fn held_old_publish_keeps_its_route_and_stream_restart_delivers_both_froze
                             report_seq: ReportSeq::new(1),
                             outcome: RecipientOutcome::Held,
                         },
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
                     )
                     .await
                     .map_err(storage_error)?;

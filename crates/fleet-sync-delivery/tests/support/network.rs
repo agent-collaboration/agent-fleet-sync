@@ -320,7 +320,7 @@ impl TestNetwork {
                                     .map_err(storage_error);
                             }
                             let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                                .report(peer(2), report)
+                                .report(peer(2), report, now)
                                 .await
                                 .map_err(storage_error)?;
                             admit_publications::<_, TestTypes, PublishTask>(scope)
@@ -424,7 +424,11 @@ impl NetworkFixture {
             ))
             .unwrap();
         engine
-            .register(ReceiveTask::new(config, consumer.clone()))
+            .register(ReceiveTask::new(
+                config,
+                consumer.clone(),
+                fixture.host.clone(),
+            ))
             .unwrap();
         engine
             .register(DeliverTask::new(
@@ -478,7 +482,10 @@ impl NetworkFixture {
             .transaction(move |scope| {
                 Box::pin(async move {
                     Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                        .begin_receive_and_admit::<ReceiveTask>(stream)
+                        .begin_receive_and_admit::<ReceiveTask>(
+                            stream,
+                            SyncTime::from_unix_millis(0),
+                        )
                         .await
                         .map_err(storage_error)?;
                     Ok(())

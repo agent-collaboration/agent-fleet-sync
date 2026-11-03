@@ -33,6 +33,7 @@ where
 pub async fn report_schema_support<S>(
     scope: &mut S,
     report: &ReportSchemaSupport,
+    now: SyncTime,
 ) -> Result<SchemaSupportRecorded, LeaseError>
 where
     S: TransactionScope,
@@ -54,6 +55,13 @@ where
             return Ok(SchemaSupportRecorded);
         }
     }
-    checked_queries::write_schema_support(scope, report.peer.to_string(), encode(report)?).await?;
+    checked_queries::write_schema_support(
+        scope,
+        report.peer.to_string(),
+        encode(report)?,
+        now.unix_millis().to_string(),
+        now.unix_millis().to_string(),
+    )
+    .await?;
     Ok(SchemaSupportRecorded)
 }

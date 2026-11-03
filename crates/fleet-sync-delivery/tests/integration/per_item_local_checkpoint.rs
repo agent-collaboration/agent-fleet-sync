@@ -223,7 +223,10 @@ async fn stored_item_bound_sanitizes_call_checkpoint_before_reopen_without_resen
                     .await?;
                     let mut inbox = Inbox::<_, LocalTypes>::new(scope, peer(2), limits());
                     let input = inbox
-                        .begin_receive(DeliveryStream::Items)
+                        .begin_receive(
+                            DeliveryStream::Items,
+                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                        )
                         .await
                         .map_err(storage_error)?
                         .unwrap();

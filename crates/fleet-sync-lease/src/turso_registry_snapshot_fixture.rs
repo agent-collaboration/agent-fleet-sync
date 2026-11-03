@@ -129,21 +129,27 @@ pub(super) fn rollback_engine(
         Turso,
         crate::NoLeaseChangeHook,
     >::new(
-        config()?, std::sync::Arc::new(crate::NoLeaseChangeHook)
+        config()?,
+        host.clone(),
+        std::sync::Arc::new(crate::NoLeaseChangeHook),
     ))?;
     engine.register(ImportTask::<
         RollbackRegistryStore,
         Turso,
         crate::NoLeaseChangeHook,
     >::new(
-        config()?, std::sync::Arc::new(crate::NoLeaseChangeHook)
+        config()?,
+        host.clone(),
+        std::sync::Arc::new(crate::NoLeaseChangeHook),
     ))?;
     engine.register(RetirementTask::<
         RollbackRegistryStore,
         Turso,
         crate::NoLeaseChangeHook,
     >::new(
-        config()?, std::sync::Arc::new(crate::NoLeaseChangeHook)
+        config()?,
+        host.clone(),
+        std::sync::Arc::new(crate::NoLeaseChangeHook),
     ))?;
     engine.register(HolderChangeTask::<
         RollbackRegistryStore,

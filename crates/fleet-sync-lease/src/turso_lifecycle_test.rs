@@ -114,6 +114,7 @@ async fn failed_registration_leaves_no_grant_and_original_creation_prevents_a_di
         crate::NoLeaseChangeHook,
     >::new(
         config()?,
+        host.clone(),
         std::sync::Arc::new(crate::NoLeaseChangeHook),
     )))?;
     assert_eq!(mismatch.drive_due().await?.failed.len(), 1);

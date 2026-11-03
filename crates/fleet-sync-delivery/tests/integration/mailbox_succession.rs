@@ -165,6 +165,7 @@ async fn ranked_replay_preserves_origin_and_old_publications_while_future_status
                             report_seq: ReportSeq::new(1),
                             outcome: RecipientOutcome::Held,
                         },
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
                     )
                     .await
                     .map_err(storage_error)?;
@@ -265,6 +266,7 @@ async fn predecessor_prefix_and_successor_suffix_retire_per_item_and_compacted_r
                                     },
                                 },
                             },
+                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
                         )
                         .await
                         .map_err(storage_error)?;

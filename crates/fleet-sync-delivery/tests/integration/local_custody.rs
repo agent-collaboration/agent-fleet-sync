@@ -56,7 +56,10 @@ async fn compact_local_headers_authorize_cancels_and_preserve_identity() {
                     );
                     let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
                     let cycle = inbox
-                        .begin_receive(DeliveryStream::Controls)
+                        .begin_receive(
+                            DeliveryStream::Controls,
+                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                        )
                         .await
                         .map_err(storage_error)?
                         .unwrap();

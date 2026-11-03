@@ -1,14 +1,1 @@
-INSERT INTO _fleet_sync_status_events (machine_id,cursor,item_id,version,status_kind,status_acceptance,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,cancel_outcome,cancel_too_late_at) VALUES (?5,
- CAST(?1 AS INTEGER),
- ?2,
- CAST(?3 AS INTEGER),
- json_extract(?4,'$.status.kind'),
- CASE WHEN json_type(?4,'$.status.value.acceptance') IS NOT NULL THEN ?4 -> '$.status.value.acceptance' END,
- json_extract(?4,'$.status.value.reason.kind'),
- json_extract(?4,'$.status.value.reason.value.code'),
- json_extract(?4,'$.status.value.reason.value.kind'),
- json_extract(?4,'$.status.value.reason.value.field'),
- CASE WHEN json_extract(?4,'$.status.value.reason.kind')='itemConflict' THEN json_extract(?4,'$.status.value.reason.value.existing') ELSE json_extract(?4,'$.status.value.reason.value.existing.digest') END,
- json_extract(?4,'$.status.value.reason.value.existing.item'),
- json_extract(?4,'$.cancel.kind'),
- json_extract(?4,'$.cancel.value.at'));
+INSERT INTO _fleet_sync_status_events (machine_id,cursor,item_id,version,status_kind,status_acceptance,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,cancel_outcome,cancel_too_late_at,created_at,updated_at) VALUES (?5,CAST(?1 AS INTEGER),?2,CAST(?3 AS INTEGER),json_extract(?4,'$.status.kind'),CASE WHEN json_type(?4,'$.status.value.acceptance') IS NOT NULL THEN ?4 -> '$.status.value.acceptance' END,json_extract(?4,'$.status.value.reason.kind'),json_extract(?4,'$.status.value.reason.value.code'),json_extract(?4,'$.status.value.reason.value.kind'),json_extract(?4,'$.status.value.reason.value.field'),CASE WHEN json_extract(?4,'$.status.value.reason.kind')='itemConflict' THEN json_extract(?4,'$.status.value.reason.value.existing') ELSE json_extract(?4,'$.status.value.reason.value.existing.digest') END,json_extract(?4,'$.status.value.reason.value.existing.item'),json_extract(?4,'$.cancel.kind'),json_extract(?4,'$.cancel.value.at'),CAST(?6 AS INTEGER),CAST(?7 AS INTEGER));

@@ -4,6 +4,7 @@ use durable_steps::{
     storage::TransactionScope,
 };
 use fleet_sync_protocol::{Import, ImportAnswer};
+use runtime_primitives::Clock;
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
@@ -12,13 +13,19 @@ use std::marker::PhantomData;
 
 pub struct ImportTask<S, D, H> {
     config: RegistryConfig,
+    clock: std::sync::Arc<dyn Clock>,
     hook: std::sync::Arc<H>,
     store: PhantomData<fn() -> (S, D)>,
 }
 impl<S, D, H> ImportTask<S, D, H> {
-    pub const fn new(config: RegistryConfig, hook: std::sync::Arc<H>) -> Self {
+    pub const fn new(
+        config: RegistryConfig,
+        clock: std::sync::Arc<dyn Clock>,
+        hook: std::sync::Arc<H>,
+    ) -> Self {
         Self {
             config,
+            clock,
             hook,
             store: PhantomData,
         }
@@ -60,6 +67,6 @@ where
         key: &'s RequestKey,
         failure: &'s OperationFailure,
     ) -> BoxFuture<'s, Result<(), StoreError>> {
-        Box::pin(fail_lifecycle(scope, key, failure))
+        Box::pin(fail_lifecycle(scope, key, failure, self.clock.now()))
     }
 }

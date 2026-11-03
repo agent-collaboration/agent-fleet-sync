@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-queries.json": "3edd3e6b8e1065db7d40e3a0f72e5fe4b610abfd3812dc29e31e96ff732bbcab",
+    "checked-queries.json": "0b420554c8d17b606f737704a4eb189962f2d82ed93049ce89e37721ec95e184",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -64,12 +64,12 @@
     "sql/read_databases.sql": "1d9cb88667eff90ef88f3ead9de2d3f33d80978228b82deb7aa569664c9ccfc5",
     "sql/read_floor.sql": "ae9cfc61011a959ed812863fef30b179195e1515349fc13c6ffc3a03449adf9c",
     "sql/read_lease.sql": "22d1b6d997c9742159455749c72dbd6a879e2ef8a686dd4bb72570d7185f97fd",
-    "sql/write_database.sql": "431720344f6f0aa89657041cf7baf311591a05b1cb6a6d00e83fa496d0ca5f73",
-    "sql/write_floor.sql": "a7889f944e7491ad4655cb8cb9f6d4c135352bc43b2e5f94bb9603c970182a82",
-    "sql/write_lease.sql": "d1203a452e6c8e91222970ca851ea177e6d5cf1b14a4776d8107be1cafdddd44",
-    "src/checked_queries/registry.rs": "16cbc34d38a2c6250a51e8e6268500869af0dff5ec5112ed17bbfb4cd5103c80"
+    "sql/write_database.sql": "bcba4f7c7590a495e6a05c7c6c9e8b93f52088bf7659d3312a8cd4a2ef9954f6",
+    "sql/write_floor.sql": "01fb3147ec874e2c072405313eb82e83897e2370e0d03fbdcfefef8f854282b0",
+    "sql/write_lease.sql": "dc5f71ac2a3be1658d9fe2970cda0ba56507c9de9f165c2d1fe5c3a4b02ee120",
+    "src/checked_queries/registry.rs": "82f389d05c2bde46450bf9ba958c979233f39a62d090ede44a1a8873a106cef4"
   },
-  "queries_digest": "f46cced335e2ef2086796a03585d898dc047ba39700de1fdfa0a88e2e07dcbce",
+  "queries_digest": "37947dbcd7c005c627118e297ef8e6f15d13762d64f3c0c6edcca63131a11016",
   "queries": [
     {
       "name": "read_database",
@@ -239,7 +239,7 @@
     },
     {
       "name": "write_database",
-      "bind_slots": 2,
+      "bind_slots": 4,
       "columns": []
     },
     {
@@ -285,7 +285,7 @@
     },
     {
       "name": "write_lease",
-      "bind_slots": 2,
+      "bind_slots": 4,
       "columns": []
     },
     {
@@ -303,7 +303,7 @@
     },
     {
       "name": "write_floor",
-      "bind_slots": 2,
+      "bind_slots": 4,
       "columns": []
     }
   ]

@@ -87,6 +87,7 @@ fn decode_session(row: checked::StoredSessionRow) -> Result<SessionRecord, Store
 pub(crate) async fn next_attach_sequence<S>(
     scope: &mut S,
     peer: PeerId,
+    now: SyncTime,
 ) -> Result<AttachSequence, SessionError>
 where
     S: SessionScope,
@@ -115,9 +116,15 @@ where
         .checked_add(1)
         .and_then(|value| AttachSequence::new(value).ok())
         .ok_or(SessionError::AttachSequenceExhausted)?;
-    checked::write_attach_sequence(scope, peer.to_string(), next.value().to_string())
-        .await
-        .map_err(store_error)?;
+    checked::write_attach_sequence(
+        scope,
+        peer.to_string(),
+        next.value().to_string(),
+        now.unix_millis().to_string(),
+        now.unix_millis().to_string(),
+    )
+    .await
+    .map_err(store_error)?;
     Ok(next)
 }
 pub(crate) async fn load_session<S>(
@@ -141,7 +148,11 @@ where
     .map(decode_session)
     .transpose()
 }
-pub(crate) async fn save_session<S>(scope: &mut S, record: &SessionRecord) -> Result<(), StoreError>
+pub(crate) async fn save_session<S>(
+    scope: &mut S,
+    record: &SessionRecord,
+    now: SyncTime,
+) -> Result<(), StoreError>
 where
     S: SessionScope,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
@@ -154,6 +165,8 @@ where
         record.peer.as_uuid().to_string(),
         record.session_id.as_uuid().to_string(),
         serde_json::to_string(record).map_err(store_error)?,
+        now.unix_millis().to_string(),
+        now.unix_millis().to_string(),
     )
     .await
     .map_err(store_error)
@@ -180,6 +193,7 @@ pub(crate) async fn save_notice<S, P: ConsumerProtocol>(
     scope: &mut S,
     key: &SessionKey,
     notice: &StoredNotice<P>,
+    now: SyncTime,
 ) -> Result<(), StoreError>
 where
     S: SessionScope,
@@ -194,6 +208,8 @@ where
         key.session_id.as_uuid().to_string(),
         notice.position.value().to_string(),
         serde_json::to_string(&notice.body).map_err(store_error)?,
+        now.unix_millis().to_string(),
+        now.unix_millis().to_string(),
     )
     .await
     .map_err(store_error)

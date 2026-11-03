@@ -45,7 +45,7 @@ where
                 record.status = publication.status;
                 record.version = publication.version;
                 record.cancel = publication.cancel;
-                return self.save_recovered(&record).await;
+                return self.save_recovered(&record, now).await;
             }
             _ => return Ok(()),
         };
@@ -71,7 +71,7 @@ where
         header.handed_off_at.get_or_insert(now);
         // A canonical relay status proves the relay's custody. The body stays
         // only in that custody and the receiving hop, never in sender history.
-        self.save_header(&header, None).await
+        self.save_header(&header, None, now).await
     }
     pub async fn status_cursor(&mut self) -> Result<StatusCursor, DeliveryError> {
         match queries::read_outbox_status(self.scope)
@@ -118,9 +118,14 @@ where
             )
             .await?;
         }
-        queries::write_outbox_status(self.scope, encode(&current.max(batch.through))?)
-            .await
-            .map_err(sql_error)
+        queries::write_outbox_status(
+            self.scope,
+            encode(&current.max(batch.through))?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
+        )
+        .await
+        .map_err(sql_error)
     }
 }
 

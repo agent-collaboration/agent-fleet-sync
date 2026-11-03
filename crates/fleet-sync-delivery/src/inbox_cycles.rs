@@ -21,11 +21,12 @@ where
     pub async fn begin_receive_and_admit<T: durable_steps::Task<Input = ReceiveInput>>(
         &mut self,
         stream: DeliveryStream,
+        now: SyncTime,
     ) -> Result<Option<durable_steps::Admitted>, DeliveryError>
     where
         S: durable_steps::JournalScope,
     {
-        let Some(input) = self.begin_receive(stream).await? else {
+        let Some(input) = self.begin_receive(stream, now).await? else {
             return Ok(None);
         };
         self.scope
@@ -40,6 +41,7 @@ where
     pub async fn begin_receive(
         &mut self,
         stream: DeliveryStream,
+        now: SyncTime,
     ) -> Result<Option<ReceiveInput>, DeliveryError> {
         let mut state = self.state().await?;
         let owner = self.owner;
@@ -62,13 +64,14 @@ where
             progress.active = Some(input);
             Some(input)
         };
-        self.save_state(&state).await?;
+        self.save_state(&state, now).await?;
         Ok(next)
     }
 
     pub async fn finish_receive(
         &mut self,
         input: ReceiveInput,
+        now: SyncTime,
     ) -> Result<Option<ReceiveInput>, DeliveryError> {
         let mut state = self.state().await?;
         let progress = state.stream(input.stream);
@@ -83,9 +86,9 @@ where
         let again = progress.rerun_requested;
         progress.active = None;
         progress.rerun_requested = false;
-        self.save_state(&state).await?;
+        self.save_state(&state, now).await?;
         if again {
-            self.begin_receive(input.stream).await
+            self.begin_receive(input.stream, now).await
         } else {
             Ok(None)
         }
@@ -95,6 +98,7 @@ where
         &mut self,
         input: ReceiveInput,
         answer: ReceivedResult,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let mut state = self.state().await?;
         let progress = state.stream(input.stream);
@@ -106,20 +110,21 @@ where
             return Err(DeliveryError::InvalidBatch);
         }
         progress.acknowledged = progress.acknowledged.max(answer.released_through);
-        self.save_state(&state).await
+        self.save_state(&state, now).await
     }
 
     pub async fn fail_receive(
         &mut self,
         stream: DeliveryStream,
         cycle: ReceiveCycle,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let mut state = self.state().await?;
         let progress = state.stream(stream);
         if progress.active.is_some_and(|run| run.cycle == cycle) {
             progress.active = None;
             progress.rerun_requested = false;
-            self.save_state(&state).await?;
+            self.save_state(&state, now).await?;
         }
         Ok(())
     }

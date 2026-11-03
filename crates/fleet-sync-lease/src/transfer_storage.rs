@@ -48,6 +48,7 @@ where
     pub(crate) async fn save_admission(
         &mut self,
         record: &TransferAdmission,
+        now: SyncTime,
     ) -> Result<(), LeaseError> {
         let id = crate::change_checks::attempt(&record.request);
         if let Some(existing) = self.admission(id).await?
@@ -73,6 +74,8 @@ where
             encode(&record.admitted_at)?,
             encode(&record.target_schema)?,
             record.follow_up.as_ref().map(encode).transpose()?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -90,9 +93,16 @@ where
         &mut self,
         id: TransferId,
         record: &CancelRecord,
+        now: SyncTime,
     ) -> Result<(), LeaseError> {
-        checked_queries::write_transfer_cancel(self.0, id.as_uuid().to_string(), encode(record)?)
-            .await?;
+        checked_queries::write_transfer_cancel(
+            self.0,
+            id.as_uuid().to_string(),
+            encode(record)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
+        )
+        .await?;
         Ok(())
     }
     async fn transfer_row(
@@ -171,6 +181,7 @@ where
     pub(crate) async fn save_transfer(
         &mut self,
         record: &TransferRecord,
+        now: SyncTime,
     ) -> Result<(), LeaseError> {
         record.validate()?;
         let id = record.intent.attempt();
@@ -205,12 +216,16 @@ where
             encode(&record.intent.new_epoch)?,
             record.outcome.as_ref().map(encode).transpose()?,
             encode(&record.phase)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         checked_queries::write_phase_history(
             self.0,
             id.to_string(),
             encode(&record.phase_history)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -219,6 +234,7 @@ where
         &mut self,
         id: TransferId,
         epoch: Epoch,
+        now: SyncTime,
     ) -> Result<(), LeaseError> {
         let record = self
             .transfer(id)
@@ -238,6 +254,7 @@ where
             self.0,
             encode(&Some(epoch))?,
             id.as_uuid().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -246,6 +263,7 @@ where
         &mut self,
         id: TransferId,
         failure: &CleanupFailure,
+        now: SyncTime,
     ) -> Result<(), LeaseError> {
         let mut record = self
             .transfer(id)
@@ -269,8 +287,13 @@ where
                 field: "cleanup failure after terminal outcome".into(),
             });
         }
-        checked_queries::write_cleanup_failure(self.0, encode(failure)?, id.as_uuid().to_string())
-            .await?;
+        checked_queries::write_cleanup_failure(
+            self.0,
+            encode(failure)?,
+            id.as_uuid().to_string(),
+            now.unix_millis().to_string(),
+        )
+        .await?;
         Ok(())
     }
 }

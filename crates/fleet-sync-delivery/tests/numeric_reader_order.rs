@@ -28,12 +28,15 @@ async fn status_fetch_keeps_numeric_cursor_order_across_both_decimal_boundaries(
                 let mut stream = StatusStream::<_, TestTypes>::new(scope, peer(1), "route".into());
                 for identity in 1..=COUNT {
                     stream
-                        .append(&StatusPublication {
-                            item: item_id(identity),
-                            status: DeliveryStatus::Held,
-                            version: StatusVersion::new(1),
-                            cancel: None,
-                        })
+                        .append(
+                            &StatusPublication {
+                                item: item_id(identity),
+                                status: DeliveryStatus::Held,
+                                version: StatusVersion::new(1),
+                                cancel: None,
+                            },
+                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                        )
                         .await
                         .map_err(storage_error)?;
                 }

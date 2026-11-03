@@ -58,12 +58,15 @@ async fn database_inventory_is_read_only_and_excludes_retired_and_unregistered_i
                     ),
                 ] {
                     registry
-                        .save_database(&DatabaseRecord::initial(
-                            database,
-                            lifecycle,
-                            Epoch::new(1).map_err(storage)?,
-                            SyncTime::from_unix_millis(100),
-                        ))
+                        .save_database(
+                            &DatabaseRecord::initial(
+                                database,
+                                lifecycle,
+                                Epoch::new(1).map_err(storage)?,
+                                SyncTime::from_unix_millis(100),
+                            ),
+                            fleet_sync_protocol::SyncTime::from_unix_millis(1000),
+                        )
                         .await
                         .map_err(storage)?;
                 }

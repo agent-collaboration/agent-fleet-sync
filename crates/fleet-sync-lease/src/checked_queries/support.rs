@@ -55,6 +55,8 @@ pub(crate) fn write_preview<S>(
     token: String,
     database: String,
     record: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -68,7 +70,9 @@ where
         )))
         .bind(token)
         .bind(database)
-        .bind(record);
+        .bind(record)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -115,6 +119,8 @@ pub(crate) fn write_schema_support<S>(
     scope: &mut S,
     peer: String,
     record: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -127,7 +133,9 @@ where
             "/sql/write_schema_support.sql"
         )))
         .bind(peer)
-        .bind(record);
+        .bind(record)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

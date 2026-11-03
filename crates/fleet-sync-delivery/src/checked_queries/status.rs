@@ -54,6 +54,8 @@ pub(crate) fn write_status_state<S>(
     scope: &mut S,
     record: String,
     machine_id: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -66,7 +68,9 @@ where
             "/sql/write_status_state.sql"
         )))
         .bind(record)
-        .bind(machine_id);
+        .bind(machine_id)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -141,6 +145,8 @@ pub(crate) fn write_publication<S>(
     target: String,
     version: String,
     record: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -155,7 +161,9 @@ where
         .bind(item_id)
         .bind(target)
         .bind(version)
-        .bind(record);
+        .bind(record)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -190,6 +198,8 @@ pub(crate) fn write_status_event<S>(
     version: String,
     record: String,
     machine_id: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -205,7 +215,9 @@ where
         .bind(item_id)
         .bind(version)
         .bind(record)
-        .bind(machine_id);
+        .bind(machine_id)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

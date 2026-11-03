@@ -132,7 +132,7 @@ where
                     mail.payload = None;
                     mail.released_at = Some(now);
                     self.storage.save_live(&mail).await?;
-                    self.owe(&mail).await?;
+                    self.owe(&mail, now).await?;
                     through = seq;
                     continue;
                 }
@@ -254,7 +254,7 @@ where
             if record.status.rank() < DeliveryStatus::<D::Acceptance>::AtRecipient.rank() {
                 record.status = DeliveryStatus::AtRecipient;
                 record.version = next_version(record.version)?;
-                self.owe(&record).await?;
+                self.owe(&record, now).await?;
             }
             self.storage.save_live(&record).await?;
         }

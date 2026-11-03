@@ -17,7 +17,10 @@ async fn local_admission_leaves_relayed_cancel_pending_until_normal_completion()
             Box::pin(async move {
                 let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
                 let cycle = inbox
-                    .begin_receive(DeliveryStream::Controls)
+                    .begin_receive(
+                        DeliveryStream::Controls,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?
                     .unwrap();
@@ -116,7 +119,10 @@ async fn local_cancel_of_a_relayed_original_returns_its_real_report_obligation()
             Box::pin(async move {
                 let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
                 let cycle = inbox
-                    .begin_receive(DeliveryStream::Items)
+                    .begin_receive(
+                        DeliveryStream::Items,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?
                     .unwrap();

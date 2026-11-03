@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-support-queries.json": "9118ec365828d5471e8e2a8037378d6bf7adb3e3af70c5ea237161f0eedb4bfd",
+    "checked-support-queries.json": "4412738c052e5f4db705dd24efd072776e15d5f89cb5473a3eba2bab4baf9be8",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -62,11 +62,11 @@
     "migrations/0006_typed_registry_workflows.sql": "561bfaeab84011dec358d488e05584a15ef34cd95d59b95f2559a22c5d921569",
     "sql/read_preview.sql": "260a60da15787eed9d1adbf75c540863d50e4d447aa59c7e4a7847cff34d18f2",
     "sql/read_schema_support.sql": "266755dccc3d7db46900f786494c83bd95499bab195445f7cc16174f6d722c6c",
-    "sql/write_preview.sql": "e71015f547493aec3d9d66d738251532243188d96b3d5adc616de714278cae73",
-    "sql/write_schema_support.sql": "17f034f9bbfceeecc8c20b9c0778abbe51f1f4e470abaf84905694b389d55e59",
-    "src/checked_queries/support.rs": "f413baaa9c3b507031271dd4a12db4e695531d3fcb848b4a97d35d7860603690"
+    "sql/write_preview.sql": "4ff9640b4e3336292daaf51e1dded50d322189327e54ef56bcfb0330d6a08ae8",
+    "sql/write_schema_support.sql": "9a287462fb401494d9713ea552ba4824b6b98e479e4d22070062054be38dffb1",
+    "src/checked_queries/support.rs": "c6572c83dfce3a17c50f0271ad2779f6518ce18d55bcedf83e45e0ee3411b2c1"
   },
-  "queries_digest": "719c6573f1602c0fea05847c50b5ec42c9930d19ac9e6f8ef86f3402e55c39b7",
+  "queries_digest": "3dd76caf0cd3bdfc6b242a50322b2c65f81fd330adad690c62b3d41614d107dc",
   "queries": [
     {
       "name": "read_preview",
@@ -125,7 +125,7 @@
     },
     {
       "name": "write_preview",
-      "bind_slots": 3,
+      "bind_slots": 5,
       "columns": []
     },
     {
@@ -164,7 +164,7 @@
     },
     {
       "name": "write_schema_support",
-      "bind_slots": 2,
+      "bind_slots": 4,
       "columns": []
     }
   ]

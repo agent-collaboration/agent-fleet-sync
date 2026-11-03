@@ -25,7 +25,7 @@ async fn allowance_covers_four_maximum_routes_for_both_item_and_cancel() {
                     mailbox.received(peer(2), stream, batch.through, SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
                 } else {
                     let outcome = if rank == 2 { RecipientOutcome::Held } else { RecipientOutcome::Delivered { acceptance:Acceptance { receipt:"x".repeat(114) } } };
-                    mailbox.report(peer(2), RecipientReport { item:item_id(identity), report_seq:ReportSeq::new(rank), outcome }).await.map_err(storage_error)?;
+                    mailbox.report(peer(2), RecipientReport { item:item_id(identity), report_seq:ReportSeq::new(rank), outcome }, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
                 }
             }
         }
@@ -134,7 +134,7 @@ async fn authoritative_route_bounds_reject_corrupt_mail_publication_and_stream_s
         fixture.store.transaction(move |scope| Box::pin(async move {
             Mailbox::<_, TestTypes>::new(scope, peer(2), limits()).submit(peer(1), item(1, "body"), SyncTime::from_unix_millis(0), "valid".into(), None).await.map_err(storage_error)?;
             let publication = StatusPublication { item:item_id(1), status:DeliveryStatus::Sent, version:StatusVersion::new(1), cancel:None };
-            StatusStream::<_, TestTypes>::new(scope, peer(1), "valid".into()).append(&publication).await.map_err(storage_error)?;
+            StatusStream::<_, TestTypes>::new(scope, peer(1), "valid".into()).append(&publication, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
             let statement = match owner {
                 "mail" => "UPDATE _fleet_sync_mail_items SET record=json_set(record,'$.value.statusTarget.route',?1)",
                 "publication" => "UPDATE _fleet_sync_status_owed SET status_route=json_quote(?1)",

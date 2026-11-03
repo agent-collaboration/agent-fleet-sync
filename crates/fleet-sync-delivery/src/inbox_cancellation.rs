@@ -148,10 +148,16 @@ where
                     };
                     original.release_requested = false;
                     effects.reports.extend(
-                        self.record_header_outcome(&mut original, original_outcome, consumer, None)
-                            .await?,
+                        self.record_header_outcome(
+                            &mut original,
+                            original_outcome,
+                            consumer,
+                            None,
+                            now,
+                        )
+                        .await?,
                     );
-                    self.update_header(&original).await?;
+                    self.update_header(&original, now).await?;
                 }
                 RecipientOutcome::Prevented { cancel: cancel_id }
             }
@@ -171,10 +177,10 @@ where
         };
         cancel.header.progress = InboxProgress::Control { outcome };
         effects.reports.extend(
-            self.record_outcome(&mut cancel, report_outcome, consumer, None)
+            self.record_outcome(&mut cancel, report_outcome, consumer, None, now)
                 .await?,
         );
-        self.save(&cancel).await?;
+        self.save(&cancel, now).await?;
         Ok(effects)
     }
 }

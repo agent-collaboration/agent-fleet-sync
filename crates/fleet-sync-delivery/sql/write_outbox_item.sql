@@ -1,37 +1,5 @@
-INSERT INTO _fleet_sync_outbox_items (status_route,item_id, live, payload_bytes, settlement_charge_bytes, payload, capacity_slot, record_kind, digest, relay_machine_id, submitter_machine_id, recipient_machine_id, valid_until, status_kind, status_sequence, status_acceptance, refusal_kind, refusal_code, refusal_failure, refusal_size_field, refusal_digest, refusal_item_id, status_version, last_report_seq, submit_attempted, cancel_outcome, cancel_too_late_at, cancel_target_item_id, acceptance_bound, settlement_bytes, failure_kind, created_at, admitted_at, handed_off_at)
-VALUES (json_extract(?5,'$.value.statusRoute'),?1,
-        CAST(?2 AS INTEGER),
-        CAST(?3 AS INTEGER),
-        CAST(?4 AS INTEGER),
-        ?6,
-        CAST(?7 AS INTEGER),
-        json_extract(?5, '$.kind'),
-        json_extract(?5, '$.value.digest'),
-        json_extract(?5, '$.value.relay'),
-        json_extract(?5, '$.value.submitter'),
-        json_extract(?5, '$.value.recipient'),
-        json_extract(?5, '$.value.validUntil'),
-        json_extract(?5, '$.value.status.kind'),
-        json_extract(?5, '$.value.status.value.seq'),
-        CASE WHEN json_type(?5, '$.value.status.value.acceptance') IS NOT NULL THEN ?5 -> '$.value.status.value.acceptance' END,
-        json_extract(?5, '$.value.status.value.reason.kind'),
-        json_extract(?5, '$.value.status.value.reason.value.code'),
-        json_extract(?5, '$.value.status.value.reason.value.kind'),
-        json_extract(?5, '$.value.status.value.reason.value.field'),
-        CASE WHEN json_extract(?5, '$.value.status.value.reason.kind')='itemConflict' THEN json_extract(?5, '$.value.status.value.reason.value.existing') ELSE json_extract(?5, '$.value.status.value.reason.value.existing.digest') END,
-        json_extract(?5, '$.value.status.value.reason.value.existing.item'),
-        json_extract(?5, '$.value.version'),
-        coalesce(json_extract(?5, '$.value.lastReportSeq'),0),
-        json_extract(?5, '$.value.submitAttempted'),
-        json_extract(?5, '$.value.cancel.kind'),
-        json_extract(?5, '$.value.cancel.value.at'),
-        json_extract(?5, '$.value.cancelTarget'),
-        json_extract(?5, '$.value.acceptanceBound'),
-        json_extract(?5, '$.value.settlementBytes'),
-        json_extract(?5, '$.value.kind'),
-        coalesce(json_extract(?5, '$.value.createdAt'), (instr('0123456789abcdef', substr(replace(?1, '-', ''), 1, 1))-1)*17592186044416 + (instr('0123456789abcdef', substr(replace(?1, '-', ''), 2, 1))-1)*1099511627776 + (instr('0123456789abcdef', substr(replace(?1, '-', ''), 3, 1))-1)*68719476736 + (instr('0123456789abcdef', substr(replace(?1, '-', ''), 4, 1))-1)*4294967296 + (instr('0123456789abcdef', substr(replace(?1, '-', ''), 5, 1))-1)*268435456 + (instr('0123456789abcdef', substr(replace(?1, '-', ''), 6, 1))-1)*16777216 + (instr('0123456789abcdef', substr(replace(?1, '-', ''), 7, 1))-1)*1048576 + (instr('0123456789abcdef', substr(replace(?1, '-', ''), 8, 1))-1)*65536 + (instr('0123456789abcdef', substr(replace(?1, '-', ''), 9, 1))-1)*4096 + (instr('0123456789abcdef', substr(replace(?1, '-', ''), 10, 1))-1)*256 + (instr('0123456789abcdef', substr(replace(?1, '-', ''), 11, 1))-1)*16 + (instr('0123456789abcdef', substr(replace(?1, '-', ''), 12, 1))-1)*1),
-        json_extract(?5, '$.value.admittedAt'),
-        json_extract(?5, '$.value.handedOffAt'))
+INSERT INTO _fleet_sync_outbox_items (status_route,item_id,live,payload_bytes,settlement_charge_bytes,payload,capacity_slot,record_kind,digest,relay_machine_id,submitter_machine_id,recipient_machine_id,valid_until,status_kind,status_sequence,status_acceptance,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,status_version,last_report_seq,submit_attempted,cancel_outcome,cancel_too_late_at,cancel_target_item_id,acceptance_bound,settlement_bytes,failure_kind,created_at,admitted_at,handed_off_at,updated_at)
+VALUES (json_extract(?5,'$.value.statusRoute'),?1,CAST(?2 AS INTEGER),CAST(?3 AS INTEGER),CAST(?4 AS INTEGER),?6,CAST(?7 AS INTEGER),json_extract(?5, '$.kind'),json_extract(?5, '$.value.digest'),json_extract(?5, '$.value.relay'),json_extract(?5, '$.value.submitter'),json_extract(?5, '$.value.recipient'),json_extract(?5, '$.value.validUntil'),json_extract(?5, '$.value.status.kind'),json_extract(?5, '$.value.status.value.seq'),CASE WHEN json_type(?5, '$.value.status.value.acceptance') IS NOT NULL THEN ?5 -> '$.value.status.value.acceptance' END,json_extract(?5, '$.value.status.value.reason.kind'),json_extract(?5, '$.value.status.value.reason.value.code'),json_extract(?5, '$.value.status.value.reason.value.kind'),json_extract(?5, '$.value.status.value.reason.value.field'),CASE WHEN json_extract(?5, '$.value.status.value.reason.kind')='itemConflict' THEN json_extract(?5, '$.value.status.value.reason.value.existing') ELSE json_extract(?5, '$.value.status.value.reason.value.existing.digest') END,json_extract(?5, '$.value.status.value.reason.value.existing.item'),json_extract(?5, '$.value.version'),coalesce(json_extract(?5, '$.value.lastReportSeq'),0),json_extract(?5, '$.value.submitAttempted'),json_extract(?5, '$.value.cancel.kind'),json_extract(?5, '$.value.cancel.value.at'),json_extract(?5, '$.value.cancelTarget'),json_extract(?5, '$.value.acceptanceBound'),json_extract(?5, '$.value.settlementBytes'),json_extract(?5, '$.value.kind'),CAST(?8 AS INTEGER),json_extract(?5, '$.value.admittedAt'),json_extract(?5, '$.value.handedOffAt'),CAST(?9 AS INTEGER))
 ON CONFLICT(item_id) DO UPDATE SET
     live=excluded.live,
     payload_bytes=excluded.payload_bytes,
@@ -65,4 +33,4 @@ ON CONFLICT(item_id) DO UPDATE SET
     failure_kind=excluded.failure_kind,
     created_at=excluded.created_at,
     admitted_at=excluded.admitted_at,
-    handed_off_at=excluded.handed_off_at,updated_at=(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER));
+    handed_off_at=excluded.handed_off_at,updated_at=excluded.updated_at;

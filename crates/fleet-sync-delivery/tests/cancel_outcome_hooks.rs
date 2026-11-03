@@ -153,7 +153,10 @@ async fn submit_cancel(
                         let input = match replay {
                             Some(input) => input,
                             None => inbox
-                                .begin_receive(DeliveryStream::Controls)
+                                .begin_receive(
+                                    DeliveryStream::Controls,
+                                    fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                                )
                                 .await
                                 .map_err(storage_error)?
                                 .unwrap(),

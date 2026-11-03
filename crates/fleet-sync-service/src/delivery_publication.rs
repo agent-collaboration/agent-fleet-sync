@@ -38,7 +38,8 @@ impl<
                     .delivery_owner(DeliveryObject::Status(sender))
                     .await
                     .map_err(|_| unreachable())?;
-                match owner.object.rule_transaction(move|scope|Box::pin(async move {StatusStream::<_,P::Delivery>::new(scope,sender,route).append_and_admit::<PublishStatus<ServiceObject,Turso,P::Delivery>>(&publication).await})).await {
+                let now = owner.object.host().now();
+                match owner.object.rule_transaction(move|scope|Box::pin(async move {StatusStream::<_,P::Delivery>::new(scope,sender,route).append_and_admit::<PublishStatus<ServiceObject,Turso,P::Delivery>>(&publication,now).await})).await {
                     Ok(_)=>{owner.object.host().wake_at(owner.object.host().now()).await.map_err(lost)?;StatusPublicationResult::Applied},
                     Err(DeliveryError::Refused{reason})=>StatusPublicationResult::Refused{reason},
                     Err(_)=>return Err(unreachable()),

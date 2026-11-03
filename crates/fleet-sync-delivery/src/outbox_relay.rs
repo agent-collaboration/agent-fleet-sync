@@ -92,7 +92,7 @@ where
             let status = copy_wire(&record.header.status)?;
             let cancel = record.header.cancel;
             let terminal = record.header.status.is_terminal();
-            self.save(&record).await?;
+            self.save(&record, now).await?;
             if !terminal {
                 let input = PushInput {
                     reference,
@@ -191,9 +191,10 @@ where
             }
             record.header.handed_off_at.get_or_insert(now);
             record.payload = None;
-            self.save(&record).await?;
+            self.save(&record, now).await?;
             if changed {
-                self.owe_relay_status::<TPublish>(&record.header).await?;
+                self.owe_relay_status::<TPublish>(&record.header, now)
+                    .await?;
             }
             Ok(StatusPublicationResult::Applied)
         }
@@ -288,9 +289,10 @@ where
             // A recipient's outcome also proves that its inbox committed the item.
             record.header.handed_off_at.get_or_insert(now);
             record.payload = None;
-            self.save(&record).await?;
+            self.save(&record, now).await?;
             if changed {
-                self.owe_relay_status::<TPublish>(&record.header).await?;
+                self.owe_relay_status::<TPublish>(&record.header, now)
+                    .await?;
             }
             Ok(ReportResult::Ack {
                 report_seq: report.report_seq,
@@ -305,6 +307,7 @@ where
     fn owe_relay_status<'call, TPublish>(
         &'call mut self,
         header: &'call OutboxHeader<D::Acceptance>,
+        now: SyncTime,
     ) -> impl std::future::Future<Output = Result<(), DeliveryError>> + Send + 'call
     where
         S: JournalScope,
@@ -316,12 +319,15 @@ where
             })?;
             let route: D::StatusRoute = decode(header.status_route.clone(), "relay status route")?;
             StatusStream::<_, D>::new(self.scope, sender, route)
-                .append_and_admit::<TPublish>(&StatusPublication {
-                    item: header.id,
-                    status: copy_wire(&header.status)?,
-                    version: header.version,
-                    cancel: header.cancel,
-                })
+                .append_and_admit::<TPublish>(
+                    &StatusPublication {
+                        item: header.id,
+                        status: copy_wire(&header.status)?,
+                        version: header.version,
+                        cancel: header.cancel,
+                    },
+                    now,
+                )
                 .await?;
             Ok(())
         }

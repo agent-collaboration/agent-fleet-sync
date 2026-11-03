@@ -70,6 +70,7 @@ async fn committed_peer_notice_has_the_attached_frame_without_clone_bounds() {
             database: "opaque consumer database field".into(),
             message: "a rejected tail is available".into(),
         }),
+        fleet_sync_protocol::SyncTime::from_unix_millis(0),
     )
     .await
     .unwrap();
@@ -107,6 +108,7 @@ async fn committed_peer_notice_has_the_attached_frame_without_clone_bounds() {
                 database: "opaque consumer database field".into(),
                 message: "retained while detached".into()
             }),
+            fleet_sync_protocol::SyncTime::from_unix_millis(0)
         )
         .await
         .unwrap()
@@ -131,9 +133,14 @@ async fn peer_notice_skips_ended_sessions_and_other_peers() {
         session_id: session(3),
     };
     attach(&mut scope, &first, old.session_id).await;
-    publish_notice::<_, NoConsumer>(&mut scope, &old, notice())
-        .await
-        .unwrap();
+    publish_notice::<_, NoConsumer>(
+        &mut scope,
+        &old,
+        notice(),
+        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+    )
+    .await
+    .unwrap();
     let current = binding(4);
     let live = SessionKey {
         peer: current.peer,
@@ -152,9 +159,14 @@ async fn peer_notice_skips_ended_sessions_and_other_peers() {
     let old_record = scope.record(&old).await;
     assert!(matches!(old_record.state, SessionState::Ended { .. }));
     let other_record = scope.record(&other_key).await;
-    let effects = publish_notice_to_peer::<_, NoConsumer>(&mut scope, &first.peer, notice())
-        .await
-        .unwrap();
+    let effects = publish_notice_to_peer::<_, NoConsumer>(
+        &mut scope,
+        &first.peer,
+        notice(),
+        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+    )
+    .await
+    .unwrap();
     let mut scope = commit_and_reopen(scope).await;
     assert_eq!(scope.record(&old).await, old_record);
     assert_eq!(scope.record(&other_key).await, other_record);
@@ -187,10 +199,15 @@ async fn peer_without_an_open_session_has_no_effects_or_writes() {
     let before = stored_rows(&mut scope).await;
     let registrations = scope.registrations.clone();
     assert!(
-        publish_notice_to_peer::<_, NoConsumer>(&mut scope, &absent, notice())
-            .await
-            .unwrap()
-            .is_empty()
+        publish_notice_to_peer::<_, NoConsumer>(
+            &mut scope,
+            &absent,
+            notice(),
+            fleet_sync_protocol::SyncTime::from_unix_millis(0)
+        )
+        .await
+        .unwrap()
+        .is_empty()
     );
     assert_eq!(stored_rows(&mut scope).await, before);
     assert_eq!(scope.registrations, registrations);
@@ -201,10 +218,15 @@ async fn peer_without_an_open_session_has_no_effects_or_writes() {
         .unwrap();
     let ended = stored_rows(&mut scope).await;
     assert!(
-        publish_notice_to_peer::<_, NoConsumer>(&mut scope, &connection.peer, notice())
-            .await
-            .unwrap()
-            .is_empty()
+        publish_notice_to_peer::<_, NoConsumer>(
+            &mut scope,
+            &connection.peer,
+            notice(),
+            fleet_sync_protocol::SyncTime::from_unix_millis(0)
+        )
+        .await
+        .unwrap()
+        .is_empty()
     );
     assert_eq!(stored_rows(&mut scope).await, ended);
     let mut scope = commit_and_reopen(scope).await;
@@ -222,9 +244,14 @@ async fn rolled_back_peer_notice_leaves_no_history_or_position_change() {
     attach(&mut scope, &connection, key.session_id).await;
     let mut scope = commit_and_reopen(scope).await;
     let before = stored_rows(&mut scope).await;
-    let effects = publish_notice_to_peer::<_, NoConsumer>(&mut scope, &connection.peer, notice())
-        .await
-        .unwrap();
+    let effects = publish_notice_to_peer::<_, NoConsumer>(
+        &mut scope,
+        &connection.peer,
+        notice(),
+        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+    )
+    .await
+    .unwrap();
     assert_eq!(effects.len(), 1);
     assert_eq!(scope.record(&key).await.notice_head.value(), 1);
     let SqlScope {
@@ -263,12 +290,21 @@ async fn peer_notice_uses_the_session_position_and_refuses_exhaustion() {
     attach(&mut scope, &connection, key.session_id).await;
     let mut record = scope.record(&key).await;
     record.notice_head = NoticePosition::new(u64::MAX - 1);
-    crate::session_storage::save_session(&mut scope, &record)
-        .await
-        .unwrap();
-    let effects = publish_notice_to_peer::<_, NoConsumer>(&mut scope, &connection.peer, notice())
-        .await
-        .unwrap();
+    crate::session_storage::save_session(
+        &mut scope,
+        &record,
+        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+    )
+    .await
+    .unwrap();
+    let effects = publish_notice_to_peer::<_, NoConsumer>(
+        &mut scope,
+        &connection.peer,
+        notice(),
+        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+    )
+    .await
+    .unwrap();
     assert!(
         matches!(effects.as_slice(), [SessionEffect::Send { frame: ServerFrame::Notice { position, .. }, .. }]
         if position.value() == u64::MAX)
@@ -276,7 +312,13 @@ async fn peer_notice_uses_the_session_position_and_refuses_exhaustion() {
     assert_eq!(scope.record(&key).await.notice_head.value(), u64::MAX);
     let before = stored_rows(&mut scope).await;
     assert!(matches!(
-        publish_notice_to_peer::<_, NoConsumer>(&mut scope, &connection.peer, notice()).await,
+        publish_notice_to_peer::<_, NoConsumer>(
+            &mut scope,
+            &connection.peer,
+            notice(),
+            fleet_sync_protocol::SyncTime::from_unix_millis(0)
+        )
+        .await,
         Err(SessionError::NoticePositionExhausted)
     ));
     assert_eq!(stored_rows(&mut scope).await, before);

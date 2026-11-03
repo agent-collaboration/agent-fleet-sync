@@ -81,6 +81,8 @@ pub(crate) fn write_transfer_admission<S>(
     admitted_at: String,
     target_schema: String,
     follow_up: Option<String>,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -99,7 +101,9 @@ where
         .bind(requested_by)
         .bind(admitted_at)
         .bind(target_schema)
-        .bind(follow_up);
+        .bind(follow_up)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -146,6 +150,8 @@ pub(crate) fn write_transfer_cancel<S>(
     scope: &mut S,
     attempt: String,
     record: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -158,7 +164,9 @@ where
             "/sql/write_transfer_cancel.sql"
         )))
         .bind(attempt)
-        .bind(record);
+        .bind(record)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

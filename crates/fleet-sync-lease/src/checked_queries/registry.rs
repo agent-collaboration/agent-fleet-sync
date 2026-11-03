@@ -96,6 +96,8 @@ pub(crate) fn write_database<S>(
     scope: &mut S,
     database: String,
     record: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -108,7 +110,9 @@ where
             "/sql/write_database.sql"
         )))
         .bind(database)
-        .bind(record);
+        .bind(record)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -157,6 +161,8 @@ pub(crate) fn write_lease<S>(
     scope: &mut S,
     database: String,
     record: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -169,7 +175,9 @@ where
             "/sql/write_lease.sql"
         )))
         .bind(database)
-        .bind(record);
+        .bind(record)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -210,6 +218,8 @@ pub(crate) fn write_floor<S>(
     scope: &mut S,
     database: String,
     epoch: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -222,7 +232,9 @@ where
             "/sql/write_floor.sql"
         )))
         .bind(database)
-        .bind(epoch);
+        .bind(epoch)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

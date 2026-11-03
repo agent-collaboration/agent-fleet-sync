@@ -61,6 +61,7 @@ where
 {
     let operation = *ctx.id();
     let offered = request.clone();
+    let now = ctx.now();
     let decision = ctx
         .local(step("check")?, move |scope| {
             Box::pin(async move {
@@ -76,9 +77,13 @@ where
                 }) {
                     return Ok(Decision::Answer(ImportAnswer::Retired));
                 }
-                let mut attempt =
-                    open_lifecycle(scope, operation, LifecycleIntent::Import(offered.clone()))
-                        .await?;
+                let mut attempt = open_lifecycle(
+                    scope,
+                    operation,
+                    LifecycleIntent::Import(offered.clone()),
+                    now,
+                )
+                .await?;
                 if let Some(outcome) = attempt.outcome {
                     if let Some(error) = saved_failure(&outcome) {
                         return Err(step_error(error));
@@ -96,7 +101,7 @@ where
                 let answer = existing_import(database, &offered);
                 attempt.outcome = Some(LifecycleOutcome::Import(answer.clone()));
                 RegistryStorage(scope)
-                    .save_lifecycle(&attempt)
+                    .save_lifecycle(&attempt, now)
                     .await
                     .map_err(step_error)?;
                 Ok(Decision::Answer(answer))
@@ -176,24 +181,30 @@ where
                         }));
                     }
                     storage
-                        .save_database(&DatabaseRecord::initial(
-                            request.database,
-                            DatabaseLifecycle::Unheld {
-                                import_digest: request.digest.clone(),
-                            },
-                            epoch,
+                        .save_database(
+                            &DatabaseRecord::initial(
+                                request.database,
+                                DatabaseLifecycle::Unheld {
+                                    import_digest: request.digest.clone(),
+                                },
+                                epoch,
+                                now,
+                            ),
                             now,
-                        ))
+                        )
                         .await
                         .map_err(step_error)?;
                     storage
-                        .save_floor(request.database, epoch)
+                        .save_floor(request.database, epoch, now)
                         .await
                         .map_err(step_error)?;
                     ImportAnswer::Imported
                 };
                 attempt.outcome = Some(LifecycleOutcome::Import(answer.clone()));
-                storage.save_lifecycle(&attempt).await.map_err(step_error)?;
+                storage
+                    .save_lifecycle(&attempt, now)
+                    .await
+                    .map_err(step_error)?;
                 crate::lease_change_hook::project_lease_change(
                     storage.0,
                     request.database,

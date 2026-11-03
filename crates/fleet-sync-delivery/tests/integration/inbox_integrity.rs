@@ -59,7 +59,10 @@ async fn receive_cancel_before_target(store: &TestStore) {
             Box::pin(async move {
                 let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
                 let input = inbox
-                    .begin_receive(DeliveryStream::Controls)
+                    .begin_receive(
+                        DeliveryStream::Controls,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?
                     .unwrap();
@@ -95,7 +98,10 @@ async fn receive_original_after_cancel(
             Box::pin(async move {
                 let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
                 let input = inbox
-                    .begin_receive(DeliveryStream::Items)
+                    .begin_receive(
+                        DeliveryStream::Items,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?
                     .unwrap();
@@ -209,39 +215,51 @@ async fn empty_cycles_are_fresh_and_overlapping_triggers_coalesce() {
             Box::pin(async move {
                 let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
                 let first = inbox
-                    .begin_receive(DeliveryStream::Items)
+                    .begin_receive(
+                        DeliveryStream::Items,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?
                     .unwrap();
                 assert!(
                     inbox
-                        .begin_receive(DeliveryStream::Items)
+                        .begin_receive(
+                            DeliveryStream::Items,
+                            fleet_sync_protocol::SyncTime::from_unix_millis(0)
+                        )
                         .await
                         .map_err(storage_error)?
                         .is_none()
                 );
                 assert!(
                     inbox
-                        .begin_receive(DeliveryStream::Items)
+                        .begin_receive(
+                            DeliveryStream::Items,
+                            fleet_sync_protocol::SyncTime::from_unix_millis(0)
+                        )
                         .await
                         .map_err(storage_error)?
                         .is_none()
                 );
                 let rerun = inbox
-                    .finish_receive(first)
+                    .finish_receive(first, fleet_sync_protocol::SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)?
                     .unwrap();
                 assert_eq!(rerun.cycle.value(), first.cycle.value() + 1);
                 assert!(
                     inbox
-                        .finish_receive(rerun)
+                        .finish_receive(rerun, fleet_sync_protocol::SyncTime::from_unix_millis(0))
                         .await
                         .map_err(storage_error)?
                         .is_none()
                 );
                 let fresh = inbox
-                    .begin_receive(DeliveryStream::Items)
+                    .begin_receive(
+                        DeliveryStream::Items,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?
                     .unwrap();
@@ -263,8 +281,8 @@ async fn a_full_inbox_still_stores_a_reserved_cancel_from_controls() {
         let DeliveryEnvelope::Item(original)=original else {return Err(durable_steps::StoreError::backend("fixture is not an item"));};
         let mut inbox=Inbox::<_,TestTypes>::new(scope,peer(2),configured);
         inbox.enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
-        let items=inbox.begin_receive(DeliveryStream::Items).await.map_err(storage_error)?.unwrap();
-        let controls=inbox.begin_receive(DeliveryStream::Controls).await.map_err(storage_error)?.unwrap();
+        let items=inbox.begin_receive(DeliveryStream::Items, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?.unwrap();
+        let controls=inbox.begin_receive(DeliveryStream::Controls, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?.unwrap();
         assert_eq!(inbox.receive_budget(items,10,100_000).await.map_err(storage_error)?.0,0);
         assert_eq!(inbox.receive_budget(controls,10,100_000).await.map_err(storage_error)?.0,10);
         let effects=inbox.store_batch(controls,FetchResult{stream:DeliveryStream::Controls,entries:vec![FetchEntry::Item{seq:DeliverySeq::new(1),item:cancel(2,1)}],through:DeliverySeq::new(1)},&TestConsumer,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;

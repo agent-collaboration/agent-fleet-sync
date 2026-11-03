@@ -112,9 +112,9 @@ where
                 }
                 lease.expires_at = expires_at;
                 lease.last_renewed_at = now;
-                storage.save_lease(&lease).await?;
+                storage.save_lease(&lease, now).await?;
                 if changed {
-                    storage.save_database(&database).await?;
+                    storage.save_database(&database, now).await?;
                 }
                 RenewAnswer::Renewed {
                     recorded: RenewResult {
@@ -145,11 +145,14 @@ where
             RenewAnswer::Refused(LeaseRefusal::NotWriter { current: None })
         };
         storage
-            .save_renewal(&RenewalAttempt {
-                request: request.clone(),
-                holder: *holder,
-                answer: answer.clone(),
-            })
+            .save_renewal(
+                &RenewalAttempt {
+                    request: request.clone(),
+                    holder: *holder,
+                    answer: answer.clone(),
+                },
+                now,
+            )
             .await?;
         if let Some(before) = snapshot_before_renewal {
             crate::lease_change_hook::project_lease_change(

@@ -57,6 +57,16 @@
           "name": "capacity_slot",
           "kind": "text",
           "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
         }
       ]
     },
@@ -119,6 +129,16 @@
           "name": "payload",
           "kind": "text",
           "nullable": true
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
         }
       ]
     },
@@ -136,6 +156,16 @@
       "parameters": [
         {
           "name": "record",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
           "kind": "text",
           "nullable": false
         }
@@ -182,6 +212,16 @@
           "name": "cancel_item",
           "kind": "text",
           "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
         }
       ]
     },
@@ -199,6 +239,16 @@
       "parameters": [
         {
           "name": "record",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
           "kind": "text",
           "nullable": false
         }
@@ -229,6 +279,16 @@
         },
         {
           "name": "cancel_item",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
           "kind": "text",
           "nullable": false
         }

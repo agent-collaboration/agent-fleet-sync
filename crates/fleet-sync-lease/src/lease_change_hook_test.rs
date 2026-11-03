@@ -80,14 +80,17 @@ fn projection_engine(
     let mut engine = TestEngine::new(store, host.clone());
     engine.register(RegistrationTask::<TestStore, Turso, ProjectionHook>::new(
         config()?,
+        host.clone(),
         hook.clone(),
     ))?;
     engine.register(ImportTask::<TestStore, Turso, ProjectionHook>::new(
         config()?,
+        host.clone(),
         hook.clone(),
     ))?;
     engine.register(RetirementTask::<TestStore, Turso, ProjectionHook>::new(
         config()?,
+        host.clone(),
         hook.clone(),
     ))?;
     engine.register(HolderChangeTask::<TestStore, Turso, ProjectionHook>::new(

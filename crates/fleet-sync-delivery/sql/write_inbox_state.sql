@@ -1,1 +1,1 @@
-INSERT INTO _fleet_sync_inbox_state(singleton,record) VALUES(1,?1) ON CONFLICT(singleton) DO UPDATE SET record=excluded.record,updated_at=(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER));
+INSERT INTO _fleet_sync_inbox_state(singleton,record,created_at,updated_at) VALUES(1,?1,CAST(?2 AS INTEGER),CAST(?3 AS INTEGER)) ON CONFLICT(singleton) DO UPDATE SET record=excluded.record,updated_at=excluded.updated_at;

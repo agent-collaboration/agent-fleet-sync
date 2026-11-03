@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-custody-queries.json": "5b5c9d1c7fedd0619712b705539e0e244fca6e2eb8a6c352e3a1b860fa11b52c",
+    "checked-custody-queries.json": "64f8be1df9296ef9cd7e4edaeb2ef4ad0424a08d3fc13f44c06f9dac3d123918",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -63,6 +63,7 @@
     "migrations/0007_typed_status_records.sql": "61b3c59edcd380af6c47ce818e21434584c356d5e788c62ab9d059c0e4ac78cb",
     "migrations/0008_custody_row_metadata.sql": "69b8ef89f3d94604d0cda7f28541251ef23874740e51f952408d9c7b9b0cd01c",
     "migrations/0009_typed_report_records.sql": "2b55df57eb4fead5ef43986aba8f66414ed0e9bbc07a0a291a971e802b35c2be",
+    "migrations/0010_restore_status_owed_machine_index.sql": "f28c4e8e1a9a3cc45e8245fb6a20ede57e92a2f95b032fbd882fd2d5ecd03311",
     "sql/drop_inbox_cancel_link.sql": "4377a26c27c954d92d5e38c1e63c55b57956745206ca0bd0509b83fcb83e794b",
     "sql/drop_inbox_item.sql": "058ff3f7aa917adc1b5a4f49df608b4eff4ea4ee0c0d6ac24cba3fe0c6bcc8f1",
     "sql/fresh_custody_token.sql": "1575d18fa6fc8787aec2e3b558727a9a2722194cb9f5c5259a832aafae7fdf81",
@@ -79,15 +80,15 @@
     "sql/remove_retained_outbox.sql": "0696c7c176d75dcef275e525f15fc4e25740099fadc0799be481009a8c63df16",
     "sql/remove_retained_outbox_links.sql": "9554d664f055972e32e634f141cfebf8562bfcde80b096db7b5d72064a5f3123",
     "sql/remove_retained_status.sql": "9968dc80dd61dbc8c172d92ac6305c09986a064901614d686e67870bb3d45f66",
-    "sql/write_inbox_cancel_link.sql": "c3996dc9b9805a287f697a549fa04200500dc0ee01f8526a2e69b926b402190d",
-    "sql/write_inbox_item.sql": "01c3370217d100a0fe2f337dfec0dd1f1e44c82112a9873c3575c34ff305a29e",
-    "sql/write_inbox_state.sql": "8bd63b644a71f0a0080c5e01c17336552ba188c544c836a029a80f2b62109bad",
-    "sql/write_outbox_cancel_link.sql": "ccffbdecdaf3c2debfb9f886e8f3934c7354090cd54ff677adb8d05ff2a7c3e2",
-    "sql/write_outbox_item.sql": "f4945353806c99f59b8d6bb6c9c574e21aa639aeb286fc7f0bd894807e811172",
-    "sql/write_outbox_status.sql": "56db3f6f9d050a8b1fa969b2ec3aa96d8e976922efaf0024f3c0a057ad06145f",
-    "src/checked_queries/custody.rs": "3c9aa8293981ca2d3ed63ff6c1b2f303714a4a2dbc17a281cce983aacc3a19a8"
+    "sql/write_inbox_cancel_link.sql": "6a4f095202b56bc7b3ffcacd974a17a975f94dd5d8d4e142895ecdb1b8cab204",
+    "sql/write_inbox_item.sql": "c5ecf91b48821eb3082b915b2c6aa31010a37f4d008f127837a2f9a11d13a5a6",
+    "sql/write_inbox_state.sql": "a3e53d591ba7b3ac692b569ccb6ce62fc10a9a8afda102c5f45a18596dca6f7d",
+    "sql/write_outbox_cancel_link.sql": "8c40505b10ee62d4f90fa3ff25bf000cadedddad2c6df5847a0ad94c537d389d",
+    "sql/write_outbox_item.sql": "4138ceb70cf85b5a01e1b5d6ce3c93779876f6c0f6cb06bbaa9c6227f2872233",
+    "sql/write_outbox_status.sql": "be56e9db06ca526864f2de386a3f9dfac57e47336e222c5bbda36815fd074557",
+    "src/checked_queries/custody.rs": "6cfa8eaae0142d42a099f1145648cec43bbce406dc54d45d29194fd6b44d0b14"
   },
-  "queries_digest": "5f841f9ce2a91196556f310c839d0c6e6399bf031790a1de80b342c7c2472bab",
+  "queries_digest": "1bc3309249b4dcc486f6e31c3db46d8e818ffd657ce63bfdef2da1e07de04968",
   "queries": [
     {
       "name": "read_outbox_item",
@@ -433,7 +434,7 @@
     },
     {
       "name": "write_outbox_item",
-      "bind_slots": 7,
+      "bind_slots": 9,
       "columns": []
     },
     {
@@ -778,7 +779,7 @@
     },
     {
       "name": "write_inbox_item",
-      "bind_slots": 6,
+      "bind_slots": 8,
       "columns": []
     },
     {
@@ -796,7 +797,7 @@
     },
     {
       "name": "write_inbox_state",
-      "bind_slots": 1,
+      "bind_slots": 3,
       "columns": []
     },
     {
@@ -861,7 +862,7 @@
     },
     {
       "name": "write_outbox_cancel_link",
-      "bind_slots": 2,
+      "bind_slots": 4,
       "columns": []
     },
     {
@@ -893,7 +894,7 @@
     },
     {
       "name": "write_outbox_status",
-      "bind_slots": 1,
+      "bind_slots": 3,
       "columns": []
     },
     {
@@ -918,7 +919,7 @@
     },
     {
       "name": "write_inbox_cancel_link",
-      "bind_slots": 2,
+      "bind_slots": 4,
       "columns": []
     },
     {

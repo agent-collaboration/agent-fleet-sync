@@ -109,7 +109,10 @@ async fn held_and_refused_attempts_project_distinct_local_observations() {
             Box::pin(async move {
                 let mut inbox = Inbox::<_, ObservationTypes>::new(scope, peer(2), limits());
                 let input = inbox
-                    .begin_receive(DeliveryStream::Items)
+                    .begin_receive(
+                        DeliveryStream::Items,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(durable_steps::StoreError::backend)?
                     .unwrap();
@@ -351,7 +354,10 @@ async fn expiry_terminal_failure_and_cancellation_record_no_local_observation() 
                     .unwrap(),
                 );
                 let input = inbox
-                    .begin_receive(DeliveryStream::Items)
+                    .begin_receive(
+                        DeliveryStream::Items,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(durable_steps::StoreError::backend)?
                     .unwrap();
@@ -403,7 +409,10 @@ async fn expiry_terminal_failure_and_cancellation_record_no_local_observation() 
                     .unwrap(),
                 );
                 let input = inbox
-                    .begin_receive(DeliveryStream::Controls)
+                    .begin_receive(
+                        DeliveryStream::Controls,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(durable_steps::StoreError::backend)?
                     .unwrap();

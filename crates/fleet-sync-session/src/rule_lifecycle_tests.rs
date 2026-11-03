@@ -28,6 +28,7 @@ async fn every_connection_close_preserves_the_session_and_notice_history() {
                 database: DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000004))
                     .unwrap(),
             },
+            fleet_sync_protocol::SyncTime::from_unix_millis(0),
         )
         .await
         .unwrap();
@@ -321,6 +322,7 @@ async fn rollback_discards_session_notices_and_staged_registrations_before_effec
         Notice::LeaseChanged {
             database: DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000004)).unwrap(),
         },
+        fleet_sync_protocol::SyncTime::from_unix_millis(0),
     )
     .await
     .unwrap();
@@ -363,22 +365,37 @@ async fn notice_positions_keep_the_full_u64_range_and_refuse_overflow() {
     };
     let mut record = scope.record(&key).await;
     record.notice_head = NoticePosition::new(u64::MAX - 1);
-    crate::session_storage::save_session(&mut scope, &record)
-        .await
-        .unwrap();
+    crate::session_storage::save_session(
+        &mut scope,
+        &record,
+        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+    )
+    .await
+    .unwrap();
     let notice = || Notice::LeaseChanged {
         database: DatabaseId::new(Uuid::from_u128(0x019eef00000070008000000000000004)).unwrap(),
     };
-    publish_notice::<_, NoConsumer>(&mut scope, &key, notice())
-        .await
-        .unwrap();
+    publish_notice::<_, NoConsumer>(
+        &mut scope,
+        &key,
+        notice(),
+        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+    )
+    .await
+    .unwrap();
     let history =
         notices_after::<_, NoConsumer>(&mut scope, &key, NoticePosition::new(u64::MAX - 1))
             .await
             .unwrap();
     assert_eq!(history.first().unwrap().position.value(), u64::MAX);
     assert!(matches!(
-        publish_notice::<_, NoConsumer>(&mut scope, &key, notice()).await,
+        publish_notice::<_, NoConsumer>(
+            &mut scope,
+            &key,
+            notice(),
+            fleet_sync_protocol::SyncTime::from_unix_millis(0)
+        )
+        .await,
         Err(SessionError::NoticePositionExhausted)
     ));
     assert_eq!(scope.record(&key).await.notice_head.value(), u64::MAX);

@@ -69,7 +69,7 @@ where
                 {
                     GateDecision::Release => {
                         outbox
-                            .mark_submit_attempted(gate_input.item)
+                            .mark_submit_attempted(gate_input.item, now)
                             .await
                             .map_err(step_error)?;
                         Ok(())

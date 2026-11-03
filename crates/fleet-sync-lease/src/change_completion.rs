@@ -65,7 +65,10 @@ where
                         record
                             .enter(crate::HolderChangePhase::Ended, now)
                             .map_err(step_error)?;
-                        storage.save_transfer(&record).await.map_err(step_error)?;
+                        storage
+                            .save_transfer(&record, now)
+                            .await
+                            .map_err(step_error)?;
                     }
                     return Ok(Some(answer));
                 }
@@ -73,7 +76,10 @@ where
                     && let Some(phase) = phase
                 {
                     record.enter(phase, now).map_err(step_error)?;
-                    storage.save_transfer(&record).await.map_err(step_error)?;
+                    storage
+                        .save_transfer(&record, now)
+                        .await
+                        .map_err(step_error)?;
                 }
                 Ok(record.outcome)
             })
@@ -137,7 +143,10 @@ where
                 record
                     .enter(crate::HolderChangePhase::Ended, now)
                     .map_err(step_error)?;
-                storage.save_transfer(&record).await.map_err(step_error)?;
+                storage
+                    .save_transfer(&record, now)
+                    .await
+                    .map_err(step_error)?;
                 Ok(answer)
             })
         })
@@ -288,7 +297,10 @@ where
                                 })
                             })?;
                         history.ended_at = Some(start);
-                        storage.save_history(&history).await.map_err(step_error)?;
+                        storage
+                            .save_history(&history, now)
+                            .await
+                            .map_err(step_error)?;
                     }
                     let lease = RegistryLease {
                         database,
@@ -297,15 +309,18 @@ where
                         last_renewed_at: now,
                         expires_at: now.after(duration),
                     };
-                    storage.save_lease(&lease).await.map_err(step_error)?;
+                    storage.save_lease(&lease, now).await.map_err(step_error)?;
                     storage
-                        .save_history(&EpochHistory {
-                            database,
-                            epoch: reserved,
-                            holder: lease.holder,
-                            granted_at: now,
-                            ended_at: None,
-                        })
+                        .save_history(
+                            &EpochHistory {
+                                database,
+                                epoch: reserved,
+                                holder: lease.holder,
+                                granted_at: now,
+                                ended_at: None,
+                            },
+                            now,
+                        )
                         .await
                         .map_err(step_error)?;
                     if let DatabaseLifecycle::Unheld { import_digest } = &record.lifecycle {
@@ -316,7 +331,10 @@ where
                             }),
                         };
                     }
-                    storage.save_database(&record).await.map_err(step_error)?;
+                    storage
+                        .save_database(&record, now)
+                        .await
+                        .map_err(step_error)?;
                     HolderChangeAnswer::Granted {
                         epoch: reserved,
                         expires_at: lease.expires_at,
@@ -327,7 +345,10 @@ where
                 transfer
                     .enter(crate::HolderChangePhase::Ended, now)
                     .map_err(step_error)?;
-                storage.save_transfer(&transfer).await.map_err(step_error)?;
+                storage
+                    .save_transfer(&transfer, now)
+                    .await
+                    .map_err(step_error)?;
                 crate::lease_change_hook::project_lease_change(
                     storage.0,
                     database,

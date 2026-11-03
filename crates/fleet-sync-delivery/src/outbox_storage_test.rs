@@ -37,7 +37,10 @@ async fn report_sequence_and_cancel_identity_survive_real_release_and_reopen() {
                 header.version = StatusVersion::new(11);
                 header.last_report_seq = ReportSeq::new(9);
                 header.submit_attempted = true;
-                outbox.update_header(&header).await.map_err(storage_error)?;
+                outbox
+                    .update_header(&header, fleet_sync_protocol::SyncTime::from_unix_millis(0))
+                    .await
+                    .map_err(storage_error)?;
                 let DeliveryEnvelope::Cancel(control) = cancel(91, 90) else {
                     return Err(durable_steps::StoreError::backend("cancel fixture"));
                 };

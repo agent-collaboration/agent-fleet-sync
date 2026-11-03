@@ -200,6 +200,7 @@ where
         &mut self,
         target: &CurrentStatusTarget<R>,
         publication: &StatusPublication<A>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         queries::write_publication(
             self.scope,
@@ -210,6 +211,8 @@ where
             })?,
             publication.version.value().to_string(),
             encode(publication)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await
         .map_err(sql_error)

@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-history-queries.json": "c03b69d5a3e455cfe46784ccd8e9266d43a14209c03adce6ebc03ffea663a69d",
+    "checked-history-queries.json": "631881d204883896dc8b4f57ae3225a35e5e289e222d8590588902aaace64228",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -65,10 +65,10 @@
     "sql/read_history_successor.sql": "c3c1c2e32a8d0963148efe50a56aeea5d8a1925ab58db23a4d2112e48f0ff979",
     "sql/read_history_transfer.sql": "71a966b55818000bb359fec5d8663478300f5be1ce7dfea51bf831a084ffd319",
     "sql/read_invalid_history_epoch.sql": "be643564d10b713dade4f32258bcf4daf4518e5a50e8d3b4498e9dfbe2eea91d",
-    "sql/write_history.sql": "1d2d8de5e875f115d0a89f36c520fc57754c001f2a09a5ca73b0eaa82198f4f8",
-    "src/checked_queries/history.rs": "6f68ce2201779defa25ed35b0e9c598e596cd1cd7029ef4fbfae54141c129d3e"
+    "sql/write_history.sql": "895e933616e1d37b317897698f9b5f953ec14d098a622caea837ec1d7b492d0b",
+    "src/checked_queries/history.rs": "7cc98ecae9cbb280d37ed57b7b093e8c9f9ce29fd53598cc707634b2bbaf83c9"
   },
-  "queries_digest": "4c939839af578a0998a0e3dd490d2ccdb66477da2418e4ebec1f85d307de922f",
+  "queries_digest": "97eaaf8ae817d99ffc6f4da43cd5c654b6c84a0a6130db25bab16e7043807fd2",
   "queries": [
     {
       "name": "read_history",
@@ -127,7 +127,7 @@
     },
     {
       "name": "write_history",
-      "bind_slots": 3,
+      "bind_slots": 5,
       "columns": []
     },
     {

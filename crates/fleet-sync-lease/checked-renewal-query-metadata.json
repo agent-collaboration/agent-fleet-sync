@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-renewal-queries.json": "2ede2f4267fee18039636a85720c36a9a6cf30e10fbc3142c4c2a78d2ac4769f",
+    "checked-renewal-queries.json": "7d514f53f80fe3b7644e54f01567754ffc0988014eef496ecdc2ee6674f0bc82",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -61,10 +61,10 @@
     "migrations/0005_typed_registry_core.sql": "1717d784907813241edf9574b2e5288313bf80688f6fdd00e1103da13e5efdaf",
     "migrations/0006_typed_registry_workflows.sql": "561bfaeab84011dec358d488e05584a15ef34cd95d59b95f2559a22c5d921569",
     "sql/read_renewal.sql": "925682d5b8c4b528f6c8b7bb6221af55715328f1af011dabb859d55a4e73d570",
-    "sql/write_renewal.sql": "b18ffa03d64f78e336a1d923f51d40a3fe496b17b37e17398e01b1cff283bf21",
-    "src/checked_queries/renewal.rs": "b04f7b6c326e87dfb934f7c3d8598612f40a66d40cc41c169e15f061014e56f4"
+    "sql/write_renewal.sql": "f459c958ecbd3ee3c0e9f61d88e2d883c93e251590ce8c011432d88e00ae1fab",
+    "src/checked_queries/renewal.rs": "6662795599cb995e24e9a623d0b5b72352064a6da7c725d08978580503cebfb2"
   },
-  "queries_digest": "37bfbd7e7d52a8f66d6b9912a460daeb68484a90dbae3847ae0c4ea645f04363",
+  "queries_digest": "4ab8b4c7a909bd62b1de4a70b693f5adef83d873e6331924504b7ba873c77989",
   "queries": [
     {
       "name": "read_renewal",
@@ -214,7 +214,7 @@
     },
     {
       "name": "write_renewal",
-      "bind_slots": 3,
+      "bind_slots": 5,
       "columns": []
     }
   ]

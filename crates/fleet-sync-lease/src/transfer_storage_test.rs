@@ -32,9 +32,13 @@ async fn typed_workflow_rows_keep_full_u64_and_phase_history_across_reopen() -> 
                         max_version: u64::MAX,
                     },
                 };
-                crate::report_schema_support(scope, &report)
-                    .await
-                    .map_err(storage)?;
+                crate::report_schema_support(
+                    scope,
+                    &report,
+                    fleet_sync_protocol::SyncTime::from_unix_millis(1000),
+                )
+                .await
+                .map_err(storage)?;
                 crate::admit_holder_change::<TestStore, Turso>(
                     scope,
                     &request,
@@ -53,7 +57,13 @@ async fn typed_workflow_rows_keep_full_u64_and_phase_history_across_reopen() -> 
                     },
                     SyncTime::from_unix_millis(1000),
                 );
-                registry.save_transfer(&transfer).await.map_err(storage)?;
+                registry
+                    .save_transfer(
+                        &transfer,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(1000),
+                    )
+                    .await
+                    .map_err(storage)?;
                 transfer
                     .enter(
                         HolderChangePhase::Reserved,
@@ -63,7 +73,13 @@ async fn typed_workflow_rows_keep_full_u64_and_phase_history_across_reopen() -> 
                 transfer
                     .enter(HolderChangePhase::Fencing, SyncTime::from_unix_millis(1200))
                     .map_err(storage)?;
-                registry.save_transfer(&transfer).await.map_err(storage)?;
+                registry
+                    .save_transfer(
+                        &transfer,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(1000),
+                    )
+                    .await
+                    .map_err(storage)?;
                 let epoch = Epoch::new(u64::MAX).map_err(storage)?;
                 transfer.outcome = Some(HolderChangeAnswer::Granted {
                     epoch,
@@ -73,7 +89,13 @@ async fn typed_workflow_rows_keep_full_u64_and_phase_history_across_reopen() -> 
                 transfer
                     .enter(HolderChangePhase::Ended, SyncTime::from_unix_millis(1300))
                     .map_err(storage)?;
-                registry.save_transfer(&transfer).await.map_err(storage)?;
+                registry
+                    .save_transfer(
+                        &transfer,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(1000),
+                    )
+                    .await
+                    .map_err(storage)?;
                 let renewal = RenewalAttempt {
                     request: RenewRequest {
                         attempt: RequestId::new(durable_steps::Uuid::from_u128(
@@ -101,7 +123,13 @@ async fn typed_workflow_rows_keep_full_u64_and_phase_history_across_reopen() -> 
                         replayed: false,
                     },
                 };
-                registry.save_renewal(&renewal).await.map_err(storage)?;
+                registry
+                    .save_renewal(
+                        &renewal,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(1000),
+                    )
+                    .await
+                    .map_err(storage)?;
                 Ok((admission, transfer, renewal))
             })
         })

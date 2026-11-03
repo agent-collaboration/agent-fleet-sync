@@ -164,7 +164,7 @@ where
                 reason: DeliveryRefusal::MailboxFull,
             });
         }
-        self.save(&record).await?;
+        self.save(&record, now).await?;
         // Local admission returns an attempt, while relay intake owns its reports.
         // A pending local control is resolved before an attempt can be offered for delivery.
         if self
@@ -295,7 +295,7 @@ where
             });
         }
         if let Some(original) = original {
-            self.save(&original).await?;
+            self.save(&original, now).await?;
         }
         let reference = DeliveryItemRef {
             item: envelope.id(),
@@ -310,10 +310,16 @@ where
             0,
             now,
         )?;
-        self.save(&record).await?;
-        queries::write_inbox_cancel_link(self.scope, item_key(target), item_key(reference.item))
-            .await
-            .map_err(sql_error)?;
+        self.save(&record, now).await?;
+        queries::write_inbox_cancel_link(
+            self.scope,
+            item_key(target),
+            item_key(reference.item),
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
+        )
+        .await
+        .map_err(sql_error)?;
         let effects = self
             .apply_pending_cancel(target, consumer, now, false)
             .await?;

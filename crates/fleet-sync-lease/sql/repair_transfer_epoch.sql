@@ -1,1 +1,1 @@
-UPDATE _fleet_sync_transfers SET new_epoch=NULLIF(?1,'null'),updated_at=(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER)) WHERE attempt=?2 AND outcome_kind IS NULL
+UPDATE _fleet_sync_transfers SET new_epoch=NULLIF(?1,'null'),updated_at=CAST(?3 AS INTEGER) WHERE attempt=?2 AND outcome_kind IS NULL

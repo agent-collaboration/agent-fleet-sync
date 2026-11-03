@@ -38,6 +38,16 @@
           "name": "record",
           "kind": "text",
           "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
         }
       ]
     },
@@ -67,6 +77,16 @@
         },
         {
           "name": "record",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
           "kind": "text",
           "nullable": false
         }

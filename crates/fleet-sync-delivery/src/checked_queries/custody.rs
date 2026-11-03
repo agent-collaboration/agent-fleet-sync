@@ -141,6 +141,8 @@ pub(crate) fn write_outbox_item<S>(
     record: String,
     payload: Option<String>,
     capacity_slot: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -159,7 +161,9 @@ where
         .bind(settlement_bytes)
         .bind(record)
         .bind(payload)
-        .bind(capacity_slot);
+        .bind(capacity_slot)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -315,6 +319,8 @@ pub(crate) fn write_inbox_item<S>(
     settlement_bytes: String,
     record: String,
     payload: Option<String>,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -332,7 +338,9 @@ where
         .bind(payload_bytes)
         .bind(settlement_bytes)
         .bind(record)
-        .bind(payload);
+        .bind(payload)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -369,6 +377,8 @@ where
 pub(crate) fn write_inbox_state<S>(
     scope: &mut S,
     record: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -380,7 +390,9 @@ where
             env!("CARGO_MANIFEST_DIR"),
             "/sql/write_inbox_state.sql"
         )))
-        .bind(record);
+        .bind(record)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -471,6 +483,8 @@ pub(crate) fn write_outbox_cancel_link<S>(
     scope: &mut S,
     target: String,
     cancel_item: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -483,7 +497,9 @@ where
             "/sql/write_outbox_cancel_link.sql"
         )))
         .bind(target)
-        .bind(cancel_item);
+        .bind(cancel_item)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -524,6 +540,8 @@ where
 pub(crate) fn write_outbox_status<S>(
     scope: &mut S,
     record: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -535,7 +553,9 @@ where
             env!("CARGO_MANIFEST_DIR"),
             "/sql/write_outbox_status.sql"
         )))
-        .bind(record);
+        .bind(record)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -572,6 +592,8 @@ pub(crate) fn write_inbox_cancel_link<S>(
     scope: &mut S,
     target: String,
     cancel_item: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -584,7 +606,9 @@ where
             "/sql/write_inbox_cancel_link.sql"
         )))
         .bind(target)
-        .bind(cancel_item);
+        .bind(cancel_item)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

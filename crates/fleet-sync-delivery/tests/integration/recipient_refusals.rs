@@ -112,6 +112,7 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
             .register(ProjectedReceive::new(
                 config(),
                 Arc::new(ProjectionConsumer),
+                network.recipient.host.clone(),
             ))
             .unwrap();
         recipient
@@ -318,7 +319,7 @@ async fn assert_settlement_fits_minimum<D: DeliveryTypes<StatusRoute = String>>(
                     let outcome=if rank==2 { RecipientOutcome::Held } else {
                         RecipientOutcome::Refused { reason:terminal_refusal.clone() }
                     };
-                    mailbox.report(peer(2),RecipientReport { item:item_id(identity),report_seq:ReportSeq::new(rank),outcome }).await.map_err(storage_error)?;
+                    mailbox.report(peer(2),RecipientReport { item:item_id(identity),report_seq:ReportSeq::new(rank),outcome }, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
                 }
             }
         }

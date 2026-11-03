@@ -184,7 +184,7 @@ where
                 }
                 original.header.status = DeliveryStatus::Cancelled;
                 original.payload = None;
-                self.save(&original).await?;
+                self.save(&original, now).await?;
                 withdrawn = true;
             }
         }
@@ -309,7 +309,7 @@ where
                         field: "cancel exceeds outbox settlement allowance",
                     },
                 )?;
-                self.update_header(&original).await?;
+                self.update_header(&original, now).await?;
                 acceptance_bound = original.acceptance_bound;
                 capacity_slot = false;
                 settlement = 0;
@@ -372,12 +372,14 @@ where
             header,
             payload: if withdrawn { None } else { Some(envelope) },
         };
-        self.save(&record).await?;
+        self.save(&record, now).await?;
         if let Some(target) = cancel_target {
             queries::write_outbox_cancel_link(
                 self.scope,
                 item_key(target),
                 item_key(reference.item),
+                now.unix_millis().to_string(),
+                now.unix_millis().to_string(),
             )
             .await
             .map_err(sql_error)?;

@@ -30,6 +30,7 @@ where
 {
     let operation = *ctx.id();
     let offered = request.clone();
+    let now = ctx.now();
     let decision = ctx
         .local(step("check")?, move |scope| {
             Box::pin(async move {
@@ -41,9 +42,13 @@ where
                 if let DatabaseLifecycle::Retired { at } = record.lifecycle {
                     return Ok(Decision::Answer(RetirementAnswer::Retired { at }));
                 }
-                let mut attempt =
-                    open_lifecycle(scope, operation, LifecycleIntent::Retire(offered.clone()))
-                        .await?;
+                let mut attempt = open_lifecycle(
+                    scope,
+                    operation,
+                    LifecycleIntent::Retire(offered.clone()),
+                    now,
+                )
+                .await?;
                 if let Some(outcome) = attempt.outcome {
                     if let Some(error) = saved_failure(&outcome) {
                         return Err(step_error(error));
@@ -76,7 +81,10 @@ where
                 if let Some(refusal) = refusal {
                     let answer = RetirementAnswer::Refused(refusal);
                     attempt.outcome = Some(LifecycleOutcome::Retirement(answer.clone()));
-                    storage.save_lifecycle(&attempt).await.map_err(step_error)?;
+                    storage
+                        .save_lifecycle(&attempt, now)
+                        .await
+                        .map_err(step_error)?;
                     return Ok(Decision::Answer(answer));
                 }
                 Ok(Decision::Continue)
@@ -115,6 +123,7 @@ where
     }
     let offered = request.clone();
     let retiring_at = ctx.now();
+    let now = retiring_at;
     let retiring_hook = std::sync::Arc::clone(&hook);
     let decision = ctx
         .local(step("retiring")?, move |scope| {
@@ -160,7 +169,10 @@ where
                             })
                         })?;
                     attempt.outcome = Some(LifecycleOutcome::Retirement(answer.clone()));
-                    storage.save_lifecycle(&attempt).await.map_err(step_error)?;
+                    storage
+                        .save_lifecycle(&attempt, now)
+                        .await
+                        .map_err(step_error)?;
                     return Ok(Decision::Answer(answer));
                 }
                 record
@@ -171,7 +183,10 @@ where
                         retiring_at,
                     )
                     .map_err(step_error)?;
-                storage.save_database(&record).await.map_err(step_error)?;
+                storage
+                    .save_database(&record, now)
+                    .await
+                    .map_err(step_error)?;
                 crate::lease_change_hook::project_lease_change(
                     storage.0,
                     offered.database,
@@ -253,11 +268,11 @@ where
             else if let Some(refusal)=refusal{RetirementAnswer::Refused(refusal)}else{
                 if !matches!(record.lifecycle,DatabaseLifecycle::Retiring{attempt} if attempt==offered.attempt){return Err(step_error(LeaseError::Corrupt{field:"retirement seal".into()}));}
                 record.change_lifecycle(DatabaseLifecycle::Retired{at:now},now).map_err(step_error)?;
-                storage.save_database(&record).await.map_err(step_error)?;
+                storage.save_database(&record, now).await.map_err(step_error)?;
                 RetirementAnswer::Retired{at:now}
             };
         attempt.outcome=Some(LifecycleOutcome::Retirement(answer.clone()));
-        storage.save_lifecycle(&attempt).await.map_err(step_error)?;
+        storage.save_lifecycle(&attempt, now).await.map_err(step_error)?;
         crate::lease_change_hook::project_lease_change(storage.0,offered.database,before,hook.as_ref()).await.map_err(step_error)?;
         Ok(answer)
     })).await?)

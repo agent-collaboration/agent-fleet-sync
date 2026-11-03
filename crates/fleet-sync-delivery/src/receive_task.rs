@@ -4,6 +4,7 @@ use durable_steps::{
     AtomicStore, BoxFuture, JournalScope, OperationContext, OperationFailure, RequestKey,
     StepError, StoreError, Task, storage::TransactionScope,
 };
+use runtime_primitives::Clock;
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
@@ -22,13 +23,15 @@ enum ReceiveBudget {
 pub struct ReceiveItems<S, Db, D, C> {
     config: DeliveryTaskConfig,
     consumer: Arc<C>,
+    clock: Arc<dyn Clock>,
     store: TaskTypes<S, Db, D>,
 }
 impl<S, Db, D, C> ReceiveItems<S, Db, D, C> {
-    pub fn new(config: DeliveryTaskConfig, consumer: Arc<C>) -> Self {
+    pub fn new(config: DeliveryTaskConfig, consumer: Arc<C>, clock: Arc<dyn Clock>) -> Self {
         Self {
             config,
             consumer,
+            clock,
             store: PhantomData,
         }
     }
@@ -136,14 +139,15 @@ where
                 },
             )
             .await?;
+        let now = ctx.now();
         ctx.local(step("finish")?, move |scope| {
             Box::pin(async move {
                 let mut inbox = Inbox::<_, D>::new(scope, config.local.owner, config.local.limits);
                 inbox
-                    .acknowledge_receive(input, receipt)
+                    .acknowledge_receive(input, receipt, now)
                     .await
                     .map_err(step_error)?;
-                if let Some(next) = inbox.finish_receive(input).await.map_err(step_error)? {
+                if let Some(next) = inbox.finish_receive(input, now).await.map_err(step_error)? {
                     scope
                         .admit::<Self>(
                             &delivery_request_key(&(next.stream, next.cycle))
@@ -169,7 +173,7 @@ where
             let (stream, cycle): (DeliveryStream, ReceiveCycle) =
                 serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
             Inbox::<_, D>::new(scope, self.config.local.owner, self.config.local.limits)
-                .fail_receive(stream, cycle)
+                .fail_receive(stream, cycle, self.clock.now())
                 .await
                 .map_err(store_error)
         })

@@ -245,7 +245,10 @@ async fn mixed_fetch_uses_actual_reserves_and_stops_exactly_at_room_boundary() {
                 assert_eq!(exact.through, DeliverySeq::new(2));
                 let mut inbox = Inbox::<_, VariableTypes>::new(scope, peer(2), limits);
                 let cycle = inbox
-                    .begin_receive(DeliveryStream::Items)
+                    .begin_receive(
+                        DeliveryStream::Items,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?
                     .unwrap();
@@ -446,7 +449,8 @@ async fn relay_validates_stored_bound_after_received_releases_body() {
                                         receipt: "x".repeat(100)
                                     }
                                 }
-                            }
+                            },
+                            fleet_sync_protocol::SyncTime::from_unix_millis(0)
                         )
                         .await,
                     Err(DeliveryError::Refused {

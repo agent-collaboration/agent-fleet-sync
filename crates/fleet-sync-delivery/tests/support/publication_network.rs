@@ -67,7 +67,10 @@ impl PublicationRoutes {
                     .transaction(move |scope| {
                         Box::pin(async move {
                             StatusStream::<_, TestTypes>::new(scope, sender, route)
-                                .append_and_admit::<network::PublishTask>(&publication)
+                                .append_and_admit::<network::PublishTask>(
+                                    &publication,
+                                    fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                                )
                                 .await
                                 .map_err(storage_error)?;
                             Ok(())

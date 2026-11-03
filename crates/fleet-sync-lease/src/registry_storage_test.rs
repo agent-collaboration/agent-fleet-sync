@@ -6,6 +6,29 @@ use sqlx_core::{migrate::Migrator, query::query, row::Row};
 use sqlx_turso::Turso;
 
 #[tokio::test]
+async fn floor_metadata_uses_the_injected_clock_and_preserves_creation_on_upsert() -> TestResult {
+    use runtime_primitives::Clock;
+    use std::sync::atomic::Ordering;
+    let directory = tempfile::tempdir()?;
+    let host = TestHost::open(directory.path(), false).await?;
+    host.now.store(1234, Ordering::SeqCst);
+    let store = open_store(&directory.path().join("clock.db"), host.clone(), true).await?;
+    let database = database()?;
+    for (epoch, millis) in [(1, 1234), (2, 5678)] {
+        host.now.store(millis, Ordering::SeqCst);
+        let now = host.now();
+        store.transaction(move |scope|Box::pin(async move {
+            RegistryStorage(scope).save_floor(database,Epoch::new(epoch).map_err(storage)?, now).await.map_err(storage)?;
+            let row=query::<Turso>("SELECT created_at,updated_at FROM _fleet_sync_epoch_floor WHERE database=?1").bind(database.to_string()).fetch_one(scope.executor()).await?;
+            assert_eq!(row.try_get::<i64,_>("created_at")?,1234);
+            assert_eq!(row.try_get::<i64,_>("updated_at")?,now.unix_millis());
+            Ok(())
+        })).await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn legacy_registry_core_rows_migrate_to_scalars_without_losing_full_u64() -> TestResult {
     let directory = tempfile::tempdir()?;
     let host = TestHost::open(directory.path(), false).await?;
@@ -115,7 +138,10 @@ async fn legacy_registry_core_rows_migrate_to_scalars_without_losing_full_u64() 
                 assert_eq!(lease_times.try_get::<i64, _>("created_at")?, 1000);
                 assert_eq!(lease_times.try_get::<i64, _>("updated_at")?, 2000);
                 registry
-                    .save_database(&expected_record)
+                    .save_database(
+                        &expected_record,
+                        fleet_sync_protocol::SyncTime::from_unix_millis(1000),
+                    )
                     .await
                     .map_err(storage)?;
                 for table in [

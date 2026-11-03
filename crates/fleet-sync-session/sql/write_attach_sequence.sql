@@ -1,1 +1,1 @@
-INSERT INTO _fleet_sync_attach_sequences(peer,sequence) VALUES(?1,?2) ON CONFLICT(peer) DO UPDATE SET sequence=excluded.sequence,updated_at=(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER))
+INSERT INTO _fleet_sync_attach_sequences(peer,sequence,created_at,updated_at) VALUES(?1,?2,CAST(?3 AS INTEGER),CAST(?4 AS INTEGER)) ON CONFLICT(peer) DO UPDATE SET sequence=excluded.sequence,updated_at=excluded.updated_at

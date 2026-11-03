@@ -28,12 +28,14 @@ pub(crate) async fn registry_engine(
         })
         .await?;
     let mut engine = Engine::new(object.clone(), object.host());
+    let clock: Arc<dyn Clock> = object.host();
     engine.register(RegistrationTask::<
         ServiceObject,
         Turso,
         fleet_sync_lease::NoLeaseChangeHook,
     >::new(
         config,
+        clock.clone(),
         std::sync::Arc::new(fleet_sync_lease::NoLeaseChangeHook),
     ))?;
     engine.register(ImportTask::<
@@ -42,6 +44,7 @@ pub(crate) async fn registry_engine(
         fleet_sync_lease::NoLeaseChangeHook,
     >::new(
         config,
+        clock.clone(),
         std::sync::Arc::new(fleet_sync_lease::NoLeaseChangeHook),
     ))?;
     engine.register(RetirementTask::<
@@ -50,10 +53,10 @@ pub(crate) async fn registry_engine(
         fleet_sync_lease::NoLeaseChangeHook,
     >::new(
         config,
+        clock.clone(),
         std::sync::Arc::new(fleet_sync_lease::NoLeaseChangeHook),
     ))?;
     engine.register(PreviewTakeoverTask::<ServiceObject, Turso>::new(config))?;
-    let clock: Arc<dyn Clock> = object.host();
     engine.register(HolderChangeTask::<
         ServiceObject,
         Turso,

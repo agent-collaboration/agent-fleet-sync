@@ -89,3 +89,6 @@ mod cancellation_support;
 mod retention_replay;
 
 mod surrogate_status;
+
+mod checked_write_clocks;
+mod schema_index_lineage;

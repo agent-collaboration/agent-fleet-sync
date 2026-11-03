@@ -45,7 +45,7 @@ where
             record.payload = None;
             record.released_at = Some(now);
             self.storage.save_live(&record).await?;
-            self.owe(&record).await?;
+            self.owe(&record, now).await?;
         }
         Ok(next)
     }

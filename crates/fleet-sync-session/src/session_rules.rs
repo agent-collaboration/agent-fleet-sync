@@ -222,7 +222,7 @@ where
         previous.state = SessionState::Ended {
             reason: EndReason::NewSession,
         };
-        save_session(scope, &previous).await?;
+        save_session(scope, &previous, now).await?;
     }
     let mut record = existing.unwrap_or(SessionRecord {
         peer: binding.peer,
@@ -241,8 +241,8 @@ where
     record.state = SessionState::Active {
         connection: binding.connection,
     };
-    save_session(scope, &record).await?;
-    let attach_seq = crate::session_storage::next_attach_sequence(scope, binding.peer).await?;
+    save_session(scope, &record, now).await?;
+    let attach_seq = crate::session_storage::next_attach_sequence(scope, binding.peer, now).await?;
     scope.set_registration(
         &binding.connection,
         ConnectionRegistration::Attaching {
@@ -311,7 +311,7 @@ where
                 })
         {
             record.state = SessionState::Detached { since: now };
-            save_session(scope, &record).await?;
+            save_session(scope, &record, now).await?;
         }
     }
     Ok(Vec::new())
@@ -321,7 +321,7 @@ pub async fn end_sessions<S, P: ConsumerProtocol>(
     scope: &mut S,
     peer: &PeerId,
     reason: EndReason,
-    _now: SyncTime,
+    now: SyncTime,
 ) -> Result<Vec<SessionEffect<P>>, SessionError>
 where
     S: SessionScope,
@@ -344,7 +344,7 @@ where
             effects.extend(closed_effects(connection, close));
         }
         record.state = SessionState::Ended { reason };
-        save_session(scope, &record).await?;
+        save_session(scope, &record, now).await?;
     }
     Ok(effects)
 }

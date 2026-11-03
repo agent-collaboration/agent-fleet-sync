@@ -156,12 +156,12 @@ where
                     .enter(crate::HolderChangePhase::Ended, now)
                     .map_err(storage_error)?;
                 RegistryStorage(scope)
-                    .save_transfer(&record)
+                    .save_transfer(&record, now)
                     .await
                     .map_err(storage_error)?;
             }
             if matches!(record.intent.request, HolderChangeRequest::Claim { .. }) {
-                crate::transfer_cancellation::admit_settlement::<S, D>(scope, id, settlement)
+                crate::transfer_cancellation::admit_settlement::<S, D>(scope, id, settlement, now)
                     .await
                     .map_err(storage_error)?;
             }

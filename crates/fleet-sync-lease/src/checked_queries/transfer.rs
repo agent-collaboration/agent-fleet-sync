@@ -101,6 +101,8 @@ pub(crate) fn write_transfer<S>(
     intent: String,
     outcome: Option<String>,
     phase: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -117,7 +119,9 @@ where
         .bind(database)
         .bind(intent)
         .bind(outcome)
-        .bind(phase);
+        .bind(phase)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -181,6 +185,7 @@ pub(crate) fn repair_transfer_epoch<S>(
     scope: &mut S,
     intent: String,
     attempt: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -193,7 +198,8 @@ where
             "/sql/repair_transfer_epoch.sql"
         )))
         .bind(intent)
-        .bind(attempt);
+        .bind(attempt)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -202,6 +208,7 @@ pub(crate) fn write_cleanup_failure<S>(
     scope: &mut S,
     cleanup_failed: String,
     attempt: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -214,7 +221,8 @@ where
             "/sql/write_cleanup_failure.sql"
         )))
         .bind(cleanup_failed)
-        .bind(attempt);
+        .bind(attempt)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -267,6 +275,8 @@ pub(crate) fn write_phase_history<S>(
     scope: &mut S,
     attempt: String,
     history: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -279,7 +289,9 @@ where
             "/sql/write_phase_history.sql"
         )))
         .bind(attempt)
-        .bind(history);
+        .bind(history)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

@@ -93,7 +93,11 @@ where
         }
     }
 
-    pub async fn mark_submit_attempted(&mut self, item: ItemId) -> Result<(), DeliveryError> {
+    pub async fn mark_submit_attempted(
+        &mut self,
+        item: ItemId,
+        now: SyncTime,
+    ) -> Result<(), DeliveryError> {
         let mut header = match self.header_state(item).await {
             Ok(Some(OutboxHeaderState::Item(header))) => header,
             Ok(_) | Err(DeliveryError::Corrupt { .. }) => return Ok(()),
@@ -106,7 +110,7 @@ where
             };
         }
         header.submit_attempted = true;
-        self.update_header(&header).await
+        self.update_header(&header, now).await
     }
 
     pub async fn mark_submitted(
@@ -128,7 +132,7 @@ where
                 header
             }
             Ok(_) | Err(DeliveryError::Corrupt { .. }) => {
-                return self.recover_answer(input, answer).await;
+                return self.recover_answer(input, answer, now).await;
             }
             Err(error) => return Err(error),
         };
@@ -169,7 +173,7 @@ where
         if handed_off {
             header.handed_off_at = Some(now);
         }
-        self.save_header(&header, None).await
+        self.save_header(&header, None, now).await
     }
 
     pub async fn status(
@@ -217,7 +221,7 @@ where
                     header.status = DeliveryStatus::Refused {
                         reason: DeliveryRefusal::ProcessingFailed { kind },
                     };
-                    self.save_header(&header, None).await?;
+                    self.save_header(&header, None, now).await?;
                 }
             }
             Ok(Some(OutboxHeaderState::Recovered(mut record))) => {
@@ -225,7 +229,7 @@ where
                     record.status = DeliveryStatus::Refused {
                         reason: DeliveryRefusal::ProcessingFailed { kind },
                     };
-                    self.save_recovered(&record).await?;
+                    self.save_recovered(&record, now).await?;
                 }
             }
             Ok(Some(OutboxHeaderState::Unresolvable { .. })) => {}
@@ -240,6 +244,8 @@ where
                     encode(&failed)?,
                     None,
                     "0".into(),
+                    created_at(item).unix_millis().to_string(),
+                    now.unix_millis().to_string(),
                 )
                 .await
                 .map_err(sql_error)?;
@@ -263,6 +269,7 @@ where
             SubmitResult::Refused {
                 reason: DeliveryRefusal::ProcessingFailed { kind },
             },
+            now,
         )
         .await
     }
@@ -270,6 +277,7 @@ where
         &mut self,
         input: &SubmitInput,
         answer: SubmitResult<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let (status, version, cancel) = match answer {
             SubmitResult::Accepted {
@@ -307,19 +315,23 @@ where
             Err(error) => return Err(error),
         };
         crate::delivery_sizes::check_status_bound::<D>(&status, acceptance_bound)?;
-        self.save_recovered(&RecoveredOutbox {
-            acceptance_bound,
-            item: input.item,
-            digest: input.digest.clone(),
-            status,
-            version,
-            cancel,
-        })
+        self.save_recovered(
+            &RecoveredOutbox {
+                acceptance_bound,
+                item: input.item,
+                digest: input.digest.clone(),
+                status,
+                version,
+                cancel,
+            },
+            now,
+        )
         .await
     }
     pub(crate) async fn save_recovered(
         &mut self,
         record: &RecoveredOutbox<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let state = OutboxHeaderState::<D::Acceptance>::Recovered(copy_wire(record)?);
         queries::write_outbox_item(
@@ -331,6 +343,8 @@ where
             encode(&state)?,
             None,
             "0".into(),
+            created_at(record.item).unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await
         .map_err(sql_error)
@@ -491,28 +505,35 @@ where
         }
         Ok(Some(record))
     }
-    pub(crate) async fn save(&mut self, record: &OutboxRecord<D>) -> Result<(), DeliveryError> {
+    pub(crate) async fn save(
+        &mut self,
+        record: &OutboxRecord<D>,
+        now: SyncTime,
+    ) -> Result<(), DeliveryError> {
         record.validate()?;
         self.save_header(
             &record.header,
             record.payload.as_ref().map(encode).transpose()?,
+            now,
         )
         .await
     }
     pub(crate) async fn update_header(
         &mut self,
         header: &OutboxHeader<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let row = queries::read_outbox_item(self.scope, item_key(header.id))
             .await
             .map_err(sql_error)?
             .ok_or(DeliveryError::CustodyMissing)?;
-        self.save_header(header, row.payload).await
+        self.save_header(header, row.payload, now).await
     }
     pub(crate) async fn save_header(
         &mut self,
         header: &OutboxHeader<D::Acceptance>,
         payload: Option<String>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         header.validate()?;
         let state = OutboxHeaderState::<D::Acceptance>::Item(copy_wire(header)?);
@@ -530,6 +551,8 @@ where
             encode(&state)?,
             payload,
             u8::from(header.capacity_slot).to_string(),
+            header.created_at.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await
         .map_err(sql_error)

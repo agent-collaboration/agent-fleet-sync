@@ -337,9 +337,13 @@ pub(super) async fn open_store(
             store
                 .transaction(move |scope| {
                     Box::pin(async move {
-                        report_schema_support(scope, &report)
-                            .await
-                            .map_err(storage)?;
+                        report_schema_support(
+                            scope,
+                            &report,
+                            fleet_sync_protocol::SyncTime::from_unix_millis(1000),
+                        )
+                        .await
+                        .map_err(storage)?;
                         Ok(())
                     })
                 })
@@ -353,18 +357,21 @@ pub(super) fn engine(store: Arc<TestStore>, host: Arc<TestHost>) -> TestResult<T
     engine.register(
         RegistrationTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
             config()?,
+            host.clone(),
             std::sync::Arc::new(crate::NoLeaseChangeHook),
         ),
     )?;
     engine.register(
         ImportTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
             config()?,
+            host.clone(),
             std::sync::Arc::new(crate::NoLeaseChangeHook),
         ),
     )?;
     engine.register(
         RetirementTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
             config()?,
+            host.clone(),
             std::sync::Arc::new(crate::NoLeaseChangeHook),
         ),
     )?;

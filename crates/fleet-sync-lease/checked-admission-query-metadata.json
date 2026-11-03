@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-admission-queries.json": "c9fdb2849af156a414dfd1ac837a2fc070cb4d09ba566308ea4c148da53a338b",
+    "checked-admission-queries.json": "f2d2a441cfef828aa068cbd20c9a53509b695cb764433b1761447bda1bae76db",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -62,11 +62,11 @@
     "migrations/0006_typed_registry_workflows.sql": "561bfaeab84011dec358d488e05584a15ef34cd95d59b95f2559a22c5d921569",
     "sql/read_transfer_admission.sql": "88a3d742bce10edee9e63d7dec8d015ac9874752acb5a1183a670abcb40c1fc5",
     "sql/read_transfer_cancel.sql": "30a97782cea37d41cd10a3c5b7e2350ac859a965fdbaa4141cc1cf0500dd204b",
-    "sql/write_transfer_admission.sql": "e71c579ed272ac52bcc6a09975cbc30f252db8961beb1458a2fba4ea4b7fb0b1",
-    "sql/write_transfer_cancel.sql": "f1a040b59584565fc8e904cde884a1b88d97065d5f0b1c3b8f0c3250f6d4120a",
-    "src/checked_queries/admission.rs": "37ba015456fad69610ca9521f2a12acc81379b71d28e2f1937cef0905794ba87"
+    "sql/write_transfer_admission.sql": "ad13b658303322f7b6259a99f1d06f5c23679fb279e68bc682dc15f46c345675",
+    "sql/write_transfer_cancel.sql": "82bd2a210c27d0860e6168c6ac456e6a8cd4b6c4f6b049fd3e2c8566fad0e3a5",
+    "src/checked_queries/admission.rs": "f0738bba66b9756c80a4e4f4ccd03c04252cdf79a1eb7947a6a71f5da30b4e7c"
   },
-  "queries_digest": "5bddb0428a75994269badf7450d0c2dbf30b05b8a43b344645713e17059d11df",
+  "queries_digest": "53cbea7655d139ad92ea1d8b16965fcb4fd8b2f7dee441c3e56f6fd32254b900",
   "queries": [
     {
       "name": "read_transfer_admission",
@@ -202,7 +202,7 @@
     },
     {
       "name": "write_transfer_admission",
-      "bind_slots": 7,
+      "bind_slots": 9,
       "columns": []
     },
     {
@@ -241,7 +241,7 @@
     },
     {
       "name": "write_transfer_cancel",
-      "bind_slots": 2,
+      "bind_slots": 4,
       "columns": []
     }
   ]

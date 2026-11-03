@@ -81,7 +81,10 @@ async fn readmission_accepts_new_ids_without_reviving_refused_items_or_losing_pu
                         )
                         .await
                         .map_err(storage_error)?;
-                    mailbox.close().await.map_err(storage_error)?;
+                    mailbox
+                        .close(fleet_sync_protocol::SyncTime::from_unix_millis(0))
+                        .await
+                        .map_err(storage_error)?;
                     assert!(matches!(
                         mailbox
                             .submit(
@@ -200,6 +203,7 @@ async fn reopening_preserves_compacted_dedup_answers_and_retirement_controls() {
                                 },
                             },
                         },
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
                     )
                     .await
                     .map_err(storage_error)?;
@@ -208,7 +212,10 @@ async fn reopening_preserves_compacted_dedup_answers_and_retirement_controls() {
                     .await
                     .map_err(storage_error)?;
                 assert_eq!(retired.retired, [item_id(1)]);
-                mailbox.close().await.map_err(storage_error)?;
+                mailbox
+                    .close(fleet_sync_protocol::SyncTime::from_unix_millis(0))
+                    .await
+                    .map_err(storage_error)?;
                 Ok(())
             })
         })

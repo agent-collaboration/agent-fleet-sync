@@ -25,19 +25,19 @@ async fn two_submitters_keep_independent_events_acknowledgements_and_publication
     } = Fixture::new().await;
     let (first_reference, second_reference) = store.transaction(|scope| Box::pin(async move {
         let (first, _) = StatusStream::<_, TestTypes>::new(scope, peer(1), "route-a".into())
-            .append(&publication(1,1,DeliveryStatus::AtRecipient)).await.map_err(storage_error)?;
+            .append(&publication(1,1,DeliveryStatus::AtRecipient), fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         let (second, _) = StatusStream::<_, TestTypes>::new(scope, peer(3), "route-c".into())
-            .append(&publication(2,1,DeliveryStatus::AtRecipient)).await.map_err(storage_error)?;
+            .append(&publication(2,1,DeliveryStatus::AtRecipient), fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         assert_eq!(first.cursor.value(),1);
         assert_eq!(second.cursor.value(),1);
         let (first, first_reference) = StatusStream::<_, TestTypes>::new(scope, peer(1), "route-a".into())
-            .append(&publication(1,2,DeliveryStatus::Held)).await.map_err(storage_error)?;
+            .append(&publication(1,2,DeliveryStatus::Held), fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         let (second, second_reference) = StatusStream::<_, TestTypes>::new(scope, peer(3), "route-c".into())
-            .append(&publication(2,2,DeliveryStatus::Uncertain)).await.map_err(storage_error)?;
+            .append(&publication(2,2,DeliveryStatus::Uncertain), fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         assert_eq!(first.cursor.value(),2);
         assert_eq!(second.cursor.value(),2);
         assert!(matches!(StatusStream::<_, TestTypes>::new(scope, peer(1), "route-a".into())
-            .acknowledge(StatusCursor::new(1)).await.map_err(storage_error)?, StatusAckResult::Acknowledged { floor } if floor.value()==1));
+            .acknowledge(StatusCursor::new(1), fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?, StatusAckResult::Acknowledged { floor } if floor.value()==1));
         Ok((first_reference.unwrap(),second_reference.unwrap()))
     })).await.unwrap();
 
@@ -85,7 +85,10 @@ async fn two_submitters_keep_independent_events_acknowledgements_and_publication
                     .await
                     .map_err(storage_error)?;
                 StatusStream::<_, TestTypes>::new(scope, peer(1), "route-a".into())
-                    .acknowledge(StatusCursor::new(2))
+                    .acknowledge(
+                        StatusCursor::new(2),
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?;
                 Ok(())
@@ -169,13 +172,13 @@ async fn scoped_upgrade_preserves_an_existing_floor_events_and_both_publication_
         assert_eq!(batch.through.value(),7);
         assert_eq!(batch.events.iter().map(|event|(event.cursor.value(),event.item,event.version.value())).collect::<Vec<_>>(),
             vec![(6,item_id(30),1),(7,item_id(31),2)]);
-        assert!(matches!(stream.acknowledge(StatusCursor::new(4)).await.map_err(storage_error)?,StatusAckResult::Acknowledged {floor} if floor.value()==5));
+        assert!(matches!(stream.acknowledge(StatusCursor::new(4), fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,StatusAckResult::Acknowledged {floor} if floor.value()==5));
         for target in [PublicationTarget::Peer {peer:peer(1),route:"route-a".to_owned()},PublicationTarget::StatusStream {sender:peer(1),route:"route-a".to_owned()}] {
             let publication = resolve_publication::<_,TestTypes>(scope,PublicationRef {item:item_id(31),version:StatusVersion::new(2),target}).await.map_err(storage_error)?.unwrap();
             assert!(matches!(publication.status,DeliveryStatus::Held));
         }
         let (new_event,_) = StatusStream::<_,TestTypes>::new(scope,peer(3),"route-c".into())
-            .append(&publication(32,1,DeliveryStatus::Uncertain)).await.map_err(storage_error)?;
+            .append(&publication(32,1,DeliveryStatus::Uncertain), fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         assert_eq!(new_event.cursor.value(),1);
         Ok(())
     })).await.unwrap();

@@ -93,6 +93,8 @@ pub(crate) fn save_session<S>(
     peer: String,
     session_id: String,
     record: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -106,7 +108,9 @@ where
         )))
         .bind(peer)
         .bind(session_id)
-        .bind(record);
+        .bind(record)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -117,6 +121,8 @@ pub(crate) fn save_notice<S>(
     session_id: String,
     position: String,
     body: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -131,7 +137,9 @@ where
         .bind(peer)
         .bind(session_id)
         .bind(position)
-        .bind(body);
+        .bind(body)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -214,6 +222,8 @@ pub(crate) fn write_attach_sequence<S>(
     scope: &mut S,
     peer: String,
     sequence: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -226,7 +236,9 @@ where
             "/sql/write_attach_sequence.sql"
         )))
         .bind(peer)
-        .bind(sequence);
+        .bind(sequence)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

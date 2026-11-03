@@ -39,6 +39,7 @@ where
                 reason: DeliveryRefusal::ProcessingFailed { kind },
             },
             consumer,
+            now,
         )
         .await
     }
@@ -47,6 +48,7 @@ where
         input: DeliveryAttempt,
         outcome: RecipientOutcome<D::Acceptance>,
         consumer: &C,
+        now: SyncTime,
     ) -> Result<InboxEffects, DeliveryError>
     where
         C: DeliveryConsumer<S>,
@@ -71,10 +73,10 @@ where
         header.release_requested = false;
         let mut effects = InboxEffects::default();
         effects.reports.extend(
-            self.record_header_outcome(&mut header, outcome, consumer, None)
+            self.record_header_outcome(&mut header, outcome, consumer, None, now)
                 .await?,
         );
-        self.update_header(&header).await?;
+        self.update_header(&header, now).await?;
         Ok(effects)
     }
     pub async fn local_outcome(
@@ -144,7 +146,7 @@ where
                         }
                     })?,
                 };
-                self.update_header(&header).await?;
+                self.update_header(&header, now).await?;
                 Ok(DeliveryCheck::Deliver { reference })
             }
             InboxProgress::Held { .. } => Ok(DeliveryCheck::Finish { outcome: None }),
@@ -248,10 +250,10 @@ where
         }
         record.header.release_requested = false;
         effects.reports.extend(
-            self.record_outcome(&mut record, recipient_outcome, consumer, observation)
+            self.record_outcome(&mut record, recipient_outcome, consumer, observation, now)
                 .await?,
         );
-        self.save(&record).await?;
+        self.save(&record, now).await?;
         let cancellation = self
             .apply_pending_cancel(input.item, consumer, now, false)
             .await?;
@@ -296,7 +298,7 @@ where
             }
             InboxProgress::Final { .. } | InboxProgress::Control { .. } => None,
         };
-        self.update_header(&header).await?;
+        self.update_header(&header, now).await?;
         match next {
             Some(input) => {
                 let key = durable_steps::RequestKey::new(encode(&(input.item, input.attempt))?)

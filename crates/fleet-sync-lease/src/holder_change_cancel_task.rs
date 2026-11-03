@@ -131,7 +131,10 @@ where
                     record
                         .enter(HolderChangePhase::Ended, now)
                         .map_err(step_error)?;
-                    storage.save_transfer(&record).await.map_err(step_error)?;
+                    storage
+                        .save_transfer(&record, now)
+                        .await
+                        .map_err(step_error)?;
                     Ok(answer)
                 })
             })
@@ -191,7 +194,7 @@ where
                 });
                 if let Some(failure) = &record.cleanup_failed {
                     RegistryStorage(scope)
-                        .save_cleanup_failure(id, failure)
+                        .save_cleanup_failure(id, failure, now)
                         .await
                         .map_err(storage_error)?;
                 }

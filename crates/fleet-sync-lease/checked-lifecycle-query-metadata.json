@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-lifecycle-queries.json": "9ac326b8399502d5e6fc0b95b28aa07e5427cdeac3455a9d3a6a0851458dcf0e",
+    "checked-lifecycle-queries.json": "ebad695949a9c3c9c109dff36912c44d9cab7b3d4649fccaffd7cdf5db4428c4",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -62,10 +62,10 @@
     "migrations/0006_typed_registry_workflows.sql": "561bfaeab84011dec358d488e05584a15ef34cd95d59b95f2559a22c5d921569",
     "sql/active_lifecycle.sql": "a9927272524cb1755363a700cd9f2a9e7ed7ac004071e33b41391ee7a2fcdc76",
     "sql/read_lifecycle.sql": "e256abac9b752c881ccdcb74e8182b10cf25f5e91618c07520c3560dfa66de95",
-    "sql/write_lifecycle.sql": "b05b988adaed51437c90d7514265d2c7b6eb4aa61005f88340881212c7d76491",
-    "src/checked_queries/lifecycle.rs": "4c0c00511f644bcdb5881c6ef16f50a4dfa923512a42efe0a4d575bdc5adcd81"
+    "sql/write_lifecycle.sql": "ffd0e3a36101caf10f9e0f3b216b71f12f77a736783ac04711c3e8eb0b75c5a6",
+    "src/checked_queries/lifecycle.rs": "1154e5e54d576e509f4f47de831255bb8eff952efb104059bc5597f107c620d6"
   },
-  "queries_digest": "087835824067a4649a1fd17695e93485fa1a7e9c0d07bad45c4af2bec670fde1",
+  "queries_digest": "1efef1bdfa84e0b5b86bbcedce4c555ed2f9216fc780bde971ae5790ab3e62db",
   "queries": [
     {
       "name": "read_lifecycle",
@@ -292,7 +292,7 @@
     },
     {
       "name": "write_lifecycle",
-      "bind_slots": 4,
+      "bind_slots": 6,
       "columns": []
     },
     {

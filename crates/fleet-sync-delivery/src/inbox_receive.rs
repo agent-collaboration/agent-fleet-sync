@@ -81,11 +81,11 @@ where
                             if let InboxProgress::Final { outcome, .. } = &record.header.progress {
                                 let outcome = copy_wire(outcome)?;
                                 effects.reports.extend(
-                                    self.record_outcome(&mut record, outcome, consumer, None)
+                                    self.record_outcome(&mut record, outcome, consumer, None, now)
                                         .await?,
                                 );
                             }
-                            self.save(&record).await?;
+                            self.save(&record, now).await?;
                         }
                     } else {
                         if input.after < progress.received {
@@ -144,12 +144,14 @@ where
                                         .ok_or(DeliveryError::Corrupt {
                                             field: "cancel exceeds inbox settlement allowance",
                                         })?;
-                                    self.save(&original).await?;
+                                    self.save(&original, now).await?;
                                 }
                                 queries::write_inbox_cancel_link(
                                     self.scope,
                                     item_key(cancel.target()),
                                     item_key(id),
+                                    now.unix_millis().to_string(),
+                                    now.unix_millis().to_string(),
                                 )
                                 .await
                                 .map_err(sql_error)?;
@@ -165,7 +167,7 @@ where
                             settlement,
                             now,
                         )?;
-                        self.save(&record).await?;
+                        self.save(&record, now).await?;
                         if let Some(DeliveryEnvelope::Item(item)) = &record.payload {
                             consumer.on_received(self.scope, item).await?;
                         }
@@ -196,7 +198,7 @@ where
         }
         progress.received = progress.received.max(batch.through);
         progress.rerun_requested |= advanced;
-        self.save_state(&state).await?;
+        self.save_state(&state, now).await?;
         // Cancellation may have ended an item in this same receive commit.
         let mut admitted = Vec::new();
         for attempt in effects.attempts {

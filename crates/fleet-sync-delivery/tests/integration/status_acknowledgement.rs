@@ -21,7 +21,10 @@ async fn append_status_event(fixture: &Fixture, item: u64, version: u64) -> Stat
             Box::pin(async move {
                 let (event, _) =
                     StatusStream::<_, TestTypes>::new(scope, peer(1), "fixture-route".into())
-                        .append(&held_publication(item, version))
+                        .append(
+                            &held_publication(item, version),
+                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                        )
                         .await
                         .map_err(storage_error)?;
                 Ok(event.cursor)
@@ -37,7 +40,10 @@ async fn acknowledge_events(fixture: &Fixture, through: u64) -> StatusAckResult 
         .transaction(move |scope| {
             Box::pin(async move {
                 StatusStream::<_, TestTypes>::new(scope, peer(1), "fixture-route".into())
-                    .acknowledge(StatusCursor::new(through))
+                    .acknowledge(
+                        StatusCursor::new(through),
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)
             })
@@ -302,7 +308,10 @@ async fn a_stored_acknowledged_floor_above_head_is_corrupt() {
                 .await?;
                 let result =
                     StatusStream::<_, TestTypes>::new(scope, peer(1), "fixture-route".into())
-                        .acknowledge(StatusCursor::new(1))
+                        .acknowledge(
+                            StatusCursor::new(1),
+                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                        )
                         .await;
                 assert!(matches!(result, Err(DeliveryError::Corrupt { .. })));
                 Ok(())

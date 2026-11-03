@@ -17,7 +17,7 @@ async fn controls_keep_the_engine_sequence_after_receipt_prunes_the_previous_row
             mailbox.report(peer(2), RecipientReport {
                 item: item_id(identity), report_seq: ReportSeq::new(1),
                 outcome: RecipientOutcome::Delivered { acceptance: Acceptance { receipt: "done".into() } },
-            }).await.map_err(storage_error)?;
+            }, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
             mailbox.retire(peer(1), &call(label), &[item_id(identity)]).await.map_err(storage_error)?;
             let controls = mailbox.fetch(peer(2), DeliveryStream::Controls,
                 DeliverySeq::new(identity - 1), 10, 100_000, SyncTime::from_unix_millis(0))
@@ -116,13 +116,13 @@ async fn receipt_releases_payload_once_and_a_late_report_cannot_regress_status()
         let mut mailbox=Mailbox::<_,TestTypes>::new(scope,peer(2),limits());
         mailbox.submit(peer(1),item(1,"body"),SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None).await.map_err(storage_error)?;
         mailbox.fetch(peer(2),DeliveryStream::Items,DeliverySeq::new(0),10,100_000,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
-        let newer=mailbox.report(peer(2),RecipientReport{item:item_id(1),report_seq:ReportSeq::new(2),outcome:RecipientOutcome::Delivered{acceptance:Acceptance{receipt:"one effect".into()}}}).await.map_err(storage_error)?;
+        let newer=mailbox.report(peer(2),RecipientReport{item:item_id(1),report_seq:ReportSeq::new(2),outcome:RecipientOutcome::Delivered{acceptance:Acceptance{receipt:"one effect".into()}}}, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         assert!(matches!(newer,ReportResult::Ack {report_seq} if report_seq.value()==2));
         let received=mailbox.received(peer(2),DeliveryStream::Items,DeliverySeq::new(1),SyncTime::from_unix_millis(1)).await.map_err(storage_error)?;
         assert_eq!(received.released_through.value(),1);
         let received_again=mailbox.received(peer(2),DeliveryStream::Items,DeliverySeq::new(1),SyncTime::from_unix_millis(2)).await.map_err(storage_error)?;
         assert_eq!(received_again.released_through.value(),1);
-        let old=mailbox.report(peer(2),RecipientReport{item:item_id(1),report_seq:ReportSeq::new(1),outcome:RecipientOutcome::Held}).await.map_err(storage_error)?;
+        let old=mailbox.report(peer(2),RecipientReport{item:item_id(1),report_seq:ReportSeq::new(1),outcome:RecipientOutcome::Held}, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         assert!(matches!(old,ReportResult::Replayed {report_seq} if report_seq.value()==1));
         assert!(matches!(mailbox.query(&[item_id(1)]).await.map_err(storage_error)?.statuses.first().unwrap().state,ItemStatusState::Known {status:DeliveryStatus::Delivered {ref acceptance},version,..} if version.value()==2&&acceptance.receipt=="one effect"));
         Ok(())
@@ -135,7 +135,7 @@ async fn only_the_current_target_retires_and_compacted_identity_replays() {
     fixture.store.transaction(|scope|Box::pin(async move {
         let mut mailbox=Mailbox::<_,TestTypes>::new(scope,peer(2),limits());
         mailbox.submit(peer(1),item(1,"body"),SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None).await.map_err(storage_error)?;
-        mailbox.report(peer(2),RecipientReport{item:item_id(1),report_seq:ReportSeq::new(1),outcome:RecipientOutcome::Delivered{acceptance:Acceptance{receipt:"done".into()}}}).await.map_err(storage_error)?;
+        mailbox.report(peer(2),RecipientReport{item:item_id(1),report_seq:ReportSeq::new(1),outcome:RecipientOutcome::Delivered{acceptance:Acceptance{receipt:"done".into()}}}, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         let denied=mailbox.retire(peer(3),&call("wrong origin"),&[item_id(1)]).await.map_err(storage_error)?;
         assert_eq!(denied.not_current_target,[item_id(1)]);
         assert!(denied.unknown.is_empty());

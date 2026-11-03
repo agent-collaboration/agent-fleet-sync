@@ -43,11 +43,12 @@ impl<
                 let request: ReportSchemaSupport = decode(request)?;
                 #[cfg(feature = "test-support")]
                 self.schema_support_probe.before_report(&request).await;
+                let now = self.registry.host().now();
                 encode(
                     self.registry
                         .transaction(move |scope| {
                             Box::pin(async move {
-                                report_schema_support(scope, &request)
+                                report_schema_support(scope, &request, now)
                                     .await
                                     .map_err(StoreError::backend)
                             })

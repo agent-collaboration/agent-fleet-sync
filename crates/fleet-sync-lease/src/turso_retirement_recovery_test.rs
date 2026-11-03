@@ -85,6 +85,7 @@ async fn failed_retirement_keeps_its_seal_and_a_new_attempt_finishes_the_real_co
         crate::NoLeaseChangeHook,
     >::new(
         config()?,
+        host.clone(),
         std::sync::Arc::new(crate::NoLeaseChangeHook),
     )))?;
     assert_eq!(changed.drive_due().await?.failed.len(), 1);

@@ -25,7 +25,7 @@ async fn released_and_compacted_mail_reopen_with_explicit_and_legacy_bounds() {
             mailbox.received(peer(2),DeliveryStream::Items,batch.through,now()).await.map_err(storage_error)?;
             if compact {
                 for identity in [1,2] {
-                    mailbox.report(peer(2),RecipientReport { item:item_id(identity),report_seq:ReportSeq::new(1),outcome:RecipientOutcome::Delivered { acceptance:Acceptance { receipt:"ok".into() } } }).await.map_err(storage_error)?;
+                    mailbox.report(peer(2),RecipientReport { item:item_id(identity),report_seq:ReportSeq::new(1),outcome:RecipientOutcome::Delivered { acceptance:Acceptance { receipt:"ok".into() } } }, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
                 }
                 let result=mailbox.retire(peer(1),&call("compact-bounds"),&[item_id(1),item_id(2)]).await.map_err(storage_error)?;
                 assert_eq!(result.retired.len(),2);
@@ -51,7 +51,7 @@ async fn released_and_compacted_mail_reopen_with_explicit_and_legacy_bounds() {
                 assert!(record["value"]["payload"].is_null());
                 assert_eq!(record["value"].get("acceptanceBound").and_then(serde_json::Value::as_u64),if identity==1 {Some(64)} else {None});
                 Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).query(&[item_id(identity)]).await.map_err(storage_error)?;
-                let result=Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).report(peer(2),RecipientReport { item:item_id(identity),report_seq:ReportSeq::new(2),outcome:RecipientOutcome::Delivered { acceptance:Acceptance { receipt:"x".repeat(100) } } }).await;
+                let result=Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).report(peer(2),RecipientReport { item:item_id(identity),report_seq:ReportSeq::new(2),outcome:RecipientOutcome::Delivered { acceptance:Acceptance { receipt:"x".repeat(100) } } }, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await;
                 if identity==1 { assert!(matches!(result,Err(DeliveryError::Refused { reason:DeliveryRefusal::TooLarge { field:DeliverySizeField::Acceptance } }))); }
                 else { result.map_err(storage_error)?; }
             }

@@ -69,7 +69,7 @@ async fn default_consumer_preserves_reserve_and_fetch_selection_with_typed_stora
         let batch=Mailbox::<_,LegacyTypes>::new(scope,peer(2),limits).fetch_with_budget(peer(2),request,now()).await.map_err(storage_error)?;
         assert_eq!(batch.entries.len(),2,"legacy consumers keep payload-only fetch selection");
         let mut inbox=Inbox::<_,LegacyTypes>::new(scope,peer(2),limits);
-        let cycle=inbox.begin_receive(DeliveryStream::Items).await.map_err(storage_error)?.unwrap();
+        let cycle=inbox.begin_receive(DeliveryStream::Items, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?.unwrap();
         let budget=inbox.receive_request(cycle,10,100_000_000).await.map_err(storage_error)?;
         assert_eq!(budget.max_items,1);
         assert_eq!(budget.max_bytes,100_000_000-u64::from(minimum));

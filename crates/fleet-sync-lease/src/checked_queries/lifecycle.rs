@@ -104,6 +104,8 @@ pub(crate) fn write_lifecycle<S>(
     database: String,
     intent: String,
     outcome: Option<String>,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -119,7 +121,9 @@ where
         .bind(attempt)
         .bind(database)
         .bind(intent)
-        .bind(outcome);
+        .bind(outcome)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

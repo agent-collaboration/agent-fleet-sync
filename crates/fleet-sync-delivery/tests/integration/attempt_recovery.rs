@@ -154,6 +154,7 @@ fn interleaved_engine(
         .register(ReceiveTask::new(
             config(),
             std::sync::Arc::new(TestConsumer),
+            network.recipient.host.clone(),
         ))
         .unwrap();
     engine

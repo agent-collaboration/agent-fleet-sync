@@ -51,7 +51,7 @@ where
         self.storage.save_state(&state).await
     }
 
-    pub async fn close(&mut self) -> Result<(), DeliveryError> {
+    pub async fn close(&mut self, now: SyncTime) -> Result<(), DeliveryError> {
         let mut state = self.storage.state().await?;
         state.closed = true;
         for row in queries::list_mail_items(self.storage.scope)
@@ -67,7 +67,7 @@ where
                 };
                 record.version = next_version(record.version)?;
                 record.payload = None;
-                self.owe(&record).await?;
+                self.owe(&record, now).await?;
                 self.storage.save_live(&record).await?;
             }
         }
@@ -239,7 +239,7 @@ where
             .map_err(sql_error)?;
         }
         self.storage.save_state(&state).await?;
-        self.owe(&record).await?;
+        self.owe(&record, now).await?;
         Ok(SubmitResult::Accepted {
             status: copy_wire(&record.status)?,
             version: record.version,
@@ -247,7 +247,11 @@ where
         })
     }
 
-    pub(crate) async fn owe(&mut self, record: &LiveMail<D>) -> Result<(), DeliveryError> {
+    pub(crate) async fn owe(
+        &mut self,
+        record: &LiveMail<D>,
+        now: SyncTime,
+    ) -> Result<(), DeliveryError> {
         self.storage
             .publication(
                 &record.status_target,
@@ -257,6 +261,7 @@ where
                     version: record.version,
                     cancel: record.cancel,
                 },
+                now,
             )
             .await
     }
@@ -310,6 +315,7 @@ where
         &mut self,
         recipient: PeerId,
         report: RecipientReport<D>,
+        now: SyncTime,
     ) -> Result<ReportResult, DeliveryError> {
         crate::delivery_sizes::check_outcome::<D>(&report.outcome)?;
         if recipient != self.storage.owner
@@ -380,7 +386,7 @@ where
                 if live.status.is_terminal() {
                     live.payload = None;
                 }
-                self.owe(live).await?;
+                self.owe(live, now).await?;
             }
             self.storage.save_live(live).await?;
         }

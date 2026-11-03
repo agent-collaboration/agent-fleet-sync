@@ -73,7 +73,11 @@ fn resumed_engine(network: &NetworkFixture, opted_in: bool) -> Engine<TestStore,
             sqlx_turso::Turso,
             OptedTypes,
             OptedConsumer,
-        >::new(config(), Arc::new(OptedConsumer)))
+        >::new(
+            config(),
+            Arc::new(OptedConsumer),
+            network.recipient.host.clone(),
+        ))
         .unwrap();
     engine
         .register(DeliverLocally::<
@@ -170,11 +174,19 @@ async fn v020_budget_checkpoint_reopens_and_completes_with_identical_fetch_ident
                     sqlx_turso::Turso,
                     OptedTypes,
                     OptedConsumer,
-                >::new(config(), Arc::new(OptedConsumer)))
+                >::new(
+                    config(),
+                    Arc::new(OptedConsumer),
+                    network.recipient.host.clone(),
+                ))
                 .unwrap();
         } else {
             old_engine
-                .register(ReceiveTask::new(config(), Arc::new(TestConsumer)))
+                .register(ReceiveTask::new(
+                    config(),
+                    Arc::new(TestConsumer),
+                    network.recipient.host.clone(),
+                ))
                 .unwrap();
         }
         let worker = tokio::spawn(async move { old_engine.drive_due().await });

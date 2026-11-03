@@ -129,7 +129,8 @@ where
         Box::pin(async move {
             let (item, attempt): (ItemId, u64) =
                 serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
-            if self.clock.now() >= crate::removal_deadline(item) {
+            let now = self.clock.now();
+            if now >= crate::removal_deadline(item) {
                 return Ok(Resume::Finish(()));
             }
             let mut inbox = Inbox::<_, D>::new(scope, self.config.owner, self.config.limits);
@@ -158,7 +159,8 @@ where
         Box::pin(async move {
             let (item, attempt): (ItemId, u64) =
                 serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
-            if self.clock.now() >= crate::removal_deadline(item) {
+            let now = self.clock.now();
+            if now >= crate::removal_deadline(item) {
                 return Ok(());
             }
             let input = DeliveryAttempt {
@@ -177,11 +179,11 @@ where
             };
             let mut inbox = Inbox::<_, D>::new(scope, self.config.owner, self.config.limits);
             let mut effects = inbox
-                .record_terminal(input, outcome, self.consumer.as_ref())
+                .record_terminal(input, outcome, self.consumer.as_ref(), now)
                 .await
                 .map_err(store_error)?;
             let cancelled = inbox
-                .apply_pending_cancel(item, self.consumer.as_ref(), self.clock.now(), false)
+                .apply_pending_cancel(item, self.consumer.as_ref(), now, false)
                 .await
                 .map_err(store_error)?;
             effects.attempts.extend(cancelled.attempts);

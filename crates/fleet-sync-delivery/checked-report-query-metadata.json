@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-report-queries.json": "05d2ec094d2946dd099630c98dce5b86c7d7b049ba22503cf770552e3b46cf1e",
+    "checked-report-queries.json": "d53ea38da32e51180b479d7be9beea1726ca2dd39329bfa53356030bccbb4170",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -63,17 +63,18 @@
     "migrations/0007_typed_status_records.sql": "61b3c59edcd380af6c47ce818e21434584c356d5e788c62ab9d059c0e4ac78cb",
     "migrations/0008_custody_row_metadata.sql": "69b8ef89f3d94604d0cda7f28541251ef23874740e51f952408d9c7b9b0cd01c",
     "migrations/0009_typed_report_records.sql": "2b55df57eb4fead5ef43986aba8f66414ed0e9bbc07a0a291a971e802b35c2be",
+    "migrations/0010_restore_status_owed_machine_index.sql": "f28c4e8e1a9a3cc45e8245fb6a20ede57e92a2f95b032fbd882fd2d5ecd03311",
     "sql/drop_inbox_reports.sql": "57f217b5b04fd4a37a6a2b3e31d62e9f4f6ec0ede68df13d97193398a55ca1b9",
     "sql/read_report.sql": "d84a92af3cbe1de14d3d30aa583ca46d92aa5165f313dbb438a8ed83c8b51621",
     "sql/retire_report.sql": "211f6817a7983d36391472ae2c3837fecc04d811fe3ad6a68e80e782fcacafbc",
-    "sql/write_report.sql": "d169890c801f55421af13a67f9bc501ad1b84924621751ce6c2313d59fefad53",
-    "src/checked_queries/report.rs": "4975f34db348cd1b0a13cae7463616feb798851427ba64de7fe3fc1caf5552f9"
+    "sql/write_report.sql": "951b856f08c02e906c3fc65fe3c6efc244f122bca3bbe08ce8c044e458610856",
+    "src/checked_queries/report.rs": "e5611ba44021e5dd0627461c147e6685038da0c7da8bf06ecfcffa0826e1df80"
   },
-  "queries_digest": "ff0b7931acb90baba0cbc70d61524f2b4fb9617e3faa62ad9c5ac3fdca60600f",
+  "queries_digest": "f9dd47ff413921cd31e9dc2963f24cb8a2b77a85c1ec9258df22613a1e9dd7f1",
   "queries": [
     {
       "name": "write_report",
-      "bind_slots": 3,
+      "bind_slots": 5,
       "columns": []
     },
     {

@@ -238,6 +238,7 @@ async fn schema_refusal_after_reservation_is_settled_and_a_gate_refusal_has_no_s
                             attach_seq: AttachSequence::new(2).map_err(storage)?,
                             support: SchemaSupport { max_version: 0 },
                         },
+                        fleet_sync_protocol::SyncTime::from_unix_millis(1000),
                     )
                     .await
                     .map_err(storage)?;

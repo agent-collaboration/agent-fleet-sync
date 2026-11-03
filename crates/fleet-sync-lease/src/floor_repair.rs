@@ -91,15 +91,18 @@ where
                     record
                         .enter(crate::HolderChangePhase::Ended, now)
                         .map_err(step_error)?;
-                    storage.save_transfer(&record).await.map_err(step_error)?;
+                    storage
+                        .save_transfer(&record, now)
+                        .await
+                        .map_err(step_error)?;
                     return Ok(RepairedFence::Answer(answer));
                 };
                 storage
-                    .save_floor(database, next)
+                    .save_floor(database, next, now)
                     .await
                     .map_err(step_error)?;
                 storage
-                    .repair_transfer_epoch(id, next)
+                    .repair_transfer_epoch(id, next, now)
                     .await
                     .map_err(step_error)?;
                 Ok(RepairedFence::Reserved {

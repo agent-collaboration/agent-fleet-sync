@@ -4,6 +4,7 @@ use durable_steps::{
     storage::TransactionScope,
 };
 use fleet_sync_protocol::{Registration, RegistrationAnswer};
+use runtime_primitives::Clock;
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
@@ -13,13 +14,19 @@ use std::marker::PhantomData;
 /// Register this task on the registry engine and admit it with lifecycle_request_key.
 pub struct RegistrationTask<S, D, H> {
     config: RegistryConfig,
+    clock: std::sync::Arc<dyn Clock>,
     hook: std::sync::Arc<H>,
     store: PhantomData<fn() -> (S, D)>,
 }
 impl<S, D, H> RegistrationTask<S, D, H> {
-    pub const fn new(config: RegistryConfig, hook: std::sync::Arc<H>) -> Self {
+    pub const fn new(
+        config: RegistryConfig,
+        clock: std::sync::Arc<dyn Clock>,
+        hook: std::sync::Arc<H>,
+    ) -> Self {
         Self {
             config,
+            clock,
             hook,
             store: PhantomData,
         }
@@ -61,6 +68,6 @@ where
         key: &'s RequestKey,
         failure: &'s OperationFailure,
     ) -> BoxFuture<'s, Result<(), StoreError>> {
-        Box::pin(fail_lifecycle(scope, key, failure))
+        Box::pin(fail_lifecycle(scope, key, failure, self.clock.now()))
     }
 }

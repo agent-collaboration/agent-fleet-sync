@@ -182,7 +182,10 @@ pub(crate) async fn receive_projection_item(
             Box::pin(async move {
                 let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
                 let input = inbox
-                    .begin_receive(envelope.stream())
+                    .begin_receive(
+                        envelope.stream(),
+                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?
                     .unwrap();

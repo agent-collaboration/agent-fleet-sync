@@ -323,7 +323,10 @@ where
                         active
                             .enter(crate::HolderChangePhase::Ended, now)
                             .map_err(step_error)?;
-                        storage.save_transfer(&active).await.map_err(step_error)?;
+                        storage
+                            .save_transfer(&active, now)
+                            .await
+                            .map_err(step_error)?;
                     } else {
                         return refuse(
                             &mut storage,
@@ -337,7 +340,7 @@ where
                     }
                 }
                 storage
-                    .save_floor(database, next)
+                    .save_floor(database, next, now)
                     .await
                     .map_err(step_error)?;
                 let intent = TransferIntent {
@@ -351,7 +354,10 @@ where
                         .enter(crate::HolderChangePhase::Releasing, now)
                         .map_err(step_error)?;
                 }
-                storage.save_transfer(&transfer).await.map_err(step_error)?;
+                storage
+                    .save_transfer(&transfer, now)
+                    .await
+                    .map_err(step_error)?;
                 Ok(CheckedChange::Continue {
                     intent,
                     holder: lease.map(|lease| lease.holder),
@@ -399,6 +405,9 @@ where
     record
         .enter(crate::HolderChangePhase::Ended, now)
         .map_err(step_error)?;
-    storage.save_transfer(&record).await.map_err(step_error)?;
+    storage
+        .save_transfer(&record, now)
+        .await
+        .map_err(step_error)?;
     Ok(CheckedChange::Answer(answer))
 }

@@ -83,6 +83,8 @@ pub(crate) fn write_renewal<S>(
     database: String,
     attempt: String,
     record: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -96,7 +98,9 @@ where
         )))
         .bind(database)
         .bind(attempt)
-        .bind(record);
+        .bind(record)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

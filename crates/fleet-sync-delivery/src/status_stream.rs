@@ -78,11 +78,12 @@ where
     pub async fn append_and_admit<T: durable_steps::Task<Input = PublicationRef<D::StatusRoute>>>(
         &mut self,
         publication: &StatusPublication<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<StatusEvent<D::Acceptance>, DeliveryError>
     where
         S: durable_steps::JournalScope,
     {
-        let (event, reference) = self.append(publication).await?;
+        let (event, reference) = self.append(publication, now).await?;
         if let Some(reference) = reference {
             self.scope
                 .admit::<T>(
@@ -175,6 +176,7 @@ where
     pub async fn append(
         &mut self,
         publication: &StatusPublication<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<
         (
             StatusEvent<D::Acceptance>,
@@ -235,6 +237,8 @@ where
             event.version.value().to_string(),
             encode(&event)?,
             self.sender.as_uuid().to_string(),
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await
         .map_err(sql_error)?;
@@ -248,6 +252,8 @@ where
             canonical_encode(&target)?,
             publication.version.value().to_string(),
             encode(publication)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await
         .map_err(sql_error)?;
@@ -256,6 +262,8 @@ where
             self.scope,
             encode(&state)?,
             self.sender.as_uuid().to_string(),
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await
         .map_err(sql_error)?;
@@ -272,6 +280,7 @@ where
     pub async fn acknowledge(
         &mut self,
         through: StatusCursor,
+        now: SyncTime,
     ) -> Result<StatusAckResult, DeliveryError> {
         let mut state = self.state().await?;
         if through > state.head {
@@ -290,6 +299,8 @@ where
                 self.scope,
                 encode(&state)?,
                 self.sender.as_uuid().to_string(),
+                now.unix_millis().to_string(),
+                now.unix_millis().to_string(),
             )
             .await
             .map_err(sql_error)?;
