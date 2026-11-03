@@ -27,7 +27,7 @@ async fn upgrade_child_checkpoint() -> Result {
         metadata(&mut transaction, "_fleet_sync_steps", "id")
             .await?
             .len(),
-        2
+        3
     );
     // The parent acts only after this signal. No timer chooses the crash point.
     println!("\n{CHECKPOINT}");
@@ -104,7 +104,7 @@ async fn sigkill_inside_uncommitted_upgrade_recovers_v1_before_retry() -> Result
         metadata(&mut connection, "_fleet_sync_steps", "id")
             .await?
             .len(),
-        2
+        3
     );
     connection.close().await?;
     let mut engine = Engine::new(store, host);

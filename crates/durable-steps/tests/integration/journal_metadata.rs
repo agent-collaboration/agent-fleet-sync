@@ -1,3 +1,6 @@
+use super::legacy_rows::{
+    LegacyOperationRow, LegacyReceiptRow, LegacyStepRow, OPERATIONS, RECEIPTS, STEPS,
+};
 use crate::support::TestHost;
 use durable_steps::{
     AtomicStore, CallTarget, DriveLease, Engine, JournalScope, OperationContext, OperationFailure,
@@ -10,6 +13,7 @@ use sqlx_core::{
     connection::{ConnectOptions, Connection},
     executor::Executor,
     query::query,
+    query_as::query_as,
     row::Row,
 };
 use sqlx_turso::{Turso, TursoConnectOptions, TursoConnection};
@@ -94,6 +98,7 @@ pub(super) async fn legacy_file(path: &Path) -> Result<TursoConnection> {
     migrator.dangerous_set_table_name("_fleet_sync_migrations");
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     migrator.run_direct(None, &mut *transaction, false).await?;
+    query::<Turso>("UPDATE _fleet_sync_migrations SET description='historical v1 journal',installed_on='2000-01-02 03:04:05',execution_time=424242 WHERE version=1").execute(&mut *transaction).await?;
     transaction
         .execute(include_str!("fixtures/v1_pending.sql"))
         .await?;
@@ -101,24 +106,23 @@ pub(super) async fn legacy_file(path: &Path) -> Result<TursoConnection> {
     Ok(connection)
 }
 
-pub(super) async fn history(
+pub(super) async fn history(connection: &mut TursoConnection) -> Result<Vec<LegacyStepRow>> {
+    Ok(query_as::<Turso, LegacyStepRow>(STEPS)
+        .fetch_all(connection)
+        .await?)
+}
+
+pub(super) async fn operations(
     connection: &mut TursoConnection,
-) -> Result<Vec<(i64, String, Option<String>, Option<Vec<u8>>)>> {
-    Ok(query::<Turso>(
-        "SELECT position,kind,intent,output FROM _fleet_sync_steps ORDER BY position",
-    )
-    .fetch_all(connection)
-    .await?
-    .into_iter()
-    .map(|row| {
-        Ok((
-            row.try_get("position")?,
-            row.try_get("kind")?,
-            row.try_get("intent")?,
-            row.try_get("output")?,
-        ))
-    })
-    .collect::<std::result::Result<_, sqlx_core::Error>>()?)
+) -> Result<Vec<LegacyOperationRow>> {
+    Ok(query_as::<Turso, LegacyOperationRow>(OPERATIONS)
+        .fetch_all(connection)
+        .await?)
+}
+pub(super) async fn receipts(connection: &mut TursoConnection) -> Result<Vec<LegacyReceiptRow>> {
+    Ok(query_as::<Turso, LegacyReceiptRow>(RECEIPTS)
+        .fetch_all(connection)
+        .await?)
 }
 
 pub(super) async fn metadata(
@@ -148,11 +152,25 @@ async fn native_upgrade_preserves_saved_history_and_replays_it_once() -> Result 
         let path = directory.path().join(format!("{home}.sqlite"));
         let mut connection = legacy_file(&path).await?;
         let before = history(&mut connection).await?;
+        let operation_before = operations(&mut connection).await?;
+        let receipt_before = receipts(&mut connection).await?;
+        assert_eq!(operation_before[1].attempt, 7);
+        assert_eq!(operation_before[1].kind_version, 9);
+        assert_eq!(operation_before[1].drive_until, Some(5_000_000_001_000));
+        assert_eq!(before[2].first_attempt_at, Some(400));
+        assert_eq!(before[2].may_have_reached, Some(1));
+        assert!(before[2].intent.as_deref().is_some_and(
+            |intent| intent.contains("may_have_reached") && intent.contains("retained retry")
+        ));
         connection.close().await?;
         let host = TestHost::new();
         let store = Arc::new(TursoStore::open_and_migrate(&path, host.clone()).await?);
         let mut connection = connect(&path).await?;
         assert_eq!(history(&mut connection).await?, before);
+        assert_eq!(operations(&mut connection).await?, operation_before);
+        let receipt_after = receipts(&mut connection).await?;
+        assert_eq!(&receipt_after[..1], receipt_before.as_slice());
+        assert_eq!(receipt_after.len(), 2);
         for (table, key) in [
             ("_fleet_sync_operations", "operation_id"),
             ("_fleet_sync_steps", "id"),
@@ -186,15 +204,68 @@ async fn native_upgrade_preserves_saved_history_and_replays_it_once() -> Result 
             old_times[0].1, 250,
             "earliest saved call attempt is the best recorded time"
         );
-        let stable = metadata(&mut connection, "_fleet_sync_steps", "id").await?;
+        assert_eq!(old_times[1].1, 400);
+        let mut stable = Vec::new();
+        for (table, key) in [
+            ("_fleet_sync_operations", "operation_id"),
+            ("_fleet_sync_steps", "id"),
+            ("_fleet_sync_schema", "id"),
+            ("_fleet_sync_migrations", "id"),
+        ] {
+            let rows = metadata(&mut connection, table, key).await?;
+            assert!(
+                rows.iter().all(|(_, created, updated)| *created != 0
+                    && *updated != 0
+                    && created <= updated)
+            );
+            stable.push(rows);
+        }
+        let receipt_times =
+            query::<Turso>("SELECT created_at FROM _fleet_sync_migrations WHERE version=1")
+                .fetch_one(&mut connection)
+                .await?;
+        assert_eq!(
+            receipt_times.try_get::<i64, _>("created_at")?,
+            946_782_245_000
+        );
+        let step_times=query::<Turso>("SELECT operation_id,position,created_at FROM _fleet_sync_steps ORDER BY operation_id,position").fetch_all(&mut connection).await?;
+        assert_eq!(
+            step_times
+                .iter()
+                .map(|row| row.try_get::<i64, _>("created_at"))
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+            vec![250, 250, 400]
+        );
         let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
         migrate_journal(&mut transaction).await?;
         transaction.commit().await?;
-        assert_eq!(
-            metadata(&mut connection, "_fleet_sync_steps", "id").await?,
-            stable
-        );
+        for ((table, key), before) in [
+            ("_fleet_sync_operations", "operation_id"),
+            ("_fleet_sync_steps", "id"),
+            ("_fleet_sync_schema", "id"),
+            ("_fleet_sync_migrations", "id"),
+        ]
+        .into_iter()
+        .zip(stable)
+        {
+            assert_eq!(metadata(&mut connection, table, key).await?, before);
+        }
         connection.close().await?;
+        let replayed = store
+            .transaction(|scope| {
+                Box::pin(async move {
+                    Ok(scope
+                        .admit::<ReplayTask>(
+                            &RequestKey::new("old-request").map_err(StoreError::backend)?,
+                            &7,
+                        )
+                        .await
+                        .map_err(StoreError::backend)?
+                        .id())
+                })
+            })
+            .await?;
+        assert_eq!(replayed, OperationId::try_from(OPERATION.to_owned())?);
         let mut engine = Engine::new(store.clone(), host.clone());
         engine.register(ReplayTask)?;
         engine.drive_due().await?;
@@ -234,7 +305,7 @@ async fn native_upgrade_rolls_back_with_its_callers_transaction() -> Result {
         metadata(&mut transaction, "_fleet_sync_steps", "id")
             .await?
             .len(),
-        2
+        3
     );
     transaction.rollback().await?;
     assert_eq!(history(&mut connection).await?, before);
@@ -256,7 +327,7 @@ async fn native_upgrade_rolls_back_with_its_callers_transaction() -> Result {
         metadata(&mut connection, "_fleet_sync_steps", "id")
             .await?
             .len(),
-        2
+        3
     );
     Ok(())
 }
@@ -421,11 +492,12 @@ async fn reopened_step_rows_refuse_noncanonical_and_nontext_surrogate_ids() -> R
 #[tokio::test]
 async fn bootstrap_refuses_invalid_schema_and_native_receipt_row_ids() -> Result {
     for table in ["_fleet_sync_schema", "_fleet_sync_migrations"] {
-        for offered in [
-            OPERATION.replace("7123", "4123"),
-            OPERATION.to_uppercase(),
-            OPERATION.replace('-', ""),
-            "not-an-id".to_owned(),
+        for (offered, blob) in [
+            (OPERATION.replace("7123", "4123"), false),
+            (OPERATION.to_uppercase(), false),
+            (OPERATION.replace('-', ""), false),
+            ("not-an-id".to_owned(), false),
+            (OPERATION.to_owned(), true),
         ] {
             let directory = tempfile::tempdir()?;
             let path = directory.path().join("bad-metadata.sqlite");
@@ -436,10 +508,15 @@ async fn bootstrap_refuses_invalid_schema_and_native_receipt_row_ids() -> Result
                 "_fleet_sync_schema" => "UPDATE _fleet_sync_schema SET id=?",
                 _ => "UPDATE _fleet_sync_migrations SET id=? WHERE version=1",
             };
-            query::<Turso>(sql)
-                .bind(offered)
-                .execute(&mut connection)
-                .await?;
+            let update = query::<Turso>(sql);
+            if blob {
+                update
+                    .bind(offered.as_bytes())
+                    .execute(&mut connection)
+                    .await?;
+            } else {
+                update.bind(offered).execute(&mut connection).await?;
+            }
             connection.close().await?;
             let result = TursoStore::open_and_migrate(&path, host).await;
             assert!(

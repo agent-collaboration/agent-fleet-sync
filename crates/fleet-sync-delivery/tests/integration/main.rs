@@ -2,11 +2,15 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+mod checked_write_clocks;
+mod existing_record_removals;
 mod push_recovery;
 mod pushed_inbox;
 mod record_retention;
 mod relay_outbox;
+mod relay_sender_authority;
 mod row_metadata;
+mod schema_index_lineage;
 mod scoped_status;
 mod typed_custody;
 
@@ -89,6 +93,3 @@ mod cancellation_support;
 mod retention_replay;
 
 mod surrogate_status;
-
-mod checked_write_clocks;
-mod schema_index_lineage;

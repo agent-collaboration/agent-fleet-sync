@@ -32,6 +32,9 @@ try {
         "v1 history and metadata survive upgrade",
         "repeat bootstrap preserves row ids",
         "saved local effect replays once",
+        "all natural keys and DO primary keys enforced",
+        "DO malformed metadata ids refused",
+        "DO writes use the injected clock",
       ]);
       else if (path === "/reborrow") assert.deepEqual(JSON.parse(body), [
         "SQL and journal share parent commit and rollback",

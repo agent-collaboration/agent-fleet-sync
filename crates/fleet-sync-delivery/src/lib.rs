@@ -87,10 +87,11 @@ pub use push_task::{PushCall, PushItem};
 mod outbox_admission;
 mod outbox_relay;
 mod record_retention;
+mod relay_sender_authority;
 pub use outbox_record::PushInput;
 pub use record_retention::{
-    DELIVERY_RETENTION_MILLIS, RemoveDeliveryRecord, admit_record_removal, item_is_too_old,
-    removal_deadline,
+    DELIVERY_RETENTION_MILLIS, RemoveDeliveryRecord, admit_existing_record_removals,
+    admit_record_removal, item_is_too_old, removal_deadline,
 };
 
 mod mailbox_settlement;

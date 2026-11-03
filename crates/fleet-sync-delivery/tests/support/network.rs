@@ -144,13 +144,31 @@ impl TestNetwork {
                         }
                         let settled = self
                             .mailbox_store()
-                            .transaction(move |scope| {
-                                Box::pin(async move {
-                                    Mailbox::<_, TestTypes>::new(scope, target.mailbox, limits())
+                            .transaction({
+                                let fleet_push = self.fleet_push.load(Ordering::SeqCst);
+                                move |scope| {
+                                    Box::pin(async move {
+                                        if fleet_push {
+                                            return Outbox::<_, TestTypes>::new(scope, limits())
+                                                .relay_settle::<RecordRemoval>(
+                                                    peer(1),
+                                                    reference.item,
+                                                    reference.digest,
+                                                    now,
+                                                )
+                                                .await
+                                                .map_err(storage_error);
+                                        }
+                                        Mailbox::<_, TestTypes>::new(
+                                            scope,
+                                            target.mailbox,
+                                            limits(),
+                                        )
                                         .settle(reference.item, reference.digest)
                                         .await
                                         .map_err(storage_error)
-                                })
+                                    })
+                                }
                             })
                             .await
                             .unwrap();
@@ -484,7 +502,7 @@ impl NetworkFixture {
                     Inbox::<_, TestTypes>::new(scope, peer(2), limits())
                         .begin_receive_and_admit::<ReceiveTask>(
                             stream,
-                            SyncTime::from_unix_millis(0),
+                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
                         )
                         .await
                         .map_err(storage_error)?;

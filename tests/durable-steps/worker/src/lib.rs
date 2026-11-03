@@ -1,11 +1,19 @@
 mod alarm_cases;
 #[path = "../../../../crates/durable-steps/tests/conformance/mod.rs"]
 mod conformance;
+#[path = "../tests/integration/journal_clock.rs"]
+mod journal_clock;
+#[path = "../tests/integration/journal_constraints.rs"]
+mod journal_constraints;
+#[path = "../tests/integration/journal_id_refusals.rs"]
+mod journal_id_refusals;
 #[path = "../tests/integration/journal_metadata.rs"]
 mod journal_metadata;
 #[path = "../../journey_task.rs"]
 mod journey_task;
 mod journey_worker;
+#[path = "../../../../crates/durable-steps/tests/integration/legacy_rows.rs"]
+mod legacy_rows;
 mod reborrow_cases;
 mod retry_journal;
 #[path = "../../../../crates/durable-steps/tests/support/mod.rs"]

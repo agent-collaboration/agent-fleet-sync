@@ -61,6 +61,7 @@ pub enum DeliveryRefusal {
     CancelSenderMismatch,
     NotThisMachine,
     NotRecipient,
+    NotSubmitter,
     TooOld,
 }
 

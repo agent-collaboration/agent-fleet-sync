@@ -23,7 +23,7 @@ async fn upgrade_never_silently_discards_a_legacy_step_with_no_parent() -> Resul
         query::<Turso>("INSERT INTO _fleet_sync_steps(operation_id,position,step_name,kind,output) VALUES('0197abc0-def0-7123-8123-abcdef012346',2,'orphan','local',X'37')")
             .execute(&mut connection).await?;
         let before = history(&mut connection).await?;
-        assert_eq!(before.len(), 3);
+        assert_eq!(before.len(), 4);
         connection.close().await?;
         let result =
             TursoStore::open_with(&path, TursoStoreOptions { foreign_keys }, TestHost::new()).await;

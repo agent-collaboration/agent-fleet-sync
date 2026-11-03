@@ -55,6 +55,11 @@ pub(crate) fn decode_header<A: DeserializeOwned>(
     let digest = required(row.digest.clone(), "outbox digest")?;
     match row.record_kind.as_deref() {
         Some("recovered") => Ok(OutboxHeaderState::Recovered(RecoveredOutbox {
+            submitter: row
+                .submitter_machine_id
+                .clone()
+                .map(|value| stored_enum(Some(value), "outbox submitter"))
+                .transpose()?,
             acceptance_bound,
             item: id,
             digest: stored_enum(Some(digest), "outbox digest")?,

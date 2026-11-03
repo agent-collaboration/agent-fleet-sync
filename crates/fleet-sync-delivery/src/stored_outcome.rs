@@ -94,6 +94,7 @@ impl RefusalFields {
             Some("cancelSenderMismatch") => DeliveryRefusal::CancelSenderMismatch,
             Some("notThisMachine") => DeliveryRefusal::NotThisMachine,
             Some("notRecipient") => DeliveryRefusal::NotRecipient,
+            Some("notSubmitter") => DeliveryRefusal::NotSubmitter,
             Some("tooOld") => DeliveryRefusal::TooOld,
             _ => return Err(DeliveryError::Corrupt { field }),
         })

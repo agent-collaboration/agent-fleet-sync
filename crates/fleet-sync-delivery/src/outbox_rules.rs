@@ -317,6 +317,7 @@ where
         crate::delivery_sizes::check_status_bound::<D>(&status, acceptance_bound)?;
         self.save_recovered(
             &RecoveredOutbox {
+                submitter: None,
                 acceptance_bound,
                 item: input.item,
                 digest: input.digest.clone(),

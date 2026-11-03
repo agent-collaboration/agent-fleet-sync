@@ -17,7 +17,7 @@ fn sql_files(directory: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
-fn checked_write_queries_never_evaluate_the_sql_wall_clock() {
+fn checked_write_and_identity_queries_never_evaluate_the_sql_wall_clock() {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     for (package, folder) in [
         ("fleet-sync-delivery", "sql"),
@@ -35,14 +35,15 @@ fn checked_write_queries_never_evaluate_the_sql_wall_clock() {
                 .join(" ")
                 .trim_start()
                 .to_ascii_lowercase();
-            if ["insert", "update", "delete", "replace"]
+            let write = ["insert", "update", "delete", "replace"]
                 .iter()
-                .any(|prefix| statement.starts_with(prefix))
-            {
+                .any(|prefix| statement.starts_with(prefix));
+            let name = path.file_stem().unwrap().to_string_lossy();
+            if write || name.contains("token") || name.contains("id") {
                 writes += 1;
                 assert!(
                     !(statement.contains("strftime") && statement.contains("'now'")),
-                    "{}: write timestamps must be bound from the owning injected clock",
+                    "{}: writes and identity/token queries must use the owning injected sources",
                     path.display()
                 );
             }

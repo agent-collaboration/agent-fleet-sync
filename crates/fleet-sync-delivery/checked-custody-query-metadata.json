@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-custody-queries.json": "64f8be1df9296ef9cd7e4edaeb2ef4ad0424a08d3fc13f44c06f9dac3d123918",
+    "checked-custody-queries.json": "11deb2686d5eadeae2e0481545f228ad4d1195b1109dc368ebb35b25b6afeab5",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -66,7 +66,6 @@
     "migrations/0010_restore_status_owed_machine_index.sql": "f28c4e8e1a9a3cc45e8245fb6a20ede57e92a2f95b032fbd882fd2d5ecd03311",
     "sql/drop_inbox_cancel_link.sql": "4377a26c27c954d92d5e38c1e63c55b57956745206ca0bd0509b83fcb83e794b",
     "sql/drop_inbox_item.sql": "058ff3f7aa917adc1b5a4f49df608b4eff4ea4ee0c0d6ac24cba3fe0c6bcc8f1",
-    "sql/fresh_custody_token.sql": "1575d18fa6fc8787aec2e3b558727a9a2722194cb9f5c5259a832aafae7fdf81",
     "sql/read_inbox_accounting.sql": "ef1a2b79018cbffd8ef6f2c78078b53010c968c4b8ec889ddd59cd7ea621f0f1",
     "sql/read_inbox_cancel_link.sql": "87dfc88a66698f62bc0a400c2194707e95150b6e815212db18e35e3c4f595071",
     "sql/read_inbox_item.sql": "fb63b0cd198adfa7d6564fb8b0165261b77975be5d3dd22ee42f4a1bac98bafd",
@@ -77,7 +76,6 @@
     "sql/read_outbox_status.sql": "b6db7ab26769fbae97930423dca2d660a69ec8ee03693d35573986cc50e3483b",
     "sql/remove_retained_events.sql": "96afe5bce791fc6c97ac43469079a05ba4f8ddf1ce030af3812d7e7634671d16",
     "sql/remove_retained_inbox_links.sql": "dabdc4721761e5b091fa5f587e114a5cfca7dbcfff65e460ba4389d8c0aba32b",
-    "sql/remove_retained_outbox.sql": "0696c7c176d75dcef275e525f15fc4e25740099fadc0799be481009a8c63df16",
     "sql/remove_retained_outbox_links.sql": "9554d664f055972e32e634f141cfebf8562bfcde80b096db7b5d72064a5f3123",
     "sql/remove_retained_status.sql": "9968dc80dd61dbc8c172d92ac6305c09986a064901614d686e67870bb3d45f66",
     "sql/write_inbox_cancel_link.sql": "6a4f095202b56bc7b3ffcacd974a17a975f94dd5d8d4e142895ecdb1b8cab204",
@@ -86,9 +84,9 @@
     "sql/write_outbox_cancel_link.sql": "8c40505b10ee62d4f90fa3ff25bf000cadedddad2c6df5847a0ad94c537d389d",
     "sql/write_outbox_item.sql": "4138ceb70cf85b5a01e1b5d6ce3c93779876f6c0f6cb06bbaa9c6227f2872233",
     "sql/write_outbox_status.sql": "be56e9db06ca526864f2de386a3f9dfac57e47336e222c5bbda36815fd074557",
-    "src/checked_queries/custody.rs": "6cfa8eaae0142d42a099f1145648cec43bbce406dc54d45d29194fd6b44d0b14"
+    "src/checked_queries/custody.rs": "955b166fe0e4f50e93977fb6ef3dc5d11b9855acafefbfbf488d07ac85f37e37"
   },
-  "queries_digest": "1bc3309249b4dcc486f6e31c3db46d8e818ffd657ce63bfdef2da1e07de04968",
+  "queries_digest": "99d1094f80fb7474c8c23ec90334df06875d7087bb6ee57ae54e7c071951c256",
   "queries": [
     {
       "name": "read_outbox_item",
@@ -946,24 +944,6 @@
       "name": "remove_retained_outbox_links",
       "bind_slots": 1,
       "columns": []
-    },
-    {
-      "name": "remove_retained_outbox",
-      "bind_slots": 1,
-      "columns": []
-    },
-    {
-      "name": "fresh_custody_token",
-      "bind_slots": 0,
-      "columns": [
-        {
-          "name": "token",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        }
-      ]
     }
   ]
 }

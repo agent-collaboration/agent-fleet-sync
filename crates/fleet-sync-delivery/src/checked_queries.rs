@@ -6,3 +6,5 @@ pub(crate) use mail::*;
 pub(crate) use status::*;
 mod report;
 pub(crate) use report::*;
+mod retention;
+pub(crate) use retention::*;

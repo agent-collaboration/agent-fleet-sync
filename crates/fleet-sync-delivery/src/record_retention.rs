@@ -23,6 +23,61 @@ pub fn item_is_too_old(item: ItemId, now: SyncTime) -> bool {
     now > removal_deadline(item)
 }
 
+/// Admit removal for pre-existing custody after migrations, in the owner's startup transaction.
+/// Only canonical item identities are read: missing or corrupt content cannot block cleanup.
+#[expect(
+    clippy::manual_async_fn,
+    reason = "explicit Send preserves borrowed journal transaction futures"
+)]
+pub fn admit_existing_record_removals<'scope, S, T>(
+    scope: &'scope mut S,
+) -> impl std::future::Future<Output = Result<(), DeliveryError>> + Send + 'scope
+where
+    S: TransactionScope + JournalScope + JournalStorage,
+    T: Task<Input = ItemId>,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
+    for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database>,
+    for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
+{
+    async move {
+        let rows = queries::read_existing_custody(scope)
+            .await
+            .map_err(sql_error)?;
+        let mut items = Vec::with_capacity(rows.len());
+        // Validate every key before making the first journal mutation.
+        for row in rows {
+            let table = match row.source.as_deref() {
+                Some("outbox") => "_fleet_sync_outbox_items",
+                Some("inbox") => "_fleet_sync_inbox_items",
+                _ => {
+                    return Err(DeliveryError::Corrupt {
+                        field: "existing custody source",
+                    });
+                }
+            };
+            let key = row.row_key.ok_or(DeliveryError::Corrupt {
+                field: "existing custody row key",
+            })?;
+            let item = row
+                .item_id
+                .and_then(|value| ItemId::try_from(value).ok())
+                .ok_or(DeliveryError::CorruptRow {
+                    table,
+                    key,
+                    field: "item_id",
+                })?;
+            items.push(item);
+        }
+        items.sort_unstable_by_key(|item| item.as_uuid());
+        items.dedup();
+        for item in items {
+            admit_record_removal::<_, T>(scope, item).await?;
+        }
+        Ok(())
+    }
+}
+
 #[expect(
     clippy::manual_async_fn,
     reason = "explicit Send avoids async-fn/GAT lifetime generality errors in journal transactions"
@@ -59,18 +114,9 @@ where
                     field: "new removal is not running",
                 });
             };
-            let token = queries::fresh_custody_token(scope)
-                .await
-                .map_err(sql_error)?
-                .token
-                .ok_or(DeliveryError::Corrupt {
-                    field: "removal drive token",
-                })?;
-            let token = ItemId::try_from(token)
-                .map_err(|_| DeliveryError::Corrupt {
-                    field: "removal token is not UUIDv7",
-                })?
-                .as_uuid();
+            // This UUID was just minted by the owning injected IdSource.
+            // The initial token is private and retry clears it before commit.
+            let token = operation.as_uuid();
             // The new row is still private to this admission transaction. Use
             // the journal's guarded APIs to schedule it without an eager drive.
             if scope

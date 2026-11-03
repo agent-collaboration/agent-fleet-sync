@@ -192,6 +192,8 @@ impl SubmitInput {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct RecoveredOutbox<A> {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub submitter: Option<PeerId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acceptance_bound: Option<u32>,
     pub item: ItemId,
     pub digest: ItemDigest,

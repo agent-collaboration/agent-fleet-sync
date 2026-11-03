@@ -8,3 +8,7 @@ INSERT INTO _fleet_sync_steps(operation_id,position,step_name,kind,output)
 VALUES('0197abc0-def0-7123-8123-abcdef012345',0,'local','local',X'37');
 INSERT INTO _fleet_sync_steps(operation_id,position,step_name,kind,intent,first_attempt_at,may_have_reached)
 VALUES('0197abc0-def0-7123-8123-abcdef012345',1,'remote','call_pending','{"intent":{"target":"[\"metadata-double\",null]","request_digest":[121,2,105,155,228,44,138,142,70,251,187,69,1,114,101,23,232,107,34,197,106,24,159,118,37,166,218,73,8,27,36,81],"replay":"deduplicated","unsent_for":null},"reach":"never_sent","last_seen":null}',250,0);
+INSERT INTO _fleet_sync_operations(operation_id,kind,kind_version,request_key,input,input_digest,state,next_attempt_at,attempt,drive_token,drive_until)
+VALUES('0197abc0-def0-7123-8123-abcdef012347','metadata-history',9,'old-nondefault',X'3133',X'3fdba35f04dc8c462986c992bcf875546257113072a909c162f7e470e581e278','running',5000000000000,7,'0197abc0-def0-7123-8123-abcdef012348',5000000001000);
+INSERT INTO _fleet_sync_steps(operation_id,position,step_name,kind,intent,first_attempt_at,may_have_reached)
+VALUES('0197abc0-def0-7123-8123-abcdef012347',5,'retry-seven','call_pending','{"intent":{"target":"[\"metadata-double\",null]","request_digest":[63,219,163,95,4,220,140,70,41,134,201,146,188,248,117,84,98,87,17,48,114,169,9,193,98,247,228,112,229,129,226,120],"replay":"deduplicated","unsent_for":null},"reach":"may_have_reached","last_seen":450,"retry_reason":{"code":"fixture_backoff","detail":"retained retry"}}',400,1);

@@ -50,12 +50,11 @@ where
             match answer {
                 OutboxAdmission::Refused { reason } => return Ok(SubmitResult::Refused { reason }),
                 OutboxAdmission::Replayed { status, version } => {
-                    let cancel = self
-                        .load(reference.item)
-                        .await?
-                        .ok_or(DeliveryError::CustodyMissing)?
-                        .header
-                        .cancel;
+                    let OutboxStatusState::Known { cancel, .. } =
+                        self.status(reference.item).await?.state
+                    else {
+                        return Err(DeliveryError::CustodyMissing);
+                    };
                     return Ok(SubmitResult::Replayed {
                         status,
                         version,

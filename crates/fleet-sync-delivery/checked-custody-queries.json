@@ -353,25 +353,6 @@
           "nullable": false
         }
       ]
-    },
-    {
-      "name": "remove_retained_outbox",
-      "sql": "sql/remove_retained_outbox.sql",
-      "result": "execute",
-      "parameters": [
-        {
-          "name": "item_id",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "fresh_custody_token",
-      "sql": "sql/fresh_custody_token.sql",
-      "result": "one",
-      "row": "StoredCustodyTokenRow",
-      "parameters": []
     }
   ]
 }

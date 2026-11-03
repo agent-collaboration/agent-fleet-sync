@@ -138,7 +138,7 @@ where
         }
         let envelope = DeliveryEnvelope::Cancel(cancel);
         crate::delivery_sizes::check_envelope(&envelope)?;
-        if let Some(answer) = self.existing_admission(&envelope).await? {
+        if let Some(answer) = self.existing_admission(&envelope, submitter).await? {
             return Ok(answer);
         }
         let DeliveryEnvelope::Cancel(cancel) = envelope else {
@@ -200,15 +200,21 @@ where
     pub(crate) async fn existing_admission(
         &mut self,
         envelope: &DeliveryEnvelope<D>,
+        submitter: PeerId,
     ) -> Result<Option<OutboxAdmission<D::Acceptance>>, DeliveryError> {
         let Some(state) = self.header_state(envelope.id()).await? else {
             return Ok(None);
         };
-        let (digest, status, version) = match state {
+        let (digest, status, version, owner) = match state {
             OutboxHeaderState::Unresolvable { kind, .. } => {
                 return Err(DeliveryError::ProcessingFailed { kind });
             }
-            OutboxHeaderState::Recovered(record) => (record.digest, record.status, record.version),
+            OutboxHeaderState::Recovered(record) => (
+                record.digest,
+                record.status,
+                record.version,
+                record.submitter,
+            ),
             OutboxHeaderState::Item(header) => {
                 header.validate()?;
                 (
@@ -217,16 +223,19 @@ where
                     })?,
                     header.status,
                     header.version,
+                    header.submitter,
                 )
             }
         };
-        Ok(Some(if digest == *envelope.digest() {
-            OutboxAdmission::Replayed { status, version }
-        } else {
-            OutboxAdmission::Refused {
-                reason: DeliveryRefusal::ItemConflict { existing: digest },
-            }
-        }))
+        Ok(Some(
+            if digest == *envelope.digest() && owner.is_none_or(|owner| owner == submitter) {
+                OutboxAdmission::Replayed { status, version }
+            } else {
+                OutboxAdmission::Refused {
+                    reason: DeliveryRefusal::ItemConflict { existing: digest },
+                }
+            },
+        ))
     }
     pub(crate) async fn enqueue_envelope(
         &mut self,
@@ -243,7 +252,7 @@ where
         }
         self.limits.validate::<D>()?;
         crate::delivery_sizes::check_envelope(&envelope)?;
-        if let Some(answer) = self.existing_admission(&envelope).await? {
+        if let Some(answer) = self.existing_admission(&envelope, submitter).await? {
             return Ok(answer);
         }
         let cancel_target = match &envelope {

@@ -54,7 +54,7 @@ pub async fn failed_answer(
         owner.submit(origin, envelope, SyncTime::from_unix_millis(0), "route".into(), None).await.map_err(delivery_rollback)?;
         match operation {
             MailboxOperation::Report => {
-                owner.report(mailbox, RecipientReport { item: identity, report_seq: ReportSeq::new(1), outcome: RecipientOutcome::Delivered { acceptance: "x".repeat(256) } })
+                owner.report(mailbox, RecipientReport { item: identity, report_seq: ReportSeq::new(1), outcome: RecipientOutcome::Delivered { acceptance: "x".repeat(256) } }, SyncTime::from_unix_millis(2))
                     .await.map_err(delivery_rollback)?;
             }
             MailboxOperation::Query => {

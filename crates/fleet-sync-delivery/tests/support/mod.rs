@@ -1,7 +1,9 @@
 #![allow(clippy::unwrap_used, dead_code)]
+pub mod existing_removals;
 pub mod interleaving;
 pub mod network;
 pub mod publication_network;
+pub mod startup_checkpoint_scope;
 use durable_steps::{
     AtomicStore, CallFailure, CallId, CallTarget, Host, NotSentReason, SyncTime,
     turso_store::TursoStore,
@@ -122,14 +124,17 @@ pub struct Fixture {
     pub host: Arc<TestHost>,
     pub directory: tempfile::TempDir,
 }
+pub fn host_at(now: SyncTime) -> Arc<TestHost> {
+    Arc::new(TestHost {
+        clock: AtomicU64::new(u64::try_from(now.unix_millis()).unwrap()),
+        identities: AtomicU64::new(0),
+        routes: std::sync::OnceLock::new(),
+    })
+}
 impl Fixture {
     pub async fn new() -> Self {
         let directory = tempfile::tempdir().unwrap();
-        let host = Arc::new(TestHost {
-            clock: AtomicU64::new(0),
-            identities: AtomicU64::new(0),
-            routes: std::sync::OnceLock::new(),
-        });
+        let host = host_at(SyncTime::from_unix_millis(0));
         let store = Arc::new(
             TursoStore::open_and_migrate(directory.path().join("delivery.db"), host.clone())
                 .await

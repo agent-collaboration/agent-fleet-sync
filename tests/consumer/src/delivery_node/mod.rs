@@ -27,7 +27,7 @@ use tokio::{
 
 type NodeHost = TokioHost<router::NodeRouter>;
 type NodeStore = TokioObject<NodeHost>;
-type RecordRemoval = RemoveDeliveryRecord<NodeStore,sqlx_turso::Turso>;
+type RecordRemoval = RemoveDeliveryRecord<NodeStore, sqlx_turso::Turso>;
 type SubmitTask = SubmitItem<NodeStore, sqlx_turso::Turso, SampleDelivery, consumer::NodeConsumer>;
 type ReceiveTask =
     ReceiveItems<NodeStore, sqlx_turso::Turso, SampleDelivery, consumer::NodeConsumer>;
@@ -301,7 +301,12 @@ impl NodeState {
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
                             Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                                .enqueue_and_admit::<SubmitTask,RecordRemoval>(item, relay, config.owner, now)
+                                .enqueue_and_admit::<SubmitTask, RecordRemoval>(
+                                    item,
+                                    relay,
+                                    config.owner,
+                                    now,
+                                )
                                 .await
                         })
                     })
@@ -330,7 +335,7 @@ impl NodeState {
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
                             Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                                .enqueue_cancel_and_admit::<SubmitTask,RecordRemoval,_>(
+                                .enqueue_cancel_and_admit::<SubmitTask, RecordRemoval, _>(
                                     cancel,
                                     relay,
                                     config.owner,
@@ -345,11 +350,12 @@ impl NodeState {
                 return Ok(serde_json::to_value(admitted.0)?);
             }
             NodeCommand::Receive { stream } => {
+                let now = self.object.host().now();
                 self.object
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
                             Inbox::<_, SampleDelivery>::new(scope, config.owner, config.limits)
-                                .begin_receive_and_admit::<ReceiveTask>(stream)
+                                .begin_receive_and_admit::<ReceiveTask>(stream, now)
                                 .await
                         })
                     })
@@ -524,14 +530,17 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
         &state,
     ))?;
     engine.register(observer::ObservedTask::new(
-        ReceiveTask::new(config, consumer.clone()),
+        ReceiveTask::new(config, consumer.clone(), object.host()),
         &state,
     ))?;
     engine.register(observer::ObservedTask::new(
         DeliverTask::new(config.local, consumer, host.clone()),
         &state,
     ))?;
-    engine.register(observer::ObservedTask::new(ReportTask::new(config, host.clone()), &state))?;
+    engine.register(observer::ObservedTask::new(
+        ReportTask::new(config, host.clone()),
+        &state,
+    ))?;
     engine.register(RecordRemoval::new())?;
     let (shutdown, stopped) = watch::channel(false);
     let runner = TokioRunner::new(Arc::new(engine), host);
