@@ -102,9 +102,13 @@ async fn query_and_settle_keep_submitter_authority_after_content_release() {
                 Box::pin(async move {
                     let mut relay = Outbox::<_, TestTypes>::new(scope, limits());
                     let owned = relay
-                        .relay_query(peer(1), item_id(1), digest(1))
+                        .relay_query(peer(1), item_id(1))
                         .await
                         .map_err(storage_error)?;
+                    assert!(matches!(
+                        &owned.state,
+                        ItemStatusState::Known { digest: stored, .. } if stored == &digest(1)
+                    ));
                     assert!(
                         matches!(
                             owned.state,
@@ -122,14 +126,10 @@ async fn query_and_settle_keep_submitter_authority_after_content_release() {
                             ) && released
                     );
                     assert!(matches!(
-                        relay.relay_query(peer(9), item_id(1), digest(1)).await,
+                        relay.relay_query(peer(9), item_id(1)).await,
                         Err(DeliveryError::Refused {
                             reason: DeliveryRefusal::NotSubmitter
                         })
-                    ));
-                    assert!(matches!(
-                        relay.relay_query(peer(1), item_id(1), digest(2)).await,
-                        Err(DeliveryError::DigestMismatch)
                     ));
                     assert!(matches!(
                         relay
@@ -176,7 +176,7 @@ async fn first_absent_settlement_binds_the_caller_and_survives_reopen() {
         .transaction(|scope| {
             Box::pin(async move {
                 let result = Outbox::<_, TestTypes>::new(scope, limits())
-                    .relay_query(peer(9), item_id(1), digest(1))
+                    .relay_query(peer(9), item_id(1))
                     .await
                     .map_err(storage_error)?;
                 assert!(matches!(result.state, ItemStatusState::Unknown));
@@ -196,6 +196,29 @@ async fn first_absent_settlement_binds_the_caller_and_survives_reopen() {
             .await
             .unwrap(),
     );
+    store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let mut relay = Outbox::<_, TestTypes>::new(scope, limits());
+                let owned = relay
+                    .relay_query(peer(1), item_id(1))
+                    .await
+                    .map_err(storage_error)?;
+                assert!(matches!(
+                    owned.state,
+                    ItemStatusState::Known { digest: stored, .. } if stored == digest(1)
+                ));
+                assert!(matches!(
+                    relay.relay_query(peer(9), item_id(1)).await,
+                    Err(DeliveryError::Refused {
+                        reason: DeliveryRefusal::NotSubmitter
+                    })
+                ));
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
     assert!(matches!(
         admit(&store, 9, 1).await,
         SubmitResult::Refused {
@@ -257,7 +280,7 @@ async fn unbound_recovery_states_bind_once_without_changing_saved_outcomes() {
                 Box::pin(async move {
                     assert!(matches!(
                         Outbox::<_, TestTypes>::new(scope, limits())
-                            .relay_query(peer(1), item_id(identity), digest(identity))
+                            .relay_query(peer(1), item_id(identity))
                             .await,
                         Err(DeliveryError::Refused {
                             reason: DeliveryRefusal::NotSubmitter
@@ -419,7 +442,7 @@ async fn cancellation_query_and_settlement_replay_the_saved_cancel_result() {
                     }
                     let digest = cancel(2, 1).digest().clone();
                     let queried = relay
-                        .relay_query(peer(1), item_id(2), digest.clone())
+                        .relay_query(peer(1), item_id(2))
                         .await
                         .map_err(storage_error)?;
                     let settled = relay

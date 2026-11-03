@@ -50,12 +50,11 @@ where
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    /// Read one item for its authenticated submitter, including released content.
+    /// Read one item and its stored digest for its authenticated submitter, including released content.
     pub async fn relay_query(
         &mut self,
         submitter: PeerId,
         item: ItemId,
-        digest: ItemDigest,
     ) -> Result<ItemStatus<D::Acceptance>, DeliveryError> {
         let Some(state) = self.header_state(item).await? else {
             return Ok(ItemStatus {
@@ -63,22 +62,41 @@ where
                 state: ItemStatusState::Unknown,
             });
         };
-        let record = sender_record(state, &digest)?;
-        if record.submitter != Some(submitter) {
+        let (owner, digest, status, version, cancel) = match state {
+            OutboxHeaderState::Item(header) => (
+                header.submitter,
+                ItemDigest::try_from(header.digest).map_err(|_| DeliveryError::Corrupt {
+                    field: "relay digest",
+                })?,
+                header.status,
+                header.version,
+                header.cancel,
+            ),
+            OutboxHeaderState::Recovered(record) => (
+                record.submitter,
+                record.digest,
+                record.status,
+                record.version,
+                record.cancel,
+            ),
+            OutboxHeaderState::Unresolvable { .. } => {
+                return Err(DeliveryError::Refused {
+                    reason: DeliveryRefusal::NotSubmitter,
+                });
+            }
+        };
+        if owner != Some(submitter) {
             return Err(DeliveryError::Refused {
                 reason: DeliveryRefusal::NotSubmitter,
             });
         }
-        if record.digest != digest {
-            return Err(DeliveryError::DigestMismatch);
-        }
         Ok(ItemStatus {
             item,
             state: ItemStatusState::Known {
-                digest: record.digest,
-                status: record.status,
-                version: record.version,
-                cancel: record.cancel,
+                digest,
+                status,
+                version,
+                cancel,
             },
         })
     }
