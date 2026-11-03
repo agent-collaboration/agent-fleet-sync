@@ -35,6 +35,23 @@ CREATE TABLE _fleet_sync_outbox_items (
     admitted_at INTEGER,
     handed_off_at INTEGER
 );
+-- Decode creation time one hexadecimal digit per shallow statement.
+-- Both scratch columns disappear with this legacy table before commit.
+ALTER TABLE _fleet_sync_outbox_items_json ADD COLUMN _uuid_hex TEXT;
+ALTER TABLE _fleet_sync_outbox_items_json ADD COLUMN _uuid_created_at INTEGER NOT NULL DEFAULT 0;
+UPDATE _fleet_sync_outbox_items_json SET _uuid_hex=replace(item_id, '-', '');
+UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,1,1))-1;
+UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,2,1))-1;
+UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,3,1))-1;
+UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,4,1))-1;
+UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,5,1))-1;
+UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,6,1))-1;
+UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,7,1))-1;
+UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,8,1))-1;
+UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,9,1))-1;
+UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,10,1))-1;
+UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,11,1))-1;
+UPDATE _fleet_sync_outbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,12,1))-1;
 INSERT INTO _fleet_sync_outbox_items (item_id, live, payload_bytes, settlement_charge_bytes, payload, capacity_slot, record_kind, digest, relay_machine_id, submitter_machine_id, recipient_machine_id, valid_until, status_kind, status_sequence, status_acceptance, refusal_kind, refusal_code, refusal_failure, refusal_size_field, refusal_digest, refusal_item_id, status_version, last_report_seq, submit_attempted, cancel_outcome, cancel_too_late_at, cancel_target_item_id, acceptance_bound, settlement_bytes, failure_kind, created_at, admitted_at, handed_off_at)
 SELECT item_id,
        live,
@@ -66,7 +83,7 @@ SELECT item_id,
        json_extract(record, '$.value.acceptanceBound'),
        json_extract(record, '$.value.settlementBytes'),
        json_extract(record, '$.value.kind'),
-       coalesce(json_extract(record, '$.value.createdAt'), (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 1, 1))-1)*17592186044416 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 2, 1))-1)*1099511627776 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 3, 1))-1)*68719476736 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 4, 1))-1)*4294967296 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 5, 1))-1)*268435456 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 6, 1))-1)*16777216 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 7, 1))-1)*1048576 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 8, 1))-1)*65536 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 9, 1))-1)*4096 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 10, 1))-1)*256 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 11, 1))-1)*16 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 12, 1))-1)*1),
+       coalesce(json_extract(record, '$.value.createdAt'), _uuid_created_at),
        json_extract(record, '$.value.admittedAt'),
        json_extract(record, '$.value.handedOffAt') FROM _fleet_sync_outbox_items_json;
 DROP TABLE _fleet_sync_outbox_items_json;
@@ -107,6 +124,23 @@ CREATE TABLE _fleet_sync_inbox_items (
     accepted_at INTEGER,
     delivered_at INTEGER
 );
+-- Decode creation time one hexadecimal digit per shallow statement.
+-- Both scratch columns disappear with this legacy table before commit.
+ALTER TABLE _fleet_sync_inbox_items_json ADD COLUMN _uuid_hex TEXT;
+ALTER TABLE _fleet_sync_inbox_items_json ADD COLUMN _uuid_created_at INTEGER NOT NULL DEFAULT 0;
+UPDATE _fleet_sync_inbox_items_json SET _uuid_hex=replace(item_id, '-', '');
+UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,1,1))-1;
+UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,2,1))-1;
+UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,3,1))-1;
+UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,4,1))-1;
+UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,5,1))-1;
+UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,6,1))-1;
+UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,7,1))-1;
+UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,8,1))-1;
+UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,9,1))-1;
+UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,10,1))-1;
+UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,11,1))-1;
+UPDATE _fleet_sync_inbox_items_json SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,12,1))-1;
 INSERT INTO _fleet_sync_inbox_items (item_id, live, payload_bytes, settlement_charge_bytes, payload, digest, sender, recipient_machine_id, recipient_address, relay_machine_id, cancel_target_item_id, valid_until, stream, route, progress, attempt, not_before, outcome_kind, outcome_acceptance, outcome_cancel_item_id, outcome_too_late_at, refusal_kind, refusal_code, refusal_failure, refusal_size_field, refusal_digest, refusal_item_id, report_seq, acceptance_bound, settlement_bytes, release_requested, created_at, accepted_at, delivered_at)
 SELECT item_id,
        live,
@@ -139,10 +173,29 @@ SELECT item_id,
        json_extract(record, '$.acceptanceBound'),
        json_extract(record, '$.settlementBytes'),
        json_extract(record, '$.releaseRequested'),
-       coalesce(json_extract(record, '$.createdAt'), (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 1, 1))-1)*17592186044416 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 2, 1))-1)*1099511627776 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 3, 1))-1)*68719476736 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 4, 1))-1)*4294967296 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 5, 1))-1)*268435456 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 6, 1))-1)*16777216 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 7, 1))-1)*1048576 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 8, 1))-1)*65536 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 9, 1))-1)*4096 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 10, 1))-1)*256 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 11, 1))-1)*16 + (instr('0123456789abcdef', substr(replace(item_id, '-', ''), 12, 1))-1)*1),
+       coalesce(json_extract(record, '$.createdAt'), _uuid_created_at),
        json_extract(record, '$.acceptedAt'),
        json_extract(record, '$.deliveredAt') FROM _fleet_sync_inbox_items_json;
 DROP TABLE _fleet_sync_inbox_items_json;
 ALTER TABLE _fleet_sync_outbox_cancel_links ADD COLUMN created_at INTEGER;
-UPDATE _fleet_sync_outbox_cancel_links SET created_at=(instr('0123456789abcdef', substr(replace(cancel_item, '-', ''), 1, 1))-1)*17592186044416 + (instr('0123456789abcdef', substr(replace(cancel_item, '-', ''), 2, 1))-1)*1099511627776 + (instr('0123456789abcdef', substr(replace(cancel_item, '-', ''), 3, 1))-1)*68719476736 + (instr('0123456789abcdef', substr(replace(cancel_item, '-', ''), 4, 1))-1)*4294967296 + (instr('0123456789abcdef', substr(replace(cancel_item, '-', ''), 5, 1))-1)*268435456 + (instr('0123456789abcdef', substr(replace(cancel_item, '-', ''), 6, 1))-1)*16777216 + (instr('0123456789abcdef', substr(replace(cancel_item, '-', ''), 7, 1))-1)*1048576 + (instr('0123456789abcdef', substr(replace(cancel_item, '-', ''), 8, 1))-1)*65536 + (instr('0123456789abcdef', substr(replace(cancel_item, '-', ''), 9, 1))-1)*4096 + (instr('0123456789abcdef', substr(replace(cancel_item, '-', ''), 10, 1))-1)*256 + (instr('0123456789abcdef', substr(replace(cancel_item, '-', ''), 11, 1))-1)*16 + (instr('0123456789abcdef', substr(replace(cancel_item, '-', ''), 12, 1))-1)*1;
+-- Decode creation time one hexadecimal digit per shallow statement.
+-- Drop both scratch columns after backfill, before commit.
+ALTER TABLE _fleet_sync_outbox_cancel_links ADD COLUMN _uuid_hex TEXT;
+ALTER TABLE _fleet_sync_outbox_cancel_links ADD COLUMN _uuid_created_at INTEGER NOT NULL DEFAULT 0;
+UPDATE _fleet_sync_outbox_cancel_links SET _uuid_hex=replace(cancel_item, '-', '');
+UPDATE _fleet_sync_outbox_cancel_links SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,1,1))-1;
+UPDATE _fleet_sync_outbox_cancel_links SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,2,1))-1;
+UPDATE _fleet_sync_outbox_cancel_links SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,3,1))-1;
+UPDATE _fleet_sync_outbox_cancel_links SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,4,1))-1;
+UPDATE _fleet_sync_outbox_cancel_links SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,5,1))-1;
+UPDATE _fleet_sync_outbox_cancel_links SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,6,1))-1;
+UPDATE _fleet_sync_outbox_cancel_links SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,7,1))-1;
+UPDATE _fleet_sync_outbox_cancel_links SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,8,1))-1;
+UPDATE _fleet_sync_outbox_cancel_links SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,9,1))-1;
+UPDATE _fleet_sync_outbox_cancel_links SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,10,1))-1;
+UPDATE _fleet_sync_outbox_cancel_links SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,11,1))-1;
+UPDATE _fleet_sync_outbox_cancel_links SET _uuid_created_at=_uuid_created_at*16+instr('0123456789abcdef',substr(_uuid_hex,12,1))-1;
+UPDATE _fleet_sync_outbox_cancel_links SET created_at=_uuid_created_at;
+ALTER TABLE _fleet_sync_outbox_cancel_links DROP COLUMN _uuid_hex;
+ALTER TABLE _fleet_sync_outbox_cancel_links DROP COLUMN _uuid_created_at;
 CREATE INDEX _fleet_sync_inbox_accounting ON _fleet_sync_inbox_items (live, payload_bytes, settlement_charge_bytes);

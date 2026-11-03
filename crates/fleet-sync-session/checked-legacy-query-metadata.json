@@ -56,7 +56,7 @@
     "generator:workspace/rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "migrations/202610160001_sessions.sql": "38e23c99919f90090a58c4bb014e6b61a18e258de229f1811170417939434098",
     "migrations/202610180001_attach_sequence.sql": "d148ad2bf049f8967fc64bb0857dec33d3e17fdc3846c0a983ace549b8902793",
-    "migrations/202611030001_typed_session_records.sql": "fc5371214bf7fc72e1eadf559623d700420c46990f7a7507c8e84b5ab263fc0c",
+    "migrations/202611030001_typed_session_records.sql": "ab340e01327e8095ada9841de16c9c5f9a530ab1c0e512fe4c033676aa155779",
     "sql/legacy/legacy_attach_sequences.sql": "5ef449417e77a16e5369482fe7c17d2a43d7accfc8a993fc1f46191b3c8e3558",
     "sql/legacy/legacy_columns.sql": "7fbbd04c9d3071266ed3411cf76735c8a0300a8b6e756666cebcc5bfabe5d161",
     "sql/legacy/legacy_notices.sql": "f92086a77417df046bcfa78a56466622c4e8209130eb435f62a06f435f7faab2",

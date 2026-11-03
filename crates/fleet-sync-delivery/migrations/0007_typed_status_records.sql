@@ -1,15 +1,15 @@
 -- Routes and acceptance values are consumer-defined; every library-owned field is scalar.
 ALTER TABLE _fleet_sync_status_state RENAME TO _fleet_sync_status_state_json;
-CREATE TABLE _fleet_sync_status_state (id TEXT NOT NULL PRIMARY KEY DEFAULT (lower(substr(printf('%012x',(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER))),1,8)||'-'||substr(printf('%012x',(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER))),9,4)||'-7'||substr(hex(randomblob(2)),2,3)||'-'||substr('89ab',(abs(random()%4)+1),1)||substr(hex(randomblob(2)),2,3)||'-'||hex(randomblob(6)))),
-    created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER)),
-    updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER)),machine_id TEXT NOT NULL UNIQUE,owner_route TEXT NOT NULL,head INTEGER NOT NULL,floor INTEGER NOT NULL);
+CREATE TABLE _fleet_sync_status_state (id TEXT NOT NULL PRIMARY KEY DEFAULT (printf('%08x-%04x-7%03x-%04x-%012x',CAST(unixepoch('subsec')*1000 AS INTEGER)>>16,CAST(unixepoch('subsec')*1000 AS INTEGER)&65535,random()&4095,(random()&16383)|32768,random()&281474976710655)),
+    created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER)),
+    updated_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER)),machine_id TEXT NOT NULL UNIQUE,owner_route TEXT NOT NULL,head INTEGER NOT NULL,floor INTEGER NOT NULL);
 INSERT INTO _fleet_sync_status_state(machine_id,owner_route,head,floor) SELECT machine_id,record -> '$.ownerRoute',json_extract(record,'$.head'),json_extract(record,'$.floor') FROM _fleet_sync_status_state_json;
 DROP TABLE _fleet_sync_status_state_json;
 ALTER TABLE _fleet_sync_status_events RENAME TO _fleet_sync_status_events_json;
 CREATE TABLE _fleet_sync_status_events (
-    id TEXT NOT NULL PRIMARY KEY DEFAULT (lower(substr(printf('%012x',(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER))),1,8)||'-'||substr(printf('%012x',(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER))),9,4)||'-7'||substr(hex(randomblob(2)),2,3)||'-'||substr('89ab',(abs(random()%4)+1),1)||substr(hex(randomblob(2)),2,3)||'-'||hex(randomblob(6)))),
-    created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER)),
-    updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER)),
+    id TEXT NOT NULL PRIMARY KEY DEFAULT (printf('%08x-%04x-7%03x-%04x-%012x',CAST(unixepoch('subsec')*1000 AS INTEGER)>>16,CAST(unixepoch('subsec')*1000 AS INTEGER)&65535,random()&4095,(random()&16383)|32768,random()&281474976710655)),
+    created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER)),
+    updated_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER)),
     machine_id TEXT NOT NULL,
     cursor INTEGER NOT NULL,
     item_id TEXT NOT NULL,
@@ -44,9 +44,9 @@ SELECT machine_id,
 DROP TABLE _fleet_sync_status_events_json;
 ALTER TABLE _fleet_sync_status_owed RENAME TO _fleet_sync_status_owed_json;
 CREATE TABLE _fleet_sync_status_owed (
-    id TEXT NOT NULL PRIMARY KEY DEFAULT (lower(substr(printf('%012x',(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER))),1,8)||'-'||substr(printf('%012x',(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER))),9,4)||'-7'||substr(hex(randomblob(2)),2,3)||'-'||substr('89ab',(abs(random()%4)+1),1)||substr(hex(randomblob(2)),2,3)||'-'||hex(randomblob(6)))),
-    created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER)),
-    updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER)),
+    id TEXT NOT NULL PRIMARY KEY DEFAULT (printf('%08x-%04x-7%03x-%04x-%012x',CAST(unixepoch('subsec')*1000 AS INTEGER)>>16,CAST(unixepoch('subsec')*1000 AS INTEGER)&65535,random()&4095,(random()&16383)|32768,random()&281474976710655)),
+    created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER)),
+    updated_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec')*1000 AS INTEGER)),
     machine_id TEXT NOT NULL,
     item_id TEXT NOT NULL,
     target_kind TEXT NOT NULL,
