@@ -120,14 +120,13 @@ pub(crate) async fn read_committed_state(fixture: &Fixture) -> CommittedState {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let custody = sqlx_core::query::query::<Turso>(
-                    "SELECT record,payload FROM _fleet_sync_inbox_items ORDER BY item_id",
-                )
-                .fetch_all(scope.executor())
-                .await?
-                .into_iter()
-                .map(|row| Ok((row.try_get("record")?, row.try_get("payload")?)))
-                .collect::<Result<Vec<_>, sqlx_core::Error>>()?;
+                let custody =
+                    sqlx_core::query::query::<Turso>(include_str!("sql/read_inbox_headers.sql"))
+                        .fetch_all(scope.executor())
+                        .await?
+                        .into_iter()
+                        .map(|row| Ok((row.try_get("record")?, row.try_get("payload")?)))
+                        .collect::<Result<Vec<_>, sqlx_core::Error>>()?;
                 let reports = sqlx_core::query::query::<Turso>(
                     "SELECT record FROM _fleet_sync_reports ORDER BY item_id,report_seq",
                 )

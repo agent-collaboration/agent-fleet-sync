@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use sqlx_core::row::Row;
@@ -234,7 +234,7 @@ async fn header_loss_before_first_gate_reconciles_same_digest_conflict_and_unkno
                     };
                     assert!(matches!(
                         Outbox::<_, TestTypes>::new(scope, limits())
-                            .enqueue(item, peer(3))
+                            .enqueue(item, peer(3), peer(1), SyncTime::from_unix_millis(0))
                             .await
                             .map_err(storage_error)?,
                         OutboxAdmission::Refused {
@@ -272,7 +272,7 @@ async fn malformed_header_before_gate_and_on_resume_routes_to_reconciliation() {
             .transaction(|scope| {
                 Box::pin(async move {
                     sqlx_core::query::query::<sqlx_turso::Turso>(
-                        "UPDATE _fleet_sync_outbox_items SET record='malformed' WHERE item_id=?1",
+                        "UPDATE _fleet_sync_outbox_items SET record_kind='malformed' WHERE item_id=?1",
                     )
                     .bind(item_id(1).as_uuid().to_string())
                     .execute(scope.executor())

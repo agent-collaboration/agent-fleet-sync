@@ -113,6 +113,7 @@ where
         &mut self,
         input: &SubmitInput,
         answer: SubmitResult<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let item = input.item;
         let mut header = match self.header_state(item).await {
@@ -131,6 +132,10 @@ where
         if header.status.is_terminal() {
             return Ok(());
         }
+        let handed_off = matches!(
+            &answer,
+            SubmitResult::Accepted { .. } | SubmitResult::Replayed { .. }
+        );
         match answer {
             SubmitResult::Accepted {
                 status,
@@ -158,6 +163,9 @@ where
             SubmitResult::Refused { reason } => header.status = DeliveryStatus::Refused { reason },
         }
         header.submit_attempted = true;
+        if handed_off {
+            header.handed_off_at = Some(now);
+        }
         self.save_header(&header, None).await
     }
 
@@ -326,13 +334,21 @@ where
         else {
             return Ok(None);
         };
-        let state = self.decode_header(row.record, item)?;
+        let state = crate::outbox_storage::decode_header(&row)?;
         let live = integer(row.live, row.live_class, "outbox live flag")?;
-        let slot = integer(row.capacity_slot, row.slot_class, "outbox capacity slot")?;
-        let bytes = integer(row.payload_bytes, row.payload_class, "outbox payload bytes")?;
+        let slot = integer(
+            row.capacity_slot,
+            row.capacity_slot_class,
+            "outbox capacity slot",
+        )?;
+        let bytes = integer(
+            row.payload_bytes,
+            row.payload_bytes_class,
+            "outbox payload bytes",
+        )?;
         let settlement = integer(
-            row.settlement_bytes,
-            row.settlement_class,
+            row.settlement_charge_bytes,
+            row.settlement_charge_bytes_class,
             "outbox settlement bytes",
         )?;
         let valid = match &state {
@@ -392,25 +408,7 @@ where
         else {
             return Ok(None);
         };
-        self.decode_header(row.record, item).map(Some)
-    }
-    fn decode_header(
-        &self,
-        raw: Option<String>,
-        item: ItemId,
-    ) -> Result<OutboxHeaderState<D::Acceptance>, DeliveryError> {
-        let state: OutboxHeaderState<D::Acceptance> = decode(raw, "outbox header")?;
-        let id = match &state {
-            OutboxHeaderState::Item(header) => header.id,
-            OutboxHeaderState::Recovered(record) => record.item,
-            OutboxHeaderState::Unresolvable { item, .. } => *item,
-        };
-        if id != item {
-            return Err(DeliveryError::Corrupt {
-                field: "outbox header identity",
-            });
-        }
-        Ok(state)
+        crate::outbox_storage::decode_header(&row).map(Some)
     }
     pub(crate) async fn load(
         &mut self,
@@ -422,7 +420,7 @@ where
         else {
             return Ok(None);
         };
-        let state = self.decode_header(row.record, item)?;
+        let state = crate::outbox_storage::decode_header(&row)?;
         let header = match state {
             OutboxHeaderState::Item(header) => header,
             OutboxHeaderState::Recovered(_) => return Err(DeliveryError::CustodyMissing),
@@ -449,12 +447,20 @@ where
                 field: "stored outbox envelope bounds",
             })?;
         }
-        let bytes = integer(row.payload_bytes, row.payload_class, "outbox payload bytes")?;
+        let bytes = integer(
+            row.payload_bytes,
+            row.payload_bytes_class,
+            "outbox payload bytes",
+        )?;
         let live = integer(row.live, row.live_class, "outbox live flag")?;
-        let slot = integer(row.capacity_slot, row.slot_class, "outbox capacity slot")?;
+        let slot = integer(
+            row.capacity_slot,
+            row.capacity_slot_class,
+            "outbox capacity slot",
+        )?;
         let settlement = integer(
-            row.settlement_bytes,
-            row.settlement_class,
+            row.settlement_charge_bytes,
+            row.settlement_charge_bytes_class,
             "outbox settlement bytes",
         )?;
         if row.item_id.as_deref() != Some(item_key(item).as_str())

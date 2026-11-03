@@ -158,8 +158,13 @@ where
                                 }
                             }
                         };
-                        let record =
-                            InboxRecord::new(item, InboxRoute::Relayed, item_progress, settlement)?;
+                        let record = InboxRecord::new(
+                            item,
+                            InboxRoute::Relayed,
+                            item_progress,
+                            settlement,
+                            now,
+                        )?;
                         self.save(&record).await?;
                         if let Some(DeliveryEnvelope::Item(item)) = &record.payload {
                             consumer.on_received(self.scope, item).await?;

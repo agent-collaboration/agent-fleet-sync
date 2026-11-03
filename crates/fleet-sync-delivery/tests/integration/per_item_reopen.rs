@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used)]
-#[path = "support/per_item.rs"]
-mod per_item;
-mod support;
+use super::per_item;
+use super::support;
 use durable_steps::{AtomicStore, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use per_item::*;
@@ -76,16 +75,45 @@ async fn compact_local_inbox_reopens_with_explicit_and_legacy_bounds() {
         host,
         directory,
     } = Fixture::new().await;
-    store.transaction(|scope| Box::pin(async move {
-        let mut inbox=Inbox::<_,VariableTypes>::new(scope,peer(2),variable_limits(100_000_000));
-        for identity in [1,2] {
-            inbox.enqueue_local(variable_item(identity,"small"),&VariableConsumer,now()).await.map_err(storage_error)?;
-            let cancel=DeliveryCancel::new(item_id(identity+10),"sender".into(),Recipient {peer:peer(2),address:"inbox".into()},None,CancelBody {target:item_id(identity)}).unwrap();
-            inbox.enqueue_local_cancel(cancel,&VariableConsumer,now()).await.map_err(storage_error)?;
-        }
-        sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_inbox_items SET record=json_remove(record,'$.acceptanceBound') WHERE item_id=?1").bind(item_id(2).as_uuid().to_string()).execute(scope.executor()).await?;
-        Ok(())
-    })).await.unwrap();
+    store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let mut inbox =
+                    Inbox::<_, VariableTypes>::new(scope, peer(2), variable_limits(100_000_000));
+                for identity in [1, 2] {
+                    inbox
+                        .enqueue_local(variable_item(identity, "small"), &VariableConsumer, now())
+                        .await
+                        .map_err(storage_error)?;
+                    let cancel = DeliveryCancel::new(
+                        item_id(identity + 10),
+                        "sender".into(),
+                        Recipient {
+                            peer: peer(2),
+                            address: "inbox".into(),
+                        },
+                        None,
+                        CancelBody {
+                            target: item_id(identity),
+                        },
+                    )
+                    .unwrap();
+                    inbox
+                        .enqueue_local_cancel(cancel, &VariableConsumer, now())
+                        .await
+                        .map_err(storage_error)?;
+                }
+                sqlx_core::query::query::<sqlx_turso::Turso>(
+                    "UPDATE _fleet_sync_inbox_items SET acceptance_bound=NULL WHERE item_id=?1",
+                )
+                .bind(item_id(2).as_uuid().to_string())
+                .execute(scope.executor())
+                .await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
     drop(store);
     let reopened = TestStore::open_and_migrate(directory.path().join("delivery.db"), host)
         .await
@@ -93,7 +121,7 @@ async fn compact_local_inbox_reopens_with_explicit_and_legacy_bounds() {
     reopened.transaction(|scope| Box::pin(async move {
         let limits=variable_limits(100_000_000);
         for identity in [1,2] {
-            let row=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT record,payload,live,settlement_bytes FROM _fleet_sync_inbox_items WHERE item_id=?1").bind(item_id(identity).as_uuid().to_string()).fetch_one(scope.executor()).await?;
+            let row=sqlx_core::query::query::<sqlx_turso::Turso>(include_str!("../support/sql/read_inbox_header.sql")).bind(item_id(identity).as_uuid().to_string()).fetch_one(scope.executor()).await?;
             assert!(row.try_get::<Option<String>,_>("payload")?.is_none());
             assert_eq!(row.try_get::<i64,_>("live")?,0);
             assert_eq!(row.try_get::<i64,_>("settlement_bytes")?,0);
@@ -105,7 +133,7 @@ async fn compact_local_inbox_reopens_with_explicit_and_legacy_bounds() {
         // A controlled stored-outcome challenge exercises both public header
         // reads and full custody decoding after real local compaction/reopen.
         let outcome=serde_json::to_string(&RecipientOutcome::Delivered {acceptance:Acceptance {receipt:"x".repeat(100)}}).unwrap();
-        sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_inbox_items SET record=json_set(record,'$.progress.value.outcome',json(?1)) WHERE item_id=?2 OR item_id=?3").bind(outcome).bind(item_id(1).as_uuid().to_string()).bind(item_id(2).as_uuid().to_string()).execute(scope.executor()).await?;
+        sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_inbox_items SET outcome_kind=json_extract(?1,'$.kind'), outcome_acceptance=?1 -> '$.value.acceptance' WHERE item_id=?2 OR item_id=?3").bind(outcome).bind(item_id(1).as_uuid().to_string()).bind(item_id(2).as_uuid().to_string()).execute(scope.executor()).await?;
         assert!(matches!(Inbox::<_,VariableTypes>::new(scope,peer(2),limits).local_outcome(item_id(1)).await,Err(DeliveryError::Corrupt { .. })));
         assert!(matches!(Inbox::<_,VariableTypes>::new(scope,peer(2),limits).local_outcome(item_id(2)).await.map_err(storage_error)?,Some(RecipientOutcome::Delivered { .. })));
         assert!(matches!(Inbox::<_,VariableTypes>::new(scope,peer(2),limits).enqueue_local(variable_item(1,"small"),&VariableConsumer,now()).await,Err(DeliveryError::Refused {reason:DeliveryRefusal::TooLarge {field:DeliverySizeField::Acceptance}})));
@@ -121,17 +149,38 @@ async fn recovered_outbox_reopens_with_explicit_and_legacy_bounds() {
         host,
         directory,
     } = Fixture::new().await;
-    store.transaction(|scope| Box::pin(async move {
-        let limits=variable_limits(100_000_000);
-        for identity in [1,2] {
-            let item=variable_item(identity,"small");
-            let input=SubmitInput {item:item.id(),digest:item.digest().clone(),relay:peer(3),mailbox:peer(2)};
-            Outbox::<_,VariableTypes>::new(scope,limits).enqueue(item,peer(3)).await.map_err(storage_error)?;
-            Outbox::<_,VariableTypes>::new(scope,limits).record_submission_failure(&input,DeliveryFailureKind::CustodyMissing).await.map_err(storage_error)?;
-        }
-        sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_outbox_items SET record=json_remove(record,'$.value.acceptanceBound') WHERE item_id=?1").bind(item_id(2).as_uuid().to_string()).execute(scope.executor()).await?;
-        Ok(())
-    })).await.unwrap();
+    store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let limits = variable_limits(100_000_000);
+                for identity in [1, 2] {
+                    let item = variable_item(identity, "small");
+                    let input = SubmitInput {
+                        item: item.id(),
+                        digest: item.digest().clone(),
+                        relay: peer(3),
+                        mailbox: peer(2),
+                    };
+                    Outbox::<_, VariableTypes>::new(scope, limits)
+                        .enqueue(item, peer(3), peer(1), SyncTime::from_unix_millis(0))
+                        .await
+                        .map_err(storage_error)?;
+                    Outbox::<_, VariableTypes>::new(scope, limits)
+                        .record_submission_failure(&input, DeliveryFailureKind::CustodyMissing)
+                        .await
+                        .map_err(storage_error)?;
+                }
+                sqlx_core::query::query::<sqlx_turso::Turso>(
+                    "UPDATE _fleet_sync_outbox_items SET acceptance_bound=NULL WHERE item_id=?1",
+                )
+                .bind(item_id(2).as_uuid().to_string())
+                .execute(scope.executor())
+                .await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
     drop(store);
     let reopened = TestStore::open_and_migrate(directory.path().join("delivery.db"), host)
         .await
@@ -139,7 +188,7 @@ async fn recovered_outbox_reopens_with_explicit_and_legacy_bounds() {
     reopened.transaction(|scope| Box::pin(async move {
         let limits=variable_limits(100_000_000);
         for identity in [1,2] {
-            let row=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT record,payload FROM _fleet_sync_outbox_items WHERE item_id=?1").bind(item_id(identity).as_uuid().to_string()).fetch_one(scope.executor()).await?;
+            let row=sqlx_core::query::query::<sqlx_turso::Turso>(include_str!("../support/sql/read_outbox_header.sql")).bind(item_id(identity).as_uuid().to_string()).fetch_one(scope.executor()).await?;
             assert!(row.try_get::<Option<String>,_>("payload")?.is_none());
             let record:serde_json::Value=serde_json::from_str(&row.try_get::<String,_>("record")?).unwrap();
             assert_eq!(record["kind"],"recovered");
@@ -147,7 +196,7 @@ async fn recovered_outbox_reopens_with_explicit_and_legacy_bounds() {
             Outbox::<_,VariableTypes>::new(scope,limits).status(item_id(identity)).await.map_err(storage_error)?;
         }
         let status=serde_json::to_string(&DeliveryStatus::Delivered {acceptance:Acceptance {receipt:"x".repeat(100)}}).unwrap();
-        sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_outbox_items SET record=json_set(record,'$.value.status',json(?1))").bind(status).execute(scope.executor()).await?;
+        sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_outbox_items SET status_kind=json_extract(?1,'$.kind'), status_acceptance=?1 -> '$.value.acceptance'").bind(status).execute(scope.executor()).await?;
         assert!(matches!(Outbox::<_,VariableTypes>::new(scope,limits).status(item_id(1)).await,Err(DeliveryError::Refused {reason:DeliveryRefusal::TooLarge {field:DeliverySizeField::Acceptance}})));
         assert!(matches!(Outbox::<_,VariableTypes>::new(scope,limits).status(item_id(2)).await.map_err(storage_error)?.state,OutboxStatusState::Known {status:DeliveryStatus::Delivered { .. },..}));
         Ok(())

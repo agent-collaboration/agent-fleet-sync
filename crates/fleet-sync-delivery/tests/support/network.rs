@@ -386,7 +386,12 @@ impl NetworkFixture {
                         return Err(StoreError::backend("fixture item"));
                     };
                     Outbox::<_, TestTypes>::new(scope, limits())
-                        .enqueue_and_admit::<SubmitTask>(item, peer(3))
+                        .enqueue_and_admit::<SubmitTask>(
+                            item,
+                            peer(3),
+                            peer(1),
+                            SyncTime::from_unix_millis(0),
+                        )
                         .await
                         .map_err(storage_error)?;
                     Ok(())

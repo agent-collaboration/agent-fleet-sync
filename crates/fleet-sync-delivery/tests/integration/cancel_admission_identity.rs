@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 
 use durable_steps::{AtomicStore, storage::TransactionScope};
 use fleet_sync_delivery::*;
@@ -35,7 +35,13 @@ async fn enqueue_cancel_at(fixture: &Fixture, id: u64) -> OutboxAdmission<Accept
         .transaction(move |scope| {
             Box::pin(async move {
                 Outbox::<_, TestTypes>::new(scope, limits())
-                    .enqueue_cancel(cancel_body(id), peer(3), &TestConsumer)
+                    .enqueue_cancel(
+                        cancel_body(id),
+                        peer(3),
+                        peer(1),
+                        SyncTime::from_unix_millis(0),
+                        &TestConsumer,
+                    )
                     .await
                     .map_err(storage_error)
             })
@@ -73,7 +79,7 @@ async fn stored_first_cancel(fixture: &Fixture, relayed: bool) -> String {
                 let statement = if relayed {
                     "SELECT record FROM _fleet_sync_mail_items WHERE item_id=?1"
                 } else {
-                    "SELECT record FROM _fleet_sync_outbox_items WHERE item_id=?1"
+                    include_str!("../support/sql/read_outbox_header.sql")
                 };
                 use sqlx_core::row::Row;
                 Ok(query::<Turso>(statement)
@@ -108,7 +114,7 @@ async fn another_outbox_cancel_names_the_first_and_does_not_take_new_custody() {
                         )
                         .unwrap();
                         Outbox::<_, TestTypes>::new(scope, limits())
-                            .enqueue(original, peer(3))
+                            .enqueue(original, peer(3), peer(1), SyncTime::from_unix_millis(0))
                             .await
                             .map_err(storage_error)?;
                         Ok(())
@@ -226,6 +232,7 @@ async fn distinct_sender_status(recovered: bool) -> Value {
                             mailbox: peer(2),
                         },
                         answer,
+                        SyncTime::from_unix_millis(0),
                     )
                     .await
                     .map_err(storage_error)?;

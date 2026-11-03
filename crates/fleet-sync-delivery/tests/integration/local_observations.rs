@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)]
-#[path = "support/local_observation.rs"]
+#[path = "../support/local_observation.rs"]
 mod local_observation;
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, Engine, JournalScope, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use local_observation::*;
@@ -178,13 +178,31 @@ async fn held_and_refused_attempts_project_distinct_local_observations() {
             ),
         ]
     );
-    fixture.store.transaction(|scope| Box::pin(async move {
-        let reports=sqlx_core::query::query::<Turso>("SELECT record FROM _fleet_sync_reports").fetch_all(scope.executor()).await?;
-        assert_eq!(reports.len(),2);
-        let rows=sqlx_core::query::query::<Turso>("SELECT record FROM _fleet_sync_inbox_items UNION ALL SELECT record FROM _fleet_sync_reports").fetch_all(scope.executor()).await?;
-        for row in rows {let raw:String=row.try_get("record")?;assert!(!raw.contains("desktop connection"));assert!(!raw.contains("active identity"));assert!(!raw.contains("observation"));}
-        Ok(())
-    })).await.unwrap();
+    fixture
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let reports =
+                    sqlx_core::query::query::<Turso>("SELECT record FROM _fleet_sync_reports")
+                        .fetch_all(scope.executor())
+                        .await?;
+                assert_eq!(reports.len(), 2);
+                let rows = sqlx_core::query::query::<Turso>(include_str!(
+                    "../support/sql/read_inbox_observations.sql"
+                ))
+                .fetch_all(scope.executor())
+                .await?;
+                for row in rows {
+                    let raw: String = row.try_get("record")?;
+                    assert!(!raw.contains("desktop connection"));
+                    assert!(!raw.contains("active identity"));
+                    assert!(!raw.contains("observation"));
+                }
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -449,10 +467,11 @@ async fn observation_hook_error_rolls_back_projection_and_outcome_together() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let row =
-                    sqlx_core::query::query::<Turso>("SELECT record FROM _fleet_sync_inbox_items")
-                        .fetch_one(scope.executor())
-                        .await?;
+                let row = sqlx_core::query::query::<Turso>(include_str!(
+                    "../support/sql/read_inbox_headers.sql"
+                ))
+                .fetch_one(scope.executor())
+                .await?;
                 let header: serde_json::Value =
                     serde_json::from_str(&row.try_get::<String, _>("record")?).unwrap();
                 assert_eq!(header["progress"]["kind"], "attempting");

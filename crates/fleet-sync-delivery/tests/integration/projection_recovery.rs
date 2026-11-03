@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used)]
-#[path = "support/projection.rs"]
-mod projection;
-mod support;
+use super::projection;
+use super::support;
 
 use durable_steps::{AtomicStore, Engine, storage::TransactionScope};
 use fleet_sync_delivery::*;
@@ -112,17 +111,20 @@ async fn task_failure_projects_malformed_digest_without_header_validation() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let row =
-                    sqlx_core::query::query::<Turso>("SELECT record FROM _fleet_sync_inbox_items")
-                        .fetch_one(scope.executor())
-                        .await?;
+                let row = sqlx_core::query::query::<Turso>(include_str!(
+                    "../support/sql/read_inbox_headers.sql"
+                ))
+                .fetch_one(scope.executor())
+                .await?;
                 let mut header: serde_json::Value =
                     serde_json::from_str(&row.try_get::<String, _>("record")?).unwrap();
                 header["digest"] = serde_json::json!("malformed digest");
-                sqlx_core::query::query::<Turso>("UPDATE _fleet_sync_inbox_items SET record=?1")
-                    .bind(header.to_string())
-                    .execute(scope.executor())
-                    .await?;
+                sqlx_core::query::query::<Turso>(
+                    "UPDATE _fleet_sync_inbox_items SET digest=json_extract(?1,'$.digest')",
+                )
+                .bind(header.to_string())
+                .execute(scope.executor())
+                .await?;
                 Ok(())
             })
         })

@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, SyncTime};
 use fleet_sync_delivery::*;
 use std::{
@@ -58,7 +58,7 @@ async fn held_old_publish_keeps_its_route_and_stream_restart_delivers_both_froze
                     return Err(durable_steps::StoreError::backend("fixture item"));
                 };
                 Outbox::<_, TestTypes>::new(scope, limits())
-                    .enqueue(item, peer(3))
+                    .enqueue(item, peer(3), peer(1), SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)?;
                 Ok(())

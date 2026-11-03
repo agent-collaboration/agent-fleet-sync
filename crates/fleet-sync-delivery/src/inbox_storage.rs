@@ -10,6 +10,10 @@ use sqlx_core::{
 };
 use std::marker::PhantomData;
 
+#[cfg(test)]
+#[path = "inbox_storage_test.rs"]
+mod tests;
+
 pub struct Inbox<'s, S, D> {
     pub(crate) scope: &'s mut S,
     pub(crate) owner: PeerId,
@@ -50,7 +54,7 @@ where
         row: queries::StoredInboxRow,
         expected: Option<ItemId>,
     ) -> Result<InboxRecord<D>, DeliveryError> {
-        let header: InboxHeader<D> = decode(row.record, "inbox header")?;
+        let header: InboxHeader<D> = crate::inbox_row::decode_header(&row)?;
         let payload = row
             .payload
             .map(|raw| decode(Some(raw), "inbox custody payload"))
@@ -62,11 +66,15 @@ where
                 field: "stored inbox envelope bounds",
             })?;
         }
-        let bytes = integer(row.payload_bytes, row.payload_class, "inbox payload bytes")?;
+        let bytes = integer(
+            row.payload_bytes,
+            row.payload_bytes_class,
+            "inbox payload bytes",
+        )?;
         let live = integer(row.live, row.live_class, "inbox live flag")?;
         let settlement = integer(
-            row.settlement_bytes,
-            row.settlement_class,
+            row.settlement_charge_bytes,
+            row.settlement_charge_bytes_class,
             "inbox settlement bytes",
         )?;
         if expected.is_some_and(|item| item != record.header.id)
@@ -113,7 +121,7 @@ where
         else {
             return Ok(None);
         };
-        let header: InboxHeader<D> = decode(row.record, "inbox header")?;
+        let header: InboxHeader<D> = crate::inbox_row::decode_header(&row)?;
         crate::delivery_sizes::stored_acceptance_bound::<D>(header.acceptance_bound)?;
         if let InboxProgress::Final { outcome, .. } = &header.progress {
             crate::delivery_sizes::check_outcome_bound::<D>(outcome, header.acceptance_bound)

@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{
     AtomicStore, CallId, Engine, storage::TransactionScope, turso_store::TursoScope,
 };
@@ -80,9 +80,9 @@ async fn held_network() -> NetworkFixture {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let row = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT record,payload FROM _fleet_sync_outbox_items",
-                )
+                let row = sqlx_core::query::query::<sqlx_turso::Turso>(include_str!(
+                    "../support/sql/read_outbox_headers.sql"
+                ))
                 .fetch_one(scope.executor())
                 .await
                 .map_err(durable_steps::StoreError::backend)?;
@@ -163,7 +163,13 @@ async fn cancelling_an_original_held_before_the_first_submit_withdraws_it_withou
                 };
                 let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
                 outbox
-                    .enqueue_cancel_and_admit::<GatedSubmit, _>(cancel, peer(3), &GatedConsumer)
+                    .enqueue_cancel_and_admit::<GatedSubmit, _>(
+                        cancel,
+                        peer(3),
+                        peer(1),
+                        SyncTime::from_unix_millis(0),
+                        &GatedConsumer,
+                    )
                     .await
                     .map_err(storage_error)?;
                 for item in [item_id(1), item_id(2)] {

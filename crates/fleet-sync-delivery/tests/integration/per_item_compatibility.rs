@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used)]
-#[path = "support/per_item.rs"]
-mod per_item;
-mod support;
+use super::per_item;
+use super::support;
 use durable_steps::{AtomicStore, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use per_item::*;
@@ -52,23 +51,20 @@ fn legacy_limits(bytes: u64) -> DeliveryLimits {
 }
 
 #[tokio::test]
-async fn default_consumer_preserves_legacy_reserve_json_and_fetch_selection() {
+async fn default_consumer_preserves_reserve_and_fetch_selection_with_typed_storage() {
     let fixture = Fixture::new().await;
     fixture.store.transaction(|scope| Box::pin(async move {
         let minimum=minimum_settlement_allowance::<LegacyTypes>().unwrap();
         assert_eq!(minimum,minimum_settlement_allowance::<VariableTypes>().unwrap());
-        assert!(matches!(Outbox::<_,LegacyTypes>::new(scope,legacy_limits(50_000)).enqueue(legacy_item(1),peer(3)).await.map_err(storage_error)?,OutboxAdmission::Refused {reason:DeliveryRefusal::MailboxFull}));
+        assert!(matches!(Outbox::<_,LegacyTypes>::new(scope,legacy_limits(50_000)).enqueue(legacy_item(1), peer(3), peer(1), SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,OutboxAdmission::Refused {reason:DeliveryRefusal::MailboxFull}));
         let limits=legacy_limits(100_000_000);
-        Outbox::<_,LegacyTypes>::new(scope,limits).enqueue(legacy_item(1),peer(3)).await.map_err(storage_error)?;
+        Outbox::<_,LegacyTypes>::new(scope,limits).enqueue(legacy_item(1), peer(3), peer(1), SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         for identity in [1,2] { Mailbox::<_,LegacyTypes>::new(scope,peer(2),limits).submit(peer(1),DeliveryEnvelope::Item(legacy_item(identity)),now(),"route".into(),None).await.map_err(storage_error)?; }
-        let row=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT record,settlement_bytes FROM _fleet_sync_outbox_items").fetch_one(scope.executor()).await?;
+        let row=sqlx_core::query::query::<sqlx_turso::Turso>(include_str!("../support/sql/read_outbox_headers.sql")).fetch_one(scope.executor()).await?;
         assert_eq!(row.try_get::<i64,_>("settlement_bytes")?,i64::from(minimum));
         let record:serde_json::Value=serde_json::from_str(&row.try_get::<String,_>("record")?).unwrap();
-        let expected=serde_json::json!({"kind":"item","value":{
-            "id":item_id(1),"digest":legacy_item(1).digest(),"relay":peer(3),"recipient":peer(2),"validUntil":null,
-            "status":{"kind":"queued"},"version":0,"submitAttempted":false,"cancel":null,"cancelTarget":null,"settlementBytes":minimum,"capacitySlot":true
-        }});
-        assert_eq!(record,expected,"default persisted shape is exactly the original header");
+        assert!(record["value"]["acceptanceBound"].is_null());
+        assert_eq!(record["value"]["settlementBytes"],minimum);
         let request=FetchInput {stream:DeliveryStream::Items,after:DeliverySeq::new(0),max_items:10,max_bytes:10_000,inbox_room_bytes:Some(0)};
         let batch=Mailbox::<_,LegacyTypes>::new(scope,peer(2),limits).fetch_with_budget(peer(2),request,now()).await.map_err(storage_error)?;
         assert_eq!(batch.entries.len(),2,"legacy consumers keep payload-only fetch selection");

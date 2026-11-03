@@ -48,6 +48,10 @@ pub(crate) struct InboxHeader<D: DeliveryTypes> {
     pub digest: String,
     pub sender: D::Sender,
     pub recipient: Recipient<D::Address>,
+    pub relay: Option<PeerId>,
+    pub created_at: SyncTime,
+    pub accepted_at: Option<SyncTime>,
+    pub delivered_at: Option<SyncTime>,
     pub cancel_target: Option<ItemId>,
     pub valid_until: Option<SyncTime>,
     pub stream: DeliveryStream,
@@ -90,6 +94,11 @@ impl<D: DeliveryTypes> InboxHeader<D> {
         )
     }
     pub fn validate(&self, owner: PeerId) -> Result<(), DeliveryError> {
+        if self.created_at != crate::custody_record::created_at(self.id) {
+            return Err(DeliveryError::Corrupt {
+                field: "inbox creation time",
+            });
+        }
         crate::delivery_sizes::stored_acceptance_bound::<D>(self.acceptance_bound)?;
         if self.acceptance_bound.is_some()
             && let InboxProgress::Final { outcome, .. } = &self.progress
@@ -151,6 +160,7 @@ impl<D: DeliveryTypes> InboxRecord<D> {
         route: InboxRoute,
         progress: InboxProgress<D::Acceptance>,
         settlement_bytes: u32,
+        now: SyncTime,
     ) -> Result<Self, DeliveryError> {
         Ok(Self {
             header: InboxHeader {
@@ -158,6 +168,10 @@ impl<D: DeliveryTypes> InboxRecord<D> {
                 digest: payload.digest().as_str().into(),
                 sender: crate::custody_record::copy_wire(payload.sender())?,
                 recipient: crate::custody_record::copy_wire(payload.recipient())?,
+                relay: None,
+                created_at: crate::custody_record::created_at(payload.id()),
+                accepted_at: Some(now),
+                delivered_at: None,
                 cancel_target: match &payload {
                     DeliveryEnvelope::Item(_) => None,
                     DeliveryEnvelope::Cancel(cancel) => Some(cancel.target()),

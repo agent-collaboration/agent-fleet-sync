@@ -262,12 +262,16 @@ impl NodeState {
     }
     async fn dispatch(&self, command: NodeCommand) -> TestResult<Value> {
         let config = self.local_config()?;
+        let now = self.object.host().now();
         match command {
             NodeCommand::Snapshot => {
                 return Ok(serde_json::to_value(
                     self.object
                         .rule_transaction::<_, DeliveryError, _>(|scope| {
-                            Box::pin(fleet_sync_delivery::test_support::snapshot(scope))
+                            Box::pin(fleet_sync_delivery::test_support::snapshot::<
+                                _,
+                                SampleDelivery,
+                            >(scope))
                         })
                         .await?,
                 )?);
@@ -296,7 +300,7 @@ impl NodeState {
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
                             Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                                .enqueue_and_admit::<SubmitTask>(item, relay)
+                                .enqueue_and_admit::<SubmitTask>(item, relay, config.owner, now)
                                 .await
                         })
                     })
@@ -328,6 +332,8 @@ impl NodeState {
                                 .enqueue_cancel_and_admit::<SubmitTask, _>(
                                     cancel,
                                     relay,
+                                    config.owner,
+                                    now,
                                     &consumer::NodeConsumer(Weak::new()),
                                 )
                                 .await
@@ -416,7 +422,7 @@ impl NodeState {
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
                             Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                                .apply_status_batch(after, batch)
+                                .apply_status_batch(after, batch, now)
                                 .await
                         })
                     })

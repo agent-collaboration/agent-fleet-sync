@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)]
-#[path = "support/local_cancellation.rs"]
+#[path = "../support/local_cancellation.rs"]
 mod local_cancellation;
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use local_cancellation::*;
@@ -396,49 +396,32 @@ async fn retirement_removes_only_original_links_reports_and_accounting_across_re
 }
 
 #[tokio::test]
-async fn corrupt_key_and_header_identities_are_rejected_without_mutation() {
+async fn corrupt_stored_peer_and_creation_time_are_rejected_without_mutation() {
     for change_key in [false, true] {
         let fixture = Fixture::new().await;
         fail_original(&fixture, 1).await;
-        let mut requested = reference(1);
+        let requested = reference(1);
         fixture
             .store
             .transaction(move |scope| {
                 Box::pin(async move {
                     if change_key {
                         query::<Turso>(
-                            "UPDATE _fleet_sync_inbox_items SET item_id=?1 WHERE item_id=?2",
+                            "UPDATE _fleet_sync_inbox_items SET recipient_machine_id=?1 WHERE item_id=?2",
                         )
-                        .bind(item_id(2).as_uuid().to_string())
+                        .bind("01900000-0000-4000-8000-000000000002".to_owned())
                         .bind(item_id(1).as_uuid().to_string())
                         .execute(scope.executor())
                         .await?;
                     } else {
-                        let row = query::<Turso>(
-                            "SELECT record FROM _fleet_sync_inbox_items WHERE item_id=?1",
-                        )
-                        .bind(item_id(1).as_uuid().to_string())
-                        .fetch_one(scope.executor())
-                        .await?;
-                        let mut header: serde_json::Value =
-                            serde_json::from_str(&row.try_get::<String, _>("record")?).unwrap();
-                        header["id"] = serde_json::to_value(item_id(2)).unwrap();
-                        query::<Turso>(
-                            "UPDATE _fleet_sync_inbox_items SET record=?1 WHERE item_id=?2",
-                        )
-                        .bind(serde_json::to_string(&header).unwrap())
-                        .bind(item_id(1).as_uuid().to_string())
-                        .execute(scope.executor())
-                        .await?;
+                        query::<Turso>("UPDATE _fleet_sync_inbox_items SET created_at=created_at+1 WHERE item_id=?1")
+                            .bind(item_id(1).as_uuid().to_string()).execute(scope.executor()).await?;
                     }
                     Ok(())
                 })
             })
             .await
             .unwrap();
-        if change_key {
-            requested.item = item_id(2);
-        }
         let before = snapshot(&fixture).await;
         let result = fixture
             .store

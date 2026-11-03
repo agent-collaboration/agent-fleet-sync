@@ -234,6 +234,9 @@ where
                 outcome: copy_wire(&recipient_outcome)?,
             };
         }
+        if matches!(recipient_outcome, RecipientOutcome::Delivered { .. }) {
+            record.header.delivered_at = Some(now);
+        }
         record.header.release_requested = false;
         effects.reports.extend(
             self.record_outcome(&mut record, recipient_outcome, consumer, observation)

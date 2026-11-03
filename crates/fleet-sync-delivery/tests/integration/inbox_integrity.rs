@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, SyncTime, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use sqlx_core::row::Row;
@@ -18,9 +18,9 @@ async fn receive_snapshot(store: &TestStore) -> InboxReceiveSnapshot {
     store
         .transaction(|scope| {
             Box::pin(async move {
-                let headers = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT record FROM _fleet_sync_inbox_items ORDER BY item_id",
-                )
+                let headers = sqlx_core::query::query::<sqlx_turso::Turso>(include_str!(
+                    "../support/sql/read_inbox_headers.sql"
+                ))
                 .fetch_all(scope.executor())
                 .await?
                 .into_iter()

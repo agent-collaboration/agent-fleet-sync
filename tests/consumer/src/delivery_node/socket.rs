@@ -198,8 +198,9 @@ impl LinkActor {
                         ServerFrame::Request {frame,body:ServerRequest::Crate(ServerCall::PublishStatus {publication,..})}=>{
                             if state.status_paused.load(std::sync::atomic::Ordering::SeqCst) {continue;}
                             let limits=delivery_limits()?;
+                            let now=state.object.host().now();
                             let result=state.object.rule_transaction::<_,DeliveryError,_>(move|scope|Box::pin(async move {
-                                Outbox::<_,SampleDelivery>::new(scope,limits).publish_status(publication).await
+                                Outbox::<_,SampleDelivery>::new(scope,limits).publish_status(publication,now).await
                             })).await;
                             let answer=match result {
                                 Ok(())=>StatusPublicationResult::Applied,

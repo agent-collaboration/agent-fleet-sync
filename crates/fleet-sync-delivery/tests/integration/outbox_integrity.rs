@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use sqlx_core::row::Row;
@@ -19,7 +19,7 @@ async fn failure_status_can_be_written_after_the_custody_body_is_corrupted() {
                 };
                 let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
                 let admitted = outbox
-                    .enqueue(original, peer(9))
+                    .enqueue(original, peer(9), peer(1), SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)?;
                 assert!(matches!(admitted, OutboxAdmission::Queued { .. }));

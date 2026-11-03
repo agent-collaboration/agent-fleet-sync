@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, SyncTime, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use sqlx_core::row::Row;
@@ -24,7 +24,12 @@ async fn enqueue_expiring(network: &NetworkFixture, expiry: i64) {
                 )
                 .unwrap();
                 Outbox::<_, TestTypes>::new(scope, limits())
-                    .enqueue_and_admit::<SubmitTask>(original, peer(3))
+                    .enqueue_and_admit::<SubmitTask>(
+                        original,
+                        peer(3),
+                        peer(1),
+                        SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?;
                 Ok(())
@@ -232,7 +237,7 @@ async fn an_initial_expiry_publication_before_the_late_submit_receipt_keeps_the_
         .transaction(move |scope| {
             Box::pin(async move {
                 Outbox::<_, TestTypes>::new(scope, limits())
-                    .mark_submitted(&input, answer)
+                    .mark_submitted(&input, answer, SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)
             })

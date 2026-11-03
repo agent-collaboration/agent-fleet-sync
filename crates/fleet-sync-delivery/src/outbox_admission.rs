@@ -20,6 +20,8 @@ where
         &mut self,
         item: DeliveryItem<D>,
         relay: PeerId,
+        submitter: PeerId,
+        now: SyncTime,
     ) -> Result<
         (
             OutboxAdmission<D::Acceptance>,
@@ -31,7 +33,7 @@ where
         S: durable_steps::JournalScope,
     {
         let mailbox = item.recipient().peer;
-        let answer = self.enqueue(item, relay).await?;
+        let answer = self.enqueue(item, relay, submitter, now).await?;
         let admitted = self.admit_submission::<T>(&answer, relay, mailbox).await?;
         Ok((answer, admitted))
     }
@@ -39,7 +41,8 @@ where
         &mut self,
         cancel: DeliveryCancel<D>,
         relay: PeerId,
-
+        submitter: PeerId,
+        now: SyncTime,
         consumer: &C,
     ) -> Result<
         (
@@ -54,7 +57,9 @@ where
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
         let mailbox = cancel.recipient().peer;
-        let answer = self.enqueue_cancel(cancel, relay, consumer).await?;
+        let answer = self
+            .enqueue_cancel(cancel, relay, submitter, now, consumer)
+            .await?;
         let admitted = self.admit_submission::<T>(&answer, relay, mailbox).await?;
         Ok((answer, admitted))
     }
@@ -86,15 +91,18 @@ where
         &mut self,
         item: DeliveryItem<D>,
         relay: PeerId,
+        submitter: PeerId,
+        now: SyncTime,
     ) -> Result<OutboxAdmission<D::Acceptance>, DeliveryError> {
-        self.enqueue_envelope(DeliveryEnvelope::Item(item), relay, false)
+        self.enqueue_envelope(DeliveryEnvelope::Item(item), relay, submitter, now, false)
             .await
     }
     pub async fn enqueue_cancel<C>(
         &mut self,
         cancel: DeliveryCancel<D>,
         relay: PeerId,
-
+        submitter: PeerId,
+        now: SyncTime,
         consumer: &C,
     ) -> Result<OutboxAdmission<D::Acceptance>, DeliveryError>
     where
@@ -116,7 +124,13 @@ where
             .is_some()
         {
             return self
-                .enqueue_envelope(DeliveryEnvelope::Cancel(cancel), relay, false)
+                .enqueue_envelope(
+                    DeliveryEnvelope::Cancel(cancel),
+                    relay,
+                    submitter,
+                    now,
+                    false,
+                )
                 .await;
         }
         let mut withdrawn = false;
@@ -148,8 +162,14 @@ where
                 withdrawn = true;
             }
         }
-        self.enqueue_envelope(DeliveryEnvelope::Cancel(cancel), relay, withdrawn)
-            .await
+        self.enqueue_envelope(
+            DeliveryEnvelope::Cancel(cancel),
+            relay,
+            submitter,
+            now,
+            withdrawn,
+        )
+        .await
     }
     async fn existing_admission(
         &mut self,
@@ -186,7 +206,8 @@ where
         &mut self,
         envelope: DeliveryEnvelope<D>,
         relay: PeerId,
-
+        submitter: PeerId,
+        now: SyncTime,
         withdrawn: bool,
     ) -> Result<OutboxAdmission<D::Acceptance>, DeliveryError> {
         self.limits.validate::<D>()?;
@@ -289,7 +310,11 @@ where
             id: reference.item,
             digest: reference.digest.as_str().to_owned(),
             relay,
-
+            submitter: Some(submitter),
+            created_at: created_at(reference.item),
+            admitted_at: Some(now),
+            handed_off_at: None,
+            last_report_seq: ReportSeq::new(0),
             recipient: envelope.recipient().peer,
             valid_until: envelope.valid_until(),
             status: if withdrawn {

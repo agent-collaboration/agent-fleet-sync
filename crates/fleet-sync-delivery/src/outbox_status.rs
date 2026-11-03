@@ -21,6 +21,7 @@ where
     pub async fn publish_status(
         &mut self,
         publication: StatusPublication<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         crate::delivery_sizes::check_status::<D>(&publication.status)?;
         if publication.version.value() == 0 || publication.status.rank() == 0 {
@@ -64,6 +65,7 @@ where
         header.version = publication.version;
         header.cancel = publication.cancel;
         header.submit_attempted = true;
+        header.handed_off_at.get_or_insert(now);
         // A canonical relay status proves the relay's custody. The body stays
         // only in that custody and the receiving hop, never in sender history.
         self.save_header(&header, None).await
@@ -81,6 +83,7 @@ where
         &mut self,
         after: StatusCursor,
         batch: StatusFetchResult<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let current = self.status_cursor().await?;
         if after > current || batch.through < after {
@@ -98,12 +101,15 @@ where
             return Err(DeliveryError::InvalidBatch);
         }
         for event in batch.events {
-            self.publish_status(StatusPublication {
-                item: event.item,
-                status: event.status,
-                version: event.version,
-                cancel: event.cancel,
-            })
+            self.publish_status(
+                StatusPublication {
+                    item: event.item,
+                    status: event.status,
+                    version: event.version,
+                    cancel: event.cancel,
+                },
+                now,
+            )
             .await?;
         }
         queries::write_outbox_status(self.scope, encode(&current.max(batch.through))?)

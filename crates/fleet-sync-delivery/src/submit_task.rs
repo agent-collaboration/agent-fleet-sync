@@ -90,7 +90,7 @@ where
                 ctx.local(step("mark_sent")?, move |scope| {
                     Box::pin(async move {
                         Outbox::<_, D>::new(scope, limits)
-                            .mark_submitted(&input, answer)
+                            .mark_submitted(&input, answer, now)
                             .await
                             .map_err(step_error)
                     })

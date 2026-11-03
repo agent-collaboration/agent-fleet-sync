@@ -21,6 +21,11 @@ pub(crate) fn sql_error(error: sqlx_core::error::Error) -> DeliveryError {
 pub(crate) fn item_key(item: ItemId) -> String {
     item.as_uuid().to_string()
 }
+pub(crate) fn created_at(item: ItemId) -> SyncTime {
+    // UUIDv7's first 48 bits are an unsigned Unix millisecond timestamp.
+    let milliseconds = item.as_uuid().as_u128() >> 80;
+    SyncTime::from_unix_millis(milliseconds as i64)
+}
 pub(crate) fn stream_key(stream: DeliveryStream) -> String {
     match stream {
         DeliveryStream::Items => "items",

@@ -62,7 +62,7 @@ impl<
             mailbox: match mailbox {
                 Some(owner) => owner
                     .object
-                    .rule_transaction(|scope| Box::pin(snapshot(scope)))
+                    .rule_transaction(|scope| Box::pin(snapshot::<_, P::Delivery>(scope)))
                     .await
                     .map_err(ServiceError::rule)?,
                 None => Vec::new(),
@@ -70,7 +70,7 @@ impl<
             origin: match origin {
                 Some(owner) => owner
                     .object
-                    .rule_transaction(|scope| Box::pin(snapshot(scope)))
+                    .rule_transaction(|scope| Box::pin(snapshot::<_, P::Delivery>(scope)))
                     .await
                     .map_err(ServiceError::rule)?,
                 None => Vec::new(),

@@ -1,5 +1,11 @@
 //! Custody belongs to the hop's transaction; hosts carry out durable calls.
 
+#[cfg(test)]
+extern crate self as fleet_sync_delivery;
+#[cfg(test)]
+#[path = "../tests/support/mod.rs"]
+mod custody_fixture;
+
 /// Delivery tables applied in the host's migration transaction.
 pub static DELIVERY_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
@@ -19,6 +25,7 @@ mod inbox_local;
 mod inbox_receive;
 mod inbox_record;
 mod inbox_retirement;
+mod inbox_row;
 mod inbox_storage;
 mod mail_storage;
 mod mailbox_custody;
@@ -28,8 +35,10 @@ mod mailbox_rules;
 mod outbox_record;
 mod outbox_rules;
 mod outbox_status;
+mod outbox_storage;
 mod status_publication;
 mod status_stream;
+mod stored_outcome;
 mod task_support;
 
 pub use delivery_contract::*;

@@ -8,6 +8,11 @@ pub(crate) struct OutboxHeader<A> {
     pub id: ItemId,
     pub digest: String,
     pub relay: PeerId,
+    pub submitter: Option<PeerId>,
+    pub created_at: SyncTime,
+    pub admitted_at: Option<SyncTime>,
+    pub handed_off_at: Option<SyncTime>,
+    pub last_report_seq: ReportSeq,
 
     pub recipient: PeerId,
     pub valid_until: Option<SyncTime>,
@@ -23,6 +28,11 @@ pub(crate) struct OutboxHeader<A> {
 }
 impl<A> OutboxHeader<A> {
     pub fn validate(&self) -> Result<(), DeliveryError> {
+        if self.created_at != crate::custody_record::created_at(self.id) {
+            return Err(DeliveryError::Corrupt {
+                field: "outbox creation time",
+            });
+        }
         let processing_failed = matches!(
             self.status,
             DeliveryStatus::Refused {

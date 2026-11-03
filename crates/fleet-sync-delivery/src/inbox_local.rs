@@ -110,6 +110,7 @@ where
                 not_before: now,
             },
             settlement,
+            now,
         )?;
         let accounting = queries::read_inbox_accounting(self.scope)
             .await
@@ -278,6 +279,7 @@ where
                 outcome: ControlOutcome::Pending,
             },
             0,
+            now,
         )?;
         self.save(&record).await?;
         queries::write_inbox_cancel_link(self.scope, item_key(target), item_key(reference.item))

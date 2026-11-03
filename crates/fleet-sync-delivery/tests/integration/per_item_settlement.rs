@@ -1,12 +1,11 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::per_item;
+use super::support;
 use durable_steps::{AtomicStore, storage::TransactionScope};
 use fleet_sync_delivery::*;
+use per_item::*;
 use sqlx_core::row::Row;
 use support::*;
-#[path = "support/per_item.rs"]
-mod per_item;
-use per_item::*;
 
 #[tokio::test]
 async fn ordinary_admission_uses_small_bound_while_large_kind_reserves_global() {
@@ -19,7 +18,12 @@ async fn ordinary_admission_uses_small_bound_while_large_kind_reserves_global() 
                 for identity in 1..=3 {
                     assert!(matches!(
                         Outbox::<_, VariableTypes>::new(scope, small_capacity)
-                            .enqueue(variable_item(identity, "small"), peer(3))
+                            .enqueue(
+                                variable_item(identity, "small"),
+                                peer(3),
+                                peer(1),
+                                SyncTime::from_unix_millis(0)
+                            )
                             .await
                             .map_err(storage_error)?,
                         OutboxAdmission::Queued { .. }
@@ -40,7 +44,12 @@ async fn ordinary_admission_uses_small_bound_while_large_kind_reserves_global() 
                 }
                 assert!(matches!(
                     Outbox::<_, VariableTypes>::new(scope, small_capacity)
-                        .enqueue(variable_item(4, "large"), peer(3))
+                        .enqueue(
+                            variable_item(4, "large"),
+                            peer(3),
+                            peer(1),
+                            SyncTime::from_unix_millis(0)
+                        )
                         .await
                         .map_err(storage_error)?,
                     OutboxAdmission::Refused {
@@ -78,7 +87,12 @@ async fn invalid_body_bound_is_refused_before_any_custody_write() {
             Box::pin(async move {
                 assert!(matches!(
                     Outbox::<_, VariableTypes>::new(scope, variable_limits(100_000_000))
-                        .enqueue(variable_item(1, "invalid"), peer(3))
+                        .enqueue(
+                            variable_item(1, "invalid"),
+                            peer(3),
+                            peer(1),
+                            SyncTime::from_unix_millis(0)
+                        )
                         .await,
                     Err(DeliveryError::Config(_))
                 ));
@@ -116,18 +130,26 @@ async fn stored_bound_rejects_oversized_acceptance_after_sender_and_relay_releas
             Box::pin(async move {
                 let limits = variable_limits(100_000_000);
                 Outbox::<_, VariableTypes>::new(scope, limits)
-                    .enqueue(variable_item(1, "small"), peer(3))
+                    .enqueue(
+                        variable_item(1, "small"),
+                        peer(3),
+                        peer(1),
+                        SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?;
                 Outbox::<_, VariableTypes>::new(scope, limits)
-                    .publish_status(StatusPublication {
-                        item: item_id(1),
-                        status: DeliveryStatus::Sent {
-                            seq: DeliverySeq::new(1),
+                    .publish_status(
+                        StatusPublication {
+                            item: item_id(1),
+                            status: DeliveryStatus::Sent {
+                                seq: DeliverySeq::new(1),
+                            },
+                            version: StatusVersion::new(1),
+                            cancel: None,
                         },
-                        version: StatusVersion::new(1),
-                        cancel: None,
-                    })
+                        SyncTime::from_unix_millis(0),
+                    )
                     .await
                     .map_err(storage_error)?;
                 let row = sqlx_core::query::query::<sqlx_turso::Turso>(
@@ -148,7 +170,7 @@ async fn stored_bound_rejects_oversized_acceptance_after_sender_and_relay_releas
                 };
                 assert!(matches!(
                     Outbox::<_, VariableTypes>::new(scope, limits)
-                        .publish_status(oversized)
+                        .publish_status(oversized, SyncTime::from_unix_millis(0))
                         .await,
                     Err(DeliveryError::Refused {
                         reason: DeliveryRefusal::TooLarge {
@@ -240,9 +262,9 @@ async fn mixed_fetch_uses_actual_reserves_and_stops_exactly_at_room_boundary() {
                     .await
                     .map_err(storage_error)?;
                 assert_eq!(effects.attempts.len(), 2);
-                let rows = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT settlement_bytes,record FROM _fleet_sync_inbox_items ORDER BY item_id",
-                )
+                let rows = sqlx_core::query::query::<sqlx_turso::Turso>(include_str!(
+                    "../support/sql/read_inbox_headers.sql"
+                ))
                 .fetch_all(scope.executor())
                 .await?;
                 assert!(rows[0].try_get::<i64, _>("settlement_bytes")? < 50_000);
@@ -279,16 +301,45 @@ async fn per_item_bound_survives_reopen_and_legacy_absence_uses_global() {
         host,
         directory,
     } = Fixture::new().await;
-    store.transaction(|scope| Box::pin(async move {
-        let limits=variable_limits(100_000_000);
-        for identity in [1,2] {
-            Outbox::<_,VariableTypes>::new(scope,limits).enqueue(variable_item(identity,"small"),peer(3)).await.map_err(storage_error)?;
-            Outbox::<_,VariableTypes>::new(scope,limits).publish_status(StatusPublication { item:item_id(identity),status:DeliveryStatus::AtRecipient,version:StatusVersion::new(1),cancel:None }).await.map_err(storage_error)?;
-        }
-        // Emulate the exact old JSON shape, including the released body.
-        sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_outbox_items SET record=json_remove(record,'$.value.acceptanceBound') WHERE item_id=?1").bind(item_id(2).as_uuid().to_string()).execute(scope.executor()).await?;
-        Ok(())
-    })).await.unwrap();
+    store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let limits = variable_limits(100_000_000);
+                for identity in [1, 2] {
+                    Outbox::<_, VariableTypes>::new(scope, limits)
+                        .enqueue(
+                            variable_item(identity, "small"),
+                            peer(3),
+                            peer(1),
+                            SyncTime::from_unix_millis(0),
+                        )
+                        .await
+                        .map_err(storage_error)?;
+                    Outbox::<_, VariableTypes>::new(scope, limits)
+                        .publish_status(
+                            StatusPublication {
+                                item: item_id(identity),
+                                status: DeliveryStatus::AtRecipient,
+                                version: StatusVersion::new(1),
+                                cancel: None,
+                            },
+                            SyncTime::from_unix_millis(0),
+                        )
+                        .await
+                        .map_err(storage_error)?;
+                }
+                // Emulate the exact old JSON shape, including the released body.
+                sqlx_core::query::query::<sqlx_turso::Turso>(
+                    "UPDATE _fleet_sync_outbox_items SET acceptance_bound=NULL WHERE item_id=?1",
+                )
+                .bind(item_id(2).as_uuid().to_string())
+                .execute(scope.executor())
+                .await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
     drop(store);
     let reopened = TestStore::open_and_migrate(directory.path().join("delivery.db"), host)
         .await
@@ -299,16 +350,19 @@ async fn per_item_bound_survives_reopen_and_legacy_absence_uses_global() {
                 let limits = variable_limits(100_000_000);
                 for identity in [1, 2] {
                     let result = Outbox::<_, VariableTypes>::new(scope, limits)
-                        .publish_status(StatusPublication {
-                            item: item_id(identity),
-                            status: DeliveryStatus::Delivered {
-                                acceptance: Acceptance {
-                                    receipt: "x".repeat(100),
+                        .publish_status(
+                            StatusPublication {
+                                item: item_id(identity),
+                                status: DeliveryStatus::Delivered {
+                                    acceptance: Acceptance {
+                                        receipt: "x".repeat(100),
+                                    },
                                 },
+                                version: StatusVersion::new(2),
+                                cancel: None,
                             },
-                            version: StatusVersion::new(2),
-                            cancel: None,
-                        })
+                            SyncTime::from_unix_millis(0),
+                        )
                         .await;
                     if identity == 1 {
                         assert!(matches!(
@@ -323,9 +377,9 @@ async fn per_item_bound_survives_reopen_and_legacy_absence_uses_global() {
                         result.map_err(storage_error)?;
                     }
                 }
-                let row = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT record FROM _fleet_sync_outbox_items WHERE item_id=?1",
-                )
+                let row = sqlx_core::query::query::<sqlx_turso::Turso>(include_str!(
+                    "../support/sql/read_outbox_header.sql"
+                ))
                 .bind(item_id(1).as_uuid().to_string())
                 .fetch_one(scope.executor())
                 .await?;
@@ -415,16 +469,16 @@ async fn cancel_consumes_original_small_reserve_without_global_charge() {
     let fixture = Fixture::new().await;
     fixture.store.transaction(|scope| Box::pin(async move {
         let limits=variable_limits(50_000);
-        Outbox::<_,VariableTypes>::new(scope,limits).enqueue(variable_item(1,"small"),peer(3)).await.map_err(storage_error)?;
+        Outbox::<_,VariableTypes>::new(scope,limits).enqueue(variable_item(1,"small"), peer(3), peer(1), SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).submit(peer(1),DeliveryEnvelope::Item(variable_item(1,"small")),now(),"route".into(),None).await.map_err(storage_error)?;
         for owner in ["outbox","mail"] {
             let query=if owner=="outbox" { "SELECT settlement_bytes FROM _fleet_sync_outbox_items" } else { "SELECT settlement_bytes FROM _fleet_sync_mail_items" };
             let before=sqlx_core::query::query::<sqlx_turso::Turso>(query).fetch_one(scope.executor()).await?.try_get::<i64,_>("settlement_bytes")?;
             let control=DeliveryCancel::<VariableTypes>::new(item_id(2),"sender".into(),Recipient {peer:peer(2),address:"inbox".into()},None,CancelBody { target:item_id(1) }).unwrap();
             let charge=serde_json::to_vec(&DeliveryEnvelope::Cancel(DeliveryCancel::<VariableTypes>::new(item_id(2),"sender".into(),Recipient {peer:peer(2),address:"inbox".into()},None,CancelBody { target:item_id(1) }).unwrap())).unwrap().len() as i64;
-            if owner=="outbox" { assert!(matches!(Outbox::<_,VariableTypes>::new(scope,limits).enqueue_cancel(control,peer(3),&VariableConsumer).await.map_err(storage_error)?,OutboxAdmission::Queued { .. })); }
+            if owner=="outbox" { assert!(matches!(Outbox::<_,VariableTypes>::new(scope,limits).enqueue_cancel(control, peer(3), peer(1), SyncTime::from_unix_millis(0), &VariableConsumer).await.map_err(storage_error)?,OutboxAdmission::Queued { .. })); }
             else { assert!(matches!(Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).submit(peer(1),DeliveryEnvelope::Cancel(control),now(),"route".into(),None).await.map_err(storage_error)?,SubmitResult::Accepted { .. })); }
-            let query=if owner=="outbox" { "SELECT settlement_bytes,record FROM _fleet_sync_outbox_items ORDER BY item_id" } else { "SELECT settlement_bytes,record FROM _fleet_sync_mail_items ORDER BY item_id" };
+            let query=if owner=="outbox" { include_str!("../support/sql/read_outbox_headers.sql") } else { "SELECT settlement_bytes,record FROM _fleet_sync_mail_items ORDER BY item_id" };
             let rows=sqlx_core::query::query::<sqlx_turso::Turso>(query).fetch_all(scope.executor()).await?;
             assert_eq!(rows.len(),2);
             // The withdrawn sender's SQL charge is zero; its durable balance still pays the control.

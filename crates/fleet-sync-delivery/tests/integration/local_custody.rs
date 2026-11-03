@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use sqlx_core::row::Row;
@@ -120,9 +120,9 @@ async fn compact_local_headers_authorize_cancels_and_preserve_identity() {
                             reason: DeliveryRefusal::ItemConflict { existing }
                         }) if existing == stored_digest
                     ));
-                    let row = sqlx_core::query::query::<sqlx_turso::Turso>(
-                        "SELECT payload_bytes,record FROM _fleet_sync_inbox_items WHERE item_id=?1",
-                    )
+                    let row = sqlx_core::query::query::<sqlx_turso::Turso>(include_str!(
+                        "../support/sql/read_inbox_header.sql"
+                    ))
                     .bind(item_id(1).as_uuid().to_string())
                     .fetch_one(scope.executor())
                     .await

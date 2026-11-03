@@ -1,0 +1,177 @@
+{
+  "migrations": [
+    "migrations"
+  ],
+  "output": "src/checked_queries/status.rs",
+  "metadata": "checked-status-query-metadata.json",
+  "queries": [
+    {
+      "name": "read_status_state",
+      "sql": "sql/read_status_state.sql",
+      "result": "optional",
+      "parameters": [],
+      "row": "StoredStatusStateRow"
+    },
+    {
+      "name": "write_status_state",
+      "sql": "sql/write_status_state.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_publication",
+      "sql": "sql/read_publication.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredPublicationRow"
+    },
+    {
+      "name": "write_publication",
+      "sql": "sql/write_publication.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "retire_publication",
+      "sql": "sql/retire_publication.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_status_event",
+      "sql": "sql/write_status_event.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "cursor",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_status_events",
+      "sql": "sql/read_status_events.sql",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "after",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "limit",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredStatusEventRow"
+    },
+    {
+      "name": "drop_status_events",
+      "sql": "sql/drop_status_events.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "through",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_status_revision",
+      "sql": "sql/read_status_revision.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredStatusEventRow"
+    },
+    {
+      "name": "list_publications",
+      "sql": "sql/list_publications.sql",
+      "result": "many",
+      "parameters": [],
+      "row": "StoredOwedPublicationRow"
+    }
+  ]
+}

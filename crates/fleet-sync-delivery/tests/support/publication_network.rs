@@ -99,7 +99,7 @@ impl PublicationRoutes {
                     .transaction(move |scope| {
                         Box::pin(async move {
                             Outbox::<_, TestTypes>::new(scope, limits())
-                                .publish_status(publication)
+                                .publish_status(publication, SyncTime::from_unix_millis(0))
                                 .await
                                 .map_err(storage_error)
                         })

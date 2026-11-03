@@ -8,7 +8,7 @@ use sqlx_turso::{
 };
 use std::{path::PathBuf, time::Instant};
 
-const ACCOUNTING_SQL: &str = include_str!("../sql/read_inbox_accounting.sql");
+const ACCOUNTING_SQL: &str = include_str!("../support/sql/legacy_inbox_accounting.sql");
 const INDEX_NAME: &str = "_fleet_sync_inbox_accounting";
 const LARGE_ROWS: u64 = 250;
 const PAYLOAD_BYTES: u64 = 65_536;
@@ -35,7 +35,7 @@ async fn accounting(connection: &mut TursoConnection) -> AccountingTotals {
 async fn query_plan(connection: &mut TursoConnection) -> Vec<String> {
     query::<Turso>(concat!(
         "EXPLAIN QUERY PLAN ",
-        include_str!("../sql/read_inbox_accounting.sql")
+        include_str!("../support/sql/legacy_inbox_accounting.sql")
     ))
     .fetch_all(connection)
     .await
@@ -48,7 +48,7 @@ async fn query_plan(connection: &mut TursoConnection) -> Vec<String> {
 async fn migrate(connection: &mut TursoConnection, through_previous: bool) {
     let migrations = DELIVERY_MIGRATOR
         .iter()
-        .filter(|migration| !through_previous || migration.version <= 2)
+        .filter(|migration| migration.version <= if through_previous { 2 } else { 3 })
         .cloned()
         .collect::<Vec<_>>();
     let mut migrator = Migrator::with_migrations(migrations);

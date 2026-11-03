@@ -92,7 +92,7 @@ pub struct LocalSnapshot {
 }
 pub async fn snapshot(fixture: &Fixture) -> LocalSnapshot {
     fixture.store.transaction(|scope| Box::pin(async move {
-        let custody=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT record,payload FROM _fleet_sync_inbox_items ORDER BY item_id").fetch_all(scope.executor()).await?.into_iter().map(|row| Ok((row.try_get("record")?,row.try_get("payload")?))).collect::<Result<Vec<_>,sqlx_core::Error>>()?;
+        let custody=sqlx_core::query::query::<sqlx_turso::Turso>(include_str!("sql/read_inbox_headers.sql")).fetch_all(scope.executor()).await?.into_iter().map(|row| Ok((row.try_get("record")?,row.try_get("payload")?))).collect::<Result<Vec<_>,sqlx_core::Error>>()?;
         let links=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT target,cancel_item FROM _fleet_sync_inbox_cancel_links ORDER BY target").fetch_all(scope.executor()).await?.into_iter().map(|row| Ok((row.try_get("target")?,row.try_get("cancel_item")?))).collect::<Result<Vec<_>,sqlx_core::Error>>()?;
         let state=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT record FROM _fleet_sync_inbox_state").fetch_all(scope.executor()).await?.into_iter().map(|row| row.try_get("record")).collect::<Result<Vec<_>,_>>()?;
         let reports=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT record FROM _fleet_sync_reports ORDER BY item_id").fetch_all(scope.executor()).await?.into_iter().map(|row| row.try_get("record")).collect::<Result<Vec<_>,_>>()?;

@@ -135,6 +135,11 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
                 id: item,
                 digest: digest.as_str().into(),
                 relay: peer,
+                submitter: Some(peer),
+                created_at: crate::custody_record::created_at(item),
+                admitted_at: Some(time),
+                handed_off_at: Some(time),
+                last_report_seq: ReportSeq::new(u64::MAX),
                 recipient: peer,
                 valid_until: Some(time),
                 status: status.clone(),
@@ -229,6 +234,10 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
         inbox_header = inbox_header.max(
             with_acceptance(
                 &InboxHeader::<NoDelivery> {
+                    relay: Some(peer),
+                    created_at: crate::custody_record::created_at(item),
+                    accepted_at: Some(time),
+                    delivered_at: Some(time),
                     id: item,
                     digest: digest.as_str().into(),
                     sender: (),

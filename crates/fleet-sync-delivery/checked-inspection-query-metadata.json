@@ -57,7 +57,8 @@
     "migrations/0001_delivery_custody.sql": "1c480b530973dadd80a9fb388bb2d55428470e7d57d24cdce8973be7e93ef8d2",
     "migrations/0002_mailbox_deadlines.sql": "7e60b848a3c73c0b05b139d1822225a631b1b79a0ea4d497646fdeb4f708d031",
     "migrations/0003_inbox_accounting.sql": "9ed7336cbc35834049b9c6b2f86e90a3b331f99b8e0791f86ce2cdfa7d7727f2",
-    "sql/read_delivery_snapshot.sql": "b748d67f29b876c66212da91a0b139344c5b7da03ec544ca74e9ecf869a84de1",
+    "migrations/0004_typed_delivery_records.sql": "cc12ce0550a54b81f5e45ccadfcd8f66311ea39cf46bd7cc1ef2308c26ecd5b4",
+    "sql/read_delivery_snapshot.sql": "201ea4d61b99a32539239f099caa740a68dfb1c7f13b3c4ac801fa6d8164b561",
     "src/checked_inspection_queries.rs": "234763ffc60fb2cf96f98724a04240ca677129331bb6bc4fceb06b50a2af478f"
   },
   "queries_digest": "c392e5d173c94753f3c98f280b86f48b862a06242132a71391a0f25f7e4a00be",
