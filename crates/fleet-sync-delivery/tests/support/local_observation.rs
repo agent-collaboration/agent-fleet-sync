@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, dead_code)]
-use crate::support::{Acceptance, item_id, limits, peer};
+use crate::support::{Acceptance, FixtureBindings, item_id, limits, peer};
 use durable_steps::{
     AtomicStore, BoxFuture, CallFailure, CallId, CallResult, CallTarget, Engine, Host,
     OperationContext, OperationFailure, RequestKey, Resume, StepError, StoreError, Task,
@@ -29,9 +29,7 @@ impl DeliveryTypes for ObservationTypes {
     const MAX_STATUS_ROUTE_BYTES: u32 = 64;
     type Body = String;
     type Sender = String;
-    fn submitter(sender: &Self::Sender) -> Submitter {
-        crate::support::sender_submitter(sender)
-    }
+
     type Address = String;
     type Acceptance = Acceptance;
     type LocalObservation = String;
@@ -100,7 +98,7 @@ impl DeliveryConsumer<TursoScope<'_, ObservationHost>> for ObservationConsumer {
 pub type ObservationStore = TursoStore<ObservationHost>;
 type RecordRemoval = RemoveDeliveryRecord<ObservationStore, Turso>;
 pub type ObservationTask =
-    DeliverLocally<ObservationStore, Turso, ObservationTypes, ObservationConsumer>;
+    DeliverLocally<ObservationStore, Turso, ObservationTypes, ObservationConsumer, FixtureBindings>;
 pub struct ObservationHost {
     pub clock: AtomicU64,
     identities: AtomicU64,
@@ -144,7 +142,7 @@ impl Host for ObservationHost {
             .unwrap()
             .transaction(move |scope| {
                 Box::pin(async move {
-                    Inbox::<_, ObservationTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, ObservationTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .resolve_local_delivery(&reference)
                         .await
                         .map_err(StoreError::backend)
@@ -199,7 +197,12 @@ impl ObservationFixture {
         engine
     }
     pub fn task(&self) -> ObservationTask {
-        ObservationTask::new(config(), self.host.consumer.clone(), self.host.clone())
+        ObservationTask::new(
+            config(),
+            self.host.consumer.clone(),
+            self.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
+        )
     }
     pub async fn enqueue(&self, id: u64, expiry: Option<SyncTime>) {
         let consumer = self.host.consumer.clone();
@@ -217,14 +220,19 @@ impl ObservationFixture {
                         "body".into(),
                     )
                     .unwrap();
-                    Inbox::<_, ObservationTypes>::new(scope, peer(2), limits())
-                        .enqueue_local_and_admit::<ObservationTask, RecordRemoval, _>(
-                            item,
-                            consumer.as_ref(),
-                            SyncTime::from_unix_millis(0),
-                        )
-                        .await
-                        .map_err(StoreError::backend)?;
+                    Inbox::<_, ObservationTypes, _>::new(
+                        scope,
+                        peer(2),
+                        limits(),
+                        &FixtureBindings,
+                    )
+                    .enqueue_local_and_admit::<ObservationTask, RecordRemoval, _>(
+                        item,
+                        consumer.as_ref(),
+                        SyncTime::from_unix_millis(0),
+                    )
+                    .await
+                    .map_err(StoreError::backend)?;
                     Ok(())
                 })
             })

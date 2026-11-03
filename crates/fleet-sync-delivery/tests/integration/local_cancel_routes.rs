@@ -15,7 +15,8 @@ async fn local_admission_leaves_relayed_cancel_pending_until_normal_completion()
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 let cycle = inbox
                     .begin_receive(
                         DeliveryStream::Controls,
@@ -53,14 +54,15 @@ async fn local_admission_leaves_relayed_cancel_pending_until_normal_completion()
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let admitted = Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
-                        local_item(1),
-                        &TestConsumer,
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
+                let admitted =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                        .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
+                            local_item(1),
+                            &TestConsumer,
+                            SyncTime::from_unix_millis(0),
+                        )
+                        .await
+                        .map_err(storage_error)?;
                 assert!(
                     matches!(admitted, LocalItemAdmission::Attempt(_)),
                     "a Relayed control must not block local admission"
@@ -117,7 +119,8 @@ async fn local_cancel_of_a_relayed_original_returns_its_real_report_obligation()
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 let cycle = inbox
                     .begin_receive(
                         DeliveryStream::Items,
@@ -157,7 +160,7 @@ async fn local_cancel_of_a_relayed_original_returns_its_real_report_obligation()
     let reference = *admission.effects.reports.first().unwrap();
     assert_eq!(reference.item, item_id(1));
     fixture.store.transaction(move |scope| Box::pin(async move {
-        let report = Inbox::<_, TestTypes>::new(scope, peer(2), limits()).resolve_report(reference).await.map_err(storage_error)?;
+        let report = Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings).resolve_report(reference).await.map_err(storage_error)?;
         assert!(matches!(report.outcome, RecipientOutcome::Prevented { cancel } if cancel == item_id(2)));
         Ok(())
     })).await.unwrap();

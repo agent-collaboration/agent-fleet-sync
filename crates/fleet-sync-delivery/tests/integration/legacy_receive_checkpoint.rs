@@ -16,9 +16,7 @@ impl DeliveryTypes for OptedTypes {
     const PER_ITEM_SETTLEMENT: bool = true;
     type Body = String;
     type Sender = String;
-    fn submitter(sender: &Self::Sender) -> Submitter {
-        crate::support::sender_submitter(sender)
-    }
+
     type Address = String;
     type Acceptance = Acceptance;
     type LocalObservation = ();
@@ -76,10 +74,12 @@ fn resumed_engine(network: &NetworkFixture, opted_in: bool) -> Engine<TestStore,
             sqlx_turso::Turso,
             OptedTypes,
             OptedConsumer,
+            FixtureBindings,
         >::new(
             config(),
             Arc::new(OptedConsumer),
             network.recipient.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
         ))
         .unwrap();
     engine
@@ -88,17 +88,20 @@ fn resumed_engine(network: &NetworkFixture, opted_in: bool) -> Engine<TestStore,
             sqlx_turso::Turso,
             OptedTypes,
             OptedConsumer,
+            FixtureBindings,
         >::new(
             config().local,
             Arc::new(OptedConsumer),
             network.recipient.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
         ))
         .unwrap();
     engine
         .register(
-            ReportOutcome::<TestStore, sqlx_turso::Turso, OptedTypes>::new(
+            ReportOutcome::<TestStore, sqlx_turso::Turso, OptedTypes, _>::new(
                 config(),
                 network.recipient.host.clone(),
+                std::sync::Arc::new(FixtureBindings),
             ),
         )
         .unwrap();
@@ -125,14 +128,19 @@ impl Task for LegacyReceivePrefix {
         let (max_items, max_bytes) = ctx
             .local(StepName::new("budget").unwrap(), move |scope| {
                 Box::pin(async move {
-                    Inbox::<_, TestTypes>::new(scope, config.local.owner, config.local.limits)
-                        .receive_budget(input, config.fetch_items, config.fetch_bytes)
-                        .await
-                        .map_err(|e| {
-                            durable_steps::StepError::Failed(OperationFailure::InvalidPayload {
-                                message: e.to_string(),
-                            })
+                    Inbox::<_, TestTypes, _>::new(
+                        scope,
+                        config.local.owner,
+                        config.local.limits,
+                        &FixtureBindings,
+                    )
+                    .receive_budget(input, config.fetch_items, config.fetch_bytes)
+                    .await
+                    .map_err(|e| {
+                        durable_steps::StepError::Failed(OperationFailure::InvalidPayload {
+                            message: e.to_string(),
                         })
+                    })
                 })
             })
             .await?;
@@ -177,10 +185,12 @@ async fn v020_budget_checkpoint_reopens_and_completes_with_identical_fetch_ident
                     sqlx_turso::Turso,
                     OptedTypes,
                     OptedConsumer,
+                    FixtureBindings,
                 >::new(
                     config(),
                     Arc::new(OptedConsumer),
                     network.recipient.host.clone(),
+                    std::sync::Arc::new(FixtureBindings),
                 ))
                 .unwrap();
         } else {
@@ -189,6 +199,7 @@ async fn v020_budget_checkpoint_reopens_and_completes_with_identical_fetch_ident
                     config(),
                     Arc::new(TestConsumer),
                     network.recipient.host.clone(),
+                    std::sync::Arc::new(FixtureBindings),
                 ))
                 .unwrap();
         }

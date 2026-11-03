@@ -42,6 +42,7 @@ fn engine(fixture: &super::support::network::NetworkFixture) -> Engine<TestStore
             },
             Arc::new(TestConsumer),
             fixture.recipient.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
         ))
         .unwrap();
     engine
@@ -66,7 +67,8 @@ async fn delivered_relayed_originals_release_payload_and_capacity_but_keep_repla
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limited);
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limited, &FixtureBindings);
                 for identity in 1..=2 {
                     assert!(matches!(
                         inbox
@@ -121,7 +123,7 @@ async fn delivered_relayed_originals_release_payload_and_capacity_but_keep_repla
             assert_eq!(row.try_get::<i64,_>("delivered_at")?,0);
             assert_eq!(row.try_get::<String,_>("outcome_kind")?,"delivered");
         }
-        let mut inbox=Inbox::<_,TestTypes>::new(scope,peer(2),limited);
+        let mut inbox=Inbox::<_,TestTypes, _>::new(scope,peer(2),limited, &FixtureBindings);
         assert!(matches!(inbox.accept_push::<DeliverTask,ReportTask,RecordRemoval,_>(project(),packet(1,"session/a"),peer(3),&TestConsumer,now()).await.map_err(storage_error)?,PushResult::Replayed {status:DeliveryStatus::Delivered {..},..}));
         assert!(matches!(inbox.accept_push::<DeliverTask,ReportTask,RecordRemoval,_>(project(),packet(3,"session/a"),peer(3),&TestConsumer,now()).await.map_err(storage_error)?,PushResult::Accepted {..}));
         Ok(())
@@ -137,7 +139,7 @@ async fn compacted_project_custody_keeps_the_full_consumer_source_for_cancellati
             .store
             .transaction(|scope| {
                 Box::pin(async move {
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
                             project(),
                             packet(1, "session/a"),
@@ -172,7 +174,8 @@ async fn compacted_project_custody_keeps_the_full_consumer_source_for_cancellati
                         CancelBody { target: item_id(1) },
                     )
                     .unwrap();
-                    let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                    let mut inbox =
+                        Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                     inbox
                         .enqueue_local_cancel(cancel, &TestConsumer, now())
                         .await

@@ -37,9 +37,13 @@ impl CallRouter for NodeRouter {
                     .object
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
-                            Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                                .resolve_submit(&lookup)
-                                .await
+                            Outbox::<_, SampleDelivery, _>::new(
+                                scope,
+                                config.limits,
+                                &SampleSenderBinding,
+                            )
+                            .resolve_submit(&lookup)
+                            .await
                         })
                     })
                     .await;
@@ -58,7 +62,17 @@ impl CallRouter for NodeRouter {
                         let DeliveryAnswer::Submit(answer) = answer else {
                             return Err(CallFailure::AnswerLost);
                         };
-                        encoded(DispatchOutcome::Answered(answer))
+                        encoded(SubmitCall::<SampleDelivery>::validated_answer(
+                            DispatchOutcome::Answered(answer),
+                        )?)
+                    }
+                    Err(DeliveryError::SenderBindingUnavailable { reason, .. }) => {
+                        Err(CallFailure::Retryable {
+                            reason: durable_steps::CallRetryReason {
+                                code: reason.code().into(),
+                                detail: "consumer sender binding is not established".into(),
+                            },
+                        })
                     }
                     Err(DeliveryError::Storage(_)) => Err(unreachable()),
                     _ => {
@@ -84,9 +98,14 @@ impl CallRouter for NodeRouter {
                     .object
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
-                            Inbox::<_, SampleDelivery>::new(scope, config.owner, config.limits)
-                                .resolve_local_delivery(&reference)
-                                .await
+                            Inbox::<_, SampleDelivery, _>::new(
+                                scope,
+                                config.owner,
+                                config.limits,
+                                &SampleSenderBinding,
+                            )
+                            .resolve_local_delivery(&reference)
+                            .await
                         })
                     })
                     .await;
@@ -106,6 +125,14 @@ impl CallRouter for NodeRouter {
                         encoded(answer)
                     }
                     Err(DeliveryError::Storage(_)) => Err(unreachable()),
+                    Err(DeliveryError::SenderBindingUnavailable { reason, .. }) => {
+                        Err(CallFailure::Retryable {
+                            reason: durable_steps::CallRetryReason {
+                                code: reason.code().into(),
+                                detail: "consumer sender binding is not established".into(),
+                            },
+                        })
+                    }
                     Err(error) => encoded(LocalDeliveryOutcome::<SampleDelivery>::Unresolvable {
                         reason: error.failure_kind(),
                     }),

@@ -233,7 +233,7 @@ async fn header_loss_before_first_gate_reconciles_same_digest_conflict_and_unkno
                         ));
                     };
                     assert!(matches!(
-                        Outbox::<_, TestTypes>::new(scope, limits())
+                        Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                             .enqueue(
                                 item,
                                 peer(3),
@@ -355,7 +355,7 @@ async fn a_terminal_local_item_releases_body_custody_without_a_relay_retirement(
                 let DeliveryEnvelope::Item(item) = item(1, "local body") else {
                     return Err(durable_steps::StoreError::backend("fixture item"));
                 };
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         item,
                         &TestConsumer,

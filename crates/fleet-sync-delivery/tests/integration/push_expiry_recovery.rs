@@ -37,7 +37,7 @@ async fn cached_push_answer(replayed: bool) {
                         digest: ItemDigest::try_from(row.try_get::<String, _>("digest")?)
                             .map_err(durable_steps::StoreError::backend)?,
                     };
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .resolve_push(&reference, at(0))
                         .await
                         .map_err(storage_error)
@@ -51,7 +51,7 @@ async fn cached_push_answer(replayed: bool) {
             .store
             .transaction(move |scope| {
                 Box::pin(async move {
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
                             pushed.submitter,
                             pushed.item,
@@ -82,7 +82,11 @@ async fn cached_push_answer(replayed: bool) {
     let mut engine = Engine::new(network.mailbox.store.clone(), network.mailbox.host.clone());
     engine
         .register(PausedPush {
-            inner: PushTask::new(limits(), network.mailbox.host.clone()),
+            inner: PushTask::new(
+                limits(),
+                network.mailbox.host.clone(),
+                std::sync::Arc::new(FixtureBindings),
+            ),
             reached: reached.clone(),
         })
         .unwrap();
@@ -305,7 +309,7 @@ async fn interrupted_dispatch_at_the_deadline_keeps_sent_without_resending_then_
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .status(item_id(1))
                         .await
                         .map_err(storage_error)?

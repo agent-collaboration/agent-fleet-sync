@@ -19,7 +19,7 @@ async fn pending_hop_and_local_tasks_finish_after_removal_without_redispatch_or_
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .submit_relay::<PushTask, RecordRemoval>(
                         fleet_sync_delivery::Submitter::Machine(peer(1)),
                         item(1, "pending sender"),
@@ -39,7 +39,7 @@ async fn pending_hop_and_local_tasks_finish_after_removal_without_redispatch_or_
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
                         fleet_sync_delivery::Submitter::Machine(peer(1)),
                         item(1, "pending sender"),
@@ -115,16 +115,17 @@ async fn actual_pending_report_finishes_after_removal_and_reopen_without_recreat
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let admission = Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
-                        fleet_sync_delivery::Submitter::Machine(peer(1)),
-                        item(1, "reported once"),
-                        peer(3),
-                        &TestConsumer,
-                        day(1),
-                    )
-                    .await
-                    .map_err(storage_error)?;
+                let admission =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                        .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
+                            fleet_sync_delivery::Submitter::Machine(peer(1)),
+                            item(1, "reported once"),
+                            peer(3),
+                            &TestConsumer,
+                            day(1),
+                        )
+                        .await
+                        .map_err(storage_error)?;
                 assert!(matches!(admission, PushResult::Accepted { .. }));
                 Ok(())
             })
@@ -146,6 +147,7 @@ async fn actual_pending_report_finishes_after_removal_and_reopen_without_recreat
             super::support::network::config().local,
             Arc::new(TestConsumer),
             network.recipient.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
         ))
         .unwrap();
     let delivered = delivery.drive_due().await.unwrap();
@@ -155,7 +157,7 @@ async fn actual_pending_report_finishes_after_removal_and_reopen_without_recreat
     network.recipient.store.transaction(|scope| Box::pin(async move {
         let row=query::<Turso>("SELECT count(*) AS pending FROM _fleet_sync_operations WHERE kind='fleet-sync.delivery.report-outcome'").fetch_one(scope.executor()).await?;
         assert_eq!(row.try_get::<i64,_>("pending")?, 1);
-        let report = Inbox::<_, TestTypes>::new(scope, peer(2), limits()).resolve_report(ReportRef {item:item_id(1), report_seq:ReportSeq::new(1)}).await.map_err(storage_error)?;
+        let report = Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings).resolve_report(ReportRef {item:item_id(1), report_seq:ReportSeq::new(1)}).await.map_err(storage_error)?;
         assert!(matches!(report.outcome, RecipientOutcome::Delivered {..}));
         Ok(())
     })).await.unwrap();
@@ -187,6 +189,7 @@ async fn actual_pending_report_finishes_after_removal_and_reopen_without_recreat
         .register(ReportTask::new(
             super::support::network::config(),
             network.recipient.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
         ))
         .unwrap();
     let result = report_engine.drive_due().await.unwrap();
@@ -234,7 +237,7 @@ async fn sixty_one_day_receipt_is_refused_even_after_custody_was_removed() {
                     item: item_id(1),
                     digest: item(1, "old").digest().clone(),
                 };
-                let result = Outbox::<_, TestTypes>::new(scope, limits())
+                let result = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .receipt::<super::support::network::PublishTask>(
                         peer(2),
                         &reference,
@@ -271,7 +274,7 @@ async fn sixty_one_day_recipient_report_is_refused_even_after_custody_was_remove
                     report_seq: ReportSeq::new(1),
                     outcome: RecipientOutcome::Held,
                 };
-                let result = Outbox::<_, TestTypes>::new(scope, limits())
+                let result = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .recipient_report::<super::support::network::PublishTask>(
                         peer(2),
                         report,

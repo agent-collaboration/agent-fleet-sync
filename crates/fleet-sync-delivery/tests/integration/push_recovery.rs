@@ -15,10 +15,15 @@ fn engine(fixture: &Fixture) -> Engine<TestStore, TestHost> {
             limits(),
             Arc::new(TestConsumer),
             fixture.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
         ))
         .unwrap();
     engine
-        .register(PushTask::new(limits(), fixture.host.clone()))
+        .register(PushTask::new(
+            limits(),
+            fixture.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
+        ))
         .unwrap();
     engine.register(PublishTask::new()).unwrap();
     engine
@@ -26,10 +31,15 @@ fn engine(fixture: &Fixture) -> Engine<TestStore, TestHost> {
             config().local,
             Arc::new(TestConsumer),
             fixture.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
         ))
         .unwrap();
     engine
-        .register(ReportTask::new(config(), fixture.host.clone()))
+        .register(ReportTask::new(
+            config(),
+            fixture.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
+        ))
         .unwrap();
     engine
 }
@@ -147,7 +157,7 @@ async fn lost_submit_and_push_answers_reopen_each_holder_and_keep_one_delivery()
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .status(item_id(1))
                         .await
                         .map_err(storage_error)?
@@ -185,7 +195,7 @@ async fn lost_submit_and_push_answers_reopen_each_holder_and_keep_one_delivery()
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .status(item_id(1))
                         .await
                         .map_err(storage_error)?
@@ -233,10 +243,11 @@ async fn no_capacity_push_retries_without_cached_answer_and_lands_once_after_cap
                     ),
                 )
                 .unwrap();
-                let admission = Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
-                    .await
-                    .map_err(storage_error)?;
+                let admission =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                        .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
+                        .await
+                        .map_err(storage_error)?;
                 require_local_attempt(admission)
             })
         })
@@ -295,7 +306,7 @@ async fn no_capacity_push_retries_without_cached_answer_and_lands_once_after_cap
                 .await?
                 .try_get::<i64, _>("count")?;
                 assert_eq!(count, 0);
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .record_failure(
                         fill,
                         DeliveryFailureKind::ExecutionFailed,
@@ -354,7 +365,7 @@ async fn no_capacity_push_retries_without_cached_answer_and_lands_once_after_cap
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .status(item_id(1))
                         .await
                         .map_err(storage_error)?

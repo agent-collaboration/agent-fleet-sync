@@ -35,11 +35,13 @@ struct PublicationObservationKey {
     route: String,
 }
 /// Call inside the owner's existing transaction; this executes only a SELECT.
-pub async fn snapshot<S, D: DeliveryTypes>(
+pub async fn snapshot<S, D: DeliveryTypes, B>(
     scope: &mut S,
+    binding: &B,
 ) -> Result<Vec<DeliveryObservation>, DeliveryError>
 where
     S: TransactionScope,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
@@ -67,14 +69,18 @@ where
                     .await
                     .map_err(sql_error)?
                     .ok_or(DeliveryError::CustodyMissing)?;
-                Some(encode(&crate::outbox_storage::decode_header::<D>(&row)?)?)
+                Some(encode(
+                    &crate::outbox_storage::decode_header::<S, D, B>(scope, binding, &row).await?,
+                )?)
             }
             "inbox" => {
                 let row = checked_queries::read_inbox_item(scope, observation.identity.clone())
                     .await
                     .map_err(sql_error)?
                     .ok_or(DeliveryError::CustodyMissing)?;
-                Some(encode(&crate::inbox_row::decode_header::<D>(&row)?)?)
+                Some(encode(
+                    &crate::inbox_row::decode_header::<S, D, B>(scope, binding, &row).await?,
+                )?)
             }
             "report" => {
                 let sequence = observation.metadata.clone().ok_or(DeliveryError::Corrupt {

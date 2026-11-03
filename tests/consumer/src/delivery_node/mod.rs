@@ -6,6 +6,7 @@ mod observer;
 mod router;
 mod socket;
 
+use crate::delivery_protocol::SampleSenderBinding;
 use crate::{SampleDelivery, SampleProtocol, TestResult, delivery_limits};
 use durable_steps::{AtomicStore, Engine, StoreError, storage::TransactionScope};
 use fleet_sync_delivery::*;
@@ -28,12 +29,28 @@ use tokio::{
 type NodeHost = TokioHost<router::NodeRouter>;
 type NodeStore = TokioObject<NodeHost>;
 type RecordRemoval = RemoveDeliveryRecord<NodeStore, sqlx_turso::Turso>;
-type SubmitTask = SubmitItem<NodeStore, sqlx_turso::Turso, SampleDelivery, consumer::NodeConsumer>;
-type ReceiveTask =
-    ReceiveItems<NodeStore, sqlx_turso::Turso, SampleDelivery, consumer::NodeConsumer>;
-type DeliverTask =
-    DeliverLocally<NodeStore, sqlx_turso::Turso, SampleDelivery, consumer::NodeConsumer>;
-type ReportTask = ReportOutcome<NodeStore, sqlx_turso::Turso, SampleDelivery>;
+type SubmitTask = SubmitItem<
+    NodeStore,
+    sqlx_turso::Turso,
+    SampleDelivery,
+    consumer::NodeConsumer,
+    SampleSenderBinding,
+>;
+type ReceiveTask = ReceiveItems<
+    NodeStore,
+    sqlx_turso::Turso,
+    SampleDelivery,
+    consumer::NodeConsumer,
+    SampleSenderBinding,
+>;
+type DeliverTask = DeliverLocally<
+    NodeStore,
+    sqlx_turso::Turso,
+    SampleDelivery,
+    consumer::NodeConsumer,
+    SampleSenderBinding,
+>;
+type ReportTask = ReportOutcome<NodeStore, sqlx_turso::Turso, SampleDelivery, SampleSenderBinding>;
 
 #[derive(Serialize, Deserialize)]
 pub enum NodeCommand {
@@ -225,12 +242,21 @@ impl NodeState {
             .object
             .rule_transaction::<_, DeliveryError, _>(move |scope| {
                 Box::pin(async move {
-                    let outbox = Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                        .status(item)
-                        .await?;
-                    let inbox = Inbox::<_, SampleDelivery>::new(scope, config.owner, config.limits)
-                        .local_outcome(item)
-                        .await?;
+                    let outbox = Outbox::<_, SampleDelivery, _>::new(
+                        scope,
+                        config.limits,
+                        &SampleSenderBinding,
+                    )
+                    .status(item)
+                    .await?;
+                    let inbox = Inbox::<_, SampleDelivery, _>::new(
+                        scope,
+                        config.owner,
+                        config.limits,
+                        &SampleSenderBinding,
+                    )
+                    .local_outcome(item)
+                    .await?;
                     Ok((outbox, inbox))
                 })
             })
@@ -272,7 +298,8 @@ impl NodeState {
                             Box::pin(fleet_sync_delivery::test_support::snapshot::<
                                 _,
                                 SampleDelivery,
-                            >(scope))
+                                _,
+                            >(scope, &SampleSenderBinding))
                         })
                         .await?,
                 )?);
@@ -288,7 +315,7 @@ impl NodeState {
                 let relay = self.remote_config()?.relay;
                 let item = DeliveryItem::<SampleDelivery>::new(
                     item,
-                    "authorized sender".into(),
+                    format!("{}|authorized sender", config.owner.as_uuid()),
                     Recipient {
                         peer: recipient,
                         address: "effects".into(),
@@ -300,14 +327,18 @@ impl NodeState {
                     .object
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
-                            Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                                .enqueue_and_admit::<SubmitTask, RecordRemoval>(
-                                    item,
-                                    relay,
-                                    Submitter::Machine(config.owner),
-                                    now,
-                                )
-                                .await
+                            Outbox::<_, SampleDelivery, _>::new(
+                                scope,
+                                config.limits,
+                                &SampleSenderBinding,
+                            )
+                            .enqueue_and_admit::<SubmitTask, RecordRemoval>(
+                                item,
+                                relay,
+                                Submitter::Machine(config.owner),
+                                now,
+                            )
+                            .await
                         })
                     })
                     .await?;
@@ -322,7 +353,7 @@ impl NodeState {
                 let relay = self.remote_config()?.relay;
                 let cancel = DeliveryCancel::<SampleDelivery>::new(
                     item,
-                    "authorized sender".into(),
+                    format!("{}|authorized sender", config.owner.as_uuid()),
                     Recipient {
                         peer: recipient,
                         address: "effects".into(),
@@ -334,15 +365,19 @@ impl NodeState {
                     .object
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
-                            Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                                .enqueue_cancel_and_admit::<SubmitTask, RecordRemoval, _>(
-                                    cancel,
-                                    relay,
-                                    Submitter::Machine(config.owner),
-                                    now,
-                                    &consumer::NodeConsumer(Weak::new()),
-                                )
-                                .await
+                            Outbox::<_, SampleDelivery, _>::new(
+                                scope,
+                                config.limits,
+                                &SampleSenderBinding,
+                            )
+                            .enqueue_cancel_and_admit::<SubmitTask, RecordRemoval, _>(
+                                cancel,
+                                relay,
+                                Submitter::Machine(config.owner),
+                                now,
+                                &consumer::NodeConsumer(Weak::new()),
+                            )
+                            .await
                         })
                     })
                     .await?;
@@ -354,9 +389,14 @@ impl NodeState {
                 self.object
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
-                            Inbox::<_, SampleDelivery>::new(scope, config.owner, config.limits)
-                                .begin_receive_and_admit::<ReceiveTask>(stream, now)
-                                .await
+                            Inbox::<_, SampleDelivery, _>::new(
+                                scope,
+                                config.owner,
+                                config.limits,
+                                &SampleSenderBinding,
+                            )
+                            .begin_receive_and_admit::<ReceiveTask>(stream, now)
+                            .await
                         })
                     })
                     .await?;
@@ -367,9 +407,14 @@ impl NodeState {
                 self.object
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
-                            Inbox::<_, SampleDelivery>::new(scope, config.owner, config.limits)
-                                .release_held::<DeliverTask>(item, now)
-                                .await
+                            Inbox::<_, SampleDelivery, _>::new(
+                                scope,
+                                config.owner,
+                                config.limits,
+                                &SampleSenderBinding,
+                            )
+                            .release_held::<DeliverTask>(item, now)
+                            .await
                         })
                     })
                     .await?;
@@ -406,9 +451,13 @@ impl NodeState {
                     .object
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
-                            Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                                .status_cursor()
-                                .await
+                            Outbox::<_, SampleDelivery, _>::new(
+                                scope,
+                                config.limits,
+                                &SampleSenderBinding,
+                            )
+                            .status_cursor()
+                            .await
                         })
                     })
                     .await?;
@@ -428,9 +477,13 @@ impl NodeState {
                 self.object
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
-                            Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                                .apply_status_batch(after, batch, now)
-                                .await
+                            Outbox::<_, SampleDelivery, _>::new(
+                                scope,
+                                config.limits,
+                                &SampleSenderBinding,
+                            )
+                            .apply_status_batch(after, batch, now)
+                            .await
                         })
                     })
                     .await?;
@@ -502,9 +555,9 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
                     .run_direct(None, scope.executor(), false)
                     .await
                     .map_err(StoreError::backend)?;
-                backfill_submitters::<SampleDelivery, _>(scope, now)
+                backfill_submitters::<SampleDelivery, _, _>(scope, &SampleSenderBinding, now)
                     .await
-                    .map_err(StoreError::backend)?;
+                    .map_err(delivery_rollback)?;
                 admit_existing_record_removals::<_, RecordRemoval>(scope, now)
                     .await
                     .map_err(StoreError::backend)?;
@@ -534,19 +587,34 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
     let config = state.remote_config()?;
     let mut engine = Engine::new(object.clone(), host.clone());
     engine.register(observer::ObservedTask::new(
-        SubmitTask::new(config.local.limits, consumer.clone(), host.clone()),
+        SubmitTask::new(
+            config.local.limits,
+            consumer.clone(),
+            host.clone(),
+            Arc::new(SampleSenderBinding),
+        ),
         &state,
     ))?;
     engine.register(observer::ObservedTask::new(
-        ReceiveTask::new(config, consumer.clone(), object.host()),
+        ReceiveTask::new(
+            config,
+            consumer.clone(),
+            object.host(),
+            Arc::new(SampleSenderBinding),
+        ),
         &state,
     ))?;
     engine.register(observer::ObservedTask::new(
-        DeliverTask::new(config.local, consumer, host.clone()),
+        DeliverTask::new(
+            config.local,
+            consumer,
+            host.clone(),
+            Arc::new(SampleSenderBinding),
+        ),
         &state,
     ))?;
     engine.register(observer::ObservedTask::new(
-        ReportTask::new(config, host.clone()),
+        ReportTask::new(config, host.clone(), Arc::new(SampleSenderBinding)),
         &state,
     ))?;
     engine.register(RecordRemoval::new())?;

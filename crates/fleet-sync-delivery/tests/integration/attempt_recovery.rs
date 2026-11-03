@@ -116,7 +116,7 @@ async fn oversized_local_receipt_is_uncertain_at_call_checkpoint_and_after_resta
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .local_outcome(item_id(1))
                         .await
                         .map_err(storage_error)?,
@@ -148,13 +148,18 @@ fn interleaved_engine(
         ))
         .unwrap();
     engine
-        .register(ReportTask::new(config(), network.recipient.host.clone()))
+        .register(ReportTask::new(
+            config(),
+            network.recipient.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
+        ))
         .unwrap();
     engine
         .register(ReceiveTask::new(
             config(),
             std::sync::Arc::new(TestConsumer),
             network.recipient.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
         ))
         .unwrap();
     engine
@@ -183,7 +188,7 @@ async fn a_release_after_the_saved_held_answer_survives_until_outcome_once() {
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .local_outcome(item_id(1))
                         .await
                         .map_err(storage_error)?,
@@ -269,7 +274,7 @@ async fn cancel_waiting_for_a_saved_held_answer_prevents_the_original_in_the_out
     assert_eq!(engine.drive_due().await.unwrap().completed.len(), 1);
     assert!(engine.drive_due().await.unwrap().failed.is_empty());
     network.recipient.store.transaction(|scope|Box::pin(async move {
-        let mut inbox=Inbox::<_,TestTypes>::new(scope,peer(2),limits());
+        let mut inbox=Inbox::<_,TestTypes, _>::new(scope,peer(2),limits(), &FixtureBindings);
         assert!(matches!(inbox.local_outcome(item_id(1)).await.map_err(storage_error)?,Some(RecipientOutcome::Prevented {cancel}) if cancel==item_id(2)));
         for item in [item_id(1),item_id(2)] {
             let reference=inbox.pending_report(item).await.map_err(storage_error)?.unwrap();

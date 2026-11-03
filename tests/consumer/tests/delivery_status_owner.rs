@@ -54,8 +54,10 @@ async fn status_stream_corruption_keeps_the_service_error_path_and_mailbox_healt
         .connect()
         .await?;
     sqlx_core::query::query::<sqlx_turso::Turso>(
-        "INSERT INTO _fleet_sync_status_state(singleton,record) VALUES(1,'{}')",
+        "INSERT INTO _fleet_sync_status_state(submitter_kind,submitter_id,owner_route,head,floor) VALUES('machine',?1,?2,-1,0)",
     )
+    .bind(peer.as_uuid().to_string())
+    .bind(serde_json::to_string("fixture-route")?)
     .execute(&mut connection)
     .await?;
     connection.close().await?;

@@ -25,7 +25,10 @@ pub trait ConsumerHandler<P: ConsumerProtocol>: Send + Sync + 'static {
 /// scope. Consumer code stays outside every shared rules crate.
 pub trait ServiceConsumer<P: ConsumerProtocol>:
     ConsumerHandler<P>
-    + LifecycleGate
+    + for<'transaction> fleet_sync_delivery::SenderBinding<
+        crate::ServiceScope<'transaction>,
+        P::Delivery,
+    > + LifecycleGate
     + HolderChangeGate
     + FollowUpHandler<Item = <Self as ServiceConsumer<P>>::HookItem>
     + for<'transaction> ReceiverRules<

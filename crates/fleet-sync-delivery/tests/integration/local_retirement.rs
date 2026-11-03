@@ -20,7 +20,7 @@ async fn retire(fixture: &Fixture, reference: DeliveryItemRef) -> LocalRetiremen
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .retire_local(&reference)
                     .await
                     .map_err(storage_error)
@@ -47,7 +47,7 @@ async fn fail_original(fixture: &Fixture, id: u64) {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .record_failure(
                         input,
                         DeliveryFailureKind::ExecutionFailed,
@@ -91,7 +91,7 @@ async fn terminal_local_originals_retire_repeat_and_reopen() {
             .store
             .transaction(|scope| {
                 Box::pin(async move {
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                             local_item(1),
                             &TestConsumer,
@@ -167,7 +167,7 @@ async fn attempting_original_is_refused_without_mutation() {
         .transaction(move |scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .check_delivery(input, SyncTime::from_unix_millis(0))
                         .await
                         .map_err(storage_error)?,
@@ -194,7 +194,7 @@ async fn held_original_is_refused_without_mutation() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
@@ -226,7 +226,8 @@ async fn terminal_relayed_original_is_refused_without_mutation() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 let cycle = inbox
                     .begin_receive(
                         DeliveryStream::Items,
@@ -335,7 +336,7 @@ async fn retirement_removes_only_original_links_reports_and_accounting_across_re
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_cancel(
                         local_cancel(51, 50, "other sender"),
                         &TestConsumer,
@@ -424,9 +425,11 @@ async fn corrupt_stored_peer_and_creation_time_are_rejected_without_mutation() {
             .transaction(move |scope| {
                 Box::pin(async move {
                     // Preserve the typed pre-write corruption refusal for inspection.
-                    Ok(Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                        .retire_local(&requested)
-                        .await)
+                    Ok(
+                        Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                            .retire_local(&requested)
+                            .await,
+                    )
                 })
             })
             .await
@@ -450,7 +453,7 @@ async fn retirement_rolls_back_with_the_owning_transaction() {
         .transaction(|scope| {
             Box::pin(async move {
                 assert_eq!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .retire_local(&reference(1))
                         .await
                         .map_err(storage_error)?,

@@ -10,7 +10,8 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-pub(crate) type ProjectionTask = DeliverLocally<TestStore, Turso, TestTypes, ProjectionConsumer>;
+pub(crate) type ProjectionTask =
+    DeliverLocally<TestStore, Turso, TestTypes, ProjectionConsumer, FixtureBindings>;
 
 #[derive(Default)]
 pub(crate) struct ProjectionConsumer {
@@ -180,7 +181,8 @@ pub(crate) async fn receive_projection_item(
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 let input = inbox
                     .begin_receive(
                         envelope.stream(),
@@ -227,7 +229,8 @@ pub(crate) async fn enqueue_projection_attempt(
                     "rich receipt: accepted once".into(),
                 )
                 .unwrap();
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 let attempt = inbox
                     .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
@@ -257,6 +260,7 @@ pub(crate) fn projection_engine(
             config().local,
             consumer,
             fixture.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
         ))
         .unwrap();
     engine

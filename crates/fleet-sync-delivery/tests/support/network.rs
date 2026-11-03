@@ -6,11 +6,14 @@ use std::{
     sync::{Mutex, Weak, atomic::AtomicBool},
 };
 
-pub type SubmitTask = SubmitItem<TestStore, sqlx_turso::Turso, TestTypes, TestConsumer>;
-pub type ReceiveTask = ReceiveItems<TestStore, sqlx_turso::Turso, TestTypes, TestConsumer>;
-pub type DeliverTask = DeliverLocally<TestStore, sqlx_turso::Turso, TestTypes, TestConsumer>;
-pub type ReportTask = ReportOutcome<TestStore, sqlx_turso::Turso, TestTypes>;
-pub type PushTask = PushItem<TestStore, sqlx_turso::Turso, TestTypes, PublishTask>;
+pub type SubmitTask =
+    SubmitItem<TestStore, sqlx_turso::Turso, TestTypes, TestConsumer, FixtureBindings>;
+pub type ReceiveTask =
+    ReceiveItems<TestStore, sqlx_turso::Turso, TestTypes, TestConsumer, FixtureBindings>;
+pub type DeliverTask =
+    DeliverLocally<TestStore, sqlx_turso::Turso, TestTypes, TestConsumer, FixtureBindings>;
+pub type ReportTask = ReportOutcome<TestStore, sqlx_turso::Turso, TestTypes, FixtureBindings>;
+pub type PushTask = PushItem<TestStore, sqlx_turso::Turso, TestTypes, PublishTask, FixtureBindings>;
 pub type PublishTask = PublishStatus<TestStore, sqlx_turso::Turso, TestTypes>;
 pub struct FetchBarrier {
     pub reached: Arc<tokio::sync::Notify>,
@@ -22,6 +25,8 @@ pub struct TestNetwork {
     pub recipient: Mutex<Weak<TestStore>>,
     pub publications: super::publication_network::PublicationRoutes,
     pub fleet_push: AtomicBool,
+    pub authenticated_submitter: Mutex<Submitter>,
+    pub binding_refresh: Mutex<Option<Arc<tokio::sync::Notify>>>,
     pub push_barrier: Mutex<Option<FetchBarrier>>,
     pub relay_up: AtomicBool,
     pub lose_submit: AtomicBool,
@@ -73,15 +78,20 @@ impl TestNetwork {
             SubmitCall::<TestTypes>::KIND => {
                 let target: SubmitCall<TestTypes> = serde_json::from_value(target).unwrap();
                 let reference: DeliveryItemRef = serde_json::from_value(request).unwrap();
+                let authenticated_submitter = *self.authenticated_submitter.lock().unwrap();
                 let resolved = self
                     .sender_store()
                     .transaction({
                         let reference = reference.clone();
                         move |scope| {
                             Box::pin(async move {
-                                Ok(Outbox::<_, TestTypes>::new(scope, limits())
-                                    .resolve_submit(&reference)
-                                    .await)
+                                Ok(Outbox::<_, TestTypes, _>::new(
+                                    scope,
+                                    limits(),
+                                    &FixtureBindings,
+                                )
+                                .resolve_submit(&reference)
+                                .await)
                             })
                         }
                     })
@@ -103,16 +113,20 @@ impl TestNetwork {
                             .transaction(move |scope| {
                                 Box::pin(async move {
                                     if fleet_push {
-                                        return Outbox::<_, TestTypes>::new(scope, limits())
-                                            .submit_relay::<PushTask, RecordRemoval>(
-                                                fleet_sync_delivery::Submitter::Machine(peer(1)),
-                                                resolved.item,
-                                                peer(3),
-                                                "fixture-route".into(),
-                                                now,
-                                            )
-                                            .await
-                                            .map_err(storage_error);
+                                        return Outbox::<_, TestTypes, _>::new(
+                                            scope,
+                                            limits(),
+                                            &FixtureBindings,
+                                        )
+                                        .submit_relay::<PushTask, RecordRemoval>(
+                                            authenticated_submitter,
+                                            resolved.item,
+                                            peer(3),
+                                            "fixture-route".into(),
+                                            now,
+                                        )
+                                        .await
+                                        .map_err(storage_error);
                                     }
                                     let answer =
                                         Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
@@ -138,6 +152,14 @@ impl TestNetwork {
                         }
                         DispatchOutcome::Answered(answer)
                     }
+                    Err(DeliveryError::SenderBindingUnavailable { reason, .. }) => {
+                        return Err(CallFailure::Retryable {
+                            reason: durable_steps::CallRetryReason {
+                                code: reason.code().into(),
+                                detail: "consumer sender binding is not established".into(),
+                            },
+                        });
+                    }
                     resolved => {
                         self.settlements.fetch_add(1, Ordering::SeqCst);
                         if let Err(DeliveryError::Storage(_)) = resolved {
@@ -150,17 +172,19 @@ impl TestNetwork {
                                 move |scope| {
                                     Box::pin(async move {
                                         if fleet_push {
-                                            return Outbox::<_, TestTypes>::new(scope, limits())
-                                                .relay_settle::<RecordRemoval>(
-                                                    fleet_sync_delivery::Submitter::Machine(peer(
-                                                        1,
-                                                    )),
-                                                    reference.item,
-                                                    reference.digest,
-                                                    now,
-                                                )
-                                                .await
-                                                .map_err(storage_error);
+                                            return Outbox::<_, TestTypes, _>::new(
+                                                scope,
+                                                limits(),
+                                                &FixtureBindings,
+                                            )
+                                            .relay_settle::<RecordRemoval>(
+                                                authenticated_submitter,
+                                                reference.item,
+                                                reference.digest,
+                                                now,
+                                            )
+                                            .await
+                                            .map_err(storage_error);
                                         }
                                         Mailbox::<_, TestTypes>::new(
                                             scope,
@@ -178,7 +202,7 @@ impl TestNetwork {
                         submit_settlement_outcome(settled)
                     }
                 };
-                Ok(value(answer))
+                Ok(value(SubmitCall::<TestTypes>::validated_answer(answer)?))
             }
             PushCall::<TestTypes>::KIND => {
                 let target: PushCall<TestTypes> = serde_json::from_value(target).unwrap();
@@ -187,7 +211,7 @@ impl TestNetwork {
                     .mailbox_store()
                     .transaction(move |scope| {
                         Box::pin(async move {
-                            Outbox::<_, TestTypes>::new(scope, limits())
+                            Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                                 .resolve_push(&reference, now)
                                 .await
                                 .map_err(storage_error)
@@ -203,20 +227,36 @@ impl TestNetwork {
                 let answer = recipient
                     .transaction(move |scope| {
                         Box::pin(async move {
-                            Inbox::<_, TestTypes>::new(scope, target.recipient, limits())
-                                .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
-                                    envelope.submitter,
-                                    envelope.item,
-                                    peer(3),
-                                    &TestConsumer,
-                                    now,
-                                )
-                                .await
-                                .map_err(storage_error)
+                            Inbox::<_, TestTypes, _>::new(
+                                scope,
+                                target.recipient,
+                                limits(),
+                                &FixtureBindings,
+                            )
+                            .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
+                                envelope.submitter,
+                                envelope.item,
+                                peer(3),
+                                &TestConsumer,
+                                now,
+                            )
+                            .await
+                            .map_err(storage_error)
                         })
                     })
                     .await
                     .unwrap();
+                // The host acts on Unknown after the custody transaction has
+                // returned, while the injected clock is unchanged.
+                if matches!(
+                    answer,
+                    PushResult::BindingUnavailable {
+                        reason: SenderBindingFailure::Unknown
+                    }
+                ) && let Some(refresh) = self.binding_refresh.lock().unwrap().as_ref()
+                {
+                    refresh.notify_one();
+                }
                 let barrier = self.push_barrier.lock().unwrap().take();
                 if let Some(barrier) = barrier {
                     barrier.reached.notify_one();
@@ -297,9 +337,14 @@ impl TestNetwork {
                 let resolved = recipient
                     .transaction(move |scope| {
                         Box::pin(async move {
-                            Ok(Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                                .resolve_local_delivery(&reference)
-                                .await)
+                            Ok(Inbox::<_, TestTypes, _>::new(
+                                scope,
+                                peer(2),
+                                limits(),
+                                &FixtureBindings,
+                            )
+                            .resolve_local_delivery(&reference)
+                            .await)
                         })
                     })
                     .await
@@ -325,6 +370,14 @@ impl TestNetwork {
                             observation: (),
                         })
                     }
+                    Err(DeliveryError::SenderBindingUnavailable { reason, .. }) => {
+                        return Err(CallFailure::Retryable {
+                            reason: durable_steps::CallRetryReason {
+                                code: reason.code().into(),
+                                detail: "consumer sender binding is not established".into(),
+                            },
+                        });
+                    }
                     Err(error) => DispatchOutcome::Unresolvable {
                         reason: error.failure_kind(),
                     },
@@ -339,10 +392,14 @@ impl TestNetwork {
                     .transaction(move |scope| {
                         Box::pin(async move {
                             if fleet_push {
-                                return Outbox::<_, TestTypes>::new(scope, limits())
-                                    .recipient_report::<PublishTask>(peer(2), report, now)
-                                    .await
-                                    .map_err(storage_error);
+                                return Outbox::<_, TestTypes, _>::new(
+                                    scope,
+                                    limits(),
+                                    &FixtureBindings,
+                                )
+                                .recipient_report::<PublishTask>(peer(2), report, now)
+                                .await
+                                .map_err(storage_error);
                             }
                             let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
                                 .report(peer(2), report, now)
@@ -400,6 +457,8 @@ impl NetworkFixture {
                 &status.store,
             ),
             fleet_push: AtomicBool::new(false),
+            authenticated_submitter: Mutex::new(Submitter::Machine(peer(1))),
+            binding_refresh: Mutex::new(None),
             push_barrier: Mutex::new(None),
             relay_up: AtomicBool::new(true),
             lose_submit: AtomicBool::new(false),
@@ -447,6 +506,7 @@ impl NetworkFixture {
                 limits(),
                 consumer.clone(),
                 fixture.host.clone(),
+                std::sync::Arc::new(FixtureBindings),
             ))
             .unwrap();
         engine
@@ -454,6 +514,7 @@ impl NetworkFixture {
                 config,
                 consumer.clone(),
                 fixture.host.clone(),
+                std::sync::Arc::new(FixtureBindings),
             ))
             .unwrap();
         engine
@@ -461,14 +522,23 @@ impl NetworkFixture {
                 config.local,
                 consumer,
                 fixture.host.clone(),
+                std::sync::Arc::new(FixtureBindings),
             ))
             .unwrap();
         engine
-            .register(ReportTask::new(config, fixture.host.clone()))
+            .register(ReportTask::new(
+                config,
+                fixture.host.clone(),
+                std::sync::Arc::new(FixtureBindings),
+            ))
             .unwrap();
         engine.register(PublishTask::new()).unwrap();
         engine
-            .register(PushTask::new(limits(), fixture.host.clone()))
+            .register(PushTask::new(
+                limits(),
+                fixture.host.clone(),
+                std::sync::Arc::new(FixtureBindings),
+            ))
             .unwrap();
         engine.register(RecordRemoval::new()).unwrap();
         engine
@@ -480,6 +550,7 @@ impl NetworkFixture {
     }
     pub async fn enqueue(&self, id: u64, body: &str) {
         let body = body.to_owned();
+        let authenticated_submitter = *self.routes.authenticated_submitter.lock().unwrap();
         self.sender
             .store
             .transaction(move |scope| {
@@ -487,11 +558,11 @@ impl NetworkFixture {
                     let DeliveryEnvelope::Item(item) = item(id, &body) else {
                         return Err(StoreError::backend("fixture item"));
                     };
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .enqueue_and_admit::<SubmitTask, RecordRemoval>(
                             item,
                             peer(3),
-                            fleet_sync_delivery::Submitter::Machine(peer(1)),
+                            authenticated_submitter,
                             SyncTime::from_unix_millis(0),
                         )
                         .await
@@ -507,7 +578,7 @@ impl NetworkFixture {
             .store
             .transaction(move |scope| {
                 Box::pin(async move {
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .begin_receive_and_admit::<ReceiveTask>(
                             stream,
                             fleet_sync_protocol::SyncTime::from_unix_millis(0),
@@ -555,11 +626,13 @@ pub async fn sender_status(network: &NetworkFixture, id: u64) -> OutboxStatusSta
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Ok(Outbox::<_, TestTypes>::new(scope, limits())
-                    .status(item_id(id))
-                    .await
-                    .map_err(storage_error)?
-                    .state)
+                Ok(
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                        .status(item_id(id))
+                        .await
+                        .map_err(storage_error)?
+                        .state,
+                )
             })
         })
         .await

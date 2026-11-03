@@ -9,10 +9,11 @@ use sqlx_core::{
     encode::Encode, types::Type,
 };
 
-impl<S, D> Outbox<'_, S, D>
+impl<S, D, B> Outbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
@@ -39,7 +40,21 @@ where
         TPush: Task<Input = PushInput>,
     {
         async move {
-            if submitter != D::submitter(item.sender()) {
+            let verified = match crate::sender_binding::verify_sender::<S, D, B>(
+                self.scope,
+                self.binding,
+                item.sender(),
+                crate::CustodyRow::Outbox(item.id()),
+            )
+            .await
+            {
+                Ok(verified) => verified,
+                Err(DeliveryError::SenderBindingUnavailable { reason, .. }) => {
+                    return Ok(SubmitResult::BindingUnavailable { reason });
+                }
+                Err(error) => return Err(error),
+            };
+            if submitter != verified.owner() {
                 return Ok(SubmitResult::Refused {
                     reason: DeliveryRefusal::NotSubmitter,
                 });
@@ -53,6 +68,9 @@ where
                 .enqueue_envelope(item, relay, submitter, now, false)
                 .await?;
             match answer {
+                OutboxAdmission::BindingUnavailable { reason } => {
+                    return Ok(SubmitResult::BindingUnavailable { reason });
+                }
                 OutboxAdmission::Refused { reason } => return Ok(SubmitResult::Refused { reason }),
                 OutboxAdmission::Replayed { status, version } => {
                     let OutboxStatusState::Known { cancel, .. } =
@@ -207,6 +225,12 @@ where
                 return Err(DeliveryError::DigestMismatch);
             }
             let status = match answer {
+                PushResult::BindingUnavailable { reason } => {
+                    return Err(DeliveryError::SenderBindingUnavailable {
+                        row: crate::CustodyRow::Outbox(reference.item),
+                        reason,
+                    });
+                }
                 PushResult::Accepted { .. } => DeliveryStatus::AtRecipient,
                 PushResult::Replayed { status, .. } => {
                     if status.rank() < DeliveryStatus::<D::Acceptance>::AtRecipient.rank() {

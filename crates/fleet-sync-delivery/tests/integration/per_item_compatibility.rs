@@ -16,9 +16,7 @@ impl DeliveryTypes for LegacyTypes {
     const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
     type Body = String;
     type Sender = String;
-    fn submitter(sender: &Self::Sender) -> Submitter {
-        crate::support::sender_submitter(sender)
-    }
+
     type Address = String;
     type Acceptance = Acceptance;
     type LocalObservation = ();
@@ -59,9 +57,9 @@ async fn default_consumer_preserves_reserve_and_fetch_selection_with_typed_stora
     fixture.store.transaction(|scope| Box::pin(async move {
         let minimum=minimum_settlement_allowance::<LegacyTypes>().unwrap();
         assert_eq!(minimum,minimum_settlement_allowance::<VariableTypes>().unwrap());
-        assert!(matches!(Outbox::<_,LegacyTypes>::new(scope,legacy_limits(50_000)).enqueue(legacy_item(1), peer(3), fleet_sync_delivery::Submitter::Machine(peer(1)), SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,OutboxAdmission::Refused {reason:DeliveryRefusal::MailboxFull}));
+        assert!(matches!(Outbox::<_,LegacyTypes, _>::new(scope,legacy_limits(50_000), &FixtureBindings).enqueue(legacy_item(1), peer(3), fleet_sync_delivery::Submitter::Machine(peer(1)), SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,OutboxAdmission::Refused {reason:DeliveryRefusal::MailboxFull}));
         let limits=legacy_limits(100_000_000);
-        Outbox::<_,LegacyTypes>::new(scope,limits).enqueue(legacy_item(1), peer(3), fleet_sync_delivery::Submitter::Machine(peer(1)), SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
+        Outbox::<_,LegacyTypes, _>::new(scope,limits, &FixtureBindings).enqueue(legacy_item(1), peer(3), fleet_sync_delivery::Submitter::Machine(peer(1)), SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         for identity in [1,2] { Mailbox::<_,LegacyTypes>::new(scope,peer(2),limits).submit(peer(1),DeliveryEnvelope::Item(legacy_item(identity)),now(),"route".into(),None).await.map_err(storage_error)?; }
         let row=sqlx_core::query::query::<sqlx_turso::Turso>(include_str!("../support/sql/read_outbox_headers.sql")).fetch_one(scope.executor()).await?;
         assert_eq!(row.try_get::<i64,_>("settlement_bytes")?,i64::from(minimum));
@@ -71,7 +69,7 @@ async fn default_consumer_preserves_reserve_and_fetch_selection_with_typed_stora
         let request=FetchInput {stream:DeliveryStream::Items,after:DeliverySeq::new(0),max_items:10,max_bytes:10_000,inbox_room_bytes:Some(0)};
         let batch=Mailbox::<_,LegacyTypes>::new(scope,peer(2),limits).fetch_with_budget(peer(2),request,now()).await.map_err(storage_error)?;
         assert_eq!(batch.entries.len(),2,"legacy consumers keep payload-only fetch selection");
-        let mut inbox=Inbox::<_,LegacyTypes>::new(scope,peer(2),limits);
+        let mut inbox=Inbox::<_,LegacyTypes, _>::new(scope,peer(2),limits, &FixtureBindings);
         let cycle=inbox.begin_receive(DeliveryStream::Items, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?.unwrap();
         let budget=inbox.receive_request(cycle,10,100_000_000).await.map_err(storage_error)?;
         assert_eq!(budget.max_items,1);

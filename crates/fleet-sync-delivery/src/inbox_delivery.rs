@@ -10,10 +10,11 @@ use sqlx_core::{
     encode::Encode, types::Type,
 };
 
-impl<S, D> Inbox<'_, S, D>
+impl<S, D, B> Inbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,

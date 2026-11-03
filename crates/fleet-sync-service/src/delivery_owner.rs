@@ -90,9 +90,11 @@ impl DeliveryOwner {
             tracing::warn!(?mailbox, field, "delivery mailbox unavailable");
         }
     }
-    pub async fn ensure_schema<D: fleet_sync_protocol::DeliveryTypes>(
-        &self,
-    ) -> Result<(), StoreError> {
+    pub async fn ensure_schema<D, B>(&self, binding: Arc<B>) -> Result<(), StoreError>
+    where
+        D: fleet_sync_protocol::DeliveryTypes,
+        B: for<'t> fleet_sync_delivery::SenderBinding<crate::ServiceScope<'t>, D> + 'static,
+    {
         self.schema
             .get_or_try_init(|| async {
                 let now = self.object.host().now();
@@ -107,9 +109,13 @@ impl DeliveryOwner {
                                 .run_direct(None, scope.executor(), false)
                                 .await
                                 .map_err(StoreError::backend)?;
-                            fleet_sync_delivery::backfill_submitters::<D, _>(scope, now)
-                                .await
-                                .map_err(StoreError::backend)?;
+                            fleet_sync_delivery::backfill_submitters::<D, _, _>(
+                                scope,
+                                binding.as_ref(),
+                                now,
+                            )
+                            .await
+                            .map_err(fleet_sync_delivery::delivery_rollback)?;
                             fleet_sync_delivery::admit_existing_record_removals::<
                                 _,
                                 fleet_sync_delivery::RemoveDeliveryRecord<ServiceObject, Turso>,
@@ -179,7 +185,9 @@ impl<
                     schema: OnceCell::new(),
                 });
                 if matches!(key, DeliveryObject::Status(_)) {
-                    owner.ensure_schema::<P::Delivery>().await?;
+                    owner
+                        .ensure_schema::<P::Delivery, _>(self.consumer.clone())
+                        .await?;
                 }
                 Ok::<_, ServiceError>(owner)
             })

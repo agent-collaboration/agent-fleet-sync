@@ -19,7 +19,7 @@ async fn report_sequence_and_cancel_identity_survive_real_release_and_reopen() {
                 let DeliveryEnvelope::Item(original) = item(90, "held before receipt") else {
                     return Err(durable_steps::StoreError::backend("original fixture"));
                 };
-                let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
                 outbox
                     .enqueue(
                         original,
@@ -112,7 +112,7 @@ async fn report_sequence_and_cancel_identity_survive_real_release_and_reopen() {
                 assert_eq!(row.try_get::<String, _>("cancel_target_item_id")?, item_key(item_id(90)));
             }
         }
-        assert!(matches!(Outbox::<_, TestTypes>::new(scope, limits()).status(item_id(90)).await.map_err(storage_error)?.state,
+        assert!(matches!(Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings).status(item_id(90)).await.map_err(storage_error)?.state,
             crate::OutboxStatusState::Known { status: DeliveryStatus::Held, version, .. } if version.value()==11));
         Ok(())
     })).await.unwrap();

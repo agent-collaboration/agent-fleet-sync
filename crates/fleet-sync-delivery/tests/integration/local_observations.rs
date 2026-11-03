@@ -11,7 +11,7 @@ use std::{
     sync::{Arc, atomic::Ordering},
     time::Duration,
 };
-use support::{item_id, limits, peer};
+use support::{FixtureBindings, item_id, limits, peer};
 
 #[tokio::test]
 async fn local_delivery_constructs_and_replays_without_relay_configuration() {
@@ -42,6 +42,7 @@ async fn local_delivery_constructs_and_replays_without_relay_configuration() {
             config,
             fixture.host.consumer.clone(),
             fixture.host.clone(),
+            Arc::new(FixtureBindings),
         ))
         .unwrap();
 
@@ -107,7 +108,12 @@ async fn held_and_refused_attempts_project_distinct_local_observations() {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, ObservationTypes>::new(scope, peer(2), limits());
+                let mut inbox = Inbox::<_, ObservationTypes, _>::new(
+                    scope,
+                    peer(2),
+                    limits(),
+                    &FixtureBindings,
+                );
                 let input = inbox
                     .begin_receive(
                         DeliveryStream::Items,
@@ -326,7 +332,12 @@ async fn expiry_terminal_failure_and_cancellation_record_no_local_observation() 
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, ObservationTypes>::new(scope, peer(2), limits());
+                let mut inbox = Inbox::<_, ObservationTypes, _>::new(
+                    scope,
+                    peer(2),
+                    limits(),
+                    &FixtureBindings,
+                );
                 inbox
                     .record_failure(
                         DeliveryAttempt {

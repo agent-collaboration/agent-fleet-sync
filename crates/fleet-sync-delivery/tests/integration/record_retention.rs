@@ -23,11 +23,11 @@ async fn sixty_one_day_ids_are_refused_at_machine_outbox_relay_push_and_local_in
     let fixture = Fixture::new().await;
     fixture.store.transaction(|scope|Box::pin(async move {
         let DeliveryEnvelope::Item(original)=item(1,"old") else {return Err(StoreError::backend("original"));};
-        assert!(matches!(Outbox::<_,TestTypes>::new(scope,limits()).enqueue(original,peer(9),fleet_sync_delivery::Submitter::Machine(peer(1)),day(61)).await.map_err(storage_error)?,OutboxAdmission::Refused {reason:DeliveryRefusal::TooOld}));
-        assert!(matches!(Outbox::<_,TestTypes>::new(scope,limits()).submit_relay::<PushTask,RecordRemoval>(fleet_sync_delivery::Submitter::Machine(peer(1)),item(1,"old"),peer(9),"route".into(),day(61)).await.map_err(storage_error)?,SubmitResult::Refused {reason:DeliveryRefusal::TooOld}));
-        assert!(matches!(Inbox::<_,TestTypes>::new(scope,peer(2),limits()).accept_push::<DeliverTask,ReportTask,RecordRemoval,_>(fleet_sync_delivery::Submitter::Machine(peer(1)), item(1,"old"),peer(9),&TestConsumer,day(61)).await.map_err(storage_error)?,PushResult::Refused {reason:DeliveryRefusal::TooOld}));
+        assert!(matches!(Outbox::<_,TestTypes, _>::new(scope,limits(), &FixtureBindings).enqueue(original,peer(9),fleet_sync_delivery::Submitter::Machine(peer(1)),day(61)).await.map_err(storage_error)?,OutboxAdmission::Refused {reason:DeliveryRefusal::TooOld}));
+        assert!(matches!(Outbox::<_,TestTypes, _>::new(scope,limits(), &FixtureBindings).submit_relay::<PushTask,RecordRemoval>(fleet_sync_delivery::Submitter::Machine(peer(1)),item(1,"old"),peer(9),"route".into(),day(61)).await.map_err(storage_error)?,SubmitResult::Refused {reason:DeliveryRefusal::TooOld}));
+        assert!(matches!(Inbox::<_,TestTypes, _>::new(scope,peer(2),limits(), &FixtureBindings).accept_push::<DeliverTask,ReportTask,RecordRemoval,_>(fleet_sync_delivery::Submitter::Machine(peer(1)), item(1,"old"),peer(9),&TestConsumer,day(61)).await.map_err(storage_error)?,PushResult::Refused {reason:DeliveryRefusal::TooOld}));
         let DeliveryEnvelope::Item(original)=item(1,"old") else {return Err(StoreError::backend("original"));};
-        assert!(too_old_error(Inbox::<_,TestTypes>::new(scope,peer(2),limits()).enqueue_local(original,&TestConsumer,day(61)).await));
+        assert!(too_old_error(Inbox::<_,TestTypes, _>::new(scope,peer(2),limits(), &FixtureBindings).enqueue_local(original,&TestConsumer,day(61)).await));
         let row=query::<Turso>("SELECT (SELECT count(*) FROM _fleet_sync_outbox_items)+(SELECT count(*) FROM _fleet_sync_inbox_items)+(SELECT count(*) FROM _fleet_sync_operations) AS rows").fetch_one(scope.executor()).await?;
         assert_eq!(row.try_get::<i64,_>("rows")?,0);
         Ok(())
@@ -65,36 +65,44 @@ async fn public_sender_fleet_push_and_local_admission_schedule_removal_from_crea
                                     let DeliveryEnvelope::Item(original) = envelope else {
                                         return Err(StoreError::backend("original"));
                                     };
-                                    let (admission, _) =
-                                        Outbox::<_, TestTypes>::new(scope, limits())
-                                            .enqueue_and_admit::<SubmitTask, RecordRemoval>(
-                                                original,
-                                                peer(3),
-                                                fleet_sync_delivery::Submitter::Machine(peer(1)),
-                                                day(admitted_day),
-                                            )
-                                            .await
-                                            .map_err(storage_error)?;
+                                    let (admission, _) = Outbox::<_, TestTypes, _>::new(
+                                        scope,
+                                        limits(),
+                                        &FixtureBindings,
+                                    )
+                                    .enqueue_and_admit::<SubmitTask, RecordRemoval>(
+                                        original,
+                                        peer(3),
+                                        fleet_sync_delivery::Submitter::Machine(peer(1)),
+                                        day(admitted_day),
+                                    )
+                                    .await
+                                    .map_err(storage_error)?;
                                     assert!(matches!(admission, OutboxAdmission::Queued { .. }));
                                 }
                                 "fleet" => {
-                                    let answer = Outbox::<_, TestTypes>::new(scope, limits())
-                                        .submit_relay::<PushTask, RecordRemoval>(
-                                            fleet_sync_delivery::Submitter::Machine(peer(1)),
-                                            envelope,
-                                            peer(3),
-                                            "route".into(),
-                                            day(admitted_day),
-                                        )
-                                        .await
-                                        .map_err(storage_error)?;
+                                    let answer = Outbox::<_, TestTypes, _>::new(
+                                        scope,
+                                        limits(),
+                                        &FixtureBindings,
+                                    )
+                                    .submit_relay::<PushTask, RecordRemoval>(
+                                        fleet_sync_delivery::Submitter::Machine(peer(1)),
+                                        envelope,
+                                        peer(3),
+                                        "route".into(),
+                                        day(admitted_day),
+                                    )
+                                    .await
+                                    .map_err(storage_error)?;
                                     assert!(matches!(answer, SubmitResult::Accepted { .. }));
                                 }
                                 "push" => {
-                                    let answer = Inbox::<_, TestTypes>::new(
+                                    let answer = Inbox::<_, TestTypes, _>::new(
                                         scope,
                                         peer(2),
                                         limits(),
+                                        &FixtureBindings,
                                     )
                                     .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
                                         fleet_sync_delivery::Submitter::Machine(peer(1)),
@@ -111,14 +119,19 @@ async fn public_sender_fleet_push_and_local_admission_schedule_removal_from_crea
                                     let DeliveryEnvelope::Item(original) = envelope else {
                                         return Err(StoreError::backend("original"));
                                     };
-                                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                                        .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
-                                            original,
-                                            &TestConsumer,
-                                            day(admitted_day),
-                                        )
-                                        .await
-                                        .map_err(storage_error)?;
+                                    Inbox::<_, TestTypes, _>::new(
+                                        scope,
+                                        peer(2),
+                                        limits(),
+                                        &FixtureBindings,
+                                    )
+                                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
+                                        original,
+                                        &TestConsumer,
+                                        day(admitted_day),
+                                    )
+                                    .await
+                                    .map_err(storage_error)?;
                                 }
                             }
                             // Observe the already-admitted delivery input; no removal admission here.
@@ -147,18 +160,22 @@ async fn public_sender_fleet_push_and_local_admission_schedule_removal_from_crea
                                                 },
                                             }
                                         };
-                                        Outbox::<_, TestTypes>::new(scope, limits())
-                                            .publish_status(
-                                                StatusPublication {
-                                                    item: identity,
-                                                    status,
-                                                    version: StatusVersion::new(2),
-                                                    cancel: None,
-                                                },
-                                                day(admitted_day),
-                                            )
-                                            .await
-                                            .map_err(storage_error)?;
+                                        Outbox::<_, TestTypes, _>::new(
+                                            scope,
+                                            limits(),
+                                            &FixtureBindings,
+                                        )
+                                        .publish_status(
+                                            StatusPublication {
+                                                item: identity,
+                                                status,
+                                                version: StatusVersion::new(2),
+                                                cancel: None,
+                                            },
+                                            day(admitted_day),
+                                        )
+                                        .await
+                                        .map_err(storage_error)?;
                                     } else {
                                         let outcome = if sequence == 2 {
                                             RecipientOutcome::Held
@@ -169,18 +186,22 @@ async fn public_sender_fleet_push_and_local_admission_schedule_removal_from_crea
                                                 },
                                             }
                                         };
-                                        let answer = Outbox::<_, TestTypes>::new(scope, limits())
-                                            .recipient_report::<PublishTask>(
-                                                peer(2),
-                                                RecipientReport {
-                                                    item: identity,
-                                                    report_seq: ReportSeq::new(1),
-                                                    outcome,
-                                                },
-                                                day(admitted_day),
-                                            )
-                                            .await
-                                            .map_err(storage_error)?;
+                                        let answer = Outbox::<_, TestTypes, _>::new(
+                                            scope,
+                                            limits(),
+                                            &FixtureBindings,
+                                        )
+                                        .recipient_report::<PublishTask>(
+                                            peer(2),
+                                            RecipientReport {
+                                                item: identity,
+                                                report_seq: ReportSeq::new(1),
+                                                outcome,
+                                            },
+                                            day(admitted_day),
+                                        )
+                                        .await
+                                        .map_err(storage_error)?;
                                         assert!(matches!(answer, ReportResult::Ack { .. }));
                                     }
                                     Ok(())
@@ -209,6 +230,7 @@ async fn public_sender_fleet_push_and_local_admission_schedule_removal_from_crea
                                 super::support::network::config().local,
                                 Arc::new(TestConsumer),
                                 fixture.host.clone(),
+                                std::sync::Arc::new(FixtureBindings),
                             ))
                             .unwrap();
                         let result = engine

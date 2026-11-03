@@ -48,8 +48,10 @@ impl DeliveryConsumer<TursoScope<'_, TestHost>> for ProjectionConsumer {
         sender == item.sender()
     }
 }
-type ProjectedReceive = ReceiveItems<TestStore, Turso, TestTypes, ProjectionConsumer>;
-type ProjectedDeliver = DeliverLocally<TestStore, Turso, TestTypes, ProjectionConsumer>;
+type ProjectedReceive =
+    ReceiveItems<TestStore, Turso, TestTypes, ProjectionConsumer, FixtureBindings>;
+type ProjectedDeliver =
+    DeliverLocally<TestStore, Turso, TestTypes, ProjectionConsumer, FixtureBindings>;
 
 fn refusal_wire(code: &str) -> Value {
     json!({"kind":"recipientRefused","value":{"code":code}})
@@ -113,6 +115,7 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
                 config(),
                 Arc::new(ProjectionConsumer),
                 network.recipient.host.clone(),
+                std::sync::Arc::new(FixtureBindings),
             ))
             .unwrap();
         recipient
@@ -120,10 +123,15 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
                 config().local,
                 Arc::new(ProjectionConsumer),
                 network.recipient.host.clone(),
+                std::sync::Arc::new(FixtureBindings),
             ))
             .unwrap();
         recipient
-            .register(ReportTask::new(config(), network.recipient.host.clone()))
+            .register(ReportTask::new(
+                config(),
+                network.recipient.host.clone(),
+                std::sync::Arc::new(FixtureBindings),
+            ))
             .unwrap();
         network.receive(DeliveryStream::Items).await;
         for _ in 0..2 {
@@ -138,7 +146,8 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
             .store
             .transaction(|scope| {
                 Box::pin(async move {
-                    let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                    let mut inbox =
+                        Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                     let outcome = inbox
                         .local_outcome(item_id(1))
                         .await
@@ -275,9 +284,7 @@ impl DeliveryTypes for UnitAcceptanceTypes {
     const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
     type Body = String;
     type Sender = String;
-    fn submitter(sender: &Self::Sender) -> Submitter {
-        crate::support::sender_submitter(sender)
-    }
+
     type Address = String;
     type Acceptance = ();
     type StatusRoute = String;

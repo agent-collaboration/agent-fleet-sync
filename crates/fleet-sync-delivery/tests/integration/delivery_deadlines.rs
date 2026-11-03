@@ -23,7 +23,7 @@ async fn enqueue_expiring(network: &NetworkFixture, expiry: i64) {
                     "expiring body".into(),
                 )
                 .unwrap();
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .enqueue_and_admit::<SubmitTask, RecordRemoval>(
                         original,
                         peer(3),
@@ -45,7 +45,7 @@ async fn assert_sender_expired(network: &NetworkFixture) {
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .status(item_id(1))
                         .await
                         .map_err(storage_error)?
@@ -82,7 +82,7 @@ async fn reach_scheduled_held(network: &NetworkFixture) {
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .local_outcome(item_id(1))
                         .await
                         .map_err(storage_error)?,
@@ -122,7 +122,7 @@ async fn held_until_does_not_repeat_early_and_the_next_attempt_uses_a_fresh_call
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .local_outcome(item_id(1))
                         .await
                         .map_err(storage_error)?,
@@ -194,7 +194,7 @@ async fn an_initial_expiry_publication_before_the_late_submit_receipt_keeps_the_
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .resolve_submit(&reference)
                     .await
                     .map_err(storage_error)
@@ -236,7 +236,7 @@ async fn an_initial_expiry_publication_before_the_late_submit_receipt_keeps_the_
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .mark_submitted(&input, answer, SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)

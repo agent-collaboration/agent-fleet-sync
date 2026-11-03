@@ -78,7 +78,7 @@ async fn released_outbox_retains_deadline_identity_reserve_and_timestamps_after_
                 )
                 .unwrap();
                 let digest = original.digest().clone();
-                let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
                 assert!(matches!(
                     outbox
                         .enqueue(
@@ -137,7 +137,7 @@ async fn released_outbox_retains_deadline_identity_reserve_and_timestamps_after_
         assert_eq!(row.try_get::<i64, _>("settlement_bytes")?, i64::from(reserve));
         assert_eq!(row.try_get::<i64, _>("submit_attempted")?, 1);
         assert_eq!(row.try_get::<i64, _>("capacity_slot")?, 1);
-        assert!(matches!(Outbox::<_, TestTypes>::new(scope, limits()).status(item_id(71)).await.map_err(storage_error)?.state,
+        assert!(matches!(Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings).status(item_id(71)).await.map_err(storage_error)?.state,
             OutboxStatusState::Known { status: DeliveryStatus::Sent, version, .. } if version.value()==1));
         Ok(())
     })).await.unwrap();
@@ -179,8 +179,8 @@ async fn typed_upgrade_preserves_existing_custody_and_marks_unknown_historical_t
         assert!(row.try_get::<Option<i64>,_>("admitted_at")?.is_none());
         assert!(row.try_get::<Option<i64>,_>("handed_off_at")?.is_none());
         assert_eq!(row.try_get::<i64,_>("last_report_seq")?,0);
-        assert_eq!(backfill_submitters::<TestTypes,_>(scope,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,1);
-        let resolved = Outbox::<_,TestTypes>::new(scope,limits()).resolve_submit(&DeliveryItemRef { item:item_id(100), digest:item(100,"migrated content").digest().clone() })
+        assert_eq!(backfill_submitters::<TestTypes,_, _>(scope, &FixtureBindings,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,1);
+        let resolved = Outbox::<_,TestTypes, _>::new(scope,limits(), &FixtureBindings).resolve_submit(&DeliveryItemRef { item:item_id(100), digest:item(100,"migrated content").digest().clone() })
             .await.map_err(storage_error)?;
         assert_eq!(serde_json::to_string(&resolved.item).unwrap(),serde_json::to_string(&item(100,"migrated content")).unwrap());
         Ok(())

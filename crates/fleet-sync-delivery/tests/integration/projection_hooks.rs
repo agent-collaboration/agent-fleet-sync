@@ -36,15 +36,16 @@ async fn received_projection_commits_once_and_replay_writes_nothing() {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let effects = Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .store_batch(
-                        input,
-                        projection_batch(item(1, "incoming body")),
-                        consumer.as_ref(),
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
+                let effects =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                        .store_batch(
+                            input,
+                            projection_batch(item(1, "incoming body")),
+                            consumer.as_ref(),
+                            SyncTime::from_unix_millis(0),
+                        )
+                        .await
+                        .map_err(storage_error)?;
                 assert!(effects.attempts.is_empty() && effects.reports.is_empty());
                 let duplicate = FetchResult {
                     stream: DeliveryStream::Items,
@@ -54,15 +55,16 @@ async fn received_projection_commits_once_and_replay_writes_nothing() {
                     }],
                     through: DeliverySeq::new(2),
                 };
-                let effects = Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .store_batch(
-                        input,
-                        duplicate,
-                        consumer.as_ref(),
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
+                let effects =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                        .store_batch(
+                            input,
+                            duplicate,
+                            consumer.as_ref(),
+                            SyncTime::from_unix_millis(0),
+                        )
+                        .await
+                        .map_err(storage_error)?;
                 assert!(effects.attempts.is_empty() && effects.reports.is_empty());
                 Ok(())
             })
@@ -171,7 +173,7 @@ async fn held_then_released_projects_both_attempts_and_stale_failure_is_inert() 
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .release_held::<ProjectionTask>(item_id(1), SyncTime::from_unix_millis(0))
                         .await
                         .map_err(storage_error)?
@@ -196,7 +198,8 @@ async fn held_then_released_projects_both_attempts_and_stale_failure_is_inert() 
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 for attempt in [
                     first,
                     DeliveryAttempt {
@@ -280,7 +283,7 @@ async fn malformed_digest_failure_projects_and_hook_error_rolls_back_both() {
             .store
             .transaction(move |scope| {
                 Box::pin(async move {
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .record_failure(
                             attempt,
                             DeliveryFailureKind::CustodyCorrupt,
@@ -306,7 +309,8 @@ async fn malformed_digest_failure_projects_and_hook_error_rolls_back_both() {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 inbox
                     .record_failure(
                         attempt,
@@ -348,7 +352,8 @@ async fn receive_time_refusal_projects_once_when_local_custody_becomes_relayed()
                 let DeliveryEnvelope::Item(original) = item(1, "original") else {
                     return Err(StoreError::backend("fixture item"));
                 };
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 let attempt = inbox
                     .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
@@ -384,7 +389,8 @@ async fn receive_time_refusal_projects_once_when_local_custody_becomes_relayed()
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 inbox
                     .store_batch(
                         input,
@@ -452,7 +458,7 @@ async fn cancellation_projects_original_and_control_in_one_transaction() {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .store_batch(
                         input,
                         projection_batch(cancel(2, 1)),

@@ -17,7 +17,8 @@ async fn admit_item(fixture: &Fixture, api: AdmissionApi) -> LocalItemAdmission 
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 match api {
                     AdmissionApi::Custody => {
                         inbox

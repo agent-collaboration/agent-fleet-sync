@@ -105,7 +105,7 @@ impl<
                 reason: DeliveryRefusal::ProcessingFailed { kind },
             });
         }
-        owner.ensure_schema::<P::Delivery>().await.map_err(|error| {
+        owner.ensure_schema::<P::Delivery, _>(self.consumer.clone()).await.map_err(|error| {
             tracing::warn!(?mailbox, phase="migration", %error, "delivery mailbox operation retry");
             ServiceError::from(error)
         })?;

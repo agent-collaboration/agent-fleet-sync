@@ -10,19 +10,22 @@ use sqlx_core::{
 };
 use std::{marker::PhantomData, sync::Arc};
 
-pub struct SubmitItem<S, Db, D, C> {
+pub struct SubmitItem<S, Db, D, C, B> {
+    binding: Arc<B>,
     limits: DeliveryLimits,
     consumer: Arc<C>,
     clock: Arc<dyn runtime_primitives::Clock>,
     store: TaskTypes<S, Db, D>,
 }
-impl<S, Db, D, C> SubmitItem<S, Db, D, C> {
+impl<S, Db, D, C, B> SubmitItem<S, Db, D, C, B> {
     pub fn new(
         limits: DeliveryLimits,
         consumer: Arc<C>,
         clock: Arc<dyn runtime_primitives::Clock>,
+        binding: Arc<B>,
     ) -> Self {
         Self {
+            binding,
             limits,
             consumer,
             clock,
@@ -30,11 +33,13 @@ impl<S, Db, D, C> SubmitItem<S, Db, D, C> {
         }
     }
 }
-impl<S, Db, D, C> Task for SubmitItem<S, Db, D, C>
+impl<S, Db, D, C, B> Task for SubmitItem<S, Db, D, C, B>
 where
     S: AtomicStore,
     Db: Database,
     D: DeliveryTypes,
+    B: Send + Sync + 'static,
+    for<'t> B: SenderBinding<S::Scope<'t>, D>,
     for<'t> S::Scope<'t>: TransactionScope<Database = Db>,
     Db::Arguments: IntoArguments<Db>,
     for<'v> String: Type<Db> + Encode<'v, Db>,
@@ -59,29 +64,32 @@ where
         let limits = self.limits;
         let consumer = Arc::clone(&self.consumer);
         let now = ctx.now();
-        ctx.local(step("gate")?, move |scope| {
-            Box::pin(async move {
-                let mut outbox = Outbox::<_, D>::new(scope, limits);
-                match outbox
-                    .gate(&gate_input, consumer.as_ref(), now)
-                    .await
-                    .map_err(step_error)?
-                {
-                    GateDecision::Release => {
-                        outbox
-                            .mark_submit_attempted(gate_input.item, now)
-                            .await
-                            .map_err(step_error)?;
-                        Ok(())
-                    }
-                    GateDecision::Hold { until } => Err(StepError::Retry {
-                        after: until.map_or(std::time::Duration::from_secs(1), |until| {
-                            delay_until(now, until)
+        {
+            let binding = Arc::clone(&self.binding);
+            ctx.local(step("gate")?, move |scope| {
+                Box::pin(async move {
+                    let mut outbox = Outbox::<_, D, B>::new(scope, limits, binding.as_ref());
+                    match outbox
+                        .gate(&gate_input, consumer.as_ref(), now)
+                        .await
+                        .map_err(step_error)?
+                    {
+                        GateDecision::Release => {
+                            outbox
+                                .mark_submit_attempted(gate_input.item, now)
+                                .await
+                                .map_err(step_error)?;
+                            Ok(())
+                        }
+                        GateDecision::Hold { until } => Err(StepError::Retry {
+                            after: until.map_or(std::time::Duration::from_secs(1), |until| {
+                                delay_until(now, until)
+                            }),
                         }),
-                    }),
-                }
+                    }
+                })
             })
-        })
+        }
         .await?;
         let answer = ctx
             .call(
@@ -94,27 +102,33 @@ where
         let receipt_time = ctx.now();
         match answer {
             DispatchOutcome::Answered(answer) => {
-                ctx.local(step("mark_sent")?, move |scope| {
-                    Box::pin(async move {
-                        Outbox::<_, D>::new(scope, limits)
-                            .mark_submitted(&input, answer, receipt_time)
-                            .await
-                            .map_err(step_error)
+                {
+                    let binding = Arc::clone(&self.binding);
+                    ctx.local(step("mark_sent")?, move |scope| {
+                        Box::pin(async move {
+                            Outbox::<_, D, B>::new(scope, limits, binding.as_ref())
+                                .mark_submitted(&input, answer, receipt_time)
+                                .await
+                                .map_err(step_error)
+                        })
                     })
-                })
+                }
                 .await?;
                 Ok(())
             }
             DispatchOutcome::Unresolvable { reason } => {
                 let kind = reason;
-                ctx.local(step("mark_failed")?, move |scope| {
-                    Box::pin(async move {
-                        Outbox::<_, D>::new(scope, limits)
-                            .record_submission_failure(&input, kind, receipt_time)
-                            .await
-                            .map_err(step_error)
+                {
+                    let binding = Arc::clone(&self.binding);
+                    ctx.local(step("mark_failed")?, move |scope| {
+                        Box::pin(async move {
+                            Outbox::<_, D, B>::new(scope, limits, binding.as_ref())
+                                .record_submission_failure(&input, kind, receipt_time)
+                                .await
+                                .map_err(step_error)
+                        })
                     })
-                })
+                }
                 .await?;
                 Err(OperationFailure::Refused {
                     code: reason.as_str().to_owned(),
@@ -135,7 +149,10 @@ where
                 return Ok(Resume::Finish(()));
             }
 
-            let state = match Outbox::<_, D>::new(scope, self.limits).status(item).await {
+            let state = match Outbox::<_, D, B>::new(scope, self.limits, self.binding.as_ref())
+                .status(item)
+                .await
+            {
                 Ok(status) => status.state,
                 Err(DeliveryError::Corrupt { .. }) => return Ok(Resume::Continue),
                 Err(error) => return Err(store_error(error)),
@@ -155,7 +172,7 @@ where
     ) -> BoxFuture<'s, Result<(), StoreError>> {
         Box::pin(async move {
             let item: ItemId = serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
-            Outbox::<_, D>::new(scope, self.limits)
+            Outbox::<_, D, B>::new(scope, self.limits, self.binding.as_ref())
                 .record_failure(item, failure_kind(failure), self.clock.now())
                 .await
                 .map_err(store_error)

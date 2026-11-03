@@ -255,7 +255,7 @@ async fn lost_first_hop_retry_after_ack_reappends_above_floor_and_forward_only_c
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .publish_status(held_publication(1, 2), SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)?;

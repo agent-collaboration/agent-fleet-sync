@@ -117,6 +117,9 @@ pub enum DeliveryAnswer<D: DeliveryTypes = NoDelivery> {
     deny_unknown_fields
 )]
 pub enum SubmitResult<A> {
+    BindingUnavailable {
+        reason: SenderBindingFailure,
+    },
     /// The relay's canonical snapshot at first admission, including an already expired item.
     Accepted {
         status: DeliveryStatus<A>,

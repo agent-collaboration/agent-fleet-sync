@@ -18,7 +18,7 @@ async fn corrupt_case(kind: &'static str) {
                 let DeliveryEnvelope::Item(original) = item(1, "content") else {
                     return Err(StoreError::backend("item"));
                 };
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .enqueue(
                         original,
                         peer(9),
@@ -56,7 +56,7 @@ async fn corrupt_case(kind: &'static str) {
                 )
                 .await
                 .map_err(storage_error)?;
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .apply_status_batch(StatusCursor::new(0), batch, SyncTime::from_unix_millis(1))
                     .await
                     .map_err(storage_error)?;
@@ -95,7 +95,7 @@ async fn corrupt_case(kind: &'static str) {
                     "owed" => resolve_publication::<_, TestTypes>(scope, reference)
                         .await
                         .is_err(),
-                    _ => Outbox::<_, TestTypes>::new(scope, limits())
+                    _ => Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .status_cursor()
                         .await
                         .is_err(),

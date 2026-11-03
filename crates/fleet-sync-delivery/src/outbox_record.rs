@@ -91,21 +91,26 @@ pub(crate) struct OutboxRecord<D: DeliveryTypes> {
 impl<D: DeliveryTypes> OutboxRecord<D> {
     pub fn validate(&self) -> Result<(), DeliveryError> {
         self.header.validate()?;
-        let owner = self.header.submitter;
-        let source = crate::submitter::checked_sender::<D>(
-            owner.map(|owner| crate::submitter::kind(owner).to_owned()),
-            owner.map(crate::submitter::id),
-            self.header.consumer_sender.as_deref(),
-            crate::submitter::SourceRetention::Item,
-            "_fleet_sync_outbox_items",
-            &self.header.id.as_uuid().to_string(),
-        )?;
+        let corrupt = |field| DeliveryError::CorruptRow {
+            table: "_fleet_sync_outbox_items",
+            key: self.header.id.as_uuid().to_string(),
+            field,
+        };
+        let source: Option<D::Sender> = self
+            .header
+            .consumer_sender
+            .as_deref()
+            .map(|raw| serde_json::from_str(raw).map_err(|_| corrupt("consumer_sender")))
+            .transpose()?;
+        if source.is_none() || self.header.submitter.is_none() {
+            return Err(corrupt("submitter"));
+        }
         if let Some(payload) = &self.payload
             && (payload.id() != self.header.id
                 || payload.digest().as_str() != self.header.digest
                 || payload.recipient().peer != self.header.recipient
                 || payload.valid_until() != self.header.valid_until
-                || crate::status_stream::canonical_encode(&source.consumer)?
+                || crate::status_stream::canonical_encode(&source)?
                     != crate::status_stream::canonical_encode(&Some(payload.sender()))?
                 || self.header.cancel_target
                     != match payload {
@@ -149,6 +154,9 @@ pub struct ResolvedPush<D: DeliveryTypes> {
     deny_unknown_fields
 )]
 pub enum OutboxAdmission<A> {
+    BindingUnavailable {
+        reason: SenderBindingFailure,
+    },
     Queued {
         reference: DeliveryItemRef,
     },

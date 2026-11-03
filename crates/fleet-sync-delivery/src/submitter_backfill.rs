@@ -37,9 +37,16 @@ enum Change {
     },
 }
 
-fn plan<D: DeliveryTypes>(
+async fn plan<S, D, B>(
+    scope: &mut S,
+    binding: &B,
     rows: Vec<queries::StoredSubmitterBackfillRow>,
-) -> Result<Vec<Change>, DeliveryError> {
+) -> Result<Vec<Change>, DeliveryError>
+where
+    S: TransactionScope,
+    D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
+{
     let mut changes = Vec::new();
     for row in rows {
         let home = match row.source.as_deref() {
@@ -134,7 +141,17 @@ fn plan<D: DeliveryTypes>(
         if let Some(raw) = row.consumer_sender {
             let sender: D::Sender =
                 serde_json::from_str(&raw).map_err(|_| corrupt("consumer_sender"))?;
-            let mapped = D::submitter(&sender);
+            let context = match home {
+                CustodyHome::Outbox => crate::CustodyRow::Outbox(item),
+                CustodyHome::Inbox => crate::CustodyRow::Inbox(item),
+            };
+            let mapped = binding
+                .resolve_submitter(scope, &sender)
+                .await
+                .map_err(|reason| DeliveryError::SenderBindingUnavailable {
+                    row: context,
+                    reason,
+                })?;
             if let Some(owner) = owner {
                 if owner != mapped {
                     return Err(corrupt("submitter"));
@@ -174,12 +191,14 @@ fn plan<D: DeliveryTypes>(
     clippy::manual_async_fn,
     reason = "explicit Send preserves borrowed transaction futures"
 )]
-pub fn backfill_submitters<'scope, D, S>(
+pub fn backfill_submitters<'scope, D, S, B>(
     scope: &'scope mut S,
+    binding: &'scope B,
     now: SyncTime,
 ) -> impl std::future::Future<Output = Result<usize, DeliveryError>> + Send + 'scope
 where
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     S: TransactionScope,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
@@ -193,7 +212,7 @@ where
         let rows = queries::read_submitter_backfill_rows(scope)
             .await
             .map_err(sql_error)?;
-        let changes = plan::<D>(rows)?;
+        let changes = plan::<S, D, B>(scope, binding, rows).await?;
         let count = changes.len();
         for change in changes {
             match change {

@@ -10,6 +10,18 @@ use tokio::sync::mpsc;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 struct Mail;
+struct MailBinding;
+impl fleet_sync_delivery::SenderBinding<crate::ServiceScope<'_>, Mail> for MailBinding {
+    async fn resolve_submitter<'a>(
+        &'a self,
+        _: &'a mut crate::ServiceScope<'_>,
+        _: &'a String,
+    ) -> Result<Submitter, fleet_sync_delivery::SenderBindingFailure> {
+        peer(2)
+            .map(Submitter::Machine)
+            .map_err(|_| fleet_sync_delivery::SenderBindingFailure::Unavailable)
+    }
+}
 impl DeliveryTypes for Mail {
     const MAX_SENDER_BYTES: u32 = 128;
     const MAX_ADDRESS_BYTES: u32 = 128;
@@ -17,9 +29,7 @@ impl DeliveryTypes for Mail {
     const MAX_STATUS_ROUTE_BYTES: u32 = 128;
     const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
     type Sender = String;
-    fn submitter(_: &Self::Sender) -> Submitter {
-        Submitter::Machine(peer(2).unwrap())
-    }
+
     type Address = String;
     type Body = String;
     type Acceptance = String;
@@ -106,15 +116,21 @@ async fn mailbox_later_wake_publishes_while_an_earlier_publication_is_held() -> 
         10_000_000,
         minimum_settlement_allowance::<Mail>()?,
     )?;
-    owner.ensure_schema::<Mail>().await?;
+    owner
+        .ensure_schema::<Mail, _>(Arc::new(MailBinding))
+        .await?;
     submit(&owner, limits, item(1)?).await?;
     let (shutdown, stopped) = watch::channel(false);
     let running = {
         let owner = owner.clone();
         let mailbox = peer(4)?;
         tokio::spawn(async move {
-            crate::delivery_deadlines::run_initialized_mailbox::<Mail>(
-                owner, mailbox, limits, stopped,
+            crate::delivery_deadlines::run_initialized_mailbox::<Mail, _>(
+                owner,
+                Arc::new(MailBinding),
+                mailbox,
+                limits,
+                stopped,
             )
             .await
         })

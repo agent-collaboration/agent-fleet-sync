@@ -20,14 +20,15 @@ async fn local_cancel_before_original_survives_reopen_and_prevents_admission() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let admitted = Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
-                        local_item(1),
-                        &TestConsumer,
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
+                let admitted =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                        .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
+                            local_item(1),
+                            &TestConsumer,
+                            SyncTime::from_unix_millis(0),
+                        )
+                        .await
+                        .map_err(storage_error)?;
                 assert!(
                     matches!(admitted, LocalItemAdmission::SettledOnAdmission),
                     "a cancelled original must not enter the journal"
@@ -65,10 +66,11 @@ async fn local_cancel_after_original_finishes_a_stale_attempt_without_dispatch()
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let check = Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .check_delivery(input, SyncTime::from_unix_millis(0))
-                    .await
-                    .map_err(storage_error)?;
+                let check =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                        .check_delivery(input, SyncTime::from_unix_millis(0))
+                        .await
+                        .map_err(storage_error)?;
                 assert!(matches!(check, DeliveryCheck::Finish { outcome: None }));
                 Ok(())
             })
@@ -89,7 +91,7 @@ async fn local_cancel_replay_preserves_canonical_identity_and_projects_once() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_cancel(
                         local_cancel(2, 1, "sender"),
                         &ProjectionConsumer::default(),
@@ -113,7 +115,7 @@ async fn local_cancel_replay_preserves_canonical_identity_and_projects_once() {
             .store
             .transaction(move |scope| {
                 Box::pin(async move {
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .enqueue_local_cancel(
                             local_cancel(replay_id, 1, "sender"),
                             &ProjectionConsumer::default(),
@@ -133,7 +135,7 @@ async fn local_cancel_replay_preserves_canonical_identity_and_projects_once() {
     }
     let expected = first.reference.digest;
     fixture.store.transaction(move |scope| Box::pin(async move {
-        let answer=Inbox::<_,TestTypes>::new(scope,peer(2),limits()).enqueue_local_cancel(local_cancel(2,1,"changed sender"),&TestConsumer,SyncTime::from_unix_millis(0)).await;
+        let answer=Inbox::<_,TestTypes, _>::new(scope,peer(2),limits(), &FixtureBindings).enqueue_local_cancel(local_cancel(2,1,"changed sender"),&TestConsumer,SyncTime::from_unix_millis(0)).await;
         assert!(matches!(answer,Err(DeliveryError::Refused{reason:DeliveryRefusal::ItemConflict{existing}}) if existing==expected));
         Ok(())
     })).await.unwrap();
@@ -152,7 +154,7 @@ async fn local_cancel_authority_refusal_is_committed_as_an_outcome() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_cancel(
                         local_cancel(2, 1, "another sender"),
                         &TestConsumer,
@@ -194,7 +196,7 @@ async fn local_cancel_projection_error_rolls_back_custody_link_and_original() {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_cancel(
                         local_cancel(2, 1, "sender"),
                         consumer.as_ref(),
@@ -252,7 +254,7 @@ async fn local_cancel_waits_for_attempting_original_and_uses_the_real_answer() {
             .store
             .transaction(|scope| {
                 Box::pin(async move {
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                             local_item(1),
                             &TestConsumer,
@@ -344,7 +346,7 @@ async fn local_cancel_prevents_a_previously_held_original() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
@@ -390,7 +392,7 @@ async fn expired_local_cancel_records_expired_and_preserves_the_original() {
                     CancelBody { target: item_id(1) },
                 )
                 .unwrap();
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_cancel(cancel, &TestConsumer, SyncTime::from_unix_millis(1))
                     .await
                     .map_err(storage_error)?;
@@ -418,7 +420,7 @@ async fn local_original_admission_rolls_back_when_pending_cancel_projection_fail
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         consumer.as_ref(),
@@ -454,7 +456,7 @@ async fn cancel_before_original_produces_zero_real_local_dispatches() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
@@ -486,7 +488,7 @@ async fn local_cancel_after_delivered_original_reopens_as_too_late() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,

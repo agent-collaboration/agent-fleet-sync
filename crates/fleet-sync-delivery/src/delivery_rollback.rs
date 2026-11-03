@@ -6,6 +6,14 @@ use serde::{Deserialize, Serialize};
 
 const DELIVERY_REFUSED: &str = "delivery_refused";
 const DELIVERY_CORRUPT: &str = "delivery_custody_corrupt";
+const DELIVERY_BINDING: &str = "delivery_sender_binding";
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BindingUnavailable {
+    row: crate::CustodyRow,
+    reason: crate::SenderBindingFailure,
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -15,6 +23,11 @@ struct CorruptCustody {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeliveryTransactionFailure {
+    #[error("sender binding unavailable for {row:?}: {reason:?}")]
+    BindingUnavailable {
+        row: crate::CustodyRow,
+        reason: crate::SenderBindingFailure,
+    },
     #[error("delivery refused: {0:?}")]
     Refused(DeliveryRefusal),
     #[error("invalid stored delivery field {field}")]
@@ -25,8 +38,12 @@ pub enum DeliveryTransactionFailure {
 
 /// Use in an AtomicStore callback that must roll back. Only classify the final
 /// store result: a failed rollback must replace this marker with a storage error.
+/// Journal tasks use their Retry/Storage adapters instead of this host marker.
 pub fn delivery_rollback(error: DeliveryError) -> StoreError {
     match error {
+        DeliveryError::SenderBindingUnavailable { row, reason } => {
+            encode_rollback(DELIVERY_BINDING, &BindingUnavailable { row, reason })
+        }
         DeliveryError::Refused { reason } => encode_rollback(DELIVERY_REFUSED, &reason),
         DeliveryError::Corrupt { field } => encode_rollback(
             DELIVERY_CORRUPT,
@@ -63,6 +80,14 @@ pub fn classify_delivery_store_error(error: StoreError) -> DeliveryTransactionFa
         && let OperationFailure::Refused { code, detail } = failure.as_ref()
     {
         match code.as_str() {
+            DELIVERY_BINDING => {
+                if let Ok(payload) = serde_json::from_str::<BindingUnavailable>(detail) {
+                    return DeliveryTransactionFailure::BindingUnavailable {
+                        row: payload.row,
+                        reason: payload.reason,
+                    };
+                }
+            }
             DELIVERY_REFUSED => {
                 if let Ok(reason) = serde_json::from_str::<DeliveryRefusal>(detail) {
                     return DeliveryTransactionFailure::Refused(reason);

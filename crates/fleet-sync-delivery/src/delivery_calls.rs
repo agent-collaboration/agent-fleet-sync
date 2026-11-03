@@ -21,6 +21,14 @@ impl<D> SubmitCall<D> {
             payload: PhantomData,
         }
     }
+    pub fn validated_answer<A>(
+        answer: SubmitOutcome<A>,
+    ) -> Result<SubmitOutcome<A>, durable_steps::CallFailure> {
+        if let DispatchOutcome::Answered(SubmitResult::BindingUnavailable { reason }) = &answer {
+            return Err(crate::sender_binding::binding_retry(*reason));
+        }
+        Ok(answer)
+    }
 }
 impl<D: DeliveryTypes> CallTarget for SubmitCall<D> {
     const KIND: &'static str = "fleet-sync.delivery.submit";

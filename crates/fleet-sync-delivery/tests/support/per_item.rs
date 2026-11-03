@@ -11,9 +11,7 @@ impl DeliveryTypes for VariableTypes {
     const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
     type Body = String;
     type Sender = String;
-    fn submitter(sender: &Self::Sender) -> Submitter {
-        crate::support::sender_submitter(sender)
-    }
+
     type Address = String;
     type Acceptance = Acceptance;
     type LocalObservation = ();

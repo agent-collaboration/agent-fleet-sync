@@ -74,6 +74,11 @@ pub type LocalDeliveryOutcome<D> = DispatchOutcome<LocalDeliveryAnswer<D>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeliveryError {
+    #[error("sender binding unavailable for {row:?}: {reason:?}")]
+    SenderBindingUnavailable {
+        row: crate::CustodyRow,
+        reason: SenderBindingFailure,
+    },
     #[error("delivery storage: {0}")]
     Storage(String),
     #[error(transparent)]

@@ -20,7 +20,7 @@ async fn admit(store: &TestStore, caller: u128, identity: u64) -> SubmitResult<A
     store
         .transaction(move |scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .submit_relay::<PushTask, RecordRemoval>(
                         fleet_sync_delivery::Submitter::Machine(peer(caller)),
                         item(identity, "owned body"),
@@ -39,7 +39,7 @@ async fn settle(store: &TestStore, caller: u128, identity: u64) -> SettleResult<
     store
         .transaction(move |scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .relay_settle::<RecordRemoval>(
                         fleet_sync_delivery::Submitter::Machine(peer(caller)),
                         item_id(identity),
@@ -73,7 +73,7 @@ async fn query_and_settle_keep_submitter_authority_after_content_release() {
                 .store
                 .transaction(|scope| {
                     Box::pin(async move {
-                        Outbox::<_, TestTypes>::new(scope, limits())
+                        Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                             .receipt::<PublishTask>(
                                 peer(2),
                                 &DeliveryItemRef {
@@ -100,7 +100,8 @@ async fn query_and_settle_keep_submitter_authority_after_content_release() {
             .store
             .transaction(move |scope| {
                 Box::pin(async move {
-                    let mut relay = Outbox::<_, TestTypes>::new(scope, limits());
+                    let mut relay =
+                        Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
                     let owned = relay
                         .relay_query(fleet_sync_delivery::Submitter::Machine(peer(1)), item_id(1))
                         .await
@@ -195,7 +196,7 @@ async fn first_absent_settlement_binds_the_caller_and_survives_reopen() {
     store
         .transaction(|scope| {
             Box::pin(async move {
-                let result = Outbox::<_, TestTypes>::new(scope, limits())
+                let result = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .relay_query(fleet_sync_delivery::Submitter::Machine(peer(9)), item_id(1))
                     .await
                     .map_err(storage_error)?;
@@ -219,7 +220,7 @@ async fn first_absent_settlement_binds_the_caller_and_survives_reopen() {
     store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut relay = Outbox::<_, TestTypes>::new(scope, limits());
+                let mut relay = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
                 let owned = relay
                     .relay_query(fleet_sync_delivery::Submitter::Machine(peer(1)), item_id(1))
                     .await
@@ -268,7 +269,7 @@ async fn unbound_recovery_states_bind_once_without_changing_saved_outcomes() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
                 outbox
                     .mark_submitted(
                         &SubmitInput {
@@ -301,7 +302,7 @@ async fn unbound_recovery_states_bind_once_without_changing_saved_outcomes() {
             .transaction(move |scope| {
                 Box::pin(async move {
                     assert!(matches!(
-                        Outbox::<_, TestTypes>::new(scope, limits())
+                        Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                             .relay_query(
                                 fleet_sync_delivery::Submitter::Machine(peer(1)),
                                 item_id(identity)
@@ -356,7 +357,7 @@ async fn a_failed_caller_transaction_rolls_back_the_first_submitter_binding() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .relay_settle::<RecordRemoval>(
                         fleet_sync_delivery::Submitter::Machine(peer(1)),
                         item_id(1),
@@ -435,7 +436,7 @@ async fn cancellation_query_and_settlement_replay_the_saved_cancel_result() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .submit_relay::<PushTask, RecordRemoval>(
                         fleet_sync_delivery::Submitter::Machine(peer(1)),
                         cancel(2, 1),
@@ -455,7 +456,8 @@ async fn cancellation_query_and_settlement_replay_the_saved_cancel_result() {
             .store
             .transaction(move |scope| {
                 Box::pin(async move {
-                    let mut relay = Outbox::<_, TestTypes>::new(scope, limits());
+                    let mut relay =
+                        Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
                     if completed {
                         relay
                             .recipient_report::<PublishTask>(
@@ -529,7 +531,7 @@ async fn settlement_at_removal_deadline_cannot_recreate_custody() {
         .transaction(|scope| {
             Box::pin(async move {
                 let deadline = removal_deadline(item_id(1));
-                let result = Outbox::<_, TestTypes>::new(scope, limits())
+                let result = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .relay_settle::<RecordRemoval>(
                         fleet_sync_delivery::Submitter::Machine(peer(1)),
                         item_id(1),

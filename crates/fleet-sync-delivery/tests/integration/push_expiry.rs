@@ -137,7 +137,7 @@ async fn payload_resolved_before_expiry_arrives_after_it_without_admitting_local
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .resolve_push(&lookup, fleet_sync_protocol::SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)
@@ -154,7 +154,7 @@ async fn payload_resolved_before_expiry_arrives_after_it_without_admitting_local
         .transaction(move |scope| {
             Box::pin(async move {
                 assert!(
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .resolve_push(&expired_lookup, at(DEADLINE))
                         .await
                         .map_err(storage_error)?
@@ -167,7 +167,7 @@ async fn payload_resolved_before_expiry_arrives_after_it_without_admitting_local
         .await
         .unwrap();
     let answer=network.recipient.store.transaction(move |scope|Box::pin(async move {
-        let answer=Inbox::<_,TestTypes>::new(scope,peer(2),limits()).accept_push::<DeliverTask,ReportTask,RecordRemoval,_>(pushed.submitter,pushed.item,peer(3),&TestConsumer,at(DEADLINE)).await.map_err(storage_error)?;
+        let answer=Inbox::<_,TestTypes, _>::new(scope,peer(2),limits(), &FixtureBindings).accept_push::<DeliverTask,ReportTask,RecordRemoval,_>(pushed.submitter,pushed.item,peer(3),&TestConsumer,at(DEADLINE)).await.map_err(storage_error)?;
         let row=query::<Turso>("SELECT outcome_kind,payload,(SELECT count(*) FROM _fleet_sync_operations WHERE kind=?1) AS deliveries FROM _fleet_sync_inbox_items WHERE item_id=?2").bind(DeliverTask::KIND).bind(item_id(1).as_uuid().to_string()).fetch_one(scope.executor()).await?;
         assert_eq!(row.try_get::<String,_>("outcome_kind")?,"expired");
         assert!(row.try_get::<Option<String>,_>("payload")?.is_none());
@@ -179,7 +179,7 @@ async fn payload_resolved_before_expiry_arrives_after_it_without_admitting_local
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .receipt::<PublishTask>(peer(2), &reference, answer, at(DEADLINE))
                     .await
                     .map_err(storage_error)?;

@@ -200,7 +200,7 @@ impl LinkActor {
                             let limits=delivery_limits()?;
                             let now=state.object.host().now();
                             let result=state.object.rule_transaction::<_,DeliveryError,_>(move|scope|Box::pin(async move {
-                                Outbox::<_,SampleDelivery>::new(scope,limits).publish_status(publication,now).await
+                                Outbox::<_,SampleDelivery, _>::new(scope,limits, &SampleSenderBinding).publish_status(publication,now).await
                             })).await;
                             let answer=match result {
                                 Ok(())=>StatusPublicationResult::Applied,

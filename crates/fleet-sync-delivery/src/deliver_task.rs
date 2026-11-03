@@ -10,20 +10,23 @@ use sqlx_core::{
 };
 use std::{marker::PhantomData, sync::Arc};
 
-pub struct DeliverLocally<S, Db, D, C> {
+pub struct DeliverLocally<S, Db, D, C, B> {
+    binding: Arc<B>,
     config: LocalDeliveryConfig,
     consumer: Arc<C>,
     clock: Arc<dyn runtime_primitives::Clock>,
     store: TaskTypes<S, Db, D>,
 }
 pub(crate) const DELIVER_LOCALLY_KIND: &str = "fleet-sync.delivery.deliver-locally";
-impl<S, Db, D, C> DeliverLocally<S, Db, D, C> {
+impl<S, Db, D, C, B> DeliverLocally<S, Db, D, C, B> {
     pub fn new(
         config: LocalDeliveryConfig,
         consumer: Arc<C>,
         clock: Arc<dyn runtime_primitives::Clock>,
+        binding: Arc<B>,
     ) -> Self {
         Self {
+            binding,
             config,
             consumer,
             clock,
@@ -31,11 +34,13 @@ impl<S, Db, D, C> DeliverLocally<S, Db, D, C> {
         }
     }
 }
-impl<S, Db, D, C> Task for DeliverLocally<S, Db, D, C>
+impl<S, Db, D, C, B> Task for DeliverLocally<S, Db, D, C, B>
 where
     S: AtomicStore,
     Db: Database,
     D: DeliveryTypes,
+    B: Send + Sync + 'static,
+    for<'t> B: SenderBinding<S::Scope<'t>, D>,
     for<'t> S::Scope<'t>: TransactionScope<Database = Db>,
     Db::Arguments: IntoArguments<Db>,
     for<'v> String: Type<Db> + Encode<'v, Db>,
@@ -59,13 +64,15 @@ where
         let input = *input;
         let config = self.config;
         let now = ctx.now();
-        let check = ctx
-            .local(step("check")?, move |scope| {
+        let check = {
+            let binding = Arc::clone(&self.binding);
+            ctx.local(step("check")?, move |scope| {
                 Box::pin(async move {
-                    let check = Inbox::<_, D>::new(scope, config.owner, config.limits)
-                        .check_delivery(input, now)
-                        .await
-                        .map_err(step_error)?;
+                    let check =
+                        Inbox::<_, D, B>::new(scope, config.owner, config.limits, binding.as_ref())
+                            .check_delivery(input, now)
+                            .await
+                            .map_err(step_error)?;
                     match check {
                         DeliveryCheck::Wait { until } => Err(StepError::Retry {
                             after: delay_until(now, until),
@@ -74,7 +81,8 @@ where
                     }
                 })
             })
-            .await?;
+        }
+        .await?;
         let (outcome, observation) = match check {
             DeliveryCheck::Finish { outcome: None } => return Ok(()),
             DeliveryCheck::Finish {
@@ -106,18 +114,28 @@ where
         };
         let consumer = Arc::clone(&self.consumer);
         let now = ctx.now();
-        ctx.local(step("outcome")?, move |scope| {
-            Box::pin(async move {
-                let effects = Inbox::<_, D>::new(scope, config.owner, config.limits)
-                    .complete_attempt(input, outcome, consumer.as_ref(), now, observation.as_ref())
-                    .await
-                    .map_err(step_error)?;
-                admit_effects::<_, Self, ReportOutcome<S, Db, D>>(scope, effects)
-                    .await
-                    .map_err(step_error)?;
-                Ok(())
+        {
+            let binding = Arc::clone(&self.binding);
+            ctx.local(step("outcome")?, move |scope| {
+                Box::pin(async move {
+                    let effects =
+                        Inbox::<_, D, B>::new(scope, config.owner, config.limits, binding.as_ref())
+                            .complete_attempt(
+                                input,
+                                outcome,
+                                consumer.as_ref(),
+                                now,
+                                observation.as_ref(),
+                            )
+                            .await
+                            .map_err(step_error)?;
+                    admit_effects::<_, Self, ReportOutcome<S, Db, D, B>>(scope, effects)
+                        .await
+                        .map_err(step_error)?;
+                    Ok(())
+                })
             })
-        })
+        }
         .await?;
         Ok(())
     }
@@ -134,7 +152,12 @@ where
             if now >= crate::removal_deadline(item) {
                 return Ok(Resume::Finish(()));
             }
-            let mut inbox = Inbox::<_, D>::new(scope, self.config.owner, self.config.limits);
+            let mut inbox = Inbox::<_, D, B>::new(
+                scope,
+                self.config.owner,
+                self.config.limits,
+                self.binding.as_ref(),
+            );
             let Some(header) = inbox.header(item).await.map_err(store_error)? else {
                 return Ok(Resume::Continue);
             };
@@ -178,7 +201,12 @@ where
                     },
                 }
             };
-            let mut inbox = Inbox::<_, D>::new(scope, self.config.owner, self.config.limits);
+            let mut inbox = Inbox::<_, D, B>::new(
+                scope,
+                self.config.owner,
+                self.config.limits,
+                self.binding.as_ref(),
+            );
             let mut effects = inbox
                 .record_terminal(input, outcome, self.consumer.as_ref(), now)
                 .await
@@ -189,7 +217,7 @@ where
                 .map_err(store_error)?;
             effects.attempts.extend(cancelled.attempts);
             effects.reports.extend(cancelled.reports);
-            admit_effects::<_, Self, ReportOutcome<S, Db, D>>(scope, effects)
+            admit_effects::<_, Self, ReportOutcome<S, Db, D, B>>(scope, effects)
                 .await
                 .map_err(store_error)?;
             Ok(())

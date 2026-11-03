@@ -7,10 +7,11 @@ use sqlx_core::{
 };
 
 use crate::Outbox;
-impl<S, D> Outbox<'_, S, D>
+impl<S, D, B> Outbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
@@ -41,7 +42,9 @@ where
         let admitted = self.admit_submission::<T>(&answer, relay, mailbox).await?;
         if !matches!(
             answer,
-            OutboxAdmission::Refused { .. } | OutboxAdmission::CancelAlreadyRequested { .. }
+            OutboxAdmission::BindingUnavailable { .. }
+                | OutboxAdmission::Refused { .. }
+                | OutboxAdmission::CancelAlreadyRequested { .. }
         ) {
             crate::admit_record_removal::<_, TRetention>(self.scope, identity).await?;
         }
@@ -78,7 +81,9 @@ where
         let admitted = self.admit_submission::<T>(&answer, relay, mailbox).await?;
         if !matches!(
             answer,
-            OutboxAdmission::Refused { .. } | OutboxAdmission::CancelAlreadyRequested { .. }
+            OutboxAdmission::BindingUnavailable { .. }
+                | OutboxAdmission::Refused { .. }
+                | OutboxAdmission::CancelAlreadyRequested { .. }
         ) {
             crate::admit_record_removal::<_, TRetention>(self.scope, identity).await?;
         }
@@ -115,7 +120,21 @@ where
         submitter: crate::Submitter,
         now: SyncTime,
     ) -> Result<OutboxAdmission<D::Acceptance>, DeliveryError> {
-        if submitter != D::submitter(item.sender()) {
+        let verified = match crate::sender_binding::verify_sender::<S, D, B>(
+            self.scope,
+            self.binding,
+            item.sender(),
+            crate::CustodyRow::Outbox(item.id()),
+        )
+        .await
+        {
+            Ok(verified) => verified,
+            Err(DeliveryError::SenderBindingUnavailable { reason, .. }) => {
+                return Ok(OutboxAdmission::BindingUnavailable { reason });
+            }
+            Err(error) => return Err(error),
+        };
+        if submitter != verified.owner() {
             return Ok(OutboxAdmission::Refused {
                 reason: DeliveryRefusal::NotSubmitter,
             });
@@ -135,7 +154,21 @@ where
         C: crate::DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
-        if submitter != D::submitter(cancel.sender()) {
+        let verified = match crate::sender_binding::verify_sender::<S, D, B>(
+            self.scope,
+            self.binding,
+            cancel.sender(),
+            crate::CustodyRow::Outbox(cancel.id()),
+        )
+        .await
+        {
+            Ok(verified) => verified,
+            Err(DeliveryError::SenderBindingUnavailable { reason, .. }) => {
+                return Ok(OutboxAdmission::BindingUnavailable { reason });
+            }
+            Err(error) => return Err(error),
+        };
+        if submitter != verified.owner() {
             return Ok(OutboxAdmission::Refused {
                 reason: DeliveryRefusal::NotSubmitter,
             });

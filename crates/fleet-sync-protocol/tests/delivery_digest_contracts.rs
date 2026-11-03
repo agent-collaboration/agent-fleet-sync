@@ -35,11 +35,7 @@ impl DeliveryTypes for MapDelivery {
     const MAX_STATUS_ROUTE_BYTES: u32 = 4;
     type Body = ConsumerMap;
     type Sender = ();
-    fn submitter(_: &Self::Sender) -> Submitter {
-        Submitter::Machine(
-            PeerId::new("019eef00-0000-7000-8000-000000000001".parse().unwrap()).unwrap(),
-        )
-    }
+
     type Address = ();
     type Acceptance = ();
     type LocalObservation = ();

@@ -15,7 +15,7 @@ async fn loader_rejects_a_stored_v4_primary_identity_with_v7_control() {
                 let DeliveryEnvelope::Item(original) = item(80, "identity") else {
                     return Err(durable_steps::StoreError::backend("original fixture"));
                 };
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(11))
                     .await
                     .map_err(storage_error)?;
@@ -23,8 +23,9 @@ async fn loader_rejects_a_stored_v4_primary_identity_with_v7_control() {
                     .await?
                     .unwrap();
                 assert!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .decode_item(valid, None)
+                        .await
                         .is_ok()
                 );
                 let invalid = "01900000-0000-4000-8000-000000000050";
@@ -38,7 +39,9 @@ async fn loader_rejects_a_stored_v4_primary_identity_with_v7_control() {
                     .await?
                     .unwrap();
                 assert!(matches!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits()).decode_item(row, None),
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                        .decode_item(row, None)
+                        .await,
                     Err(DeliveryError::Corrupt { .. })
                 ));
                 Ok(())

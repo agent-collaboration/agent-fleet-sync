@@ -42,7 +42,7 @@ async fn released_consumer_sources_map_exactly_and_completion_is_a_cheap_stable_
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .relay_submitter(item_id(1))
                         .await,
                     Err(DeliveryError::CorruptRow {
@@ -69,9 +69,12 @@ async fn undecodable_source_names_its_row_and_writes_nothing_even_if_the_caller_
     let outcome = fixture
         .store
         .transaction(|scope| {
-            Box::pin(
-                async move { Ok(backfill_submitters::<TestTypes, _>(scope, startup_time()).await) },
-            )
+            Box::pin(async move {
+                Ok(
+                    backfill_submitters::<TestTypes, _, _>(scope, &FixtureBindings, startup_time())
+                        .await,
+                )
+            })
         })
         .await
         .unwrap();
@@ -93,7 +96,7 @@ async fn handed_off_and_terminal_legacy_rows_keep_status_release_capacity_and_ke
     })).await.unwrap();
     assert_eq!(startup(&fixture.store).await.unwrap(), 104);
     fixture.store.transaction(|scope|Box::pin(async move {
-        let mut outbox=Outbox::<_,TestTypes>::new(scope,limits());
+        let mut outbox=Outbox::<_,TestTypes, _>::new(scope,limits(), &FixtureBindings);
         assert!(matches!(outbox.status(item_id(101)).await.map_err(storage_error)?.state,OutboxStatusState::Known {status:DeliveryStatus::Sent,version,..} if version.value()==1));
         assert!(matches!(outbox.status(item_id(100)).await.map_err(storage_error)?.state,OutboxStatusState::Known {status:DeliveryStatus::Delivered {..},version,..} if version.value()==1));
         assert!(matches!(outbox.relay_query(Submitter::Machine(peer(1)),item_id(101)).await,Err(DeliveryError::Refused {..})));
@@ -160,7 +163,7 @@ async fn backfill_child_checkpoint() -> Result<(), Box<dyn std::error::Error>> {
     let host = host_at(startup_time());
     let mut real = TursoScope::new(&mut transaction, host.as_ref());
     let mut scope = BackfillCheckpointScope { inner: &mut real };
-    backfill_submitters::<TestTypes, _>(&mut scope, startup_time()).await?;
+    backfill_submitters::<TestTypes, _, _>(&mut scope, &FixtureBindings, startup_time()).await?;
     Err("backfill returned without observing an uncommitted mapped row".into())
 }
 

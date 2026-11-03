@@ -15,6 +15,7 @@ mod relay_sender_authority;
 mod relayed_capacity;
 mod row_metadata;
 mod schema_index_lineage;
+mod scoped_sender_binding;
 mod scoped_status;
 mod submitter_backfill;
 mod typed_custody;
@@ -100,3 +101,7 @@ mod cancellation_support;
 mod retention_replay;
 
 mod surrogate_status;
+
+mod scoped_binding_backfill;
+mod scoped_binding_recovery;
+mod scoped_binding_reopen;

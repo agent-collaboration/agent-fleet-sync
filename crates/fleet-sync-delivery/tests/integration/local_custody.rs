@@ -17,7 +17,7 @@ async fn compact_local_headers_authorize_cancels_and_preserve_identity() {
                     let DeliveryEnvelope::Item(original) = item(1, "local body") else {
                         return Err(durable_steps::StoreError::backend("fixture item"));
                     };
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                             original,
                             &TestConsumer,
@@ -54,7 +54,8 @@ async fn compact_local_headers_authorize_cancels_and_preserve_identity() {
                         )
                         .unwrap(),
                     );
-                    let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                    let mut inbox =
+                        Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                     let cycle = inbox
                         .begin_receive(
                             DeliveryStream::Controls,
@@ -159,7 +160,7 @@ async fn local_enqueue_conflict_returns_the_stored_digest() {
                     digest: original.digest().clone(),
                 };
                 assert!(matches!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                         .await
                         .map_err(storage_error)?,
@@ -178,7 +179,8 @@ async fn local_enqueue_conflict_returns_the_stored_digest() {
                     return Err(durable_steps::StoreError::backend("fixture item"));
                 };
                 assert_ne!(changed.digest(), &reference.digest);
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 let conflict = inbox
                     .enqueue_local(changed, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await;
@@ -230,7 +232,7 @@ async fn local_enqueue_capacity_returns_mailbox_full_without_losing_custody() {
                     digest: original.digest().clone(),
                 };
                 assert!(matches!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), configured)
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), configured, &FixtureBindings)
                         .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                         .await
                         .map_err(storage_error)?,
@@ -248,7 +250,8 @@ async fn local_enqueue_capacity_returns_mailbox_full_without_losing_custody() {
                 let DeliveryEnvelope::Item(blocked) = item(2, "local body") else {
                     return Err(durable_steps::StoreError::backend("fixture item"));
                 };
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), configured);
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), configured, &FixtureBindings);
                 let full = inbox
                     .enqueue_local(blocked, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await;
@@ -284,7 +287,7 @@ async fn local_enqueue_capacity_returns_mailbox_full_without_losing_custody() {
                     return Err(durable_steps::StoreError::backend("fixture item"));
                 };
                 assert!(matches!(
-                    Inbox::<_, TestTypes>::new(scope, peer(3), configured)
+                    Inbox::<_, TestTypes, _>::new(scope, peer(3), configured, &FixtureBindings)
                         .enqueue_local(mismatched, &TestConsumer, SyncTime::from_unix_millis(0))
                         .await,
                     Err(DeliveryError::InvalidBatch)

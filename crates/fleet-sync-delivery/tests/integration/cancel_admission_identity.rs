@@ -34,7 +34,7 @@ async fn enqueue_cancel_at(fixture: &Fixture, id: u64) -> OutboxAdmission<Accept
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .enqueue_cancel(
                         cancel_body(id),
                         peer(3),
@@ -113,7 +113,7 @@ async fn another_outbox_cancel_names_the_first_and_does_not_take_new_custody() {
                             "queued original".into(),
                         )
                         .unwrap();
-                        Outbox::<_, TestTypes>::new(scope, limits())
+                        Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                             .enqueue(
                                 original,
                                 peer(3),
@@ -137,7 +137,7 @@ async fn another_outbox_cancel_names_the_first_and_does_not_take_new_custody() {
             .store
             .transaction(|scope| {
                 Box::pin(async move {
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .status(item_id(3))
                         .await
                         .map_err(storage_error)
@@ -224,7 +224,7 @@ async fn distinct_sender_status(recovered: bool) -> Value {
                         .execute(scope.executor())
                         .await?;
                 }
-                let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
                 outbox
                     .mark_submitted(
                         &SubmitInput {
@@ -247,7 +247,7 @@ async fn distinct_sender_status(recovered: bool) -> Value {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .status(item_id(3))
                     .await
                     .map_err(storage_error)
@@ -296,7 +296,7 @@ async fn recovered_canonical_cancel_still_names_its_stored_identity() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .record_submission_failure(
                         &SubmitInput {
                             item: item_id(2),

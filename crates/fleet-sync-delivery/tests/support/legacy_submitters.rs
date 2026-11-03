@@ -18,6 +18,13 @@ pub fn project() -> Submitter {
 }
 
 pub async fn legacy_store(compacted: usize) -> Fixture {
+    legacy_store_with_sender(compacted, |_, owner| owned_sender(owner, "legacy/session")).await
+}
+
+pub async fn legacy_store_with_sender(
+    compacted: usize,
+    source: fn(u64, Submitter) -> String,
+) -> Fixture {
     let directory = tempfile::tempdir().unwrap();
     let host = host_at(startup_time());
     let store = Arc::new(
@@ -30,7 +37,7 @@ pub async fn legacy_store(compacted: usize) -> Fixture {
         prefix.dangerous_set_table_name("_fleet_sync_delivery_migrations");
         prefix.run_direct(None,scope.executor(),false).await.map_err(StoreError::backend)?;
         for (identity,owner,inbox) in [(1,Submitter::Machine(peer(1)),false),(2,project(),false),(3,Submitter::Machine(peer(1)),true),(4,project(),true)] {
-            let packet=DeliveryEnvelope::<TestTypes>::Item(DeliveryItem::new(item_id(identity),owned_sender(owner,"legacy/session"),
+            let packet=DeliveryEnvelope::<TestTypes>::Item(DeliveryItem::new(item_id(identity),source(identity, owner),
                 Recipient {peer:peer(2),address:"inbox".into()},None,"legacy body".into()).unwrap());
             let payload=serde_json::to_string(&packet).map_err(StoreError::backend)?;
             let reserve=limits().settlement_allowance();
@@ -68,7 +75,7 @@ pub async fn startup(store: &TestStore) -> Result<usize, DeliveryError> {
     store
         .transaction(|scope| {
             Box::pin(async move {
-                backfill_submitters::<TestTypes, _>(scope, startup_time())
+                backfill_submitters::<TestTypes, _, _>(scope, &FixtureBindings, startup_time())
                     .await
                     .map_err(storage_error)
             })

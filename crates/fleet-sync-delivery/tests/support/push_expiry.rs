@@ -39,7 +39,7 @@ pub async fn seed(network: &NetworkFixture) {
                     "deadline body".into(),
                 )
                 .unwrap();
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .enqueue_and_admit::<SubmitTask, RecordRemoval>(
                         item,
                         peer(3),

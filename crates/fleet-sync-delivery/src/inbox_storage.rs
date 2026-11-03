@@ -14,15 +14,17 @@ use std::marker::PhantomData;
 #[path = "inbox_storage_test.rs"]
 mod tests;
 
-pub struct Inbox<'s, S, D> {
+pub struct Inbox<'s, S, D, B> {
+    pub(crate) binding: &'s B,
     pub(crate) scope: &'s mut S,
     pub(crate) owner: PeerId,
     pub(crate) limits: DeliveryLimits,
     payload: PhantomData<fn() -> D>,
 }
-impl<'s, S, D> Inbox<'s, S, D> {
-    pub fn new(scope: &'s mut S, owner: PeerId, limits: DeliveryLimits) -> Self {
+impl<'s, S, D, B> Inbox<'s, S, D, B> {
+    pub fn new(scope: &'s mut S, owner: PeerId, limits: DeliveryLimits, binding: &'s B) -> Self {
         Self {
+            binding,
             scope,
             owner,
             limits,
@@ -30,10 +32,11 @@ impl<'s, S, D> Inbox<'s, S, D> {
         }
     }
 }
-impl<S, D> Inbox<'_, S, D>
+impl<S, D, B> Inbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
@@ -43,18 +46,22 @@ where
         &mut self,
         item: ItemId,
     ) -> Result<Option<InboxRecord<D>>, DeliveryError> {
-        queries::read_inbox_item(self.scope, item_key(item))
+        let row = queries::read_inbox_item(self.scope, item_key(item))
             .await
-            .map_err(sql_error)?
-            .map(|row| self.decode_item(row, Some(item)))
-            .transpose()
+            .map_err(sql_error)?;
+        match row {
+            Some(row) => self.decode_item(row, Some(item)).await.map(Some),
+            None => Ok(None),
+        }
     }
-    pub(crate) fn decode_item(
-        &self,
+
+    pub(crate) async fn decode_item(
+        &mut self,
         row: queries::StoredInboxRow,
         expected: Option<ItemId>,
     ) -> Result<InboxRecord<D>, DeliveryError> {
-        let header: InboxHeader<D> = crate::inbox_row::decode_header(&row)?;
+        let header: InboxHeader<D> =
+            crate::inbox_row::decode_header::<S, D, B>(self.scope, self.binding, &row).await?;
         let payload = row
             .payload
             .map(|raw| decode(Some(raw), "inbox custody payload"))
@@ -126,7 +133,8 @@ where
         else {
             return Ok(None);
         };
-        let header: InboxHeader<D> = crate::inbox_row::decode_header(&row)?;
+        let header: InboxHeader<D> =
+            crate::inbox_row::decode_header::<S, D, B>(self.scope, self.binding, &row).await?;
         crate::delivery_sizes::stored_acceptance_bound::<D>(header.acceptance_bound)?;
         if let InboxProgress::Final { outcome, .. } = &header.progress {
             crate::delivery_sizes::check_outcome_bound::<D>(outcome, header.acceptance_bound)
@@ -151,6 +159,25 @@ where
         if header.legacy_read_only {
             return Err(DeliveryError::Refused {
                 reason: DeliveryRefusal::NotSubmitter,
+            });
+        }
+        let source = header.sender.as_ref().ok_or(DeliveryError::CorruptRow {
+            table: "_fleet_sync_inbox_items",
+            key: item_key(header.id),
+            field: "consumer_sender",
+        })?;
+        let verified = crate::sender_binding::verify_sender::<S, D, B>(
+            self.scope,
+            self.binding,
+            source,
+            crate::CustodyRow::Inbox(header.id),
+        )
+        .await?;
+        if Some(verified.owner()) != header.submitter {
+            return Err(DeliveryError::CorruptRow {
+                table: "_fleet_sync_inbox_items",
+                key: item_key(header.id),
+                field: "submitter",
             });
         }
         // Only the recipient retains the full cancellation header; relay/outbox compacts keep identity/digest/status.

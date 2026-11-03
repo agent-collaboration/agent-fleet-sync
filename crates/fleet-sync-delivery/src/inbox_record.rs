@@ -115,9 +115,7 @@ impl<D: DeliveryTypes> InboxHeader<D> {
             {
                 return Err(invalid("legacy custody"));
             }
-        } else if self.sender.as_ref().map(D::submitter) != self.submitter
-            || self.submitter.is_none()
-        {
+        } else if self.sender.is_none() || self.submitter.is_none() {
             return Err(invalid("submitter"));
         }
         if self.created_at != crate::custody_record::created_at(self.id) {
@@ -183,17 +181,19 @@ impl<D: DeliveryTypes> InboxHeader<D> {
 impl<D: DeliveryTypes> InboxRecord<D> {
     pub fn new(
         payload: DeliveryEnvelope<D>,
+        verified: crate::sender_binding::VerifiedSender<D>,
         route: InboxRoute,
         progress: InboxProgress<D::Acceptance>,
         settlement_bytes: u32,
         now: SyncTime,
     ) -> Result<Self, DeliveryError> {
+        let (submitter, source) = verified.into_parts();
         Ok(Self {
             header: InboxHeader {
                 id: payload.id(),
                 digest: payload.digest().as_str().into(),
-                sender: Some(crate::custody_record::copy_wire(payload.sender())?),
-                submitter: Some(D::submitter(payload.sender())),
+                sender: Some(source),
+                submitter: Some(submitter),
                 legacy_read_only: false,
                 recipient: crate::custody_record::copy_wire(payload.recipient())?,
                 relay: None,

@@ -20,7 +20,7 @@ pub enum AfterAnswer {
     },
 }
 pub struct InterleavedDeliver<C = TestConsumer> {
-    inner: DeliverLocally<TestStore, sqlx_turso::Turso, TestTypes, C>,
+    inner: DeliverLocally<TestStore, sqlx_turso::Turso, TestTypes, C, FixtureBindings>,
     store: Arc<TestStore>,
     action: AfterAnswer,
     performed: Arc<AtomicBool>,
@@ -38,7 +38,12 @@ impl<C> InterleavedDeliver<C> {
         consumer: Arc<C>,
     ) -> Self {
         Self {
-            inner: DeliverLocally::new(config().local, consumer, host),
+            inner: DeliverLocally::new(
+                config().local,
+                consumer,
+                host,
+                std::sync::Arc::new(FixtureBindings),
+            ),
             store,
             action,
             performed: Arc::new(AtomicBool::new(false)),
@@ -122,13 +127,18 @@ impl<O: OperationContext<Store = TestStore>> InterceptContext<'_, O> {
                     self.store
                         .transaction(|scope| {
                             Box::pin(async move {
-                                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                                    .release_held::<DeliverTask>(
-                                        item_id(1),
-                                        SyncTime::from_unix_millis(0),
-                                    )
-                                    .await
-                                    .map_err(storage_error)?;
+                                Inbox::<_, TestTypes, _>::new(
+                                    scope,
+                                    peer(2),
+                                    limits(),
+                                    &FixtureBindings,
+                                )
+                                .release_held::<DeliverTask>(
+                                    item_id(1),
+                                    SyncTime::from_unix_millis(0),
+                                )
+                                .await
+                                .map_err(storage_error)?;
                                 Ok(())
                             })
                         })
@@ -139,7 +149,12 @@ impl<O: OperationContext<Store = TestStore>> InterceptContext<'_, O> {
                 self.store
                     .transaction(|scope| {
                         Box::pin(async move {
-                            let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                            let mut inbox = Inbox::<_, TestTypes, _>::new(
+                                scope,
+                                peer(2),
+                                limits(),
+                                &FixtureBindings,
+                            );
                             let cycle = inbox
                                 .begin_receive(
                                     DeliveryStream::Controls,

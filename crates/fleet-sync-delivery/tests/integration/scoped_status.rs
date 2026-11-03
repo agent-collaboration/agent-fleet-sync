@@ -49,7 +49,7 @@ async fn two_submitters_keep_independent_events_acknowledgements_and_publication
                 let DeliveryEnvelope::Item(original) = item(1, "sender custody") else {
                     return Err(StoreError::backend("item fixture"));
                 };
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .enqueue(
                         original,
                         peer(9),
@@ -78,8 +78,8 @@ async fn two_submitters_keep_independent_events_acknowledgements_and_publication
         .await
         .unwrap();
     sender.store.transaction(move |scope| Box::pin(async move {
-        Outbox::<_,TestTypes>::new(scope,limits()).publish_status(first_publication,SyncTime::from_unix_millis(20)).await.map_err(storage_error)?;
-        assert!(matches!(Outbox::<_,TestTypes>::new(scope,limits()).status(item_id(1)).await.map_err(storage_error)?.state,
+        Outbox::<_,TestTypes, _>::new(scope,limits(), &FixtureBindings).publish_status(first_publication,SyncTime::from_unix_millis(20)).await.map_err(storage_error)?;
+        assert!(matches!(Outbox::<_,TestTypes, _>::new(scope,limits(), &FixtureBindings).status(item_id(1)).await.map_err(storage_error)?.state,
             OutboxStatusState::Known { status:DeliveryStatus::Held,version,.. } if version.value()==2));
         Ok(())
     })).await.unwrap();

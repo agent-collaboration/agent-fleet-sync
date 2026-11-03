@@ -136,7 +136,8 @@ async fn submit_cancel(
                     CancelBody { target: item_id(1) },
                 )
                 .unwrap();
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 match route {
                     CancelRoute::Local => {
                         inbox

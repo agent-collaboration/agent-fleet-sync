@@ -10,15 +10,7 @@ impl DeliveryTypes for SampleDelivery {
     const MAX_STATUS_ROUTE_BYTES: u32 = 128;
     type Body = String;
     type Sender = String;
-    fn submitter(_: &Self::Sender) -> fleet_sync_protocol::Submitter {
-        // This sample consumer has one authorized producer, machine 2.
-        match fleet_sync_protocol::PeerId::new(durable_steps::Uuid::from_u128(
-            0x019eef00000070008000000000000002,
-        )) {
-            Ok(peer) => fleet_sync_protocol::Submitter::Machine(peer),
-            Err(error) => panic!("invalid sample producer identity: {error}"),
-        }
-    }
+
     type Address = String;
     type Acceptance = String;
     type LocalObservation = ();
@@ -34,4 +26,23 @@ pub fn delivery_limits() -> Result<DeliveryLimits, DeliveryConfigError> {
         10_000_000,
         minimum_settlement_allowance::<SampleDelivery>()?,
     )
+}
+
+// This private fixture source names its producer independently of the transport claim.
+pub(crate) struct SampleSenderBinding;
+impl<S: durable_steps::storage::TransactionScope>
+    fleet_sync_delivery::SenderBinding<S, SampleDelivery> for SampleSenderBinding
+{
+    async fn resolve_submitter<'a>(
+        &'a self,
+        _: &'a mut S,
+        sender: &'a String,
+    ) -> Result<fleet_sync_delivery::Submitter, fleet_sync_delivery::SenderBindingFailure> {
+        let peer = sender
+            .strip_suffix("|authorized sender")
+            .ok_or(fleet_sync_delivery::SenderBindingFailure::Unknown)?;
+        fleet_sync_delivery::PeerId::try_from(peer.to_owned())
+            .map(fleet_sync_delivery::Submitter::Machine)
+            .map_err(|_| fleet_sync_delivery::SenderBindingFailure::Unknown)
+    }
 }

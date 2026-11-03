@@ -24,7 +24,7 @@ async fn retire(fixture: &Fixture, reference: DeliveryItemRef) -> LocalRetiremen
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .retire_local(&reference)
                     .await
                     .map_err(storage_error)
@@ -42,7 +42,7 @@ async fn retirement_waits_for_pending_delivery_after_cancellation() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
@@ -98,7 +98,7 @@ async fn current_header_attempt_does_not_hide_an_older_unsettled_delivery() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
@@ -144,7 +144,7 @@ async fn current_header_attempt_does_not_hide_an_older_unsettled_delivery() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .release_held::<DeliverTask>(item_id(1), SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)
@@ -196,7 +196,7 @@ async fn held_delivery_finishes_its_operation_then_terminal_custody_can_retire()
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
@@ -251,7 +251,7 @@ async fn older_report_sequence_preserves_custody_without_mutation() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
@@ -305,7 +305,7 @@ async fn malformed_running_delivery_key_is_corruption_before_any_deletion() {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .record_failure(
                         input,
                         DeliveryFailureKind::ExecutionFailed,
@@ -331,9 +331,11 @@ async fn malformed_running_delivery_key_is_corruption_before_any_deletion() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Ok(Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .retire_local(&reference(1))
-                    .await)
+                Ok(
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                        .retire_local(&reference(1))
+                        .await,
+                )
             })
         })
         .await
@@ -355,7 +357,7 @@ async fn empty_stored_running_key_is_corruption_without_deleting_custody() {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .record_failure(
                         input,
                         DeliveryFailureKind::ExecutionFailed,
@@ -391,9 +393,11 @@ async fn empty_stored_running_key_is_corruption_without_deleting_custody() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Ok(Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .retire_local(&reference(1))
-                    .await)
+                Ok(
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                        .retire_local(&reference(1))
+                        .await,
+                )
             })
         })
         .await
@@ -419,7 +423,7 @@ async fn running_key_backend_failure_stays_storage_without_deleting_custody() {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .record_failure(
                         input,
                         DeliveryFailureKind::ExecutionFailed,
@@ -442,9 +446,11 @@ async fn running_key_backend_failure_stays_storage_without_deleting_custody() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Ok(Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .retire_local(&reference(1))
-                    .await)
+                Ok(
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                        .retire_local(&reference(1))
+                        .await,
+                )
             })
         })
         .await

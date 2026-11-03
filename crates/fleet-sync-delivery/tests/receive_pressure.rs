@@ -74,7 +74,7 @@ async fn capacity_taken_after_fetch_budget_waits_with_saved_batch_and_recovers_a
                 let DeliveryEnvelope::Item(local) = item(9, "local A!") else {
                     return Err(StoreError::backend("fixture must be a local item"));
                 };
-                Inbox::<_, TestTypes>::new(scope, peer(2), config.local.limits)
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), config.local.limits, &FixtureBindings)
                     .enqueue_local(local, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)

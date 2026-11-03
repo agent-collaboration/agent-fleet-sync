@@ -10,24 +10,27 @@ use sqlx_core::{
 };
 use std::marker::PhantomData;
 
-pub struct Outbox<'s, S, D> {
+pub struct Outbox<'s, S, D, B> {
+    pub(crate) binding: &'s B,
     pub(crate) scope: &'s mut S,
     pub(crate) limits: DeliveryLimits,
     payload: PhantomData<fn() -> D>,
 }
-impl<'s, S, D> Outbox<'s, S, D> {
-    pub fn new(scope: &'s mut S, limits: DeliveryLimits) -> Self {
+impl<'s, S, D, B> Outbox<'s, S, D, B> {
+    pub fn new(scope: &'s mut S, limits: DeliveryLimits, binding: &'s B) -> Self {
         Self {
+            binding,
             scope,
             limits,
             payload: PhantomData,
         }
     }
 }
-impl<S, D> Outbox<'_, S, D>
+impl<S, D, B> Outbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
@@ -145,6 +148,12 @@ where
             SubmitResult::Accepted { .. } | SubmitResult::Replayed { .. }
         );
         match answer {
+            SubmitResult::BindingUnavailable { reason } => {
+                return Err(DeliveryError::SenderBindingUnavailable {
+                    row: crate::CustodyRow::Outbox(input.item),
+                    reason,
+                });
+            }
             SubmitResult::Accepted {
                 status,
                 version,
@@ -292,6 +301,12 @@ where
         now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let (status, version, cancel) = match answer {
+            SubmitResult::BindingUnavailable { reason } => {
+                return Err(DeliveryError::SenderBindingUnavailable {
+                    row: crate::CustodyRow::Outbox(input.item),
+                    reason,
+                });
+            }
             SubmitResult::Accepted {
                 status,
                 version,
@@ -372,7 +387,8 @@ where
         else {
             return Ok(None);
         };
-        let state = crate::outbox_storage::decode_header::<D>(&row)?;
+        let state =
+            crate::outbox_storage::decode_header::<S, D, B>(self.scope, self.binding, &row).await?;
         let live = integer(row.live, row.live_class, "outbox live flag")?;
         let slot = integer(
             row.capacity_slot,
@@ -449,7 +465,9 @@ where
         else {
             return Ok(None);
         };
-        crate::outbox_storage::decode_header::<D>(&row).map(Some)
+        crate::outbox_storage::decode_header::<S, D, B>(self.scope, self.binding, &row)
+            .await
+            .map(Some)
     }
     pub(crate) async fn load(
         &mut self,
@@ -461,7 +479,8 @@ where
         else {
             return Ok(None);
         };
-        let state = crate::outbox_storage::decode_header::<D>(&row)?;
+        let state =
+            crate::outbox_storage::decode_header::<S, D, B>(self.scope, self.binding, &row).await?;
         let header = match state {
             OutboxHeaderState::Item(header) => header,
             OutboxHeaderState::Recovered(_) => return Err(DeliveryError::CustodyMissing),
@@ -557,6 +576,18 @@ where
         now: SyncTime,
     ) -> Result<(), DeliveryError> {
         header.validate()?;
+        crate::submitter::checked_sender::<S, D, B>(
+            self.scope,
+            self.binding,
+            header
+                .submitter
+                .map(|owner| crate::submitter::kind(owner).to_owned()),
+            header.submitter.map(crate::submitter::id),
+            header.consumer_sender.as_deref(),
+            crate::submitter::SourceRetention::Item,
+            crate::CustodyRow::Outbox(header.id),
+        )
+        .await?;
         let state = OutboxHeaderState::<D::Acceptance>::Item(copy_wire(header)?);
         queries::write_outbox_item(
             self.scope,

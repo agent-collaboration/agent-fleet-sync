@@ -154,7 +154,7 @@ async fn held_then_delivered_coalesces_one_owed_report_and_old_completion_preser
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .release_held::<DeliverTask>(item_id(1), SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)?;
@@ -180,7 +180,8 @@ async fn held_then_delivered_coalesces_one_owed_report_and_old_completion_preser
                 assert_eq!(row.try_get::<i64, _>("count").unwrap(), 1);
                 let sequence = row.try_get::<i64, _>("seq").unwrap();
                 assert!(sequence > 1);
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 inbox
                     .retire_report(ReportRef {
                         item: item_id(1),
@@ -218,7 +219,7 @@ async fn held_then_delivered_coalesces_one_owed_report_and_old_completion_preser
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .status(item_id(1))
                         .await
                         .map_err(storage_error)?

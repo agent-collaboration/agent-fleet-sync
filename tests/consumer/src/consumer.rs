@@ -256,3 +256,18 @@ impl HolderChangeGate for Consumer {
         Ok(())
     }
 }
+
+impl fleet_sync_delivery::SenderBinding<ServiceScope<'_>, crate::SampleDelivery> for Consumer {
+    async fn resolve_submitter<'a>(
+        &'a self,
+        scope: &'a mut ServiceScope<'_>,
+        sender: &'a String,
+    ) -> Result<Submitter, fleet_sync_delivery::SenderBindingFailure> {
+        fleet_sync_delivery::SenderBinding::resolve_submitter(
+            &crate::delivery_protocol::SampleSenderBinding,
+            scope,
+            sender,
+        )
+        .await
+    }
+}

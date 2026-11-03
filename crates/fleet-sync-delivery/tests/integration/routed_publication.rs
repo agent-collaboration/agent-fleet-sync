@@ -65,7 +65,7 @@ async fn held_old_publish_keeps_its_route_and_stream_restart_delivers_both_froze
                 let DeliveryEnvelope::Item(item) = item(1, "inherited item") else {
                     return Err(durable_steps::StoreError::backend("fixture item"));
                 };
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .enqueue(
                         item,
                         peer(3),
@@ -240,7 +240,7 @@ async fn held_old_publish_keeps_its_route_and_stream_restart_delivers_both_froze
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .status(item_id(1))
                         .await
                         .map_err(storage_error)?

@@ -70,7 +70,7 @@ async fn forged_source_claims_are_refused_at_each_intake_without_writes() {
                     return Err(StoreError::backend("fixture item"));
                 };
                 assert!(matches!(
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .enqueue(item, peer(3), machine, now())
                         .await
                         .map_err(storage_error)?,
@@ -89,7 +89,7 @@ async fn forged_source_claims_are_refused_at_each_intake_without_writes() {
         .transaction(move |scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .submit_relay::<PushTask, RecordRemoval>(
                             machine,
                             envelope(project, 10),
@@ -114,7 +114,7 @@ async fn forged_source_claims_are_refused_at_each_intake_without_writes() {
         .transaction(move |scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
                             machine,
                             envelope(project, 10),
@@ -150,7 +150,7 @@ async fn both_owner_kinds_survive_three_custody_records_replay_and_payload_relea
                         return Err(StoreError::backend("fixture item"));
                     };
                     assert!(matches!(
-                        Outbox::<_, TestTypes>::new(scope, limits())
+                        Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                             .enqueue(item, peer(3), owner, now())
                             .await
                             .map_err(storage_error)?,
@@ -165,7 +165,8 @@ async fn both_owner_kinds_survive_three_custody_records_replay_and_payload_relea
             .store
             .transaction(move |scope| {
                 Box::pin(async move {
-                    let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
+                    let mut outbox =
+                        Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
                     assert_eq!(
                         outbox
                             .relay_submitter(item_id(999))
@@ -215,7 +216,7 @@ async fn both_owner_kinds_survive_three_custody_records_replay_and_payload_relea
             .store
             .transaction(move |scope| {
                 Box::pin(async move {
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .resolve_push(
                             &DeliveryItemRef {
                                 item: item_id(11),
@@ -236,7 +237,7 @@ async fn both_owner_kinds_survive_three_custody_records_replay_and_payload_relea
             .transaction(move |scope| {
                 Box::pin(async move {
                     assert!(matches!(
-                        Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                        Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                             .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
                                 pushed.submitter,
                                 pushed.item,
@@ -264,7 +265,8 @@ async fn both_owner_kinds_survive_three_custody_records_replay_and_payload_relea
             .store
             .transaction(move |scope| {
                 Box::pin(async move {
-                    let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
+                    let mut outbox =
+                        Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
                     let reference = DeliveryItemRef {
                         item: item_id(11),
                         digest: envelope(owner, 11).digest().clone(),
@@ -441,7 +443,7 @@ async fn project_publication_waits_without_a_holder_then_resolves_the_current_ma
                 let DeliveryEnvelope::Item(item) = envelope(owner, 30) else {
                     return Err(StoreError::backend("fixture item"));
                 };
-                let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
                 outbox
                     .enqueue(item, peer(3), owner, now())
                     .await
@@ -537,7 +539,7 @@ async fn project_publication_waits_without_a_holder_then_resolves_the_current_ma
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let status = Outbox::<_, TestTypes>::new(scope, limits())
+                let status = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .status(item_id(30))
                     .await
                     .map_err(storage_error)?;

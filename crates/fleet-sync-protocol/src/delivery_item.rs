@@ -18,8 +18,7 @@ pub trait DeliveryTypes: Send + Sync + 'static {
     const MAX_STATUS_ROUTE_BYTES: u32;
     type Body: Serialize + DeserializeOwned + Send + Sync;
     type Sender: Serialize + DeserializeOwned + Send + Sync;
-    /// Project the consumer source to its owner; the host authorizes that owner.
-    fn submitter(sender: &Self::Sender) -> crate::Submitter;
+
     type Address: Serialize + DeserializeOwned + Send + Sync;
     type Acceptance: Serialize + DeserializeOwned + Send + Sync;
     /// Consumer-owned evidence retained only in the local delivery journal.
@@ -37,9 +36,7 @@ impl DeliveryTypes for NoDelivery {
     const MAX_STATUS_ROUTE_BYTES: u32 = 4;
     type Body = ();
     type Sender = crate::Submitter;
-    fn submitter(sender: &Self::Sender) -> crate::Submitter {
-        *sender
-    }
+
     type Address = ();
     type Acceptance = ();
     type LocalObservation = ();

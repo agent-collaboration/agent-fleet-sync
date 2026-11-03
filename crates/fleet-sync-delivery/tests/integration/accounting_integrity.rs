@@ -47,7 +47,7 @@ async fn admit(
     };
     match hop {
         "outbox" => {
-            Outbox::<_, TestTypes>::new(scope, limits())
+            Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                 .enqueue(
                     original,
                     peer(3),
@@ -68,7 +68,7 @@ async fn admit(
                 .await?;
         }
         _ => {
-            Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+            Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                 .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                 .await?;
         }

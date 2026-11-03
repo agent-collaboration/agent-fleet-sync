@@ -6,6 +6,7 @@
 mod actor_reference;
 mod copy_failure;
 mod crate_call_frame;
+mod delivery_binding;
 mod delivery_identity;
 mod delivery_item;
 mod delivery_message;
@@ -39,6 +40,7 @@ pub mod unit_budget;
 pub use actor_reference::*;
 pub use copy_failure::*;
 pub use crate_call_frame::*;
+pub use delivery_binding::*;
 pub use delivery_identity::*;
 pub use delivery_item::*;
 pub use delivery_message::*;

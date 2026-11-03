@@ -23,9 +23,7 @@ impl DeliveryTypes for LocalTypes {
     const MAX_STATUS_ROUTE_BYTES: u32 = 64;
     type Body = String;
     type Sender = String;
-    fn submitter(sender: &Self::Sender) -> Submitter {
-        crate::support::sender_submitter(sender)
-    }
+
     type Address = String;
     type Acceptance = Acceptance;
     type LocalObservation = ();
@@ -89,8 +87,9 @@ impl DeliveryConsumer<TursoScope<'_, TestHost>> for LocalConsumer {
         requester == item.sender()
     }
 }
-type LocalTask = DeliverLocally<TestStore, sqlx_turso::Turso, LocalTypes, LocalConsumer>;
-type LocalReport = ReportOutcome<TestStore, sqlx_turso::Turso, LocalTypes>;
+type LocalTask =
+    DeliverLocally<TestStore, sqlx_turso::Turso, LocalTypes, LocalConsumer, FixtureBindings>;
+type LocalReport = ReportOutcome<TestStore, sqlx_turso::Turso, LocalTypes, FixtureBindings>;
 struct PausedLocalTask {
     inner: LocalTask,
     reached: Arc<tokio::sync::Notify>,
@@ -232,7 +231,8 @@ async fn stored_item_bound_sanitizes_call_checkpoint_before_reopen_without_resen
                     )
                     .execute(scope.executor())
                     .await?;
-                    let mut inbox = Inbox::<_, LocalTypes>::new(scope, peer(2), limits());
+                    let mut inbox =
+                        Inbox::<_, LocalTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                     let input = inbox
                         .begin_receive(
                             DeliveryStream::Items,
@@ -299,6 +299,7 @@ async fn stored_item_bound_sanitizes_call_checkpoint_before_reopen_without_resen
                     config().local,
                     Arc::new(LocalConsumer),
                     network.recipient.host.clone(),
+                    std::sync::Arc::new(FixtureBindings),
                 ),
                 reached: reached.clone(),
             })
@@ -375,10 +376,15 @@ async fn stored_item_bound_sanitizes_call_checkpoint_before_reopen_without_resen
                 config().local,
                 Arc::new(LocalConsumer),
                 network.recipient.host.clone(),
+                std::sync::Arc::new(FixtureBindings),
             ))
             .unwrap();
         engine
-            .register(LocalReport::new(config(), network.recipient.host.clone()))
+            .register(LocalReport::new(
+                config(),
+                network.recipient.host.clone(),
+                std::sync::Arc::new(FixtureBindings),
+            ))
             .unwrap();
         let report = engine.drive_due().await.unwrap();
         assert!(report.failed.is_empty(), "{report:?}");
@@ -405,11 +411,12 @@ async fn stored_item_bound_sanitizes_call_checkpoint_before_reopen_without_resen
                         row.try_get::<Option<String>, _>("observation")?,
                         if uncertain { None } else { Some("null".into()) }
                     );
-                    let result = Inbox::<_, LocalTypes>::new(scope, peer(2), limits())
-                        .local_outcome(item_id(1))
-                        .await
-                        .map_err(storage_error)?
-                        .unwrap();
+                    let result =
+                        Inbox::<_, LocalTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                            .local_outcome(item_id(1))
+                            .await
+                            .map_err(storage_error)?
+                            .unwrap();
                     assert_eq!(matches!(result, RecipientOutcome::Uncertain), uncertain);
                     Ok(())
                 })

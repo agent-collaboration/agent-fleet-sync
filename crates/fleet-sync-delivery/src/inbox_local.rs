@@ -10,10 +10,11 @@ use sqlx_core::{
     encode::Encode, types::Type,
 };
 
-impl<S, D> Inbox<'_, S, D>
+impl<S, D, B> Inbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
@@ -101,6 +102,13 @@ where
             }
             return Ok(LocalItemAdmission::Replayed);
         }
+        let verified = crate::sender_binding::verify_sender::<S, D, B>(
+            self.scope,
+            self.binding,
+            item.sender(),
+            crate::CustodyRow::Inbox(item.id()),
+        )
+        .await?;
         let input = DeliveryAttempt {
             item: item.id(),
             attempt: 0,
@@ -128,6 +136,7 @@ where
         }
         let record = InboxRecord::new(
             DeliveryEnvelope::Item(item),
+            verified,
             InboxRoute::Local,
             InboxProgress::Pending {
                 attempt: 0,
@@ -209,6 +218,13 @@ where
             });
         }
         let envelope = DeliveryEnvelope::Cancel(cancel);
+        let verified = crate::sender_binding::verify_sender::<S, D, B>(
+            self.scope,
+            self.binding,
+            envelope.sender(),
+            crate::CustodyRow::Inbox(envelope.id()),
+        )
+        .await?;
         crate::delivery_sizes::check_envelope(&envelope)?;
         if envelope.recipient().peer != self.owner {
             return Err(DeliveryError::InvalidBatch);
@@ -303,6 +319,7 @@ where
         };
         let record = InboxRecord::new(
             envelope,
+            verified,
             InboxRoute::Local,
             InboxProgress::Control {
                 outcome: ControlOutcome::Pending,

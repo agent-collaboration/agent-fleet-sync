@@ -1,4 +1,6 @@
-use crate::{CancelResult, DeliveryRefusal, DeliveryStatus, ItemDigest, SyncTime};
+use crate::{
+    CancelResult, DeliveryRefusal, DeliveryStatus, ItemDigest, SenderBindingFailure, SyncTime,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -10,6 +12,9 @@ use serde::{Deserialize, Serialize};
     deny_unknown_fields
 )]
 pub enum PushResult<A = ()> {
+    BindingUnavailable {
+        reason: SenderBindingFailure,
+    },
     Accepted {
         accepted_at: SyncTime,
     },

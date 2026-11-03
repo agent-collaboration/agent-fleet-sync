@@ -39,7 +39,7 @@ async fn queue(store: &TestStore) {
                     return Err(StoreError::backend("item fixture"));
                 };
                 assert!(matches!(
-                    Outbox::<_, TestTypes>::new(scope, limits())
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                         .enqueue(item, peer(3), Submitter::Project(project()), now())
                         .await
                         .map_err(storage_error)?,
@@ -55,11 +55,13 @@ async fn state(store: &TestStore) -> OutboxStatusState<Acceptance> {
     store
         .transaction(|scope| {
             Box::pin(async move {
-                Ok(Outbox::<_, TestTypes>::new(scope, limits())
-                    .status(item_id(1))
-                    .await
-                    .map_err(storage_error)?
-                    .state)
+                Ok(
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                        .status(item_id(1))
+                        .await
+                        .map_err(storage_error)?
+                        .state,
+                )
             })
         })
         .await
@@ -96,7 +98,7 @@ async fn successor_resend_delivers_through_push_report_and_current_project_holde
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Outbox::<_, TestTypes>::new(scope, limits())
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                     .submit_relay::<PushTask, RecordRemoval>(
                         Submitter::Project(project()),
                         envelope(),
@@ -115,7 +117,7 @@ async fn successor_resend_delivers_through_push_report_and_current_project_holde
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
                 outbox
                     .mark_submit_attempted(item_id(1), now())
                     .await
@@ -193,7 +195,7 @@ async fn source_mismatch(report: bool) {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
                 outbox
                     .submit_relay::<PushTask, RecordRemoval>(
                         Submitter::Project(project()),
@@ -233,7 +235,7 @@ async fn source_mismatch(report: bool) {
         .unwrap();
     let before = snapshot(&fixture.store).await;
     fixture.store.transaction(move |scope|Box::pin(async move {
-            let mut outbox=Outbox::<_,TestTypes>::new(scope,limits());
+            let mut outbox=Outbox::<_,TestTypes, _>::new(scope,limits(), &FixtureBindings);
             let error=if report {
                 outbox.recipient_report::<PublishTask>(peer(2),RecipientReport::<TestTypes> {item:item_id(1),report_seq:ReportSeq::new(1),outcome:RecipientOutcome::Delivered {acceptance:Acceptance {receipt:"actual B receipt".into()}}},now()).await.err()
             } else {outbox.status(item_id(1)).await.err()};

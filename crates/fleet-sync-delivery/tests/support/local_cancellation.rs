@@ -41,7 +41,7 @@ pub async fn enqueue_original(
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits)
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits, &FixtureBindings)
                     .enqueue_local(local_item(id), &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)
@@ -55,7 +55,7 @@ pub async fn enqueue_cancel(fixture: &Fixture, id: u64, target: u64) -> LocalCan
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_cancel(
                         local_cancel(id, target, "sender"),
                         &TestConsumer,
@@ -73,7 +73,7 @@ pub async fn outcome(fixture: &Fixture, id: u64) -> Option<RecipientOutcome<Acce
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .local_outcome(item_id(id))
                     .await
                     .map_err(storage_error)

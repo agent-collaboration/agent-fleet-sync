@@ -48,7 +48,8 @@ impl DeliveryConsumer<TursoScope<'_, TestHost>> for GatedConsumer {
         requester == item.sender()
     }
 }
-type GatedSubmit = SubmitItem<TestStore, sqlx_turso::Turso, TestTypes, GatedConsumer>;
+type GatedSubmit =
+    SubmitItem<TestStore, sqlx_turso::Turso, TestTypes, GatedConsumer, FixtureBindings>;
 fn sender_engine(network: &NetworkFixture) -> Engine<TestStore, TestHost> {
     let mut engine = Engine::new(network.sender.store.clone(), network.sender.host.clone());
     engine
@@ -56,6 +57,7 @@ fn sender_engine(network: &NetworkFixture) -> Engine<TestStore, TestHost> {
             limits(),
             Arc::new(GatedConsumer),
             network.sender.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
         ))
         .unwrap();
     engine
@@ -165,7 +167,7 @@ async fn cancelling_an_original_held_before_the_first_submit_withdraws_it_withou
                 let DeliveryEnvelope::Cancel(cancel) = cancel(2, 1) else {
                     return Err(durable_steps::StoreError::backend("fixture cancel"));
                 };
-                let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
                 outbox
                     .enqueue_cancel_and_admit::<GatedSubmit, RecordRemoval, _>(
                         cancel,

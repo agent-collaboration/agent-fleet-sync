@@ -9,10 +9,11 @@ use sqlx_core::{
     encode::Encode, types::Type,
 };
 
-impl<S, D> Inbox<'_, S, D>
+impl<S, D, B> Inbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
@@ -41,13 +42,29 @@ where
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
         async move {
-            if submitter != D::submitter(item.sender()) {
+            let verified = match crate::sender_binding::verify_sender::<S, D, B>(
+                self.scope,
+                self.binding,
+                item.sender(),
+                crate::CustodyRow::Inbox(item.id()),
+            )
+            .await
+            {
+                Ok(verified) => verified,
+                Err(DeliveryError::SenderBindingUnavailable { reason, .. }) => {
+                    return Ok(PushResult::BindingUnavailable { reason });
+                }
+                Err(error) => return Err(error),
+            };
+            if submitter != verified.owner() {
                 return Ok(PushResult::Refused {
                     reason: DeliveryRefusal::NotSubmitter,
                 });
             }
             let identity = item.id();
-            let (answer, effects) = self.store_push(item, relay, consumer, now).await?;
+            let (answer, effects) = self
+                .store_push(item, verified, relay, consumer, now)
+                .await?;
             if matches!(
                 answer,
                 PushResult::Accepted { .. } | PushResult::Replayed { .. }
@@ -75,6 +92,7 @@ where
     async fn store_push<C>(
         &mut self,
         item: DeliveryEnvelope<D>,
+        verified: crate::sender_binding::VerifiedSender<D>,
         relay: PeerId,
         consumer: &C,
         now: SyncTime,
@@ -224,7 +242,8 @@ where
                 }
             }
         };
-        let mut record = InboxRecord::new(item, InboxRoute::Relayed, progress, reserve, now)?;
+        let mut record =
+            InboxRecord::new(item, verified, InboxRoute::Relayed, progress, reserve, now)?;
         record.header.relay = Some(relay);
         self.save(&record, now).await?;
         if let Some(DeliveryEnvelope::Item(item)) = &record.payload {

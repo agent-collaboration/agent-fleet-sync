@@ -62,19 +62,33 @@ impl<
         };
         Ok(DeliveryServiceSnapshot {
             mailbox: match mailbox {
-                Some(owner) => owner
-                    .object
-                    .rule_transaction(|scope| Box::pin(snapshot::<_, P::Delivery>(scope)))
-                    .await
-                    .map_err(ServiceError::rule)?,
+                Some(owner) => {
+                    let binding = self.state.consumer.clone();
+                    owner
+                        .object
+                        .rule_transaction(move |scope| {
+                            Box::pin(async move {
+                                snapshot::<_, P::Delivery, _>(scope, binding.as_ref()).await
+                            })
+                        })
+                        .await
+                        .map_err(ServiceError::rule)?
+                }
                 None => Vec::new(),
             },
             origin: match origin {
-                Some(owner) => owner
-                    .object
-                    .rule_transaction(|scope| Box::pin(snapshot::<_, P::Delivery>(scope)))
-                    .await
-                    .map_err(ServiceError::rule)?,
+                Some(owner) => {
+                    let binding = self.state.consumer.clone();
+                    owner
+                        .object
+                        .rule_transaction(move |scope| {
+                            Box::pin(async move {
+                                snapshot::<_, P::Delivery, _>(scope, binding.as_ref()).await
+                            })
+                        })
+                        .await
+                        .map_err(ServiceError::rule)?
+                }
                 None => Vec::new(),
             },
         })

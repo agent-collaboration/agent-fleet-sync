@@ -3,6 +3,7 @@ use crate::{
     delivery_owner::{DeliveryObject, DeliveryOwner},
     service_state::ServiceState,
 };
+use fleet_sync_delivery::SenderBinding;
 use fleet_sync_delivery::{
     DeliveryError, DeliveryLimits, Mailbox, PublishStatus, admit_publications,
 };
@@ -35,14 +36,18 @@ impl PassFailure {
     }
 }
 
-async fn mailbox_pass<D: DeliveryTypes>(
+async fn mailbox_pass<
+    D: DeliveryTypes,
+    B: for<'t> SenderBinding<crate::ServiceScope<'t>, D> + 'static,
+>(
     owner: &DeliveryOwner,
+    binding: Arc<B>,
     mailbox: PeerId,
     limits: DeliveryLimits,
 ) -> Result<(), PassFailure> {
     let host = owner.object.host();
     owner
-        .ensure_schema::<D>()
+        .ensure_schema::<D, _>(binding)
         .await
         .map_err(|error| PassFailure::operational("migration", error))?;
     let now = host.now();
@@ -106,7 +111,14 @@ pub(crate) async fn run_mailbox<P, C, A>(
         };
         match result {
             Ok(owner) => {
-                run_initialized_mailbox::<P::Delivery>(owner, mailbox, limits, shutdown).await;
+                run_initialized_mailbox::<P::Delivery, _>(
+                    owner,
+                    state.consumer.clone(),
+                    mailbox,
+                    limits,
+                    shutdown,
+                )
+                .await;
                 return;
             }
             Err(cause) => {
@@ -122,17 +134,28 @@ pub(crate) async fn run_mailbox<P, C, A>(
     }
 }
 
-async fn owned_mailbox_pass<D: DeliveryTypes>(
+async fn owned_mailbox_pass<
+    D: DeliveryTypes,
+    B: for<'t> SenderBinding<crate::ServiceScope<'t>, D> + 'static,
+>(
     owner: Arc<DeliveryOwner>,
+    binding: Arc<B>,
     mailbox: PeerId,
     limits: DeliveryLimits,
     retry: bool,
 ) -> (bool, Result<(), PassFailure>) {
-    (retry, mailbox_pass::<D>(&owner, mailbox, limits).await)
+    (
+        retry,
+        mailbox_pass::<D, _>(&owner, binding, mailbox, limits).await,
+    )
 }
 
-pub(crate) async fn run_initialized_mailbox<D: DeliveryTypes>(
+pub(crate) async fn run_initialized_mailbox<
+    D: DeliveryTypes,
+    B: for<'t> SenderBinding<crate::ServiceScope<'t>, D> + 'static,
+>(
     owner: Arc<DeliveryOwner>,
+    binding: Arc<B>,
     mailbox: PeerId,
     limits: DeliveryLimits,
     mut shutdown: watch::Receiver<bool>,
@@ -145,8 +168,9 @@ pub(crate) async fn run_initialized_mailbox<D: DeliveryTypes>(
     let mut stopping = *shutdown.borrow() || health.borrow().is_some();
     let mut passes = JoinSet::new();
     if !stopping {
-        passes.spawn(owned_mailbox_pass::<D>(
+        passes.spawn(owned_mailbox_pass::<D, _>(
             owner.clone(),
+            binding.clone(),
             mailbox,
             limits,
             false,
@@ -201,7 +225,7 @@ pub(crate) async fn run_initialized_mailbox<D: DeliveryTypes>(
                 // bypass operational backoff, including while its retry runs.
                 let retry = retry_at.take().is_some();
                 retry_in_flight = retry;
-                passes.spawn(owned_mailbox_pass::<D>(owner.clone(), mailbox, limits, retry));
+                passes.spawn(owned_mailbox_pass::<D, _>(owner.clone(), binding.clone(), mailbox, limits, retry));
             },
             changed = health.changed(), if !stopping => {
                 if changed.is_err() || health.borrow().is_some() {stopping = true;}

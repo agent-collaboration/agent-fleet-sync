@@ -17,7 +17,7 @@ async fn ordinary_admission_uses_small_bound_while_large_kind_reserves_global() 
                 let small_capacity = variable_limits(50_000);
                 for identity in 1..=3 {
                     assert!(matches!(
-                        Outbox::<_, VariableTypes>::new(scope, small_capacity)
+                        Outbox::<_, VariableTypes, _>::new(scope, small_capacity, &FixtureBindings)
                             .enqueue(
                                 variable_item(identity, "small"),
                                 peer(3),
@@ -43,7 +43,7 @@ async fn ordinary_admission_uses_small_bound_while_large_kind_reserves_global() 
                     ));
                 }
                 assert!(matches!(
-                    Outbox::<_, VariableTypes>::new(scope, small_capacity)
+                    Outbox::<_, VariableTypes, _>::new(scope, small_capacity, &FixtureBindings)
                         .enqueue(
                             variable_item(4, "large"),
                             peer(3),
@@ -86,14 +86,18 @@ async fn invalid_body_bound_is_refused_before_any_custody_write() {
         .transaction(|scope| {
             Box::pin(async move {
                 assert!(matches!(
-                    Outbox::<_, VariableTypes>::new(scope, variable_limits(100_000_000))
-                        .enqueue(
-                            variable_item(1, "invalid"),
-                            peer(3),
-                            fleet_sync_delivery::Submitter::Machine(peer(1)),
-                            SyncTime::from_unix_millis(0)
-                        )
-                        .await,
+                    Outbox::<_, VariableTypes, _>::new(
+                        scope,
+                        variable_limits(100_000_000),
+                        &FixtureBindings
+                    )
+                    .enqueue(
+                        variable_item(1, "invalid"),
+                        peer(3),
+                        fleet_sync_delivery::Submitter::Machine(peer(1)),
+                        SyncTime::from_unix_millis(0)
+                    )
+                    .await,
                     Err(DeliveryError::Config(_))
                 ));
                 assert!(matches!(
@@ -129,7 +133,7 @@ async fn stored_bound_rejects_oversized_acceptance_after_sender_and_relay_releas
         .transaction(|scope| {
             Box::pin(async move {
                 let limits = variable_limits(100_000_000);
-                Outbox::<_, VariableTypes>::new(scope, limits)
+                Outbox::<_, VariableTypes, _>::new(scope, limits, &FixtureBindings)
                     .enqueue(
                         variable_item(1, "small"),
                         peer(3),
@@ -138,7 +142,7 @@ async fn stored_bound_rejects_oversized_acceptance_after_sender_and_relay_releas
                     )
                     .await
                     .map_err(storage_error)?;
-                Outbox::<_, VariableTypes>::new(scope, limits)
+                Outbox::<_, VariableTypes, _>::new(scope, limits, &FixtureBindings)
                     .publish_status(
                         StatusPublication {
                             item: item_id(1),
@@ -167,7 +171,7 @@ async fn stored_bound_rejects_oversized_acceptance_after_sender_and_relay_releas
                     cancel: None,
                 };
                 assert!(matches!(
-                    Outbox::<_, VariableTypes>::new(scope, limits)
+                    Outbox::<_, VariableTypes, _>::new(scope, limits, &FixtureBindings)
                         .publish_status(oversized, SyncTime::from_unix_millis(0))
                         .await,
                     Err(DeliveryError::Refused {
@@ -243,7 +247,8 @@ async fn mixed_fetch_uses_actual_reserves_and_stops_exactly_at_room_boundary() {
                     .map_err(storage_error)?;
                 assert_eq!(exact.entries.len(), 2);
                 assert_eq!(exact.through, DeliverySeq::new(2));
-                let mut inbox = Inbox::<_, VariableTypes>::new(scope, peer(2), limits);
+                let mut inbox =
+                    Inbox::<_, VariableTypes, _>::new(scope, peer(2), limits, &FixtureBindings);
                 let cycle = inbox
                     .begin_receive(
                         DeliveryStream::Items,
@@ -307,7 +312,7 @@ async fn per_item_bound_survives_reopen_and_legacy_absence_uses_global() {
             Box::pin(async move {
                 let limits = variable_limits(100_000_000);
                 for identity in [1, 2] {
-                    Outbox::<_, VariableTypes>::new(scope, limits)
+                    Outbox::<_, VariableTypes, _>::new(scope, limits, &FixtureBindings)
                         .enqueue(
                             variable_item(identity, "small"),
                             peer(3),
@@ -316,7 +321,7 @@ async fn per_item_bound_survives_reopen_and_legacy_absence_uses_global() {
                         )
                         .await
                         .map_err(storage_error)?;
-                    Outbox::<_, VariableTypes>::new(scope, limits)
+                    Outbox::<_, VariableTypes, _>::new(scope, limits, &FixtureBindings)
                         .publish_status(
                             StatusPublication {
                                 item: item_id(identity),
@@ -350,21 +355,22 @@ async fn per_item_bound_survives_reopen_and_legacy_absence_uses_global() {
             Box::pin(async move {
                 let limits = variable_limits(100_000_000);
                 for identity in [1, 2] {
-                    let result = Outbox::<_, VariableTypes>::new(scope, limits)
-                        .publish_status(
-                            StatusPublication {
-                                item: item_id(identity),
-                                status: DeliveryStatus::Delivered {
-                                    acceptance: Acceptance {
-                                        receipt: "x".repeat(100),
+                    let result =
+                        Outbox::<_, VariableTypes, _>::new(scope, limits, &FixtureBindings)
+                            .publish_status(
+                                StatusPublication {
+                                    item: item_id(identity),
+                                    status: DeliveryStatus::Delivered {
+                                        acceptance: Acceptance {
+                                            receipt: "x".repeat(100),
+                                        },
                                     },
+                                    version: StatusVersion::new(2),
+                                    cancel: None,
                                 },
-                                version: StatusVersion::new(2),
-                                cancel: None,
-                            },
-                            SyncTime::from_unix_millis(0),
-                        )
-                        .await;
+                                SyncTime::from_unix_millis(0),
+                            )
+                            .await;
                     if identity == 1 {
                         assert!(matches!(
                             result,
@@ -471,14 +477,14 @@ async fn cancel_consumes_original_small_reserve_without_global_charge() {
     let fixture = Fixture::new().await;
     fixture.store.transaction(|scope| Box::pin(async move {
         let limits=variable_limits(50_000);
-        Outbox::<_,VariableTypes>::new(scope,limits).enqueue(variable_item(1,"small"), peer(3), fleet_sync_delivery::Submitter::Machine(peer(1)), SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
+        Outbox::<_,VariableTypes, _>::new(scope,limits, &FixtureBindings).enqueue(variable_item(1,"small"), peer(3), fleet_sync_delivery::Submitter::Machine(peer(1)), SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).submit(peer(1),DeliveryEnvelope::Item(variable_item(1,"small")),now(),"route".into(),None).await.map_err(storage_error)?;
         for owner in ["outbox","mail"] {
             let query=if owner=="outbox" { "SELECT settlement_bytes FROM _fleet_sync_outbox_items" } else { "SELECT settlement_bytes FROM _fleet_sync_mail_items" };
             let before=sqlx_core::query::query::<sqlx_turso::Turso>(query).fetch_one(scope.executor()).await?.try_get::<i64,_>("settlement_bytes")?;
             let control=DeliveryCancel::<VariableTypes>::new(item_id(2),"sender".into(),Recipient {peer:peer(2),address:"inbox".into()},None,CancelBody { target:item_id(1) }).unwrap();
             let charge=serde_json::to_vec(&DeliveryEnvelope::Cancel(DeliveryCancel::<VariableTypes>::new(item_id(2),"sender".into(),Recipient {peer:peer(2),address:"inbox".into()},None,CancelBody { target:item_id(1) }).unwrap())).unwrap().len() as i64;
-            if owner=="outbox" { assert!(matches!(Outbox::<_,VariableTypes>::new(scope,limits).enqueue_cancel(control, peer(3), fleet_sync_delivery::Submitter::Machine(peer(1)), SyncTime::from_unix_millis(0), &VariableConsumer).await.map_err(storage_error)?,OutboxAdmission::Queued { .. })); }
+            if owner=="outbox" { assert!(matches!(Outbox::<_,VariableTypes, _>::new(scope,limits, &FixtureBindings).enqueue_cancel(control, peer(3), fleet_sync_delivery::Submitter::Machine(peer(1)), SyncTime::from_unix_millis(0), &VariableConsumer).await.map_err(storage_error)?,OutboxAdmission::Queued { .. })); }
             else { assert!(matches!(Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).submit(peer(1),DeliveryEnvelope::Cancel(control),now(),"route".into(),None).await.map_err(storage_error)?,SubmitResult::Accepted { .. })); }
             let query=if owner=="outbox" { include_str!("../support/sql/read_outbox_headers.sql") } else { "SELECT settlement_bytes,record FROM _fleet_sync_mail_items ORDER BY item_id" };
             let rows=sqlx_core::query::query::<sqlx_turso::Turso>(query).fetch_all(scope.executor()).await?;

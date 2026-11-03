@@ -57,7 +57,8 @@ async fn receive_cancel_before_target(store: &TestStore) {
     store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 let input = inbox
                     .begin_receive(
                         DeliveryStream::Controls,
@@ -96,7 +97,8 @@ async fn receive_original_after_cancel(
     store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 let input = inbox
                     .begin_receive(
                         DeliveryStream::Items,
@@ -198,7 +200,7 @@ async fn canonical_pending_cancel_applies_when_its_original_arrives() {
     assert!(effects.attempts.is_empty());
     assert_eq!(effects.reports.len(), 2);
     fixture.store.transaction(|scope| Box::pin(async move {
-        let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+        let mut inbox = Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
         assert!(matches!(inbox.local_outcome(item_id(1)).await.map_err(storage_error)?, Some(RecipientOutcome::Prevented { cancel }) if cancel == item_id(PENDING_CANCEL)));
         assert!(inbox.pending_report(item_id(1)).await.map_err(storage_error)?.is_some());
         assert!(inbox.pending_report(item_id(PENDING_CANCEL)).await.map_err(storage_error)?.is_some());
@@ -213,7 +215,8 @@ async fn empty_cycles_are_fresh_and_overlapping_triggers_coalesce() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 let first = inbox
                     .begin_receive(
                         DeliveryStream::Items,
@@ -279,7 +282,7 @@ async fn a_full_inbox_still_stores_a_reserved_cancel_from_controls() {
         let original=item(1,"held original");
         let configured=configured_limits(100_000,20,serde_json::to_vec(&original).unwrap().len() as u64+u64::from(limits().settlement_allowance()));
         let DeliveryEnvelope::Item(original)=original else {return Err(durable_steps::StoreError::backend("fixture is not an item"));};
-        let mut inbox=Inbox::<_,TestTypes>::new(scope,peer(2),configured);
+        let mut inbox=Inbox::<_,TestTypes, _>::new(scope,peer(2),configured, &FixtureBindings);
         inbox.enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         let items=inbox.begin_receive(DeliveryStream::Items, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?.unwrap();
         let controls=inbox.begin_receive(DeliveryStream::Controls, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?.unwrap();
@@ -302,7 +305,7 @@ async fn failure_outcome_survives_corrupted_recipient_custody() {
                 let DeliveryEnvelope::Item(original) = item(1, "original") else {
                     return Err(durable_steps::StoreError::backend("fixture is not an item"));
                 };
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)
@@ -341,7 +344,7 @@ async fn failure_outcome_survives_corrupted_recipient_custody() {
         .await
         .unwrap();
     fixture.store.transaction(move|scope|Box::pin(async move {
-        let mut inbox=Inbox::<_,TestTypes>::new(scope,peer(2),limits());
+        let mut inbox=Inbox::<_,TestTypes, _>::new(scope,peer(2),limits(), &FixtureBindings);
         inbox.record_failure(attempt,DeliveryFailureKind::CustodyCorrupt,&TestConsumer,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         assert!(matches!(inbox.local_outcome(item_id(1)).await.map_err(storage_error)?,Some(RecipientOutcome::Refused{reason:DeliveryRefusal::ProcessingFailed{kind}}) if kind.as_str()=="custodyCorrupt"));
         Ok(())
