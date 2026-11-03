@@ -332,3 +332,29 @@ impl LifecycleIntent {
         }
     }
 }
+
+impl LifecycleAttempt {
+    pub(crate) fn validate(&self) -> Result<(), crate::LeaseError> {
+        if !matches!(
+            (&self.intent, &self.outcome),
+            (_, None | Some(LifecycleOutcome::Failed { .. }))
+                | (
+                    LifecycleIntent::Register(_),
+                    Some(LifecycleOutcome::Registration(_))
+                )
+                | (
+                    LifecycleIntent::Import(_),
+                    Some(LifecycleOutcome::Import(_))
+                )
+                | (
+                    LifecycleIntent::Retire(_),
+                    Some(LifecycleOutcome::Retirement(_))
+                )
+        ) {
+            return Err(crate::LeaseError::Corrupt {
+                field: "lifecycle outcome kind".into(),
+            });
+        }
+        Ok(())
+    }
+}

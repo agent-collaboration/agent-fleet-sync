@@ -96,7 +96,7 @@ pub async fn generate_manifest(path: impl AsRef<Path>, check: bool) -> Result<()
         .await
         .map_err(|error| GenerateError::Sql(error.to_string()))?;
     migrator
-        .run_direct(None, &mut *transaction, false)
+        .run_direct(manifest.migration_target, &mut *transaction, false)
         .await
         .map_err(|error| GenerateError::Sql(error.to_string()))?;
     transaction

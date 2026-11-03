@@ -8,6 +8,15 @@ pub(crate) fn corrupt_column(field: &str) -> LeaseError {
         field: field.into(),
     }
 }
+pub(crate) fn stored_row_id(id: &Option<String>, table: &str, key: &str) -> Result<(), LeaseError> {
+    if id
+        .as_deref()
+        .is_none_or(|value| !runtime_primitives::canonical_uuid_v7(value))
+    {
+        return Err(corrupt_column(&format!("{table} row {key}: id")));
+    }
+    Ok(())
+}
 pub(crate) fn required_text(value: Option<String>, field: &str) -> Result<String, LeaseError> {
     value.ok_or_else(|| corrupt_column(field))
 }
@@ -150,6 +159,12 @@ impl StoredLeaseRow {
 }
 impl StoredHistoryRow {
     pub(crate) fn history_record(&self) -> Result<EpochHistory, LeaseError> {
+        let key = format!(
+            "{}/{}",
+            self.database.as_deref().unwrap_or("<missing>"),
+            self.epoch.as_deref().unwrap_or("<missing>")
+        );
+        stored_row_id(&self.id, "_fleet_sync_epoch_history", &key)?;
         Ok(EpochHistory {
             database: stored_scalar(self.database.clone(), "history database")?,
             epoch: stored_epoch(self.epoch.clone(), "history epoch")?,

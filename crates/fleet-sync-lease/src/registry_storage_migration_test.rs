@@ -30,7 +30,7 @@ async fn legacy_identity_refusal(case: &'static str) -> TestResult {
             Box::pin(async move {
                 let mut old = Migrator::with_migrations(
                     LEASE_MIGRATOR
-                        .iter()
+                        .sql_migrations()
                         .filter(|m| m.version <= 4)
                         .cloned()
                         .collect::<Vec<_>>(),
@@ -53,9 +53,7 @@ async fn legacy_identity_refusal(case: &'static str) -> TestResult {
     let result = store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut all =
-                    Migrator::with_migrations(LEASE_MIGRATOR.iter().cloned().collect::<Vec<_>>());
-                all.dangerous_set_table_name("_fleet_sync_registry_migrations");
+                let all = LEASE_MIGRATOR.with_history_table("_fleet_sync_registry_migrations");
                 all.run_direct(None, scope.executor(), false)
                     .await
                     .map_err(storage)

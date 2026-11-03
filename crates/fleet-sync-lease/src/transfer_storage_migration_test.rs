@@ -21,15 +21,14 @@ async fn frozen_legacy_workflow_receipts_and_history_migrate_and_reopen_with_eve
     let host = TestHost::open(directory.path(), false).await?;
     let store = open_store(&directory.path().join("registry.db"), host.clone(), false).await?;
     store.transaction(|scope|Box::pin(async move {
-        let mut old=Migrator::with_migrations(LEASE_MIGRATOR.iter().filter(|m|m.version<=4).cloned().collect::<Vec<_>>());
+        let mut old=Migrator::with_migrations(LEASE_MIGRATOR.sql_migrations().filter(|m|m.version<=4).cloned().collect::<Vec<_>>());
         old.dangerous_set_table_name("_fleet_sync_registry_migrations");
         old.run_direct(None,scope.executor(),false).await.map_err(storage)?;
         query::<Turso>("INSERT INTO _fleet_sync_renewal_attempts(database,attempt,record) VALUES(?1,'019eef00-0000-7000-8000-000000000008',?2)").bind(DATABASE).bind(RENEWAL).execute(scope.executor()).await?;
         query::<Turso>("INSERT INTO _fleet_sync_transfer_admissions(attempt,operation,request,requested_by,admitted_at,follow_up,target_schema) VALUES(?1,?2,?3,?4,'1000',?5,?6)").bind(ATTEMPT).bind("\"019eef00-0000-7000-8000-000000000010\"").bind(REQUEST).bind("\"actor:tests\"").bind("\"019eef00-0000-7000-8000-000000000011\"").bind("{\"maxVersion\":18446744073709551615}").execute(scope.executor()).await?;
         query::<Turso>("INSERT INTO _fleet_sync_transfers(attempt,database,intent,outcome,phase,phase_history) VALUES(?1,?2,'18446744073709551615',?3,'{\"phase\":\"ended\"}',?4)").bind(ATTEMPT).bind(DATABASE).bind(OUTCOME).bind(HISTORY).execute(scope.executor()).await?;
         query::<Turso>("INSERT INTO _fleet_sync_lifecycle_attempts(attempt,database,intent,outcome) VALUES('019eef00-0000-7000-8000-000000000006',?1,?2,?3)").bind(DATABASE).bind(LIFECYCLE_INTENT).bind(LIFECYCLE_OUTCOME).execute(scope.executor()).await?;
-        let mut all=Migrator::with_migrations(LEASE_MIGRATOR.iter().cloned().collect::<Vec<_>>());
-        all.dangerous_set_table_name("_fleet_sync_registry_migrations");
+        let all=LEASE_MIGRATOR.with_history_table("_fleet_sync_registry_migrations");
         all.run_direct(None,scope.executor(),false).await.map_err(storage)
     })).await?;
     drop(store);

@@ -491,6 +491,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct StoredOutboxCursorRow {
+    pub id: Option<String>,
     pub cursor_class: Option<String>,
     pub cursor: Option<String>,
 }
@@ -512,6 +513,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredOutboxCursorRow {
+                    id: row.try_get("id")?,
                     cursor_class: row.try_get("cursor_class")?,
                     cursor: row.try_get("cursor")?,
                 })

@@ -82,6 +82,12 @@ pub enum DeliveryError {
     Refused { reason: DeliveryRefusal },
     #[error("invalid stored delivery field {field}")]
     Corrupt { field: &'static str },
+    #[error("invalid stored {table} row {key:?}: {field}")]
+    CorruptRow {
+        table: &'static str,
+        key: String,
+        field: &'static str,
+    },
     #[error("delivery encoding: {0}")]
     Encoding(String),
     #[error("delivery sequence exhausted")]
@@ -106,7 +112,7 @@ impl DeliveryError {
             Self::ProcessingFailed { kind } => *kind,
             Self::CustodyMissing => DeliveryFailureKind::CustodyMissing,
             Self::DigestMismatch => DeliveryFailureKind::DigestMismatch,
-            Self::Corrupt { .. } => DeliveryFailureKind::CustodyCorrupt,
+            Self::Corrupt { .. } | Self::CorruptRow { .. } => DeliveryFailureKind::CustodyCorrupt,
             _ => DeliveryFailureKind::ExecutionFailed,
         }
     }

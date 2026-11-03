@@ -9,6 +9,7 @@ use sqlx_core::{
 
 #[derive(Debug)]
 pub(crate) struct StoredRenewalRow {
+    pub id: Option<String>,
     pub database: Option<String>,
     pub attempt: Option<String>,
     pub request_epoch: Option<String>,
@@ -52,6 +53,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredRenewalRow {
+                    id: row.try_get("id")?,
                     database: row.try_get("database")?,
                     attempt: row.try_get("attempt")?,
                     request_epoch: row.try_get("request_epoch")?,

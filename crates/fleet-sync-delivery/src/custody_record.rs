@@ -282,3 +282,21 @@ pub(crate) fn delivery_header<D: DeliveryTypes>(
         digest: digest.clone(),
     })
 }
+
+pub(crate) fn stored_row_id(
+    id: &Option<String>,
+    table: &'static str,
+    key: String,
+) -> Result<(), DeliveryError> {
+    if id
+        .as_deref()
+        .is_none_or(|value| !runtime_primitives::canonical_uuid_v7(value))
+    {
+        return Err(DeliveryError::CorruptRow {
+            table,
+            key,
+            field: "id",
+        });
+    }
+    Ok(())
+}

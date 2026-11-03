@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Output},
 };
-#[path = "support/metadata_integrity_cases.rs"]
+#[path = "../support/metadata_integrity_cases.rs"]
 mod metadata_integrity_cases;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -121,6 +121,7 @@ fn external_consumer(consumer: &Path, library: &Path) -> TestResult<PathBuf> {
         &manifest,
         serde_json::to_vec_pretty(&QueryManifest {
             migrations: vec!["migrations".into()],
+            migration_target: None,
             output: "src/checked_queries.rs".into(),
             metadata: "checked-query-metadata.json".into(),
             queries,

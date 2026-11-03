@@ -9,6 +9,7 @@ use sqlx_core::{
 
 #[derive(Debug)]
 pub(crate) struct StoredHistoryRow {
+    pub id: Option<String>,
     pub database: Option<String>,
     pub epoch: Option<String>,
     pub holder: Option<String>,
@@ -39,6 +40,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredHistoryRow {
+                    id: row.try_get("id")?,
                     database: row.try_get("database")?,
                     epoch: row.try_get("epoch")?,
                     holder: row.try_get("holder")?,
@@ -100,6 +102,7 @@ where
         rows.iter()
             .map(|row| {
                 Ok(StoredHistoryRow {
+                    id: row.try_get("id")?,
                     database: row.try_get("database")?,
                     epoch: row.try_get("epoch")?,
                     holder: row.try_get("holder")?,
@@ -134,6 +137,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredHistoryRow {
+                    id: row.try_get("id")?,
                     database: row.try_get("database")?,
                     epoch: row.try_get("epoch")?,
                     holder: row.try_get("holder")?,
@@ -148,6 +152,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct StoredInvalidHistoryEpochRow {
+    pub id: Option<String>,
     pub epoch: Option<String>,
 }
 pub(crate) fn read_invalid_history_epoch<S>(
@@ -172,6 +177,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredInvalidHistoryEpochRow {
+                    id: row.try_get("id")?,
                     epoch: row.try_get("epoch")?,
                 })
             })

@@ -1,4 +1,4 @@
-SELECT machine_id,
+SELECT CAST(CASE WHEN typeof(id)='text' THEN id END AS TEXT) AS id,machine_id,
        item_id,
        typeof(version) AS version_class,CAST(version AS TEXT) AS version,
        status_kind,

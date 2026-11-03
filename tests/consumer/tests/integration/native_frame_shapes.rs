@@ -1,5 +1,5 @@
 #[allow(dead_code, unused_imports)]
-mod support;
+use super::support;
 use fleet_sync_protocol::*;
 use fleet_sync_session::TransportConnection;
 use fleet_sync_test_consumer::*;
@@ -31,8 +31,8 @@ async fn identified_bad_bodies_are_correlated_and_the_same_session_stays_usable(
         .peer(2, SessionId::new(durable_steps::Uuid::now_v7())?)
         .await?;
     let result: TestResult = async {
-        // Frame IDs remain non-nil correlation IDs; they need not be UUIDv7.
-        let frame = FrameId::new(durable_steps::Uuid::from_u128(0x019eef00000040008000000000000011))?;
+        // A valid canonical UUIDv7 keeps malformed bodies correlated.
+        let frame = FrameId::new(durable_steps::Uuid::from_u128(0x019eef00000070008000000000000011))?;
         let long_field = "界".repeat(100);
         let bounded_field = "界".repeat(64);
         let mut oversized = json!({"kind":"request","value":{"frame":frame,"body":{"kind":"consumer","value":{"Echo":{"text":"must not route"}}}}});

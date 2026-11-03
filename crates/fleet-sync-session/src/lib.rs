@@ -19,7 +19,11 @@ pub use session_client::*;
 mod checked_session_queries;
 mod session_storage;
 pub use durable_steps::storage::TransactionScope;
-pub static SESSION_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+mod checked_legacy_queries;
+mod session_migration;
+pub use session_migration::{
+    SESSION_MIGRATOR, SessionMigrationError, SessionMigrator, validate_legacy_rows,
+};
 
 #[cfg(test)]
 #[path = "peer_notice_test.rs"]

@@ -9,7 +9,6 @@ use fleet_sync_lease::*;
 use fleet_sync_protocol::*;
 use fleet_sync_session::PeerAuthenticator;
 use runtime_primitives::{Clock, WakeScheduler};
-use sqlx_core::migrate::Migrator;
 use sqlx_turso::Turso;
 use std::sync::Arc;
 
@@ -20,9 +19,7 @@ pub(crate) async fn registry_engine(
     object
         .transaction(|scope| {
             Box::pin(async move {
-                let mut migrator =
-                    Migrator::with_migrations(LEASE_MIGRATOR.iter().cloned().collect::<Vec<_>>());
-                migrator.dangerous_set_table_name("_fleet_sync_registry_migrations");
+                let migrator = LEASE_MIGRATOR.with_history_table("_fleet_sync_registry_migrations");
                 migrator
                     .run_direct(None, scope.executor(), false)
                     .await

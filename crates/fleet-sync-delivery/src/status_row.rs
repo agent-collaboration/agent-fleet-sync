@@ -1,4 +1,9 @@
-use crate::{DeliveryError, checked_queries::*, custody_record::integer, stored_outcome::*};
+use crate::{
+    DeliveryError,
+    checked_queries::*,
+    custody_record::{integer, stored_row_id},
+    stored_outcome::*,
+};
 use fleet_sync_protocol::*;
 use serde::de::DeserializeOwned;
 
@@ -6,9 +11,11 @@ pub(crate) trait PublicationRow {
     fn publication<A: DeserializeOwned>(&self) -> Result<StatusPublication<A>, DeliveryError>;
 }
 macro_rules! publication_row {
-    ($($row:ty),+)=>{$(
+    ($($row:ty => $table:literal),+)=>{$(
         impl PublicationRow for $row {
             fn publication<A:DeserializeOwned>(&self)->Result<StatusPublication<A>,DeliveryError> {
+                let key=format!("{}/{}/{}",self.machine_id.as_deref().unwrap_or("<missing>"),self.item_id.as_deref().unwrap_or("<missing>"),self.version.as_deref().unwrap_or("<missing>"));
+                stored_row_id(&self.id,$table,key)?;
                 Ok(StatusPublication {
                     item:stored_enum(self.item_id.clone(),"status item id")?,
                     version:StatusVersion::new(integer(self.version.clone(),self.version_class.clone(),"status version")?),
@@ -22,7 +29,7 @@ macro_rules! publication_row {
     )+};
 }
 publication_row!(
-    StoredStatusEventRow,
-    StoredPublicationRow,
-    StoredOwedPublicationRow
+    StoredStatusEventRow => "_fleet_sync_status_events",
+    StoredPublicationRow => "_fleet_sync_status_owed",
+    StoredOwedPublicationRow => "_fleet_sync_status_owed"
 );

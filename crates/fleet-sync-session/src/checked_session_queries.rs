@@ -9,6 +9,7 @@ use sqlx_core::{
 
 #[derive(Debug)]
 pub(crate) struct StoredSessionRow {
+    pub id: Option<String>,
     pub peer: Option<String>,
     pub session_id: Option<String>,
     pub state_kind: Option<String>,
@@ -40,6 +41,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredSessionRow {
+                    id: row.try_get("id")?,
                     peer: row.try_get("peer")?,
                     session_id: row.try_get("session_id")?,
                     state_kind: row.try_get("state_kind")?,
@@ -73,6 +75,7 @@ where
         rows.iter()
             .map(|row| {
                 Ok(StoredSessionRow {
+                    id: row.try_get("id")?,
                     peer: row.try_get("peer")?,
                     session_id: row.try_get("session_id")?,
                     state_kind: row.try_get("state_kind")?,
@@ -136,6 +139,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct StoredNoticeRow {
+    pub id: Option<String>,
     pub position: Option<String>,
     pub notice_kind: Option<String>,
     pub database_id: Option<String>,
@@ -164,6 +168,7 @@ where
         rows.iter()
             .map(|row| {
                 Ok(StoredNoticeRow {
+                    id: row.try_get("id")?,
                     position: row.try_get("position")?,
                     notice_kind: row.try_get("notice_kind")?,
                     database_id: row.try_get("database_id")?,

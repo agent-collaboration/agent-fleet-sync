@@ -17,9 +17,19 @@ pub async fn open_and_migrate(path: &Path) -> TestResult<TursoConnection> {
         .connect()
         .await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    {
+        let mut scope = FixtureScope {
+            transaction: &mut transaction,
+            state: FixtureState::default(),
+            registrations: BTreeMap::new(),
+            publications: Vec::new(),
+            effects: Vec::new(),
+        };
+        fleet_sync_session::validate_legacy_rows(&mut scope).await?;
+    }
     let migrations = FIXTURE_MIGRATOR
         .iter()
-        .chain(SESSION_MIGRATOR.iter())
+        .chain(SESSION_MIGRATOR.sql_migrations())
         .cloned()
         .collect();
     sqlx::migrate::Migrator::with_migrations(migrations)

@@ -5,6 +5,12 @@ use crate::{
 use fleet_sync_protocol::*;
 impl StoredRenewalRow {
     pub(crate) fn renewal_record(&self) -> Result<RenewalAttempt, LeaseError> {
+        let key = format!(
+            "{}/{}",
+            self.database.as_deref().unwrap_or("<missing>"),
+            self.attempt.as_deref().unwrap_or("<missing>")
+        );
+        stored_row_id(&self.id, "_fleet_sync_renewal_attempts", &key)?;
         let payload = [
             ("recorded_epoch", &self.recorded_epoch),
             ("recorded_expires_at", &self.recorded_expires_at),

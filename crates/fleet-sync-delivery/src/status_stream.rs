@@ -101,20 +101,23 @@ where
                 .await
                 .map_err(sql_error)?
             {
-                Some(row) => StreamState {
-                    sender: stored_enum(row.machine_id, "status stream machine")?,
-                    owner_route: decode(row.owner_route, "status stream route")?,
-                    head: StatusCursor::new(integer(
-                        row.head,
-                        row.head_class,
-                        "status stream head",
-                    )?),
-                    floor: StatusCursor::new(integer(
-                        row.floor,
-                        row.floor_class,
-                        "status stream floor",
-                    )?),
-                },
+                Some(row) => {
+                    stored_row_id(&row.id, "_fleet_sync_status_state", self.sender.to_string())?;
+                    StreamState {
+                        sender: stored_enum(row.machine_id, "status stream machine")?,
+                        owner_route: decode(row.owner_route, "status stream route")?,
+                        head: StatusCursor::new(integer(
+                            row.head,
+                            row.head_class,
+                            "status stream head",
+                        )?),
+                        floor: StatusCursor::new(integer(
+                            row.floor,
+                            row.floor_class,
+                            "status stream floor",
+                        )?),
+                    }
+                }
                 None => StreamState {
                     sender: self.sender,
                     owner_route: self.owner_route.clone(),

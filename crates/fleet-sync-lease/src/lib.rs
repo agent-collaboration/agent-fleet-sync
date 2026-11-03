@@ -3,7 +3,13 @@
 //! Consumer hosts supply admission, copy calls, time and the transaction scope.
 
 /// Registry tables applied in the host's migration transaction.
-pub static LEASE_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+mod checked_legacy_queries;
+mod lease_migration;
+mod lease_migration_error;
+mod legacy_registry_rows;
+pub use lease_migration::{LEASE_MIGRATOR, LeaseMigrator};
+pub use lease_migration_error::LeaseMigrationError;
+pub use legacy_registry_rows::validate_legacy_rows;
 
 #[expect(
     clippy::too_many_arguments,

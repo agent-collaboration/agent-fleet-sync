@@ -79,6 +79,7 @@ where
             .map_err(sql_error)?
         {
             Some(row) => {
+                stored_row_id(&row.id, "_fleet_sync_outbox_status", "singleton 1".into())?;
                 integer(row.cursor, row.cursor_class, "outbox status cursor").map(StatusCursor::new)
             }
             None => Ok(StatusCursor::new(0)),

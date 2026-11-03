@@ -18,14 +18,29 @@ fn corrupt(field: &str) -> StoreError {
 fn required(value: Option<String>, field: &str) -> Result<String, StoreError> {
     value.ok_or_else(|| corrupt(field))
 }
-fn canonical_counter(text: String, field: &str) -> Result<u64, StoreError> {
+pub(crate) fn canonical_counter(text: String, field: &str) -> Result<u64, StoreError> {
     let value = text.parse::<u64>().map_err(|_| corrupt(field))?;
     if value.to_string() != text {
         return Err(corrupt(field));
     }
     Ok(value)
 }
+fn stored_row_id(id: &Option<String>, table: &str, key: &str) -> Result<(), StoreError> {
+    if id
+        .as_deref()
+        .is_none_or(|value| !runtime_primitives::canonical_uuid_v7(value))
+    {
+        return Err(corrupt(&format!("{table} row {key}: id")));
+    }
+    Ok(())
+}
 fn decode_session(row: checked::StoredSessionRow) -> Result<SessionRecord, StoreError> {
+    let key = format!(
+        "{}/{}",
+        row.peer.as_deref().unwrap_or("<missing>"),
+        row.session_id.as_deref().unwrap_or("<missing>")
+    );
+    stored_row_id(&row.id, "_fleet_sync_sessions", &key)?;
     let peer = PeerId::try_from(required(row.peer, "peer")?).map_err(|_| corrupt("peer"))?;
     let session_id = SessionId::try_from(required(row.session_id, "session id")?)
         .map_err(|_| corrupt("session id"))?;
@@ -204,6 +219,13 @@ where
     .map_err(store_error)?;
     let mut notices = Vec::new();
     for row in rows {
+        let row_key = format!(
+            "{}/{}/{}",
+            key.peer,
+            key.session_id,
+            row.position.as_deref().unwrap_or("<missing>")
+        );
+        stored_row_id(&row.id, "_fleet_sync_notices", &row_key)?;
         let decimal = required(row.position, "notice position")?;
         let position = decimal
             .parse::<u64>()

@@ -315,10 +315,8 @@ pub(super) async fn open_store(
         store
             .transaction(|scope| {
                 Box::pin(async move {
-                    let mut migrator = sqlx_core::migrate::Migrator::with_migrations(
-                        LEASE_MIGRATOR.iter().cloned().collect::<Vec<_>>(),
-                    );
-                    migrator.dangerous_set_table_name("_fleet_sync_registry_migrations");
+                    let migrator =
+                        LEASE_MIGRATOR.with_history_table("_fleet_sync_registry_migrations");
                     migrator
                         .run_direct(None, scope.executor(), false)
                         .await

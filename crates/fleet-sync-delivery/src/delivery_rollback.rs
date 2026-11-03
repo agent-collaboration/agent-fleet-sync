@@ -34,6 +34,12 @@ pub fn delivery_rollback(error: DeliveryError) -> StoreError {
                 field: field.into(),
             },
         ),
+        DeliveryError::CorruptRow { table, key, field } => encode_rollback(
+            DELIVERY_CORRUPT,
+            &CorruptCustody {
+                field: format!("{table} row {key:?}: {field}"),
+            },
+        ),
         error => StoreError::backend(error),
     }
 }

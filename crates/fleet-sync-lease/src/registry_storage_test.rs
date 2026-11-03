@@ -54,7 +54,7 @@ async fn legacy_registry_core_rows_migrate_to_scalars_without_losing_full_u64() 
     let expected_history = history.clone();
     let expected_report = report.clone();
     store.transaction(move |scope| Box::pin(async move {
-        let mut old=Migrator::with_migrations(LEASE_MIGRATOR.iter().filter(|m|m.version<=4).cloned().collect::<Vec<_>>());
+        let mut old=Migrator::with_migrations(LEASE_MIGRATOR.sql_migrations().filter(|m|m.version<=4).cloned().collect::<Vec<_>>());
         old.dangerous_set_table_name("_fleet_sync_registry_migrations");
         old.run_direct(None,scope.executor(),false).await.map_err(storage)?;
         for (statement,body) in [
@@ -64,8 +64,7 @@ async fn legacy_registry_core_rows_migrate_to_scalars_without_losing_full_u64() 
         query::<Turso>("INSERT INTO _fleet_sync_epoch_floor(database,epoch) VALUES(?1,'18446744073709551615')").bind(database.to_string()).execute(scope.executor()).await?;
         query::<Turso>("INSERT INTO _fleet_sync_epoch_history(database,epoch,record) VALUES(?1,'18446744073709551615',?2)").bind(database.to_string()).bind(super::encode(&history).map_err(storage)?).execute(scope.executor()).await?;
         query::<Turso>("INSERT INTO _fleet_sync_schema_support(peer,record) VALUES(?1,?2)").bind(holder.to_string()).bind(super::encode(&report).map_err(storage)?).execute(scope.executor()).await?;
-        let mut all=Migrator::with_migrations(LEASE_MIGRATOR.iter().cloned().collect::<Vec<_>>());
-        all.dangerous_set_table_name("_fleet_sync_registry_migrations");
+        let all=LEASE_MIGRATOR.with_history_table("_fleet_sync_registry_migrations");
         all.run_direct(None,scope.executor(),false).await.map_err(storage)?;
         Ok(())
     })).await?;

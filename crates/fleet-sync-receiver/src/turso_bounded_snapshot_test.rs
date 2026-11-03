@@ -5,7 +5,9 @@ use fleet_sync_protocol::*;
 use sqlx_core::connection::Connection;
 
 fn assert_complete_units_fit(page: &SnapshotPage, limit: usize) -> TestResult {
-    let frame = FrameId::new(durable_steps::Uuid::from_u128(1))?;
+    let frame = FrameId::new(durable_steps::Uuid::from_u128(
+        0x019eef00000070008000000000000001,
+    ))?;
     let seed = SeedPage {
         seed: SeedId {
             generation: u64::MAX,

@@ -6,11 +6,11 @@
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
     "generator:fleet-sync-query-gen/src/main.rs": "528bf0583d11bde8fc4b7c0d5a2ea21bde8380e452c0c123a22929dfa5635cfd",
-    "generator:fleet-sync-query-gen/src/native_generation.rs": "c50abad4f34d2e0f9fef19d5623c6ce1be2e4064ec17ef2f4fa73cdf83f5733f",
+    "generator:fleet-sync-query-gen/src/native_generation.rs": "621160213c6b6cd17f5ee448c240088269476aa2feea99ef4d75627b0412b2d5",
     "generator:fleet-sync-query-gen/src/query_render.rs": "2584f37650c8355b5537362ff5f66c8cf6a3955eb7a903faa5c5887ec26c880a",
     "generator:fleet-sync-query-gen/src/source_freshness.rs": "8fc73a2d5dcfb3d81f7a10b92507ff0ad2a969c0a5b48c9528b3b5016f58ddb3",
     "generator:fleet-sync-query-gen/src/source_inputs.rs": "8cabacd9d34273e5cf16201c1680b89d755c98b5060ea0004ee1e5dcea4ec622",
-    "generator:fleet-sync-query-gen/src/source_manifest.rs": "770e53cb230b27d44731507738e08f7217dba8fc230617d97bda765c78be8ad8",
+    "generator:fleet-sync-query-gen/src/source_manifest.rs": "311dfe2915aad7ddbf8d1c453f0ad4924603ace53e703b2369221dd46d82165a",
     "generator:sqlx-durable-object-core/Cargo.toml": "5af0f7433ff001c4f2347d0575306bb35da43f53b3b75ae4c0fb2c3a0b5e308f",
     "generator:sqlx-durable-object-core/src/arguments.rs": "d278847139d6d4824d9b59f4c50302b8aad641a549ddbfefa1eba55b499d876f",
     "generator:sqlx-durable-object-core/src/error.rs": "1c1484a9714c5bf4bca07d8faf45413841d86f0bcd1c65dda44bafc362ee8bac",
@@ -60,20 +60,27 @@
     "migrations/0004_schema_support.sql": "090cab7906d98b119a8ea39f289f09542b66d8094282d932a7ba126723bab29d",
     "migrations/0005_typed_registry_core.sql": "1717d784907813241edf9574b2e5288313bf80688f6fdd00e1103da13e5efdaf",
     "migrations/0006_typed_registry_workflows.sql": "561bfaeab84011dec358d488e05584a15ef34cd95d59b95f2559a22c5d921569",
-    "sql/read_history.sql": "f0eeaceaf80279c2b97e253f26bb218e0268bc8b9dd7f0b2c4a09832144f7dcb",
-    "sql/read_history_page.sql": "4d29101956825ae7484b616bcbeb433eab37204f8bad698629a33a5af74b049b",
-    "sql/read_history_successor.sql": "f8220b7afcf8a76953122b0e0a9a6ec73d87469ac334c17bf953f26f9bca1600",
+    "sql/read_history.sql": "69f04cbfaace71fe8a45b9f192f3ca8511e3e83e4b16e7c23371fa09570e61ca",
+    "sql/read_history_page.sql": "d424dbc6ad81810e982af3efc5e4adfcf2ead926512c5e8d6e2452ca36dd5b98",
+    "sql/read_history_successor.sql": "c3c1c2e32a8d0963148efe50a56aeea5d8a1925ab58db23a4d2112e48f0ff979",
     "sql/read_history_transfer.sql": "71a966b55818000bb359fec5d8663478300f5be1ce7dfea51bf831a084ffd319",
-    "sql/read_invalid_history_epoch.sql": "bd872dfc2bc18215f206a4451b6f6f7372ea02b4f342b85933643e2a16501570",
+    "sql/read_invalid_history_epoch.sql": "be643564d10b713dade4f32258bcf4daf4518e5a50e8d3b4498e9dfbe2eea91d",
     "sql/write_history.sql": "1d2d8de5e875f115d0a89f36c520fc57754c001f2a09a5ca73b0eaa82198f4f8",
-    "src/checked_queries/history.rs": "f39e9d764894ea00442bf4004b4e9176393a09ad909b879745a681b08ce27ea3"
+    "src/checked_queries/history.rs": "6f68ce2201779defa25ed35b0e9c598e596cd1cd7029ef4fbfae54141c129d3e"
   },
-  "queries_digest": "a19fb3ab41dcf580d409a85999c74110003432c53bb86497443f48b1a22b6d9b",
+  "queries_digest": "4c939839af578a0998a0e3dd490d2ccdb66477da2418e4ebec1f85d307de922f",
   "queries": [
     {
       "name": "read_history",
       "bind_slots": 2,
       "columns": [
+        {
+          "name": "id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
         {
           "name": "database",
           "sql_type": "TEXT",
@@ -128,6 +135,13 @@
       "bind_slots": 4,
       "columns": [
         {
+          "name": "id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
           "name": "database",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
@@ -176,6 +190,13 @@
       "bind_slots": 2,
       "columns": [
         {
+          "name": "id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
           "name": "database",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
@@ -223,6 +244,13 @@
       "name": "read_invalid_history_epoch",
       "bind_slots": 1,
       "columns": [
+        {
+          "name": "id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
         {
           "name": "epoch",
           "sql_type": "TEXT",

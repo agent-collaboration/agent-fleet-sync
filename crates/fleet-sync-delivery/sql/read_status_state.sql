@@ -1,1 +1,1 @@
-SELECT machine_id,owner_route,typeof(head) AS head_class,CAST(head AS TEXT) AS head,typeof(floor) AS floor_class,CAST(floor AS TEXT) AS floor FROM _fleet_sync_status_state WHERE machine_id=?1;
+SELECT CAST(CASE WHEN typeof(id)='text' THEN id END AS TEXT) AS id,machine_id,owner_route,typeof(head) AS head_class,CAST(head AS TEXT) AS head,typeof(floor) AS floor_class,CAST(floor AS TEXT) AS floor FROM _fleet_sync_status_state WHERE machine_id=?1;

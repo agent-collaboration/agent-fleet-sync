@@ -264,24 +264,8 @@ impl StoredLifecycleRow {
             _ => return Err(corrupt_column("lifecycle outcome")),
         };
         validate_variant_columns(&payload, allowed, "lifecycle outcome columns")?;
-        if !matches!(
-            (&intent, &outcome),
-            (_, None | Some(LifecycleOutcome::Failed { .. }))
-                | (
-                    LifecycleIntent::Register(_),
-                    Some(LifecycleOutcome::Registration(_))
-                )
-                | (
-                    LifecycleIntent::Import(_),
-                    Some(LifecycleOutcome::Import(_))
-                )
-                | (
-                    LifecycleIntent::Retire(_),
-                    Some(LifecycleOutcome::Retirement(_))
-                )
-        ) {
-            return Err(corrupt_column("lifecycle outcome kind"));
-        }
-        Ok(LifecycleAttempt { intent, outcome })
+        let record = LifecycleAttempt { intent, outcome };
+        record.validate()?;
+        Ok(record)
     }
 }

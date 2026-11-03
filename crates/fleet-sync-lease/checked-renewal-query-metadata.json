@@ -6,11 +6,11 @@
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
     "generator:fleet-sync-query-gen/src/main.rs": "528bf0583d11bde8fc4b7c0d5a2ea21bde8380e452c0c123a22929dfa5635cfd",
-    "generator:fleet-sync-query-gen/src/native_generation.rs": "c50abad4f34d2e0f9fef19d5623c6ce1be2e4064ec17ef2f4fa73cdf83f5733f",
+    "generator:fleet-sync-query-gen/src/native_generation.rs": "621160213c6b6cd17f5ee448c240088269476aa2feea99ef4d75627b0412b2d5",
     "generator:fleet-sync-query-gen/src/query_render.rs": "2584f37650c8355b5537362ff5f66c8cf6a3955eb7a903faa5c5887ec26c880a",
     "generator:fleet-sync-query-gen/src/source_freshness.rs": "8fc73a2d5dcfb3d81f7a10b92507ff0ad2a969c0a5b48c9528b3b5016f58ddb3",
     "generator:fleet-sync-query-gen/src/source_inputs.rs": "8cabacd9d34273e5cf16201c1680b89d755c98b5060ea0004ee1e5dcea4ec622",
-    "generator:fleet-sync-query-gen/src/source_manifest.rs": "770e53cb230b27d44731507738e08f7217dba8fc230617d97bda765c78be8ad8",
+    "generator:fleet-sync-query-gen/src/source_manifest.rs": "311dfe2915aad7ddbf8d1c453f0ad4924603ace53e703b2369221dd46d82165a",
     "generator:sqlx-durable-object-core/Cargo.toml": "5af0f7433ff001c4f2347d0575306bb35da43f53b3b75ae4c0fb2c3a0b5e308f",
     "generator:sqlx-durable-object-core/src/arguments.rs": "d278847139d6d4824d9b59f4c50302b8aad641a549ddbfefa1eba55b499d876f",
     "generator:sqlx-durable-object-core/src/error.rs": "1c1484a9714c5bf4bca07d8faf45413841d86f0bcd1c65dda44bafc362ee8bac",
@@ -60,16 +60,23 @@
     "migrations/0004_schema_support.sql": "090cab7906d98b119a8ea39f289f09542b66d8094282d932a7ba126723bab29d",
     "migrations/0005_typed_registry_core.sql": "1717d784907813241edf9574b2e5288313bf80688f6fdd00e1103da13e5efdaf",
     "migrations/0006_typed_registry_workflows.sql": "561bfaeab84011dec358d488e05584a15ef34cd95d59b95f2559a22c5d921569",
-    "sql/read_renewal.sql": "3b0ff280997c512d4fdea803a08eed0b2c919591d888117544bb94b9a72f8246",
+    "sql/read_renewal.sql": "925682d5b8c4b528f6c8b7bb6221af55715328f1af011dabb859d55a4e73d570",
     "sql/write_renewal.sql": "b18ffa03d64f78e336a1d923f51d40a3fe496b17b37e17398e01b1cff283bf21",
-    "src/checked_queries/renewal.rs": "181388d597fc3009a7b1a229325779a871b0e6d2d8a617e927ca35e00912d6b0"
+    "src/checked_queries/renewal.rs": "b04f7b6c326e87dfb934f7c3d8598612f40a66d40cc41c169e15f061014e56f4"
   },
-  "queries_digest": "1026ade85ab2478218d83365ce76daf3309f1115184ac54f31543482ba34acac",
+  "queries_digest": "37bfbd7e7d52a8f66d6b9912a460daeb68484a90dbae3847ae0c4ea645f04363",
   "queries": [
     {
       "name": "read_renewal",
       "bind_slots": 2,
       "columns": [
+        {
+          "name": "id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
         {
           "name": "database",
           "sql_type": "TEXT",

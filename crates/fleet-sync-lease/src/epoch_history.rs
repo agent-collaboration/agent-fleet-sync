@@ -74,6 +74,15 @@ where
     if let Some(row) =
         checked_queries::read_invalid_history_epoch(scope, database.as_uuid().to_string()).await?
     {
+        crate::registry_row::stored_row_id(
+            &row.id,
+            "_fleet_sync_epoch_history",
+            &format!(
+                "{}/{}",
+                database,
+                row.epoch.as_deref().unwrap_or("<missing>")
+            ),
+        )?;
         stored_epoch(row.epoch)?;
         return Err(corrupt("epoch history key"));
     }

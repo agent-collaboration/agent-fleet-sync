@@ -6,11 +6,11 @@
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
     "generator:fleet-sync-query-gen/src/main.rs": "528bf0583d11bde8fc4b7c0d5a2ea21bde8380e452c0c123a22929dfa5635cfd",
-    "generator:fleet-sync-query-gen/src/native_generation.rs": "c50abad4f34d2e0f9fef19d5623c6ce1be2e4064ec17ef2f4fa73cdf83f5733f",
+    "generator:fleet-sync-query-gen/src/native_generation.rs": "621160213c6b6cd17f5ee448c240088269476aa2feea99ef4d75627b0412b2d5",
     "generator:fleet-sync-query-gen/src/query_render.rs": "2584f37650c8355b5537362ff5f66c8cf6a3955eb7a903faa5c5887ec26c880a",
     "generator:fleet-sync-query-gen/src/source_freshness.rs": "8fc73a2d5dcfb3d81f7a10b92507ff0ad2a969c0a5b48c9528b3b5016f58ddb3",
     "generator:fleet-sync-query-gen/src/source_inputs.rs": "8cabacd9d34273e5cf16201c1680b89d755c98b5060ea0004ee1e5dcea4ec622",
-    "generator:fleet-sync-query-gen/src/source_manifest.rs": "770e53cb230b27d44731507738e08f7217dba8fc230617d97bda765c78be8ad8",
+    "generator:fleet-sync-query-gen/src/source_manifest.rs": "311dfe2915aad7ddbf8d1c453f0ad4924603ace53e703b2369221dd46d82165a",
     "generator:sqlx-durable-object-core/Cargo.toml": "5af0f7433ff001c4f2347d0575306bb35da43f53b3b75ae4c0fb2c3a0b5e308f",
     "generator:sqlx-durable-object-core/src/arguments.rs": "d278847139d6d4824d9b59f4c50302b8aad641a549ddbfefa1eba55b499d876f",
     "generator:sqlx-durable-object-core/src/error.rs": "1c1484a9714c5bf4bca07d8faf45413841d86f0bcd1c65dda44bafc362ee8bac",
@@ -61,15 +61,15 @@
     "migrations/0005_typed_registry_core.sql": "1717d784907813241edf9574b2e5288313bf80688f6fdd00e1103da13e5efdaf",
     "migrations/0006_typed_registry_workflows.sql": "561bfaeab84011dec358d488e05584a15ef34cd95d59b95f2559a22c5d921569",
     "sql/active_transfer.sql": "b438909798b77bf5989351c581c3f28df0350d5e3e91938b7aa1c54fd86bad95",
-    "sql/read_phase_history.sql": "ebb2f6e86539a624245de53a89c31f5ee7b5c8a975bfa489c46744124f8fda12",
+    "sql/read_phase_history.sql": "ee69bfcdf01aeeb6e3700980ac5be500df84e7fbf338e5683219a360fd8cb873",
     "sql/read_transfer.sql": "a9d73d1a9f7f2b52db9acb90687192074e56fa146098351c4233c1bf11a696e7",
     "sql/repair_transfer_epoch.sql": "6bf4b6517ce53e93a4a8e917cc06e92ff2f8992f56a77009fef60b87df4e456a",
     "sql/write_cleanup_failure.sql": "5034275c318ab2b57e5bc9ad7f7a019154b653336ed1806dd5dfb641b5bf9755",
     "sql/write_phase_history.sql": "0d12a595771087421778a54f3cb418f47a2c596c51029d3ba5a361cce51cdc50",
     "sql/write_transfer.sql": "6938c5fdbf071837638f364bb997f7a4df9570529836e6f58b6c297fb48f000d",
-    "src/checked_queries/transfer.rs": "99c602c2773c601dd81c443cb32f314a95f63c9512f49dbdd89f94471ebea2b3"
+    "src/checked_queries/transfer.rs": "2c199127472367b349e678dcf864f06c3a5c1aa0ec221855212ec9cbf2d48b9e"
   },
-  "queries_digest": "f72d4c375dff7b11ea1077b3cdb3a3e20653143cda883d8972a26563fae4bb52",
+  "queries_digest": "a31c6457667276e1c729b6b87075df87cc7f81050359296e5c47fbe3cf69e16d",
   "queries": [
     {
       "name": "read_transfer",
@@ -508,6 +508,20 @@
       "name": "read_phase_history",
       "bind_slots": 1,
       "columns": [
+        {
+          "name": "id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "attempt",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
         {
           "name": "position",
           "sql_type": "TEXT",

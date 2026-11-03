@@ -9,6 +9,7 @@ use sqlx_core::{
 
 #[derive(Debug)]
 pub(crate) struct StoredStatusStateRow {
+    pub id: Option<String>,
     pub machine_id: Option<String>,
     pub owner_route: Option<String>,
     pub head_class: Option<String>,
@@ -37,6 +38,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredStatusStateRow {
+                    id: row.try_get("id")?,
                     machine_id: row.try_get("machine_id")?,
                     owner_route: row.try_get("owner_route")?,
                     head_class: row.try_get("head_class")?,
@@ -72,6 +74,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct StoredPublicationRow {
+    pub id: Option<String>,
     pub machine_id: Option<String>,
     pub item_id: Option<String>,
     pub version_class: Option<String>,
@@ -111,6 +114,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredPublicationRow {
+                    id: row.try_get("id")?,
                     machine_id: row.try_get("machine_id")?,
                     item_id: row.try_get("item_id")?,
                     version_class: row.try_get("version_class")?,
@@ -209,6 +213,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct StoredStatusEventRow {
+    pub id: Option<String>,
     pub machine_id: Option<String>,
     pub cursor_class: Option<String>,
     pub cursor: Option<String>,
@@ -251,6 +256,7 @@ where
         rows.iter()
             .map(|row| {
                 Ok(StoredStatusEventRow {
+                    id: row.try_get("id")?,
                     machine_id: row.try_get("machine_id")?,
                     cursor_class: row.try_get("cursor_class")?,
                     cursor: row.try_get("cursor")?,
@@ -318,6 +324,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredStatusEventRow {
+                    id: row.try_get("id")?,
                     machine_id: row.try_get("machine_id")?,
                     cursor_class: row.try_get("cursor_class")?,
                     cursor: row.try_get("cursor")?,
@@ -342,6 +349,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct StoredOwedPublicationRow {
+    pub id: Option<String>,
     pub machine_id: Option<String>,
     pub item_id: Option<String>,
     pub version_class: Option<String>,
@@ -376,6 +384,7 @@ where
         rows.iter()
             .map(|row| {
                 Ok(StoredOwedPublicationRow {
+                    id: row.try_get("id")?,
                     machine_id: row.try_get("machine_id")?,
                     item_id: row.try_get("item_id")?,
                     version_class: row.try_get("version_class")?,

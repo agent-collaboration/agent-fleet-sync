@@ -222,6 +222,8 @@ where
 
 #[derive(Debug)]
 pub(crate) struct StoredPhaseHistoryRow {
+    pub id: Option<String>,
+    pub attempt: Option<String>,
     pub position: Option<String>,
     pub phase_kind: Option<String>,
     pub final_epoch: Option<String>,
@@ -249,6 +251,8 @@ where
         rows.iter()
             .map(|row| {
                 Ok(StoredPhaseHistoryRow {
+                    id: row.try_get("id")?,
+                    attempt: row.try_get("attempt")?,
                     position: row.try_get("position")?,
                     phase_kind: row.try_get("phase_kind")?,
                     final_epoch: row.try_get("final_epoch")?,

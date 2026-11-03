@@ -87,3 +87,5 @@ mod per_item_local_checkpoint;
 mod cancellation_support;
 
 mod retention_replay;
+
+mod surrogate_status;

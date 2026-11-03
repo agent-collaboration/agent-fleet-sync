@@ -7,6 +7,7 @@ fn main() -> Result<(), fleet_sync_query_gen::GenerateError> {
         "checked-lifecycle-queries.json",
         "checked-admission-queries.json",
         "checked-support-queries.json",
+        "checked-legacy-queries.json",
     ] {
         fleet_sync_query_gen::verify_manifest(manifest)?;
     }

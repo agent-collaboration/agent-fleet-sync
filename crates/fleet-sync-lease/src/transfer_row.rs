@@ -243,6 +243,12 @@ impl StoredTransferRow {
 
 impl StoredPhaseHistoryRow {
     pub(crate) fn phase_entry(&self) -> Result<(u64, PhaseEntry), LeaseError> {
+        let key = format!(
+            "{}/{}",
+            self.attempt.as_deref().unwrap_or("<missing>"),
+            self.position.as_deref().unwrap_or("<missing>")
+        );
+        stored_row_id(&self.id, "_fleet_sync_transfer_phase_history", &key)?;
         let position = stored_counter(self.position.clone(), "phase history position")?;
         if position >= 8 {
             return Err(corrupt_column("holder-change phase history"));

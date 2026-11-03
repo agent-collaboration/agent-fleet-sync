@@ -19,6 +19,7 @@ fn corpus(
     fs::write(root.join("sql/read_example.sql"), sql)?;
     let manifest = QueryManifest {
         migrations: vec!["migrations".into()],
+        migration_target: None,
         output: "src/checked_queries.rs".into(),
         metadata: "checked-query-metadata.json".into(),
         queries: vec![QuerySpec {
@@ -234,5 +235,42 @@ async fn generated_output_cannot_overwrite_a_generator_logical_key() -> TestResu
         "{result:?}"
     );
     assert_eq!(fs::read(output)?, b"must remain untouched");
+    Ok(())
+}
+
+#[tokio::test]
+async fn legacy_queries_describe_only_the_requested_migration_prefix() -> TestResult {
+    let temporary = tempfile::tempdir()?;
+    let manifest = corpus(temporary.path(), "SELECT amount FROM example", vec![])?;
+    fs::write(
+        temporary.path().join("migrations/2_typed.sql"),
+        "DROP TABLE example; CREATE TABLE example(record_id TEXT PRIMARY KEY,label TEXT);",
+    )?;
+    let mut document: serde_json::Value = serde_json::from_slice(&fs::read(&manifest)?)?;
+    document["migration_target"] = serde_json::json!(1);
+    fs::write(&manifest, serde_json::to_vec_pretty(&document)?)?;
+    generate_manifest(&manifest, false).await?;
+    generate_manifest(&manifest, true).await?;
+    let metadata: CorpusMetadata = serde_json::from_slice(&fs::read(
+        temporary.path().join("checked-query-metadata.json"),
+    )?)?;
+    assert!(metadata.queries.iter().any(|query| {
+        query
+            .columns
+            .iter()
+            .any(|column| column.name == "amount" && column.sql_type == "INTEGER")
+    }));
+    document
+        .as_object_mut()
+        .ok_or("manifest object")?
+        .remove("migration_target");
+    fs::write(&manifest, serde_json::to_vec_pretty(&document)?)?;
+    assert!(
+        matches!(
+            generate_manifest(&manifest, false).await,
+            Err(GenerateError::Sql(_))
+        ),
+        "current schema must not pretend to contain the old amount column"
+    );
     Ok(())
 }

@@ -66,7 +66,7 @@ fn carrier_error() -> UnitEncodingError {
 fn sizing_frame() -> Result<FrameId, UnitEncodingError> {
     // Every legal frame correlation has the same UUID text width. This carrier
     // is counted and taken apart locally; its identity is never emitted.
-    FrameId::new(uuid::Uuid::from_u128(1)).map_err(encoding_error)
+    FrameId::new(uuid::Uuid::from_u128(0x019eef00000070008000000000000001)).map_err(encoding_error)
 }
 
 /// Count actual typed seed/session encodings with maximum-width future seed

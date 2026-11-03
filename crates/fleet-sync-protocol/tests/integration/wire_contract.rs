@@ -33,14 +33,9 @@ fn entity_identities_refuse_non_v7_and_noncanonical_text() {
         ItemId,
         SeedAttemptId,
         InstallId,
-        InstallAttemptId
-    );
-    assert!(ConnectionId::new(Uuid::parse_str(version_four).unwrap()).is_ok());
-    assert!(FrameId::new(Uuid::parse_str(version_four).unwrap()).is_ok());
-    assert!(ConnectionId::new(Uuid::nil()).is_err());
-    assert!(FrameId::new(Uuid::nil()).is_err());
-    assert!(
-        serde_json::from_value::<FrameId>(serde_json::json!(format!("{{{version_four}}}"))).is_ok()
+        InstallAttemptId,
+        ConnectionId,
+        FrameId
     );
 }
 

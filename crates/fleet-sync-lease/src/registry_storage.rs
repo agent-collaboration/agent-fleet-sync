@@ -342,3 +342,7 @@ mod tests;
 #[cfg(test)]
 #[path = "registry_storage_migration_test.rs"]
 mod migration_tests;
+
+#[cfg(test)]
+#[path = "registry_surrogate_test.rs"]
+mod surrogate_tests;

@@ -6,11 +6,11 @@
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
     "generator:fleet-sync-query-gen/src/main.rs": "528bf0583d11bde8fc4b7c0d5a2ea21bde8380e452c0c123a22929dfa5635cfd",
-    "generator:fleet-sync-query-gen/src/native_generation.rs": "c50abad4f34d2e0f9fef19d5623c6ce1be2e4064ec17ef2f4fa73cdf83f5733f",
+    "generator:fleet-sync-query-gen/src/native_generation.rs": "621160213c6b6cd17f5ee448c240088269476aa2feea99ef4d75627b0412b2d5",
     "generator:fleet-sync-query-gen/src/query_render.rs": "2584f37650c8355b5537362ff5f66c8cf6a3955eb7a903faa5c5887ec26c880a",
     "generator:fleet-sync-query-gen/src/source_freshness.rs": "8fc73a2d5dcfb3d81f7a10b92507ff0ad2a969c0a5b48c9528b3b5016f58ddb3",
     "generator:fleet-sync-query-gen/src/source_inputs.rs": "8cabacd9d34273e5cf16201c1680b89d755c98b5060ea0004ee1e5dcea4ec622",
-    "generator:fleet-sync-query-gen/src/source_manifest.rs": "770e53cb230b27d44731507738e08f7217dba8fc230617d97bda765c78be8ad8",
+    "generator:fleet-sync-query-gen/src/source_manifest.rs": "311dfe2915aad7ddbf8d1c453f0ad4924603ace53e703b2369221dd46d82165a",
     "generator:sqlx-durable-object-core/Cargo.toml": "5af0f7433ff001c4f2347d0575306bb35da43f53b3b75ae4c0fb2c3a0b5e308f",
     "generator:sqlx-durable-object-core/src/arguments.rs": "d278847139d6d4824d9b59f4c50302b8aad641a549ddbfefa1eba55b499d876f",
     "generator:sqlx-durable-object-core/src/error.rs": "1c1484a9714c5bf4bca07d8faf45413841d86f0bcd1c65dda44bafc362ee8bac",
@@ -73,7 +73,7 @@
     "sql/read_outbox_accounting.sql": "deec9d75232de22911be67ad648e0510e76dedbef2dce3c1d65fc4022e8c3d0f",
     "sql/read_outbox_cancel_link.sql": "8e2fe6e7af6c484923c6b325fce8ecbdabfe0dc7054c2a606db8200a0d71773d",
     "sql/read_outbox_item.sql": "9fc6f319b3f7f38cc37ac178661a2132c46e463bcf4d7f9a660d85df21b24cf2",
-    "sql/read_outbox_status.sql": "67920f8a0bb7968eb79fd4d645eb722f06fc0cbd696c003271e203d3d8826ebb",
+    "sql/read_outbox_status.sql": "b6db7ab26769fbae97930423dca2d660a69ec8ee03693d35573986cc50e3483b",
     "sql/remove_retained_events.sql": "96afe5bce791fc6c97ac43469079a05ba4f8ddf1ce030af3812d7e7634671d16",
     "sql/remove_retained_inbox_links.sql": "dabdc4721761e5b091fa5f587e114a5cfca7dbcfff65e460ba4389d8c0aba32b",
     "sql/remove_retained_outbox.sql": "0696c7c176d75dcef275e525f15fc4e25740099fadc0799be481009a8c63df16",
@@ -85,9 +85,9 @@
     "sql/write_outbox_cancel_link.sql": "ccffbdecdaf3c2debfb9f886e8f3934c7354090cd54ff677adb8d05ff2a7c3e2",
     "sql/write_outbox_item.sql": "f4945353806c99f59b8d6bb6c9c574e21aa639aeb286fc7f0bd894807e811172",
     "sql/write_outbox_status.sql": "56db3f6f9d050a8b1fa969b2ec3aa96d8e976922efaf0024f3c0a057ad06145f",
-    "src/checked_queries/custody.rs": "b319b91b2d0d77eebe6f328e3b49703bd7cf613dfe2619bd0440d037d58ad437"
+    "src/checked_queries/custody.rs": "3c9aa8293981ca2d3ed63ff6c1b2f303714a4a2dbc17a281cce983aacc3a19a8"
   },
-  "queries_digest": "9f31238b2fa9438eb7a1c4c7acef4d3495a751d7d460c44397ca1f580643e4c6",
+  "queries_digest": "5f841f9ce2a91196556f310c839d0c6e6399bf031790a1de80b342c7c2472bab",
   "queries": [
     {
       "name": "read_outbox_item",
@@ -868,6 +868,13 @@
       "name": "read_outbox_status",
       "bind_slots": 0,
       "columns": [
+        {
+          "name": "id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
         {
           "name": "cursor_class",
           "sql_type": "TEXT",
