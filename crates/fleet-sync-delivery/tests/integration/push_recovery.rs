@@ -11,9 +11,15 @@ use std::{
 fn engine(fixture: &Fixture) -> Engine<TestStore, TestHost> {
     let mut engine = Engine::new(fixture.store.clone(), fixture.host.clone());
     engine
-        .register(SubmitTask::new(limits(), Arc::new(TestConsumer)))
+        .register(SubmitTask::new(
+            limits(),
+            Arc::new(TestConsumer),
+            fixture.host.clone(),
+        ))
         .unwrap();
-    engine.register(PushTask::new(limits())).unwrap();
+    engine
+        .register(PushTask::new(limits(), fixture.host.clone()))
+        .unwrap();
     engine.register(PublishTask::new()).unwrap();
     engine
         .register(DeliverTask::new(
@@ -22,7 +28,9 @@ fn engine(fixture: &Fixture) -> Engine<TestStore, TestHost> {
             fixture.host.clone(),
         ))
         .unwrap();
-    engine.register(ReportTask::new(config())).unwrap();
+    engine
+        .register(ReportTask::new(config(), fixture.host.clone()))
+        .unwrap();
     engine
 }
 async fn reopened(fixture: Fixture) -> Fixture {
@@ -184,6 +192,175 @@ async fn lost_submit_and_push_answers_reopen_each_holder_and_keep_one_delivery()
                         .state,
                     OutboxStatusState::Known {
                         status: DeliveryStatus::Uncertain,
+                        ..
+                    }
+                ));
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn no_capacity_push_retries_without_cached_answer_and_lands_once_after_capacity_returns() {
+    use durable_steps::{
+        OperationId, Task,
+        storage::{JournalStorage, StepState},
+    };
+    let network = NetworkFixture::new().await;
+    network.routes.fleet_push.store(true, Ordering::SeqCst);
+    let fill = network
+        .recipient
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let original = DeliveryItem::<TestTypes>::new(
+                    item_id(999),
+                    "sender".into(),
+                    Recipient {
+                        peer: peer(2),
+                        address: "inbox".into(),
+                    },
+                    None,
+                    "f".repeat(
+                        usize::try_from(
+                            limits().inbox_bytes()
+                                - u64::from(limits().settlement_allowance())
+                                - 1024,
+                        )
+                        .unwrap(),
+                    ),
+                )
+                .unwrap();
+                let admission = Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
+                    .await
+                    .map_err(storage_error)?;
+                require_local_attempt(admission)
+            })
+        })
+        .await
+        .unwrap();
+    network.enqueue(1, "wait for real receiving room").await;
+    assert_eq!(
+        engine(&network.sender)
+            .drive_due()
+            .await
+            .unwrap()
+            .completed
+            .len(),
+        1
+    );
+    let push = network
+        .mailbox
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let row =
+                    query::<Turso>("SELECT operation_id FROM _fleet_sync_operations WHERE kind=?1")
+                        .bind(PushTask::KIND)
+                        .fetch_one(scope.executor())
+                        .await?;
+                let raw: String = row.try_get("operation_id")?;
+                let item = ItemId::try_from(raw).map_err(durable_steps::StoreError::backend)?;
+                OperationId::new(item.as_uuid()).map_err(durable_steps::StoreError::backend)
+            })
+        })
+        .await
+        .unwrap();
+    let first = engine(&network.mailbox).drive_due().await.unwrap();
+    assert_eq!(
+        first.retried,
+        vec![push],
+        "no-capacity Push was cached or failed terminally"
+    );
+    assert!(first.completed.is_empty() && first.failed.is_empty());
+    network.mailbox.store.transaction(move|scope|Box::pin(async move {
+        let checkpoint=scope.step(push,0).await?.ok_or(durable_steps::StoreError::backend("missing push checkpoint"))?;
+        assert!(matches!(checkpoint.state,StepState::CallPending {attempt,..} if attempt.retry_reason.as_ref().is_some_and(|reason|reason.code=="noCapacity")),"no-capacity answer was cached as CallDone");
+        Ok(())
+    })).await.unwrap();
+    assert!(payload(&network.mailbox.store, "outbox").await.is_some());
+    network
+        .recipient
+        .store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                let count = query::<Turso>(
+                    "SELECT count(*) AS count FROM _fleet_sync_inbox_items WHERE item_id=?1",
+                )
+                .bind(item_id(1).as_uuid().to_string())
+                .fetch_one(scope.executor())
+                .await?
+                .try_get::<i64, _>("count")?;
+                assert_eq!(count, 0);
+                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    .record_failure(
+                        fill,
+                        DeliveryFailureKind::ExecutionFailed,
+                        &TestConsumer,
+                        SyncTime::from_unix_millis(1),
+                    )
+                    .await
+                    .map_err(storage_error)?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+    network.advance();
+    assert_eq!(
+        engine(&network.mailbox)
+            .drive_due()
+            .await
+            .unwrap()
+            .completed,
+        vec![push]
+    );
+    assert!(payload(&network.mailbox.store, "outbox").await.is_none());
+    assert_eq!(
+        engine(&network.recipient)
+            .drive_due()
+            .await
+            .unwrap()
+            .completed
+            .len(),
+        1
+    );
+    engine(&network.recipient).drive_due().await.unwrap();
+    engine(&network.mailbox).drive_due().await.unwrap();
+    assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
+    network
+        .recipient
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let row = query::<Turso>(
+                    "SELECT count(*) AS count FROM _fleet_sync_inbox_items WHERE item_id=?1",
+                )
+                .bind(item_id(1).as_uuid().to_string())
+                .fetch_one(scope.executor())
+                .await?;
+                assert_eq!(row.try_get::<i64, _>("count")?, 1);
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+    network
+        .sender
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                assert!(matches!(
+                    Outbox::<_, TestTypes>::new(scope, limits())
+                        .status(item_id(1))
+                        .await
+                        .map_err(storage_error)?
+                        .state,
+                    OutboxStatusState::Known {
+                        status: DeliveryStatus::Delivered { .. },
                         ..
                     }
                 ));

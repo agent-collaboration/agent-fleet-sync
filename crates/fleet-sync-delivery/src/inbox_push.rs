@@ -24,7 +24,7 @@ where
         clippy::manual_async_fn,
         reason = "explicit Send avoids async-fn/GAT lifetime generality errors in journal transactions"
     )]
-    pub fn accept_push<'call, TAttempt, TReport, C>(
+    pub fn accept_push<'call, TAttempt, TReport, TRetention, C>(
         &'call mut self,
         item: DeliveryEnvelope<D>,
         relay: PeerId,
@@ -32,14 +32,22 @@ where
         now: SyncTime,
     ) -> impl std::future::Future<Output = Result<PushResult<D::Acceptance>, DeliveryError>> + Send + 'call
     where
-        S: JournalScope,
+        S: JournalScope + durable_steps::storage::JournalStorage,
+        TRetention: Task<Input = ItemId>,
         TAttempt: Task<Input = DeliveryAttempt>,
         TReport: Task<Input = ReportRef>,
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
         async move {
+            let identity = item.id();
             let (answer, effects) = self.store_push(item, relay, consumer, now).await?;
+            if matches!(
+                answer,
+                PushResult::Accepted { .. } | PushResult::Replayed { .. }
+            ) {
+                crate::admit_record_removal::<_, TRetention>(self.scope, identity).await?;
+            }
             for attempt in effects.attempts {
                 if self.load(attempt.item).await?.is_some_and(|record|matches!(record.header.progress,InboxProgress::Pending {attempt:current,..} if current==attempt.attempt)) {
                 self.scope.admit::<TAttempt>(&crate::delivery_request_key(&(attempt.item,attempt.attempt))?,&attempt).await.map_err(|error|DeliveryError::Storage(error.to_string()))?;
@@ -69,6 +77,14 @@ where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        if crate::item_is_too_old(item.id(), now) {
+            return Ok((
+                PushResult::Refused {
+                    reason: DeliveryRefusal::TooOld,
+                },
+                InboxEffects::default(),
+            ));
+        }
         self.limits.validate::<D>()?;
         crate::delivery_sizes::check_envelope(&item)?;
         if item.recipient().peer != self.owner {

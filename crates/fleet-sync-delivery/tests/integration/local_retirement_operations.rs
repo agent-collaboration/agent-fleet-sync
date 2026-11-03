@@ -1,10 +1,8 @@
 #![allow(clippy::unwrap_used)]
-#[path = "support/local_cancellation.rs"]
-mod local_cancellation;
-mod support;
+use super::cancellation_support::*;
+use super::support;
 use durable_steps::{AtomicStore, Engine, JournalScope, Task, storage::TransactionScope};
 use fleet_sync_delivery::*;
-use local_cancellation::*;
 use sqlx_core::query::query;
 use sqlx_turso::Turso;
 use std::{sync::Arc, time::Duration};
@@ -45,7 +43,7 @@ async fn retirement_waits_for_pending_delivery_after_cancellation() {
         .transaction(|scope| {
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask, _>(
+                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
                         SyncTime::from_unix_millis(0),
@@ -101,7 +99,7 @@ async fn current_header_attempt_does_not_hide_an_older_unsettled_delivery() {
         .transaction(|scope| {
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask, _>(
+                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
                         SyncTime::from_unix_millis(0),
@@ -199,7 +197,7 @@ async fn held_delivery_finishes_its_operation_then_terminal_custody_can_retire()
         .transaction(|scope| {
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask, _>(
+                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
                         SyncTime::from_unix_millis(0),
@@ -254,7 +252,7 @@ async fn older_report_sequence_preserves_custody_without_mutation() {
         .transaction(|scope| {
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask, _>(
+                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
                         SyncTime::from_unix_millis(0),

@@ -121,7 +121,9 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
                 network.recipient.host.clone(),
             ))
             .unwrap();
-        recipient.register(ReportTask::new(config())).unwrap();
+        recipient
+            .register(ReportTask::new(config(), network.recipient.host.clone()))
+            .unwrap();
         network.receive(DeliveryStream::Items).await;
         for _ in 0..2 {
             let report = recipient.drive_due().await.unwrap();

@@ -1,13 +1,9 @@
 #![allow(clippy::unwrap_used)]
-#[path = "support/local_cancellation.rs"]
-mod local_cancellation;
-#[path = "support/projection.rs"]
-mod projection;
-mod support;
+use super::cancellation_support::*;
+use super::projection::{ProjectionConsumer, prepare_projection_table, read_committed_state};
+use super::support;
 use durable_steps::{AtomicStore, Engine};
 use fleet_sync_delivery::*;
-use local_cancellation::*;
-use projection::{ProjectionConsumer, prepare_projection_table, read_committed_state};
 use std::sync::{Arc, atomic::Ordering};
 use std::time::Duration;
 use support::{network::*, *};
@@ -25,7 +21,7 @@ async fn local_cancel_before_original_survives_reopen_and_prevents_admission() {
         .transaction(|scope| {
             Box::pin(async move {
                 let admitted = Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask, _>(
+                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
                         SyncTime::from_unix_millis(0),
@@ -257,7 +253,7 @@ async fn local_cancel_waits_for_attempting_original_and_uses_the_real_answer() {
             .transaction(|scope| {
                 Box::pin(async move {
                     Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                        .enqueue_local_and_admit::<DeliverTask, _>(
+                        .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                             local_item(1),
                             &TestConsumer,
                             SyncTime::from_unix_millis(0),
@@ -349,7 +345,7 @@ async fn local_cancel_prevents_a_previously_held_original() {
         .transaction(|scope| {
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask, _>(
+                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
                         SyncTime::from_unix_millis(0),
@@ -423,7 +419,7 @@ async fn local_original_admission_rolls_back_when_pending_cancel_projection_fail
         .transaction(move |scope| {
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask, _>(
+                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         consumer.as_ref(),
                         SyncTime::from_unix_millis(0),
@@ -459,7 +455,7 @@ async fn cancel_before_original_produces_zero_real_local_dispatches() {
         .transaction(|scope| {
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask, _>(
+                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
                         SyncTime::from_unix_millis(0),
@@ -491,7 +487,7 @@ async fn local_cancel_after_delivered_original_reopens_as_too_late() {
         .transaction(|scope| {
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask, _>(
+                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
                         SyncTime::from_unix_millis(0),

@@ -24,12 +24,15 @@ where
         input: DeliveryAttempt,
         kind: DeliveryFailureKind,
         consumer: &C,
-        _now: SyncTime,
+        now: SyncTime,
     ) -> Result<InboxEffects, DeliveryError>
     where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        if now >= crate::removal_deadline(input.item) {
+            return Ok(InboxEffects::default());
+        }
         self.record_terminal(
             input,
             RecipientOutcome::Refused {
@@ -107,6 +110,9 @@ where
         input: DeliveryAttempt,
         now: SyncTime,
     ) -> Result<DeliveryCheck<D::Acceptance>, DeliveryError> {
+        if now >= crate::removal_deadline(input.item) {
+            return Ok(DeliveryCheck::Finish { outcome: None });
+        }
         let Some(mut header) = self.header(input.item).await? else {
             return Err(DeliveryError::Corrupt {
                 field: "delivery item missing",
@@ -159,6 +165,9 @@ where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        if now >= crate::removal_deadline(input.item) {
+            return Ok(InboxEffects::default());
+        }
         if let LocalOutcome::Delivered { acceptance } = &outcome {
             crate::delivery_sizes::check_status::<D>(&DeliveryStatus::Delivered {
                 acceptance: copy_wire(acceptance)?,

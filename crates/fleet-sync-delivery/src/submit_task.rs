@@ -13,13 +13,19 @@ use std::{marker::PhantomData, sync::Arc};
 pub struct SubmitItem<S, Db, D, C> {
     limits: DeliveryLimits,
     consumer: Arc<C>,
+    clock: Arc<dyn runtime_primitives::Clock>,
     store: TaskTypes<S, Db, D>,
 }
 impl<S, Db, D, C> SubmitItem<S, Db, D, C> {
-    pub fn new(limits: DeliveryLimits, consumer: Arc<C>) -> Self {
+    pub fn new(
+        limits: DeliveryLimits,
+        consumer: Arc<C>,
+        clock: Arc<dyn runtime_primitives::Clock>,
+    ) -> Self {
         Self {
             limits,
             consumer,
+            clock,
             store: PhantomData,
         }
     }
@@ -85,12 +91,13 @@ where
             )
             .await?;
         let input = input.clone();
+        let receipt_time = ctx.now();
         match answer {
             DispatchOutcome::Answered(answer) => {
                 ctx.local(step("mark_sent")?, move |scope| {
                     Box::pin(async move {
                         Outbox::<_, D>::new(scope, limits)
-                            .mark_submitted(&input, answer, now)
+                            .mark_submitted(&input, answer, receipt_time)
                             .await
                             .map_err(step_error)
                     })
@@ -103,7 +110,7 @@ where
                 ctx.local(step("mark_failed")?, move |scope| {
                     Box::pin(async move {
                         Outbox::<_, D>::new(scope, limits)
-                            .record_submission_failure(&input, kind)
+                            .record_submission_failure(&input, kind, receipt_time)
                             .await
                             .map_err(step_error)
                     })
@@ -123,6 +130,10 @@ where
     ) -> BoxFuture<'s, Result<Resume<()>, StoreError>> {
         Box::pin(async move {
             let item: ItemId = serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
+            if self.clock.now() >= crate::removal_deadline(item) {
+                return Ok(Resume::Finish(()));
+            }
+
             let state = match Outbox::<_, D>::new(scope, self.limits).status(item).await {
                 Ok(status) => status.state,
                 Err(DeliveryError::Corrupt { .. }) => return Ok(Resume::Continue),
@@ -144,7 +155,7 @@ where
         Box::pin(async move {
             let item: ItemId = serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
             Outbox::<_, D>::new(scope, self.limits)
-                .record_failure(item, failure_kind(failure))
+                .record_failure(item, failure_kind(failure), self.clock.now())
                 .await
                 .map_err(store_error)
         })

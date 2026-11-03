@@ -129,6 +129,9 @@ where
         Box::pin(async move {
             let (item, attempt): (ItemId, u64) =
                 serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
+            if self.clock.now() >= crate::removal_deadline(item) {
+                return Ok(Resume::Finish(()));
+            }
             let mut inbox = Inbox::<_, D>::new(scope, self.config.owner, self.config.limits);
             let Some(header) = inbox.header(item).await.map_err(store_error)? else {
                 return Ok(Resume::Continue);
@@ -155,6 +158,9 @@ where
         Box::pin(async move {
             let (item, attempt): (ItemId, u64) =
                 serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
+            if self.clock.now() >= crate::removal_deadline(item) {
+                return Ok(());
+            }
             let input = DeliveryAttempt {
                 item,
                 attempt,

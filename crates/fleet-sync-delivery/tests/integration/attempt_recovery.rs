@@ -147,7 +147,9 @@ fn interleaved_engine(
             action,
         ))
         .unwrap();
-    engine.register(ReportTask::new(config())).unwrap();
+    engine
+        .register(ReportTask::new(config(), network.recipient.host.clone()))
+        .unwrap();
     engine
         .register(ReceiveTask::new(
             config(),

@@ -8,17 +8,19 @@ use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
 };
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 pub struct ReportOutcome<S, Db, D> {
     config: DeliveryTaskConfig,
+    clock: Arc<dyn runtime_primitives::Clock>,
     store: TaskTypes<S, Db, D>,
 }
 pub(crate) const REPORT_OUTCOME_KIND: &str = "fleet-sync.delivery.report-outcome";
 impl<S, Db, D> ReportOutcome<S, Db, D> {
-    pub const fn new(config: DeliveryTaskConfig) -> Self {
+    pub fn new(config: DeliveryTaskConfig, clock: Arc<dyn runtime_primitives::Clock>) -> Self {
         Self {
             config,
+            clock,
             store: PhantomData,
         }
     }
@@ -95,6 +97,9 @@ where
         Box::pin(async move {
             let (item, report_seq): (ItemId, ReportSeq) =
                 serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
+            if self.clock.now() >= crate::removal_deadline(item) {
+                return Ok(Resume::Finish(()));
+            }
             let reference = ReportRef { item, report_seq };
             if Inbox::<_, D>::new(scope, self.config.local.owner, self.config.local.limits)
                 .report_superseded(reference)

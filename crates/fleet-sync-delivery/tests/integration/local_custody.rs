@@ -18,7 +18,7 @@ async fn compact_local_headers_authorize_cancels_and_preserve_identity() {
                         return Err(durable_steps::StoreError::backend("fixture item"));
                     };
                     Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                        .enqueue_local_and_admit::<DeliverTask, _>(
+                        .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                             original,
                             &TestConsumer,
                             SyncTime::from_unix_millis(0),

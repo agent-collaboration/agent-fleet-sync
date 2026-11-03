@@ -606,3 +606,123 @@ where
         Ok(())
     }
 }
+pub(crate) fn remove_retained_status<S>(
+    scope: &mut S,
+    item_id: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/remove_retained_status.sql"
+        )))
+        .bind(item_id);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn remove_retained_events<S>(
+    scope: &mut S,
+    item_id: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/remove_retained_events.sql"
+        )))
+        .bind(item_id);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn remove_retained_inbox_links<S>(
+    scope: &mut S,
+    item_id: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/remove_retained_inbox_links.sql"
+        )))
+        .bind(item_id);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn remove_retained_outbox_links<S>(
+    scope: &mut S,
+    item_id: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/remove_retained_outbox_links.sql"
+        )))
+        .bind(item_id);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+pub(crate) fn remove_retained_outbox<S>(
+    scope: &mut S,
+    item_id: String,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/remove_retained_outbox.sql"
+        )))
+        .bind(item_id);
+        statement.execute(scope.executor()).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StoredCustodyTokenRow {
+    pub token: Option<String>,
+}
+pub(crate) fn fresh_custody_token<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<StoredCustodyTokenRow, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/fresh_custody_token.sql"
+        )));
+        let row = statement.fetch_one(scope.executor()).await?;
+        Ok(StoredCustodyTokenRow {
+            token: row.try_get("token")?,
+        })
+    }
+}

@@ -103,7 +103,7 @@ impl TestNetwork {
                                 Box::pin(async move {
                                     if fleet_push {
                                         return Outbox::<_, TestTypes>::new(scope, limits())
-                                            .submit_relay::<PushTask>(
+                                            .submit_relay::<PushTask, RecordRemoval>(
                                                 peer(1),
                                                 resolved.item,
                                                 peer(3),
@@ -180,7 +180,7 @@ impl TestNetwork {
                     .transaction(move |scope| {
                         Box::pin(async move {
                             Inbox::<_, TestTypes>::new(scope, target.recipient, limits())
-                                .accept_push::<DeliverTask, ReportTask, _>(
+                                .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
                                     envelope,
                                     peer(3),
                                     &TestConsumer,
@@ -417,7 +417,11 @@ impl NetworkFixture {
         let mut engine = Engine::new(fixture.store.clone(), fixture.host.clone());
         let consumer = Arc::new(TestConsumer);
         engine
-            .register(SubmitTask::new(limits(), consumer.clone()))
+            .register(SubmitTask::new(
+                limits(),
+                consumer.clone(),
+                fixture.host.clone(),
+            ))
             .unwrap();
         engine
             .register(ReceiveTask::new(config, consumer.clone()))
@@ -429,9 +433,14 @@ impl NetworkFixture {
                 fixture.host.clone(),
             ))
             .unwrap();
-        engine.register(ReportTask::new(config)).unwrap();
+        engine
+            .register(ReportTask::new(config, fixture.host.clone()))
+            .unwrap();
         engine.register(PublishTask::new()).unwrap();
-        engine.register(PushTask::new(limits())).unwrap();
+        engine
+            .register(PushTask::new(limits(), fixture.host.clone()))
+            .unwrap();
+        engine.register(RecordRemoval::new()).unwrap();
         engine
     }
     pub fn advance(&self) {
@@ -449,7 +458,7 @@ impl NetworkFixture {
                         return Err(StoreError::backend("fixture item"));
                     };
                     Outbox::<_, TestTypes>::new(scope, limits())
-                        .enqueue_and_admit::<SubmitTask>(
+                        .enqueue_and_admit::<SubmitTask, RecordRemoval>(
                             item,
                             peer(3),
                             peer(1),

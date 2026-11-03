@@ -23,7 +23,7 @@ where
         clippy::manual_async_fn,
         reason = "explicit Send avoids async-fn/GAT lifetime generality errors in journal transactions"
     )]
-    pub fn submit_relay<'call, TPush>(
+    pub fn submit_relay<'call, TPush, TRetention>(
         &'call mut self,
         submitter: PeerId,
         item: DeliveryEnvelope<D>,
@@ -34,7 +34,8 @@ where
     + Send
     + 'call
     where
-        S: JournalScope,
+        S: JournalScope + durable_steps::storage::JournalStorage,
+        TRetention: Task<Input = ItemId>,
         TPush: Task<Input = PushInput>,
     {
         async move {
@@ -75,6 +76,7 @@ where
                 }
                 OutboxAdmission::Queued { .. } => {}
             }
+            crate::admit_record_removal::<_, TRetention>(self.scope, reference.item).await?;
             let mut record = self
                 .load(reference.item)
                 .await?
@@ -138,6 +140,11 @@ where
         TPublish: Task<Input = PublicationRef<D::StatusRoute>>,
     {
         async move {
+            if now >= crate::removal_deadline(reference.item) {
+                return Ok(StatusPublicationResult::Refused {
+                    reason: DeliveryRefusal::TooOld,
+                });
+            }
             let mut record = self
                 .load(reference.item)
                 .await?
@@ -207,6 +214,11 @@ where
         TPublish: Task<Input = PublicationRef<D::StatusRoute>>,
     {
         async move {
+            if now >= crate::removal_deadline(report.item) {
+                return Ok(ReportResult::Refused {
+                    reason: DeliveryRefusal::TooOld,
+                });
+            }
             let mut record = self
                 .load(report.item)
                 .await?

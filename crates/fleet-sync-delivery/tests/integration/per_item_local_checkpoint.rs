@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{
     AtomicStore, BoxFuture, CallResult, CallTarget, Engine, JournalScope, OperationContext,
     OperationFailure, RequestKey, Resume, StepError, StepName, StoreError, Task,
@@ -363,7 +363,9 @@ async fn stored_item_bound_sanitizes_call_checkpoint_before_reopen_without_resen
                 network.recipient.host.clone(),
             ))
             .unwrap();
-        engine.register(LocalReport::new(config())).unwrap();
+        engine
+            .register(LocalReport::new(config(), network.recipient.host.clone()))
+            .unwrap();
         let report = engine.drive_due().await.unwrap();
         assert!(report.failed.is_empty(), "{report:?}");
         assert!(report.retried.is_empty(), "{report:?}");

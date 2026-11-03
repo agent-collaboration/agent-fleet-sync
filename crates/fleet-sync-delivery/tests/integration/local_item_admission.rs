@@ -1,14 +1,10 @@
-#![allow(clippy::unwrap_used)]
-#[path = "support/local_cancellation.rs"]
-mod local_cancellation;
-#[path = "support/projection.rs"]
-mod projection;
-mod support;
+use super::projection;
+use super::support;
 
+use super::cancellation_support::{enqueue_cancel, local_item};
+use super::projection::{ProjectionConsumer, prepare_projection_table, read_committed_state};
 use durable_steps::{AtomicStore, storage::JournalStorage};
 use fleet_sync_delivery::*;
-use local_cancellation::{enqueue_cancel, local_item};
-use projection::{ProjectionConsumer, prepare_projection_table, read_committed_state};
 use support::{network::DeliverTask, *};
 
 #[derive(Clone, Copy)]
@@ -34,7 +30,7 @@ async fn admit_item(fixture: &Fixture, api: AdmissionApi) -> LocalItemAdmission 
                     }
                     AdmissionApi::AndAdmit => {
                         inbox
-                            .enqueue_local_and_admit::<DeliverTask, _>(
+                            .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                                 local_item(1),
                                 &ProjectionConsumer::default(),
                                 SyncTime::from_unix_millis(0),

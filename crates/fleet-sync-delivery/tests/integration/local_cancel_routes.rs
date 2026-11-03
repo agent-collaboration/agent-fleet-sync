@@ -1,10 +1,8 @@
 #![allow(clippy::unwrap_used)]
-#[path = "support/local_cancellation.rs"]
-mod local_cancellation;
-mod support;
+use super::cancellation_support::*;
+use super::support;
 use durable_steps::AtomicStore;
 use fleet_sync_delivery::*;
-use local_cancellation::*;
 use std::sync::atomic::Ordering;
 use support::{network::*, *};
 
@@ -53,7 +51,7 @@ async fn local_admission_leaves_relayed_cancel_pending_until_normal_completion()
         .transaction(|scope| {
             Box::pin(async move {
                 let admitted = Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask, _>(
+                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
                         SyncTime::from_unix_millis(0),

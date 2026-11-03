@@ -15,6 +15,7 @@ use std::sync::{
 };
 
 pub type TestStore = TursoStore<TestHost>;
+pub type RecordRemoval = RemoveDeliveryRecord<TestStore, sqlx_turso::Turso>;
 pub struct TestTypes;
 pub struct TestProtocol;
 impl ConsumerProtocol for TestProtocol {

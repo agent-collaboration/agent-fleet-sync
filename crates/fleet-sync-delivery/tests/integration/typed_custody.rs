@@ -79,15 +79,18 @@ async fn released_outbox_retains_deadline_identity_reserve_and_timestamps_after_
                 .unwrap();
                 let digest = original.digest().clone();
                 let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
-                outbox
-                    .enqueue(
-                        original,
-                        peer(9),
-                        peer(1),
-                        SyncTime::from_unix_millis(1_730_000_000_011),
-                    )
-                    .await
-                    .map_err(storage_error)?;
+                assert!(matches!(
+                    outbox
+                        .enqueue(
+                            original,
+                            peer(9),
+                            peer(1),
+                            SyncTime::from_unix_millis(1_718_000_000_011),
+                        )
+                        .await
+                        .map_err(storage_error)?,
+                    OutboxAdmission::Queued { .. }
+                ));
                 outbox
                     .mark_submitted(
                         &SubmitInput {
@@ -101,7 +104,7 @@ async fn released_outbox_retains_deadline_identity_reserve_and_timestamps_after_
                             version: StatusVersion::new(1),
                             cancel: None,
                         },
-                        SyncTime::from_unix_millis(1_730_000_000_023),
+                        SyncTime::from_unix_millis(1_718_000_000_023),
                     )
                     .await
                     .map_err(storage_error)?;
@@ -128,8 +131,8 @@ async fn released_outbox_retains_deadline_identity_reserve_and_timestamps_after_
         assert_eq!(row.try_get::<String, _>("submitter_machine_id")?, peer(1).as_uuid().to_string());
         assert_eq!(row.try_get::<String, _>("recipient_machine_id")?, peer(2).as_uuid().to_string());
         assert_eq!(row.try_get::<i64, _>("created_at")?, 1_717_986_918_400);
-        assert_eq!(row.try_get::<i64, _>("admitted_at")?, 1_730_000_000_011);
-        assert_eq!(row.try_get::<i64, _>("handed_off_at")?, 1_730_000_000_023);
+        assert_eq!(row.try_get::<i64, _>("admitted_at")?, 1_718_000_000_011);
+        assert_eq!(row.try_get::<i64, _>("handed_off_at")?, 1_718_000_000_023);
         assert_eq!(row.try_get::<i64, _>("valid_until")?, 1_800_000_000_000);
         assert_eq!(row.try_get::<i64, _>("settlement_bytes")?, i64::from(reserve));
         assert_eq!(row.try_get::<i64, _>("submit_attempted")?, 1);

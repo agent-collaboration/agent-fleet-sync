@@ -16,7 +16,10 @@ where
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    pub async fn enqueue_and_admit<T: durable_steps::Task<Input = SubmitInput>>(
+    pub async fn enqueue_and_admit<
+        T: durable_steps::Task<Input = SubmitInput>,
+        TRetention: durable_steps::Task<Input = ItemId>,
+    >(
         &mut self,
         item: DeliveryItem<D>,
         relay: PeerId,
@@ -30,14 +33,25 @@ where
         DeliveryError,
     >
     where
-        S: durable_steps::JournalScope,
+        S: durable_steps::JournalScope + durable_steps::storage::JournalStorage,
     {
+        let identity = item.id();
         let mailbox = item.recipient().peer;
         let answer = self.enqueue(item, relay, submitter, now).await?;
         let admitted = self.admit_submission::<T>(&answer, relay, mailbox).await?;
+        if !matches!(
+            answer,
+            OutboxAdmission::Refused { .. } | OutboxAdmission::CancelAlreadyRequested { .. }
+        ) {
+            crate::admit_record_removal::<_, TRetention>(self.scope, identity).await?;
+        }
         Ok((answer, admitted))
     }
-    pub async fn enqueue_cancel_and_admit<T: durable_steps::Task<Input = SubmitInput>, C>(
+    pub async fn enqueue_cancel_and_admit<
+        T: durable_steps::Task<Input = SubmitInput>,
+        TRetention: durable_steps::Task<Input = ItemId>,
+        C,
+    >(
         &mut self,
         cancel: DeliveryCancel<D>,
         relay: PeerId,
@@ -52,15 +66,22 @@ where
         DeliveryError,
     >
     where
-        S: durable_steps::JournalScope,
+        S: durable_steps::JournalScope + durable_steps::storage::JournalStorage,
         C: crate::DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        let identity = cancel.id();
         let mailbox = cancel.recipient().peer;
         let answer = self
             .enqueue_cancel(cancel, relay, submitter, now, consumer)
             .await?;
         let admitted = self.admit_submission::<T>(&answer, relay, mailbox).await?;
+        if !matches!(
+            answer,
+            OutboxAdmission::Refused { .. } | OutboxAdmission::CancelAlreadyRequested { .. }
+        ) {
+            crate::admit_record_removal::<_, TRetention>(self.scope, identity).await?;
+        }
         Ok((answer, admitted))
     }
     async fn admit_submission<T: durable_steps::Task<Input = SubmitInput>>(
@@ -70,7 +91,7 @@ where
         mailbox: PeerId,
     ) -> Result<Option<durable_steps::Admitted>, DeliveryError>
     where
-        S: durable_steps::JournalScope,
+        S: durable_steps::JournalScope + durable_steps::storage::JournalStorage,
     {
         let OutboxAdmission::Queued { reference } = answer else {
             return Ok(None);
@@ -110,6 +131,11 @@ where
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
         self.limits.validate::<D>()?;
+        if crate::item_is_too_old(cancel.id(), now) {
+            return Ok(OutboxAdmission::Refused {
+                reason: DeliveryRefusal::TooOld,
+            });
+        }
         let envelope = DeliveryEnvelope::Cancel(cancel);
         crate::delivery_sizes::check_envelope(&envelope)?;
         if let Some(answer) = self.existing_admission(&envelope).await? {
@@ -210,6 +236,11 @@ where
         now: SyncTime,
         withdrawn: bool,
     ) -> Result<OutboxAdmission<D::Acceptance>, DeliveryError> {
+        if crate::item_is_too_old(envelope.id(), now) {
+            return Ok(OutboxAdmission::Refused {
+                reason: DeliveryRefusal::TooOld,
+            });
+        }
         self.limits.validate::<D>()?;
         crate::delivery_sizes::check_envelope(&envelope)?;
         if let Some(answer) = self.existing_admission(&envelope).await? {

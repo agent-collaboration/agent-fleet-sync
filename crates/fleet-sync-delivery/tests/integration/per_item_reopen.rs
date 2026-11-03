@@ -166,7 +166,11 @@ async fn recovered_outbox_reopens_with_explicit_and_legacy_bounds() {
                         .await
                         .map_err(storage_error)?;
                     Outbox::<_, VariableTypes>::new(scope, limits)
-                        .record_submission_failure(&input, DeliveryFailureKind::CustodyMissing)
+                        .record_submission_failure(
+                            &input,
+                            DeliveryFailureKind::CustodyMissing,
+                            SyncTime::from_unix_millis(0),
+                        )
                         .await
                         .map_err(storage_error)?;
                 }

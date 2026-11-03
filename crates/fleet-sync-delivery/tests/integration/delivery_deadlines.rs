@@ -24,7 +24,7 @@ async fn enqueue_expiring(network: &NetworkFixture, expiry: i64) {
                 )
                 .unwrap();
                 Outbox::<_, TestTypes>::new(scope, limits())
-                    .enqueue_and_admit::<SubmitTask>(
+                    .enqueue_and_admit::<SubmitTask, RecordRemoval>(
                         original,
                         peer(3),
                         peer(1),

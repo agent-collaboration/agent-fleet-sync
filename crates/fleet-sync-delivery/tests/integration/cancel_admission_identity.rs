@@ -300,6 +300,7 @@ async fn recovered_canonical_cancel_still_names_its_stored_identity() {
                             mailbox: peer(2),
                         },
                         DeliveryFailureKind::CustodyMissing,
+                        SyncTime::from_unix_millis(0),
                     )
                     .await
                     .map_err(storage_error)

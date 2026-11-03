@@ -19,22 +19,41 @@ where
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
+    pub async fn enqueue_local_cancel_and_admit<TRetention, C>(
+        &mut self,
+        cancel: DeliveryCancel<D>,
+        consumer: &C,
+        now: SyncTime,
+    ) -> Result<LocalCancelAdmission, DeliveryError>
+    where
+        S: durable_steps::JournalScope + durable_steps::storage::JournalStorage,
+        TRetention: durable_steps::Task<Input = ItemId>,
+        C: DeliveryConsumer<S>,
+        C::Protocol: ConsumerProtocol<Delivery = D>,
+    {
+        let admission = self.enqueue_local_cancel(cancel, consumer, now).await?;
+        crate::admit_record_removal::<_, TRetention>(self.scope, admission.reference.item).await?;
+        Ok(admission)
+    }
     /// Admit an original only after resolving any pending Local control.
     /// Relayed controls keep their existing receive and completion paths.
     /// An Attempt payload has already been admitted as T before this returns.
-    pub async fn enqueue_local_and_admit<T, C>(
+    pub async fn enqueue_local_and_admit<T, TRetention, C>(
         &mut self,
         item: DeliveryItem<D>,
         consumer: &C,
         now: SyncTime,
     ) -> Result<LocalItemAdmission, DeliveryError>
     where
-        S: durable_steps::JournalScope,
+        S: durable_steps::JournalScope + durable_steps::storage::JournalStorage,
         T: durable_steps::Task<Input = DeliveryAttempt>,
+        TRetention: durable_steps::Task<Input = ItemId>,
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        let identity = item.id();
         let admission = self.enqueue_local(item, consumer, now).await?;
+        crate::admit_record_removal::<_, TRetention>(self.scope, identity).await?;
         let LocalItemAdmission::Attempt(input) = admission else {
             return Ok(admission);
         };
@@ -59,6 +78,11 @@ where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        if crate::item_is_too_old(item.id(), now) {
+            return Err(DeliveryError::Refused {
+                reason: DeliveryRefusal::TooOld,
+            });
+        }
         self.limits.validate::<D>()?;
         crate::delivery_sizes::check_item(&item)?;
         if item.recipient().peer != self.owner {
@@ -179,6 +203,11 @@ where
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
         self.limits.validate::<D>()?;
+        if crate::item_is_too_old(cancel.id(), now) {
+            return Err(DeliveryError::Refused {
+                reason: DeliveryRefusal::TooOld,
+            });
+        }
         let envelope = DeliveryEnvelope::Cancel(cancel);
         crate::delivery_sizes::check_envelope(&envelope)?;
         if envelope.recipient().peer != self.owner {

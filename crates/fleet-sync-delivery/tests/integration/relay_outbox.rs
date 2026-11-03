@@ -39,7 +39,7 @@ async fn admit(
                     .unwrap(),
                 );
                 Outbox::<_, TestTypes>::new(scope, limits())
-                    .submit_relay::<PushTask>(
+                    .submit_relay::<PushTask, RecordRemoval>(
                         peer(submitter),
                         envelope,
                         peer(9),
@@ -257,7 +257,7 @@ async fn rolled_back_next_holder_acceptance_keeps_content_and_receipt_release_is
         .transaction(|scope| {
             Box::pin(async move {
                 Outbox::<_, TestTypes>::new(scope, limits())
-                    .submit_relay::<PushTask>(
+                    .submit_relay::<PushTask, RecordRemoval>(
                         peer(1),
                         item(1, "body-a"),
                         peer(9),
@@ -317,7 +317,7 @@ async fn rolled_back_next_holder_acceptance_keeps_content_and_receipt_release_is
         .transaction(|scope| {
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .accept_push::<DeliverTask, super::support::network::ReportTask, _>(
+                    .accept_push::<DeliverTask,super::support::network::ReportTask,RecordRemoval,_>(
                         item(1, "body-a"),
                         peer(9),
                         &TestConsumer,
@@ -336,7 +336,7 @@ async fn rolled_back_next_holder_acceptance_keeps_content_and_receipt_release_is
         .transaction(|scope| {
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .accept_push::<DeliverTask, super::support::network::ReportTask, _>(
+                    .accept_push::<DeliverTask,super::support::network::ReportTask,RecordRemoval,_>(
                         item(1, "body-a"),
                         peer(9),
                         &TestConsumer,

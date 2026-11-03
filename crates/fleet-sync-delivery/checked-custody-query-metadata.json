@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-custody-queries.json": "096de3b1e617a43948ea8f6b91e1b7b9b733f446db9bb963b1eab99fb8eb5307",
+    "checked-custody-queries.json": "5b5c9d1c7fedd0619712b705539e0e244fca6e2eb8a6c352e3a1b860fa11b52c",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -65,6 +65,7 @@
     "migrations/0009_typed_report_records.sql": "2b55df57eb4fead5ef43986aba8f66414ed0e9bbc07a0a291a971e802b35c2be",
     "sql/drop_inbox_cancel_link.sql": "4377a26c27c954d92d5e38c1e63c55b57956745206ca0bd0509b83fcb83e794b",
     "sql/drop_inbox_item.sql": "058ff3f7aa917adc1b5a4f49df608b4eff4ea4ee0c0d6ac24cba3fe0c6bcc8f1",
+    "sql/fresh_custody_token.sql": "1575d18fa6fc8787aec2e3b558727a9a2722194cb9f5c5259a832aafae7fdf81",
     "sql/read_inbox_accounting.sql": "ef1a2b79018cbffd8ef6f2c78078b53010c968c4b8ec889ddd59cd7ea621f0f1",
     "sql/read_inbox_cancel_link.sql": "87dfc88a66698f62bc0a400c2194707e95150b6e815212db18e35e3c4f595071",
     "sql/read_inbox_item.sql": "fb63b0cd198adfa7d6564fb8b0165261b77975be5d3dd22ee42f4a1bac98bafd",
@@ -73,15 +74,20 @@
     "sql/read_outbox_cancel_link.sql": "8e2fe6e7af6c484923c6b325fce8ecbdabfe0dc7054c2a606db8200a0d71773d",
     "sql/read_outbox_item.sql": "9fc6f319b3f7f38cc37ac178661a2132c46e463bcf4d7f9a660d85df21b24cf2",
     "sql/read_outbox_status.sql": "67920f8a0bb7968eb79fd4d645eb722f06fc0cbd696c003271e203d3d8826ebb",
+    "sql/remove_retained_events.sql": "96afe5bce791fc6c97ac43469079a05ba4f8ddf1ce030af3812d7e7634671d16",
+    "sql/remove_retained_inbox_links.sql": "dabdc4721761e5b091fa5f587e114a5cfca7dbcfff65e460ba4389d8c0aba32b",
+    "sql/remove_retained_outbox.sql": "0696c7c176d75dcef275e525f15fc4e25740099fadc0799be481009a8c63df16",
+    "sql/remove_retained_outbox_links.sql": "9554d664f055972e32e634f141cfebf8562bfcde80b096db7b5d72064a5f3123",
+    "sql/remove_retained_status.sql": "9968dc80dd61dbc8c172d92ac6305c09986a064901614d686e67870bb3d45f66",
     "sql/write_inbox_cancel_link.sql": "c3996dc9b9805a287f697a549fa04200500dc0ee01f8526a2e69b926b402190d",
     "sql/write_inbox_item.sql": "01c3370217d100a0fe2f337dfec0dd1f1e44c82112a9873c3575c34ff305a29e",
     "sql/write_inbox_state.sql": "8bd63b644a71f0a0080c5e01c17336552ba188c544c836a029a80f2b62109bad",
     "sql/write_outbox_cancel_link.sql": "ccffbdecdaf3c2debfb9f886e8f3934c7354090cd54ff677adb8d05ff2a7c3e2",
     "sql/write_outbox_item.sql": "f4945353806c99f59b8d6bb6c9c574e21aa639aeb286fc7f0bd894807e811172",
     "sql/write_outbox_status.sql": "56db3f6f9d050a8b1fa969b2ec3aa96d8e976922efaf0024f3c0a057ad06145f",
-    "src/checked_queries/custody.rs": "c60af876cb2d35e6521b5472dd633e5e6b932ae9cae4186b6dfde258b723ad58"
+    "src/checked_queries/custody.rs": "b319b91b2d0d77eebe6f328e3b49703bd7cf613dfe2619bd0440d037d58ad437"
   },
-  "queries_digest": "3db5609002db3847b8613e14876e4ea9fe524312871a781bdafcdc3f40a684f6",
+  "queries_digest": "9f31238b2fa9438eb7a1c4c7acef4d3495a751d7d460c44397ca1f580643e4c6",
   "queries": [
     {
       "name": "read_outbox_item",
@@ -912,6 +918,44 @@
       "name": "drop_inbox_cancel_link",
       "bind_slots": 1,
       "columns": []
+    },
+    {
+      "name": "remove_retained_status",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "remove_retained_events",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "remove_retained_inbox_links",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "remove_retained_outbox_links",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "remove_retained_outbox",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "fresh_custody_token",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "token",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        }
+      ]
     }
   ]
 }

@@ -52,7 +52,11 @@ type GatedSubmit = SubmitItem<TestStore, sqlx_turso::Turso, TestTypes, GatedCons
 fn sender_engine(network: &NetworkFixture) -> Engine<TestStore, TestHost> {
     let mut engine = Engine::new(network.sender.store.clone(), network.sender.host.clone());
     engine
-        .register(GatedSubmit::new(limits(), Arc::new(GatedConsumer)))
+        .register(GatedSubmit::new(
+            limits(),
+            Arc::new(GatedConsumer),
+            network.sender.host.clone(),
+        ))
         .unwrap();
     engine
 }
@@ -163,7 +167,7 @@ async fn cancelling_an_original_held_before_the_first_submit_withdraws_it_withou
                 };
                 let mut outbox = Outbox::<_, TestTypes>::new(scope, limits());
                 outbox
-                    .enqueue_cancel_and_admit::<GatedSubmit, _>(
+                    .enqueue_cancel_and_admit::<GatedSubmit, RecordRemoval, _>(
                         cancel,
                         peer(3),
                         peer(1),

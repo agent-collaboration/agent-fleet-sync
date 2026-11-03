@@ -4,6 +4,7 @@ mod support;
 
 mod push_recovery;
 mod pushed_inbox;
+mod record_retention;
 mod relay_outbox;
 mod row_metadata;
 mod scoped_status;
@@ -69,3 +70,18 @@ mod recipient_refusals;
 mod revision_retirement;
 
 mod routed_settlement;
+
+mod legacy_receive_checkpoint;
+
+mod local_cancel_routes;
+
+mod local_cancellation;
+
+mod local_item_admission;
+
+mod local_retirement_operations;
+
+mod per_item_local_checkpoint;
+
+#[path = "../support/local_cancellation.rs"]
+mod cancellation_support;

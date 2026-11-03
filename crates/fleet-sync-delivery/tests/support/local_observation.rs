@@ -95,6 +95,7 @@ impl DeliveryConsumer<TursoScope<'_, ObservationHost>> for ObservationConsumer {
 }
 
 pub type ObservationStore = TursoStore<ObservationHost>;
+type RecordRemoval = RemoveDeliveryRecord<ObservationStore, Turso>;
 pub type ObservationTask =
     DeliverLocally<ObservationStore, Turso, ObservationTypes, ObservationConsumer>;
 pub struct ObservationHost {
@@ -214,7 +215,7 @@ impl ObservationFixture {
                     )
                     .unwrap();
                     Inbox::<_, ObservationTypes>::new(scope, peer(2), limits())
-                        .enqueue_local_and_admit::<ObservationTask, _>(
+                        .enqueue_local_and_admit::<ObservationTask, RecordRemoval, _>(
                             item,
                             consumer.as_ref(),
                             SyncTime::from_unix_millis(0),

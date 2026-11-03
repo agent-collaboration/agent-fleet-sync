@@ -115,6 +115,9 @@ where
         answer: SubmitResult<D::Acceptance>,
         now: SyncTime,
     ) -> Result<(), DeliveryError> {
+        if now >= crate::removal_deadline(input.item) {
+            return Ok(());
+        }
         let item = input.item;
         let mut header = match self.header_state(item).await {
             Ok(Some(OutboxHeaderState::Item(header)))
@@ -203,7 +206,11 @@ where
         &mut self,
         item: ItemId,
         kind: DeliveryFailureKind,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
+        if now >= crate::removal_deadline(item) {
+            return Ok(());
+        }
         match self.recovery_header(item).await {
             Ok(Some(OutboxHeaderState::Item(mut header))) => {
                 if !header.status.is_terminal() {
@@ -246,7 +253,11 @@ where
         &mut self,
         input: &SubmitInput,
         kind: DeliveryFailureKind,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
+        if now >= crate::removal_deadline(input.item) {
+            return Ok(());
+        }
         self.recover_answer(
             input,
             SubmitResult::Refused {

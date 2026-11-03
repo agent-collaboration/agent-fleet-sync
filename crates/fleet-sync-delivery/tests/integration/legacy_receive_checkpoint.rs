@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, Engine, OperationContext, OperationFailure, StepName, Task};
 use fleet_sync_delivery::*;
 use sqlx_core::row::Row;
@@ -88,7 +88,12 @@ fn resumed_engine(network: &NetworkFixture, opted_in: bool) -> Engine<TestStore,
         ))
         .unwrap();
     engine
-        .register(ReportOutcome::<TestStore, sqlx_turso::Turso, OptedTypes>::new(config()))
+        .register(
+            ReportOutcome::<TestStore, sqlx_turso::Turso, OptedTypes>::new(
+                config(),
+                network.recipient.host.clone(),
+            ),
+        )
         .unwrap();
     engine
 }

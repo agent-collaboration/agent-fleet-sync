@@ -1,6 +1,5 @@
 #![allow(clippy::unwrap_used)]
-#[path = "../support/local_cancellation.rs"]
-mod local_cancellation;
+use super::cancellation_support as local_cancellation;
 use super::support;
 use durable_steps::{AtomicStore, storage::TransactionScope};
 use fleet_sync_delivery::*;
@@ -93,7 +92,7 @@ async fn terminal_local_originals_retire_repeat_and_reopen() {
             .transaction(|scope| {
                 Box::pin(async move {
                     Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                        .enqueue_local_and_admit::<DeliverTask, _>(
+                        .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                             local_item(1),
                             &TestConsumer,
                             SyncTime::from_unix_millis(0),
@@ -196,7 +195,7 @@ async fn held_original_is_refused_without_mutation() {
         .transaction(|scope| {
             Box::pin(async move {
                 Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .enqueue_local_and_admit::<DeliverTask, _>(
+                    .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
                         local_item(1),
                         &TestConsumer,
                         SyncTime::from_unix_millis(0),

@@ -11,7 +11,11 @@ use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
 };
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
+
+#[cfg(test)]
+#[path = "push_task_test.rs"]
+mod tests;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
@@ -54,13 +58,15 @@ impl<D: DeliveryTypes> CallTarget for PushCall<D> {
 
 pub struct PushItem<S, Db, D, TPublish> {
     limits: DeliveryLimits,
+    clock: Arc<dyn runtime_primitives::Clock>,
     store: TaskTypes<S, Db, D>,
     publisher: PhantomData<fn() -> TPublish>,
 }
 impl<S, Db, D, TPublish> PushItem<S, Db, D, TPublish> {
-    pub const fn new(limits: DeliveryLimits) -> Self {
+    pub fn new(limits: DeliveryLimits, clock: Arc<dyn runtime_primitives::Clock>) -> Self {
         Self {
             limits,
+            clock,
             store: PhantomData,
             publisher: PhantomData,
         }
@@ -134,6 +140,10 @@ where
     ) -> BoxFuture<'s, Result<Resume<()>, StoreError>> {
         Box::pin(async move {
             let item: ItemId = serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
+            if self.clock.now() >= crate::removal_deadline(item) {
+                return Ok(Resume::Finish(()));
+            }
+
             let mut outbox = Outbox::<_, D>::new(scope, self.limits);
             let header = outbox.header_state(item).await.map_err(store_error)?;
             match header {

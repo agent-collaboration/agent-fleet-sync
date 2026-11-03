@@ -27,6 +27,7 @@ use tokio::{
 
 type NodeHost = TokioHost<router::NodeRouter>;
 type NodeStore = TokioObject<NodeHost>;
+type RecordRemoval = RemoveDeliveryRecord<NodeStore,sqlx_turso::Turso>;
 type SubmitTask = SubmitItem<NodeStore, sqlx_turso::Turso, SampleDelivery, consumer::NodeConsumer>;
 type ReceiveTask =
     ReceiveItems<NodeStore, sqlx_turso::Turso, SampleDelivery, consumer::NodeConsumer>;
@@ -300,7 +301,7 @@ impl NodeState {
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
                             Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                                .enqueue_and_admit::<SubmitTask>(item, relay, config.owner, now)
+                                .enqueue_and_admit::<SubmitTask,RecordRemoval>(item, relay, config.owner, now)
                                 .await
                         })
                     })
@@ -329,7 +330,7 @@ impl NodeState {
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
                             Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                                .enqueue_cancel_and_admit::<SubmitTask, _>(
+                                .enqueue_cancel_and_admit::<SubmitTask,RecordRemoval,_>(
                                     cancel,
                                     relay,
                                     config.owner,
@@ -519,7 +520,7 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
     let config = state.remote_config()?;
     let mut engine = Engine::new(object.clone(), host.clone());
     engine.register(observer::ObservedTask::new(
-        SubmitTask::new(config.local.limits, consumer.clone()),
+        SubmitTask::new(config.local.limits, consumer.clone(), host.clone()),
         &state,
     ))?;
     engine.register(observer::ObservedTask::new(
@@ -530,7 +531,8 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
         DeliverTask::new(config.local, consumer, host.clone()),
         &state,
     ))?;
-    engine.register(observer::ObservedTask::new(ReportTask::new(config), &state))?;
+    engine.register(observer::ObservedTask::new(ReportTask::new(config, host.clone()), &state))?;
+    engine.register(RecordRemoval::new())?;
     let (shutdown, stopped) = watch::channel(false);
     let runner = TokioRunner::new(Arc::new(engine), host);
     let runner_task = tokio::spawn(async move { runner.run(stopped).await });

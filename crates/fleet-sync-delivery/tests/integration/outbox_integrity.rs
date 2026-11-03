@@ -59,7 +59,7 @@ async fn failure_status_can_be_written_after_the_custody_body_is_corrupted() {
         .unwrap();
     fixture.store.transaction(|scope|Box::pin(async move {
         let mut outbox=Outbox::<_,TestTypes>::new(scope,limits());
-        outbox.record_failure(item_id(1),DeliveryFailureKind::CustodyCorrupt).await.map_err(storage_error)?;
+        outbox.record_failure(item_id(1),DeliveryFailureKind::CustodyCorrupt, SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         let status=outbox.status(item_id(1)).await.map_err(storage_error)?;
         assert!(matches!(status.state,OutboxStatusState::Known{status:DeliveryStatus::Refused{reason:DeliveryRefusal::ProcessingFailed{kind}},..} if kind.as_str()=="custodyCorrupt"));
         Ok(())

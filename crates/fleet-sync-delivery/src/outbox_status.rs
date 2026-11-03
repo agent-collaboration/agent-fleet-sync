@@ -23,6 +23,9 @@ where
         publication: StatusPublication<D::Acceptance>,
         now: SyncTime,
     ) -> Result<(), DeliveryError> {
+        if now >= crate::removal_deadline(publication.item) {
+            return Ok(());
+        }
         crate::delivery_sizes::check_status::<D>(&publication.status)?;
         if publication.version.value() == 0 || publication.status.rank() == 0 {
             return Err(DeliveryError::InvalidBatch);
