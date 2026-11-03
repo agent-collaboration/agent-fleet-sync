@@ -25,13 +25,14 @@ pub fn item_is_too_old(item: ItemId, now: SyncTime) -> bool {
 
 /// Admit removal for pre-existing custody after migrations, in the owner's startup transaction.
 /// Only canonical item identities are read: missing or corrupt content cannot block cleanup.
+/// Return the number of distinct items newly scheduled; existing admissions do not count.
 #[expect(
     clippy::manual_async_fn,
     reason = "explicit Send preserves borrowed journal transaction futures"
 )]
 pub fn admit_existing_record_removals<'scope, S, T>(
     scope: &'scope mut S,
-) -> impl std::future::Future<Output = Result<(), DeliveryError>> + Send + 'scope
+) -> impl std::future::Future<Output = Result<usize, DeliveryError>> + Send + 'scope
 where
     S: TransactionScope + JournalScope + JournalStorage,
     T: Task<Input = ItemId>,
@@ -71,10 +72,11 @@ where
         }
         items.sort_unstable_by_key(|item| item.as_uuid());
         items.dedup();
+        let mut admitted = 0;
         for item in items {
-            admit_record_removal::<_, T>(scope, item).await?;
+            admitted += usize::from(admit_record_removal_once::<_, T>(scope, item).await?);
         }
-        Ok(())
+        Ok(admitted)
     }
 }
 
@@ -86,6 +88,29 @@ pub fn admit_record_removal<'scope, S, T>(
     scope: &'scope mut S,
     item: ItemId,
 ) -> impl std::future::Future<Output = Result<(), DeliveryError>> + Send + 'scope
+where
+    S: TransactionScope + JournalScope + JournalStorage,
+    T: Task<Input = ItemId>,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
+    for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database>,
+    for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
+{
+    async move {
+        admit_record_removal_once::<_, T>(scope, item)
+            .await
+            .map(|_| ())
+    }
+}
+
+#[expect(
+    clippy::manual_async_fn,
+    reason = "explicit Send preserves borrowed journal transaction futures"
+)]
+fn admit_record_removal_once<'scope, S, T>(
+    scope: &'scope mut S,
+    item: ItemId,
+) -> impl std::future::Future<Output = Result<bool, DeliveryError>> + Send + 'scope
 where
     S: TransactionScope + JournalScope + JournalStorage,
     T: Task<Input = ItemId>,
@@ -139,8 +164,9 @@ where
                 .retry(operation, token, removal_deadline(item), 0)
                 .await?;
             scope.ensure_wake(removal_deadline(item)).await?;
+            return Ok(true);
         }
-        Ok(())
+        Ok(false)
     }
 }
 

@@ -45,7 +45,7 @@ async fn startup_backfills_old_copies_once_and_each_keeps_its_creation_deadline(
     let fixture = legacy_store().await;
     assert_eq!(custody(&fixture.store).await.len(), 3);
     assert!(schedule(&fixture.store).await.is_empty());
-    startup(&fixture.store).await;
+    assert_eq!(startup(&fixture.store).await, 2);
     let first = schedule(&fixture.store).await;
     assert_eq!(
         first.len(),
@@ -60,7 +60,7 @@ async fn startup_backfills_old_copies_once_and_each_keeps_its_creation_deadline(
         deadlines,
         std::collections::BTreeSet::from([90 * DAY, 150 * DAY])
     );
-    startup(&fixture.store).await;
+    assert_eq!(startup(&fixture.store).await, 0);
     assert_eq!(schedule(&fixture.store).await, first);
     let report = engine(&fixture).drive_due().await.unwrap();
     assert_eq!(report.completed.len(), 1);
@@ -71,7 +71,7 @@ async fn startup_backfills_old_copies_once_and_each_keeps_its_creation_deadline(
     );
     let pending = schedule(&fixture.store).await;
     assert_eq!(pending.len(), 1);
-    startup(&fixture.store).await;
+    assert_eq!(startup(&fixture.store).await, 0);
     assert_eq!(schedule(&fixture.store).await, pending);
     fixture
         .host
@@ -95,8 +95,28 @@ async fn startup_backfills_old_copies_once_and_each_keeps_its_creation_deadline(
         1
     );
     assert!(custody(&fixture.store).await.is_empty());
-    startup(&fixture.store).await;
+    assert_eq!(startup(&fixture.store).await, 0);
     assert!(schedule(&fixture.store).await.is_empty());
+}
+
+#[tokio::test]
+async fn startup_counts_only_new_admissions_when_some_items_are_already_scheduled() {
+    let fixture = legacy_store().await;
+    fixture
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                admit_record_removal::<_, RecordRemoval>(scope, old_item(10))
+                    .await
+                    .map_err(storage_error)
+            })
+        })
+        .await
+        .unwrap();
+    assert_eq!(schedule(&fixture.store).await.len(), 1);
+    assert_eq!(startup(&fixture.store).await, 1);
+    assert_eq!(schedule(&fixture.store).await.len(), 2);
+    assert_eq!(startup(&fixture.store).await, 0);
 }
 
 #[tokio::test]

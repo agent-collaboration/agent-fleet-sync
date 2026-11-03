@@ -49,7 +49,7 @@ pub async fn legacy_store() -> Fixture {
         directory,
     }
 }
-pub async fn startup(store: &TestStore) {
+pub async fn startup(store: &TestStore) -> usize {
     store
         .transaction(|scope| {
             Box::pin(async move {
@@ -59,7 +59,7 @@ pub async fn startup(store: &TestStore) {
             })
         })
         .await
-        .unwrap();
+        .unwrap()
 }
 pub async fn schedule(store: &TestStore) -> Vec<(String, String, i64)> {
     store.transaction(|scope|Box::pin(async move {
