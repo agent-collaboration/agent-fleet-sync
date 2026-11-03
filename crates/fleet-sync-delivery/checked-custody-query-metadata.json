@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-custody-queries.json": "812470c68f04074a58187cc02e91c81d71eb2e8d62072748b5d214a618e36e47",
+    "checked-custody-queries.json": "096de3b1e617a43948ea8f6b91e1b7b9b733f446db9bb963b1eab99fb8eb5307",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -59,34 +59,41 @@
     "migrations/0003_inbox_accounting.sql": "9ed7336cbc35834049b9c6b2f86e90a3b331f99b8e0791f86ce2cdfa7d7727f2",
     "migrations/0004_typed_delivery_records.sql": "cc12ce0550a54b81f5e45ccadfcd8f66311ea39cf46bd7cc1ef2308c26ecd5b4",
     "migrations/0005_scoped_status_streams.sql": "13c1f3b8fd48474da5c476d58f5a3970959752cab34164446dc9319a7710aeb2",
+    "migrations/0006_relay_outbox.sql": "e8c83482fc2aed0d38728368d5ce83883aab87b9702749c87c15227ca749197b",
+    "migrations/0007_typed_status_records.sql": "61b3c59edcd380af6c47ce818e21434584c356d5e788c62ab9d059c0e4ac78cb",
+    "migrations/0008_custody_row_metadata.sql": "69b8ef89f3d94604d0cda7f28541251ef23874740e51f952408d9c7b9b0cd01c",
+    "migrations/0009_typed_report_records.sql": "2b55df57eb4fead5ef43986aba8f66414ed0e9bbc07a0a291a971e802b35c2be",
     "sql/drop_inbox_cancel_link.sql": "4377a26c27c954d92d5e38c1e63c55b57956745206ca0bd0509b83fcb83e794b",
     "sql/drop_inbox_item.sql": "058ff3f7aa917adc1b5a4f49df608b4eff4ea4ee0c0d6ac24cba3fe0c6bcc8f1",
-    "sql/drop_inbox_reports.sql": "57f217b5b04fd4a37a6a2b3e31d62e9f4f6ec0ede68df13d97193398a55ca1b9",
     "sql/read_inbox_accounting.sql": "ef1a2b79018cbffd8ef6f2c78078b53010c968c4b8ec889ddd59cd7ea621f0f1",
     "sql/read_inbox_cancel_link.sql": "87dfc88a66698f62bc0a400c2194707e95150b6e815212db18e35e3c4f595071",
     "sql/read_inbox_item.sql": "fb63b0cd198adfa7d6564fb8b0165261b77975be5d3dd22ee42f4a1bac98bafd",
     "sql/read_inbox_state.sql": "110e4ef32a4034247f7a11f59e7fc0e2f1de2afc3f73b84bbc6b6cc65d1b7d24",
     "sql/read_outbox_accounting.sql": "deec9d75232de22911be67ad648e0510e76dedbef2dce3c1d65fc4022e8c3d0f",
     "sql/read_outbox_cancel_link.sql": "8e2fe6e7af6c484923c6b325fce8ecbdabfe0dc7054c2a606db8200a0d71773d",
-    "sql/read_outbox_item.sql": "f253cec13944329fdf18862dc678c403acc0733458cc71f5d1d51bc4d6eded51",
-    "sql/read_outbox_status.sql": "1a8147fda4f9ac82d8d623c68e9a6765c1b42d6574d19a997a0ee2a4018b6caa",
-    "sql/read_report.sql": "3bec8b7a425b880634bfda8f2d027d23f8514eaf95ae910f7a2096d2b88b2b63",
-    "sql/retire_report.sql": "211f6817a7983d36391472ae2c3837fecc04d811fe3ad6a68e80e782fcacafbc",
+    "sql/read_outbox_item.sql": "9fc6f319b3f7f38cc37ac178661a2132c46e463bcf4d7f9a660d85df21b24cf2",
+    "sql/read_outbox_status.sql": "67920f8a0bb7968eb79fd4d645eb722f06fc0cbd696c003271e203d3d8826ebb",
     "sql/write_inbox_cancel_link.sql": "c3996dc9b9805a287f697a549fa04200500dc0ee01f8526a2e69b926b402190d",
-    "sql/write_inbox_item.sql": "4675615f80654d7222b774d3201d4646ae8e07f954c8dbe9be428776234084e8",
-    "sql/write_inbox_state.sql": "b9318cdb04d50870c7f35dcb4d74ad6fe886bc37ece69d63bda2bbb7dc8afb01",
+    "sql/write_inbox_item.sql": "01c3370217d100a0fe2f337dfec0dd1f1e44c82112a9873c3575c34ff305a29e",
+    "sql/write_inbox_state.sql": "8bd63b644a71f0a0080c5e01c17336552ba188c544c836a029a80f2b62109bad",
     "sql/write_outbox_cancel_link.sql": "ccffbdecdaf3c2debfb9f886e8f3934c7354090cd54ff677adb8d05ff2a7c3e2",
-    "sql/write_outbox_item.sql": "5671da014cfa882af21d1331dbf8388c01c04c8efbdfafeead89e5ebfd28ab7e",
-    "sql/write_outbox_status.sql": "c619ad504ac1aedfa3c752a725e09e6a327dd4de87dbb444aef6f522d75fe712",
-    "sql/write_report.sql": "21eaec3d63aa3c09645a2fe3503797a84f969f152809a0e80b9998e9ecfcde62",
-    "src/checked_queries/custody.rs": "b4452857c4ad1a9aec4274c7fd64cef5b7fd4c024c6b8c7ca3ff82441271b3aa"
+    "sql/write_outbox_item.sql": "f4945353806c99f59b8d6bb6c9c574e21aa639aeb286fc7f0bd894807e811172",
+    "sql/write_outbox_status.sql": "56db3f6f9d050a8b1fa969b2ec3aa96d8e976922efaf0024f3c0a057ad06145f",
+    "src/checked_queries/custody.rs": "c60af876cb2d35e6521b5472dd633e5e6b932ae9cae4186b6dfde258b723ad58"
   },
-  "queries_digest": "18ca76d5efecd06a32ab6f47a33c313ab87f8dfb76b680bf22a9b71cd36e32b1",
+  "queries_digest": "3db5609002db3847b8613e14876e4ea9fe524312871a781bdafcdc3f40a684f6",
   "queries": [
     {
       "name": "read_outbox_item",
       "bind_slots": 1,
       "columns": [
+        {
+          "name": "status_route",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
         {
           "name": "item_id",
           "sql_type": "TEXT",
@@ -787,34 +794,6 @@
       "columns": []
     },
     {
-      "name": "write_report",
-      "bind_slots": 3,
-      "columns": []
-    },
-    {
-      "name": "read_report",
-      "bind_slots": 2,
-      "columns": [
-        {
-          "name": "record",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "retire_report",
-      "bind_slots": 2,
-      "columns": []
-    },
-    {
-      "name": "drop_inbox_reports",
-      "bind_slots": 1,
-      "columns": []
-    },
-    {
       "name": "read_outbox_accounting",
       "bind_slots": 0,
       "columns": [
@@ -884,11 +863,18 @@
       "bind_slots": 0,
       "columns": [
         {
-          "name": "record",
+          "name": "cursor_class",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
-          "type_source": "driver"
+          "type_source": "typeof"
+        },
+        {
+          "name": "cursor",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
         }
       ]
     },

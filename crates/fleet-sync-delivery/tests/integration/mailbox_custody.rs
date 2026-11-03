@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, SyncTime};
 use fleet_sync_delivery::*;
 use support::*;
@@ -39,10 +39,10 @@ async fn repeat_preserves_sequence_and_conflicting_content_changes_nothing() {
     let fixture = Fixture::new().await;
     fixture.store.transaction(|scope|Box::pin(async move {
         let mut mailbox=Mailbox::<_,TestTypes>::new(scope,peer(2),limits());
-        assert!(matches!(mailbox.submit(peer(1),item(1,"original"),SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None).await.map_err(storage_error)?,SubmitResult::Accepted{seq,status:DeliveryStatus::Sent{seq:status_seq},version,cancel:None} if seq.value()==1&&status_seq==seq&&version.value()==1));
-        assert!(matches!(mailbox.submit(peer(1),item(1,"original"),SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None).await.map_err(storage_error)?,SubmitResult::Replayed{status:DeliveryStatus::Sent{seq},version,..} if seq.value()==1&&version.value()==1));
+        assert!(matches!(mailbox.submit(peer(1),item(1,"original"),SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None).await.map_err(storage_error)?,SubmitResult::Accepted{status:DeliveryStatus::Sent,version,cancel:None} if version.value()==1));
+        assert!(matches!(mailbox.submit(peer(1),item(1,"original"),SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None).await.map_err(storage_error)?,SubmitResult::Replayed{status:DeliveryStatus::Sent,version,..} if version.value()==1));
         assert!(matches!(mailbox.submit(peer(1),item(1,"different"),SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None).await.map_err(storage_error)?,SubmitResult::Refused{reason:DeliveryRefusal::ItemConflict{..}}));
-        assert!(matches!(mailbox.submit(peer(1),item(2,"next"),SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None).await.map_err(storage_error)?,SubmitResult::Accepted{seq,..} if seq.value()==2));
+        assert!(matches!(mailbox.submit(peer(1),item(2,"next"),SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None).await.map_err(storage_error)?,SubmitResult::Accepted{..}));
         let fetched=mailbox.fetch(peer(2),DeliveryStream::Items,DeliverySeq::new(0),10,100_000,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         let bodies:Vec<_>=fetched.entries.into_iter().map(|entry|match entry {FetchEntry::Item{item:DeliveryEnvelope::Item(item),..}=>item.body().to_owned(),_=>"unexpected".into()}).collect();
         assert_eq!(bodies,["original","next"]);
@@ -117,13 +117,14 @@ async fn receipt_releases_payload_once_and_a_late_report_cannot_regress_status()
         mailbox.submit(peer(1),item(1,"body"),SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None).await.map_err(storage_error)?;
         mailbox.fetch(peer(2),DeliveryStream::Items,DeliverySeq::new(0),10,100_000,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
         let newer=mailbox.report(peer(2),RecipientReport{item:item_id(1),report_seq:ReportSeq::new(2),outcome:RecipientOutcome::Delivered{acceptance:Acceptance{receipt:"one effect".into()}}}).await.map_err(storage_error)?;
-        assert!(matches!(newer,ReportResult::Applied{version,..} if version.value()==2));
+        assert!(matches!(newer,ReportResult::Ack {report_seq} if report_seq.value()==2));
         let received=mailbox.received(peer(2),DeliveryStream::Items,DeliverySeq::new(1),SyncTime::from_unix_millis(1)).await.map_err(storage_error)?;
         assert_eq!(received.released_through.value(),1);
         let received_again=mailbox.received(peer(2),DeliveryStream::Items,DeliverySeq::new(1),SyncTime::from_unix_millis(2)).await.map_err(storage_error)?;
         assert_eq!(received_again.released_through.value(),1);
         let old=mailbox.report(peer(2),RecipientReport{item:item_id(1),report_seq:ReportSeq::new(1),outcome:RecipientOutcome::Held}).await.map_err(storage_error)?;
-        assert!(matches!(old,ReportResult::Applied{status:DeliveryStatus::Delivered{acceptance},version,..} if version.value()==2&&acceptance.receipt=="one effect"));
+        assert!(matches!(old,ReportResult::Replayed {report_seq} if report_seq.value()==1));
+        assert!(matches!(mailbox.query(&[item_id(1)]).await.map_err(storage_error)?.statuses.first().unwrap().state,ItemStatusState::Known {status:DeliveryStatus::Delivered {ref acceptance},version,..} if version.value()==2&&acceptance.receipt=="one effect"));
         Ok(())
     })).await.unwrap();
 }
@@ -168,16 +169,37 @@ async fn a_full_mailbox_uses_the_reserved_cancel_and_names_it_for_another_cancel
                         peer(1),
                         item(1, "held original"),
                         SyncTime::from_unix_millis(0),
-                     "fixture-route".to_owned(), None,)
+                        "fixture-route".to_owned(),
+                        None,
+                    )
                     .await
                     .map_err(storage_error)?;
                 let first = mailbox
-                    .submit(peer(1), cancel(2, 1), SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None)
+                    .submit(
+                        peer(1),
+                        cancel(2, 1),
+                        SyncTime::from_unix_millis(0),
+                        "fixture-route".to_owned(),
+                        None,
+                    )
                     .await
                     .map_err(storage_error)?;
-                assert!(matches!(first,SubmitResult::Accepted{seq,status:DeliveryStatus::Sent {seq:status_seq},cancel:Some(CancelResult::Pending),..} if seq.value()==1&&status_seq==seq));
+                assert!(matches!(
+                    first,
+                    SubmitResult::Accepted {
+                        status: DeliveryStatus::Sent,
+                        cancel: Some(CancelResult::Pending),
+                        ..
+                    }
+                ));
                 let second = mailbox
-                    .submit(peer(1), cancel(3, 1), SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None)
+                    .submit(
+                        peer(1),
+                        cancel(3, 1),
+                        SyncTime::from_unix_millis(0),
+                        "fixture-route".to_owned(),
+                        None,
+                    )
                     .await
                     .map_err(storage_error)?;
                 assert!(matches!(

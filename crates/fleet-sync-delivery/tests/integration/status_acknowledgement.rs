@@ -289,25 +289,15 @@ async fn empty_fetch_preserves_the_requested_cursor_when_the_floor_is_higher() {
 #[tokio::test]
 async fn a_stored_acknowledged_floor_above_head_is_corrupt() {
     use durable_steps::storage::TransactionScope;
-    use sqlx_core::row::Row;
     let fixture = Fixture::new().await;
     append_status_event(&fixture, 1, 1).await;
     fixture
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let row = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT record FROM _fleet_sync_status_state",
-                )
-                .fetch_one(scope.executor())
-                .await?;
-                let mut state: serde_json::Value =
-                    serde_json::from_str(&row.try_get::<String, _>("record")?).unwrap();
-                state["floor"] = serde_json::json!(2);
                 sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "UPDATE _fleet_sync_status_state SET record=?",
+                    "UPDATE _fleet_sync_status_state SET floor=2",
                 )
-                .bind(state.to_string())
                 .execute(scope.executor())
                 .await?;
                 let result =

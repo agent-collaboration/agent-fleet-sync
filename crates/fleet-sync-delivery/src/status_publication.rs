@@ -1,3 +1,4 @@
+use crate::status_row::PublicationRow;
 use crate::{DeliveryError, PublicationRef, checked_queries as queries, custody_record::*};
 use crate::{PublicationTarget, status_stream::canonical_encode};
 use durable_steps::storage::TransactionScope;
@@ -30,7 +31,7 @@ where
     else {
         return Ok(None);
     };
-    let publication: StatusPublication<D::Acceptance> = decode(row.record, "owed publication")?;
+    let publication: StatusPublication<D::Acceptance> = row.publication()?;
     crate::delivery_sizes::check_status::<D>(&publication.status).map_err(|_| {
         DeliveryError::Corrupt {
             field: "stored publication bounds",
@@ -38,6 +39,7 @@ where
     })?;
     let version = integer(row.version, row.version_class, "owed publication version")?;
     if publication.item != reference.item
+        || row.target.as_deref() != Some(canonical_encode(&reference.target)?.as_str())
         || publication.version.value() != version
         || version == 0
         || row.machine_id.as_deref()
@@ -95,7 +97,7 @@ where
     let rows = queries::list_publications(scope).await.map_err(sql_error)?;
     let mut admitted = Vec::with_capacity(rows.len());
     for row in rows {
-        let publication: StatusPublication<D::Acceptance> = decode(row.record, "owed publication")?;
+        let publication: StatusPublication<D::Acceptance> = row.publication()?;
         let version = integer(row.version, row.version_class, "owed publication version")?;
         if row.item_id.as_deref() != Some(item_key(publication.item).as_str())
             || publication.version.value() != version

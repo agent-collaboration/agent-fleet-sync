@@ -171,7 +171,7 @@ where
         )
         .await
     }
-    async fn existing_admission(
+    pub(crate) async fn existing_admission(
         &mut self,
         envelope: &DeliveryEnvelope<D>,
     ) -> Result<Option<OutboxAdmission<D::Acceptance>>, DeliveryError> {
@@ -202,7 +202,7 @@ where
             }
         }))
     }
-    async fn enqueue_envelope(
+    pub(crate) async fn enqueue_envelope(
         &mut self,
         envelope: DeliveryEnvelope<D>,
         relay: PeerId,
@@ -315,6 +315,7 @@ where
             admitted_at: Some(now),
             handed_off_at: None,
             last_report_seq: ReportSeq::new(0),
+            status_route: None,
             recipient: envelope.recipient().peer,
             valid_until: envelope.valid_until(),
             status: if withdrawn {

@@ -182,10 +182,11 @@ async fn held_and_refused_attempts_project_distinct_local_observations() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let reports =
-                    sqlx_core::query::query::<Turso>("SELECT record FROM _fleet_sync_reports")
-                        .fetch_all(scope.executor())
-                        .await?;
+                let reports = sqlx_core::query::query::<Turso>(include_str!(
+                    "../support/sql/read_report_headers.sql"
+                ))
+                .fetch_all(scope.executor())
+                .await?;
                 assert_eq!(reports.len(), 2);
                 let rows = sqlx_core::query::query::<Turso>(include_str!(
                     "../support/sql/read_inbox_observations.sql"

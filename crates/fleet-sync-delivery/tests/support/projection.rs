@@ -127,14 +127,13 @@ pub(crate) async fn read_committed_state(fixture: &Fixture) -> CommittedState {
                         .into_iter()
                         .map(|row| Ok((row.try_get("record")?, row.try_get("payload")?)))
                         .collect::<Result<Vec<_>, sqlx_core::Error>>()?;
-                let reports = sqlx_core::query::query::<Turso>(
-                    "SELECT record FROM _fleet_sync_reports ORDER BY item_id,report_seq",
-                )
-                .fetch_all(scope.executor())
-                .await?
-                .into_iter()
-                .map(|row| row.try_get("record"))
-                .collect::<Result<Vec<_>, _>>()?;
+                let reports =
+                    sqlx_core::query::query::<Turso>(include_str!("sql/read_report_headers.sql"))
+                        .fetch_all(scope.executor())
+                        .await?
+                        .into_iter()
+                        .map(|row| row.try_get("record"))
+                        .collect::<Result<Vec<_>, _>>()?;
                 let projections = sqlx_core::query::query::<Turso>(
                     "SELECT item,kind,value FROM application_projection ORDER BY event",
                 )

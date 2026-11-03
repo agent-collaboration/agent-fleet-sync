@@ -1,1 +1,1 @@
-INSERT INTO _fleet_sync_outbox_status(singleton,record) VALUES(1,?1) ON CONFLICT(singleton) DO UPDATE SET record=excluded.record;
+INSERT INTO _fleet_sync_outbox_status(singleton,cursor) VALUES(1,CAST(?1 AS INTEGER)) ON CONFLICT(singleton) DO UPDATE SET cursor=excluded.cursor,updated_at=(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER));

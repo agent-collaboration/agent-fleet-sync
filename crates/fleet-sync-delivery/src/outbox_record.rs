@@ -13,6 +13,8 @@ pub(crate) struct OutboxHeader<A> {
     pub admitted_at: Option<SyncTime>,
     pub handed_off_at: Option<SyncTime>,
     pub last_report_seq: ReportSeq,
+    /// Opaque consumer route; its schema belongs to DeliveryTypes::StatusRoute.
+    pub status_route: Option<String>,
 
     pub recipient: PeerId,
     pub valid_until: Option<SyncTime>,
@@ -169,6 +171,13 @@ pub struct SubmitInput {
     pub digest: ItemDigest,
     pub relay: PeerId,
     pub mailbox: PeerId,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PushInput {
+    pub reference: DeliveryItemRef,
+    pub recipient: PeerId,
 }
 impl SubmitInput {
     pub fn reference(&self) -> DeliveryItemRef {

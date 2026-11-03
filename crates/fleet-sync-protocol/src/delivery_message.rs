@@ -100,7 +100,7 @@ pub enum DeliveryAnswer<D: DeliveryTypes = NoDelivery> {
     Submit(SubmitResult<D::Acceptance>),
     Fetch(FetchResult<D>),
     Received(ReceivedResult),
-    Report(ReportResult<D::Acceptance>),
+    Report(ReportResult),
     StatusFetch(StatusFetchResult<D::Acceptance>),
     StatusAck(StatusAckResult),
     Query(QueryResult<D::Acceptance>),
@@ -119,7 +119,6 @@ pub enum DeliveryAnswer<D: DeliveryTypes = NoDelivery> {
 pub enum SubmitResult<A> {
     /// The relay's canonical snapshot at first admission, including an already expired item.
     Accepted {
-        seq: DeliverySeq,
         status: DeliveryStatus<A>,
         version: StatusVersion,
         cancel: Option<CancelResult>,
@@ -191,16 +190,10 @@ pub struct RecipientReport<D: DeliveryTypes> {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[serde(tag = "kind", content = "value", rename_all_fields = "camelCase")]
-pub enum ReportResult<A> {
-    Applied {
-        item: ItemId,
-        acknowledged: ReportSeq,
-        status: DeliveryStatus<A>,
-        version: StatusVersion,
-    },
-    Refused {
-        reason: DeliveryRefusal,
-    },
+pub enum ReportResult {
+    Ack { report_seq: ReportSeq },
+    Replayed { report_seq: ReportSeq },
+    Refused { reason: DeliveryRefusal },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

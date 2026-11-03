@@ -307,16 +307,10 @@ async fn seed_report(fixture: &Fixture, id: u64) {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let report = RecipientReport::<TestTypes> {
-                    item: item_id(id),
-                    report_seq: ReportSeq::new(17),
-                    outcome: RecipientOutcome::Expired,
-                };
                 query::<Turso>(
-                    "INSERT INTO _fleet_sync_reports(item_id,report_seq,record) VALUES(?1,17,?2)",
+                    "INSERT INTO _fleet_sync_reports(item_id,report_seq,outcome_kind) VALUES(?1,17,'expired')",
                 )
                 .bind(item_id(id).as_uuid().to_string())
-                .bind(serde_json::to_string(&report).unwrap())
                 .execute(scope.executor())
                 .await?;
                 Ok(())

@@ -1,4 +1,5 @@
 use crate::{DeliveryError, checked_queries as queries, custody_record::*};
+use crate::{status_row::PublicationRow, stored_outcome::stored_enum};
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::*;
 use serde::{Deserialize, Serialize};
@@ -100,7 +101,20 @@ where
                 .await
                 .map_err(sql_error)?
             {
-                Some(row) => decode(row.record, "status stream state")?,
+                Some(row) => StreamState {
+                    sender: stored_enum(row.machine_id, "status stream machine")?,
+                    owner_route: decode(row.owner_route, "status stream route")?,
+                    head: StatusCursor::new(integer(
+                        row.head,
+                        row.head_class,
+                        "status stream head",
+                    )?),
+                    floor: StatusCursor::new(integer(
+                        row.floor,
+                        row.floor_class,
+                        "status stream floor",
+                    )?),
+                },
                 None => StreamState {
                     sender: self.sender,
                     owner_route: self.owner_route.clone(),
@@ -128,7 +142,18 @@ where
         &self,
         row: queries::StoredStatusEventRow,
     ) -> Result<StatusEvent<D::Acceptance>, DeliveryError> {
-        let event: StatusEvent<D::Acceptance> = decode(row.record, "status stream event")?;
+        let publication = row.publication()?;
+        let event = StatusEvent {
+            cursor: StatusCursor::new(integer(
+                row.cursor.clone(),
+                row.cursor_class.clone(),
+                "status cursor",
+            )?),
+            item: publication.item,
+            status: publication.status,
+            version: publication.version,
+            cancel: publication.cancel,
+        };
         if event.cursor.value() == 0
             || row.machine_id.as_deref() != Some(self.sender.as_uuid().to_string().as_str())
             || event.version.value() == 0

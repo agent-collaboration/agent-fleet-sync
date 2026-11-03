@@ -1,1 +1,13 @@
-SELECT machine_id,item_id,target,typeof(version) AS version_class,CAST(version AS TEXT) AS version,record FROM _fleet_sync_status_owed ORDER BY item_id,target;
+SELECT machine_id,
+       item_id,
+       typeof(version) AS version_class,CAST(version AS TEXT) AS version,
+       status_kind,
+       status_acceptance,
+       refusal_kind,
+       refusal_code,
+       refusal_failure,
+       refusal_size_field,
+       refusal_digest,
+       refusal_item_id,
+       cancel_outcome,
+       cancel_too_late_at,CAST(json_object('kind',target_kind,'value',json(CASE target_kind WHEN 'peer' THEN json_object('peer',machine_id,'route',json(status_route)) WHEN 'statusStream' THEN json_object('route',json(status_route),'sender',machine_id) ELSE 'null' END)) AS TEXT) AS target FROM _fleet_sync_status_owed ORDER BY item_id,target_kind,machine_id;

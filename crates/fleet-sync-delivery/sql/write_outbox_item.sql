@@ -1,5 +1,5 @@
-INSERT INTO _fleet_sync_outbox_items (item_id, live, payload_bytes, settlement_charge_bytes, payload, capacity_slot, record_kind, digest, relay_machine_id, submitter_machine_id, recipient_machine_id, valid_until, status_kind, status_sequence, status_acceptance, refusal_kind, refusal_code, refusal_failure, refusal_size_field, refusal_digest, refusal_item_id, status_version, last_report_seq, submit_attempted, cancel_outcome, cancel_too_late_at, cancel_target_item_id, acceptance_bound, settlement_bytes, failure_kind, created_at, admitted_at, handed_off_at)
-VALUES (?1,
+INSERT INTO _fleet_sync_outbox_items (status_route,item_id, live, payload_bytes, settlement_charge_bytes, payload, capacity_slot, record_kind, digest, relay_machine_id, submitter_machine_id, recipient_machine_id, valid_until, status_kind, status_sequence, status_acceptance, refusal_kind, refusal_code, refusal_failure, refusal_size_field, refusal_digest, refusal_item_id, status_version, last_report_seq, submit_attempted, cancel_outcome, cancel_too_late_at, cancel_target_item_id, acceptance_bound, settlement_bytes, failure_kind, created_at, admitted_at, handed_off_at)
+VALUES (json_extract(?5,'$.value.statusRoute'),?1,
         CAST(?2 AS INTEGER),
         CAST(?3 AS INTEGER),
         CAST(?4 AS INTEGER),
@@ -39,6 +39,7 @@ ON CONFLICT(item_id) DO UPDATE SET
     payload=excluded.payload,
     capacity_slot=excluded.capacity_slot,
     record_kind=excluded.record_kind,
+    status_route=excluded.status_route,
     digest=excluded.digest,
     relay_machine_id=excluded.relay_machine_id,
     submitter_machine_id=excluded.submitter_machine_id,
@@ -64,4 +65,4 @@ ON CONFLICT(item_id) DO UPDATE SET
     failure_kind=excluded.failure_kind,
     created_at=excluded.created_at,
     admitted_at=excluded.admitted_at,
-    handed_off_at=excluded.handed_off_at;
+    handed_off_at=excluded.handed_off_at,updated_at=(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER));

@@ -1,1 +1,1 @@
-DELETE FROM _fleet_sync_status_owed WHERE item_id = ?1 AND target = ?2 AND version = CAST(?3 AS INTEGER);
+DELETE FROM _fleet_sync_status_owed WHERE item_id=?1 AND target_kind=json_extract(?2,'$.kind') AND machine_id=COALESCE(json_extract(?2,'$.value.sender'),json_extract(?2,'$.value.peer')) AND status_route=?2 -> '$.value.route' AND version=CAST(?3 AS INTEGER);

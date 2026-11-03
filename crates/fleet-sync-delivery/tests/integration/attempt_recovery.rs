@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, Engine, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use sqlx_core::row::Row;
@@ -206,9 +206,9 @@ async fn cancel_waiting_for_a_saved_delivered_answer_becomes_too_late() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let row = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT record FROM _fleet_sync_reports WHERE item_id=?1",
-                )
+                let row = sqlx_core::query::query::<sqlx_turso::Turso>(include_str!(
+                    "../support/sql/read_report_header.sql"
+                ))
                 .bind(item_id(2).as_uuid().to_string())
                 .fetch_one(scope.executor())
                 .await
@@ -294,9 +294,9 @@ async fn cancel_waiting_for_an_uncertain_attempt_becomes_too_late() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let row = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT record FROM _fleet_sync_reports WHERE item_id=?1",
-                )
+                let row = sqlx_core::query::query::<sqlx_turso::Turso>(include_str!(
+                    "../support/sql/read_report_header.sql"
+                ))
                 .bind(item_id(2).as_uuid().to_string())
                 .fetch_one(scope.executor())
                 .await

@@ -1,1 +1,1 @@
-INSERT INTO _fleet_sync_status_state(machine_id,record) VALUES(?2,?1) ON CONFLICT(machine_id) DO UPDATE SET record=excluded.record;
+INSERT INTO _fleet_sync_status_state(machine_id,owner_route,head,floor) VALUES(?2,?1 -> '$.ownerRoute',CAST(json_extract(?1,'$.head') AS INTEGER),CAST(json_extract(?1,'$.floor') AS INTEGER)) ON CONFLICT(machine_id) DO UPDATE SET owner_route=excluded.owner_route,head=excluded.head,floor=excluded.floor,updated_at=(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER));

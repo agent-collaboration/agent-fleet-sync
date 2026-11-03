@@ -66,4 +66,4 @@ ON CONFLICT(item_id) DO UPDATE SET
     release_requested=excluded.release_requested,
     created_at=excluded.created_at,
     accepted_at=excluded.accepted_at,
-    delivered_at=excluded.delivered_at;
+    delivered_at=excluded.delivered_at,updated_at=(CAST(strftime('%s','now') AS INTEGER)*1000+CAST(substr(strftime('%f','now'),4,3) AS INTEGER));

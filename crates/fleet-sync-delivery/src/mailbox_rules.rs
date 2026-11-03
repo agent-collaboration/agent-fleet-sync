@@ -200,7 +200,7 @@ where
         let status = if item.valid_until().is_some_and(|until| now >= until) {
             DeliveryStatus::Expired
         } else {
-            DeliveryStatus::Sent { seq }
+            DeliveryStatus::Sent
         };
         let terminal = status.is_terminal();
         let record = LiveMail {
@@ -241,7 +241,6 @@ where
         self.storage.save_state(&state).await?;
         self.owe(&record).await?;
         Ok(SubmitResult::Accepted {
-            seq,
             status: copy_wire(&record.status)?,
             version: record.version,
             cancel: record.cancel,
@@ -311,7 +310,7 @@ where
         &mut self,
         recipient: PeerId,
         report: RecipientReport<D>,
-    ) -> Result<ReportResult<D::Acceptance>, DeliveryError> {
+    ) -> Result<ReportResult, DeliveryError> {
         crate::delivery_sizes::check_outcome::<D>(&report.outcome)?;
         if recipient != self.storage.owner
             || report.report_seq.value() == 0
@@ -329,9 +328,11 @@ where
             MailRecord::Compacted(compacted) => compacted.acceptance_bound,
         };
         crate::delivery_sizes::check_outcome_bound::<D>(&report.outcome, acceptance_bound)?;
+        let mut replayed = true;
         if let MailRecord::Live(live) = &mut record
             && report.report_seq > live.last_report_seq
         {
+            replayed = false;
             let is_cancel = live.cancel_target.is_some();
             let (status, cancel) = match report.outcome {
                 RecipientOutcome::Held => (DeliveryStatus::Held, None),
@@ -383,11 +384,14 @@ where
             }
             self.storage.save_live(live).await?;
         }
-        Ok(ReportResult::Applied {
-            item: report.item,
-            acknowledged: report.report_seq,
-            status: copy_wire(record.status())?,
-            version: record.version(),
+        Ok(if replayed {
+            ReportResult::Replayed {
+                report_seq: report.report_seq,
+            }
+        } else {
+            ReportResult::Ack {
+                report_seq: report.report_seq,
+            }
         })
     }
 }

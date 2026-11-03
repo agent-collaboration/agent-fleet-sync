@@ -56,10 +56,10 @@ fn all_eight_delivery_request_bodies_cross_the_operation_envelope() {
 #[test]
 fn all_eight_delivery_answers_preserve_their_typed_bodies() {
     let answers = [
-        json!({"kind":"submit","value":{"kind":"accepted","value":{"seq":1,"status":{"kind":"sent","value":{"seq":1}},"version":1,"cancel":null}}}),
+        json!({"kind":"submit","value":{"kind":"accepted","value":{"status":{"kind":"sent"},"version":1,"cancel":null}}}),
         json!({"kind":"fetch","value":{"stream":"controls","entries":[{"kind":"retired","value":{"seq":2,"items":[ITEM]}}],"through":2}}),
         json!({"kind":"received","value":{"stream":"controls","releasedThrough":2}}),
-        json!({"kind":"report","value":{"kind":"applied","value":{"item":ITEM,"acknowledged":2,"status":{"kind":"delivered","value":{"acceptance":null}},"version":4}}}),
+        json!({"kind":"report","value":{"kind":"ack","value":{"reportSeq":2}}}),
         json!({"kind":"statusFetch","value":{"events":[{"cursor":5,"item":ITEM,"status":{"kind":"held"},"version":3,"cancel":null}],"through":5}}),
         json!({"kind":"query","value":{"statuses":[{"item":ITEM,"state":{"kind":"known","value":{"digest":"bd00f74cc22f8538a42a06a5227faf5e6b323622380dc9c61a3ad79ac72f3a4b","status":{"kind":"held"},"version":3,"cancel":null}}}]}}),
         json!({"kind":"retire","value":{"retired":[ITEM],"unknown":[],"notCurrentTarget":[]}}),
@@ -160,10 +160,7 @@ fn delivery_header_preserves_identity_and_rejects_a_body() {
 #[test]
 fn accepted_and_replayed_submit_receipts_carry_the_canonical_expired_snapshot() {
     for kind in ["accepted", "replayed"] {
-        let mut snapshot = json!({"status":{"kind":"expired"},"version":1,"cancel":null});
-        if kind == "accepted" {
-            snapshot["seq"] = json!(1);
-        }
+        let snapshot = json!({"status":{"kind":"expired"},"version":1,"cancel":null});
         let wire = json!({"kind":"delivery","value":{"kind":"submit","value":{"kind":kind,"value":snapshot}}});
         let decoded: OperationAnswer = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(decoded).unwrap(), wire);

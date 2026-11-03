@@ -97,10 +97,7 @@ async fn released_outbox_retains_deadline_identity_reserve_and_timestamps_after_
                             mailbox: peer(2),
                         },
                         SubmitResult::Accepted {
-                            seq: DeliverySeq::new(17),
-                            status: DeliveryStatus::Sent {
-                                seq: DeliverySeq::new(17),
-                            },
+                            status: DeliveryStatus::Sent,
                             version: StatusVersion::new(1),
                             cancel: None,
                         },
@@ -138,7 +135,7 @@ async fn released_outbox_retains_deadline_identity_reserve_and_timestamps_after_
         assert_eq!(row.try_get::<i64, _>("submit_attempted")?, 1);
         assert_eq!(row.try_get::<i64, _>("capacity_slot")?, 1);
         assert!(matches!(Outbox::<_, TestTypes>::new(scope, limits()).status(item_id(71)).await.map_err(storage_error)?.state,
-            OutboxStatusState::Known { status: DeliveryStatus::Sent { seq }, version, .. } if seq.value()==17 && version.value()==1));
+            OutboxStatusState::Known { status: DeliveryStatus::Sent, version, .. } if version.value()==1));
         Ok(())
     })).await.unwrap();
 }

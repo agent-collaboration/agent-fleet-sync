@@ -75,7 +75,9 @@ where
             .await
             .map_err(sql_error)?
         {
-            Some(row) => decode(row.record, "outbox status cursor"),
+            Some(row) => {
+                integer(row.cursor, row.cursor_class, "outbox status cursor").map(StatusCursor::new)
+            }
             None => Ok(StatusCursor::new(0)),
         }
     }

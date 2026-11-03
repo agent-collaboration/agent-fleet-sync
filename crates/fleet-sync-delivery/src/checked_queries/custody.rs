@@ -9,6 +9,7 @@ use sqlx_core::{
 
 #[derive(Debug)]
 pub(crate) struct StoredOutboxRow {
+    pub status_route: Option<String>,
     pub item_id: Option<String>,
     pub live_class: Option<String>,
     pub live: Option<String>,
@@ -78,6 +79,7 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredOutboxRow {
+                    status_route: row.try_get("status_route")?,
                     item_id: row.try_get("item_id")?,
                     live_class: row.try_get("live_class")?,
                     live: row.try_get("live")?,
@@ -383,98 +385,6 @@ where
         Ok(())
     }
 }
-pub(crate) fn write_report<S>(
-    scope: &mut S,
-    item_id: String,
-    report_seq: String,
-    record: String,
-) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
-where
-    S: TransactionScope,
-    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
-    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
-{
-    async move {
-        let statement = query::<S::Database>(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/sql/write_report.sql"
-        )))
-        .bind(item_id)
-        .bind(report_seq)
-        .bind(record);
-        statement.execute(scope.executor()).await?;
-        Ok(())
-    }
-}
-pub(crate) fn read_report<S>(
-    scope: &mut S,
-    item_id: String,
-    report_seq: String,
-) -> impl std::future::Future<Output = Result<Option<StoredCustodyStateRow>, sqlx_core::Error>> + Send
-where
-    S: TransactionScope,
-    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
-    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
-    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
-    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
-{
-    async move {
-        let statement = query::<S::Database>(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/sql/read_report.sql"
-        )))
-        .bind(item_id)
-        .bind(report_seq);
-        let row = statement.fetch_optional(scope.executor()).await?;
-        row.as_ref()
-            .map(|row| {
-                Ok(StoredCustodyStateRow {
-                    record: row.try_get("record")?,
-                })
-            })
-            .transpose()
-    }
-}
-pub(crate) fn retire_report<S>(
-    scope: &mut S,
-    item_id: String,
-    report_seq: String,
-) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
-where
-    S: TransactionScope,
-    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
-    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
-{
-    async move {
-        let statement = query::<S::Database>(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/sql/retire_report.sql"
-        )))
-        .bind(item_id)
-        .bind(report_seq);
-        statement.execute(scope.executor()).await?;
-        Ok(())
-    }
-}
-pub(crate) fn drop_inbox_reports<S>(
-    scope: &mut S,
-    item_id: String,
-) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
-where
-    S: TransactionScope,
-    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
-    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
-{
-    async move {
-        let statement = query::<S::Database>(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/sql/drop_inbox_reports.sql"
-        )))
-        .bind(item_id);
-        statement.execute(scope.executor()).await?;
-        Ok(())
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct StoredCustodyAccountingRow {
@@ -578,9 +488,15 @@ where
         Ok(())
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct StoredOutboxCursorRow {
+    pub cursor_class: Option<String>,
+    pub cursor: Option<String>,
+}
 pub(crate) fn read_outbox_status<S>(
     scope: &mut S,
-) -> impl std::future::Future<Output = Result<Option<StoredCustodyStateRow>, sqlx_core::Error>> + Send
+) -> impl std::future::Future<Output = Result<Option<StoredOutboxCursorRow>, sqlx_core::Error>> + Send
 where
     S: TransactionScope,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
@@ -595,8 +511,9 @@ where
         let row = statement.fetch_optional(scope.executor()).await?;
         row.as_ref()
             .map(|row| {
-                Ok(StoredCustodyStateRow {
-                    record: row.try_get("record")?,
+                Ok(StoredOutboxCursorRow {
+                    cursor_class: row.try_get("cursor_class")?,
+                    cursor: row.try_get("cursor")?,
                 })
             })
             .transpose()

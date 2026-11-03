@@ -1,1 +1,14 @@
-SELECT machine_id,item_id,typeof(version) AS version_class,CAST(version AS TEXT) AS version,typeof(cursor) AS cursor_class,CAST(cursor AS TEXT) AS cursor,record FROM _fleet_sync_status_events WHERE machine_id = ?3 AND item_id = ?1 AND version = CAST(?2 AS INTEGER);
+SELECT machine_id,
+       typeof(cursor) AS cursor_class,CAST(cursor AS TEXT) AS cursor,
+       item_id,
+       typeof(version) AS version_class,CAST(version AS TEXT) AS version,
+       status_kind,
+       status_acceptance,
+       refusal_kind,
+       refusal_code,
+       refusal_failure,
+       refusal_size_field,
+       refusal_digest,
+       refusal_item_id,
+       cancel_outcome,
+       cancel_too_late_at FROM _fleet_sync_status_events WHERE machine_id=?3 AND item_id=?1 AND version=CAST(?2 AS INTEGER);

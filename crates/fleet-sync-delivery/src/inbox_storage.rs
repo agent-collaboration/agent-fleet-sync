@@ -245,7 +245,7 @@ where
         .ok_or(DeliveryError::Corrupt {
             field: "report custody row missing",
         })?;
-        let report: RecipientReport<D> = decode(row.record, "recipient report")?;
+        let report: RecipientReport<D> = crate::report_row::decode_report(&row)?;
         crate::delivery_sizes::check_outcome::<D>(&report.outcome).map_err(|_| {
             DeliveryError::Corrupt {
                 field: "stored report bounds",

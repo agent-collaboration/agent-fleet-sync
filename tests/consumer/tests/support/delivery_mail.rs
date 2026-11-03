@@ -109,7 +109,7 @@ pub async fn stopped_node_row(
         db.close().await?;
         return Ok(serde_json::json!({"record":record,"bytes":bytes}));
     }
-    let sql = "SELECT record,CAST(report_seq AS TEXT) AS payload_bytes FROM _fleet_sync_reports WHERE item_id=?1";
+    let sql = "SELECT json_object('item',item_id,'reportSeq',report_seq,'outcomeKind',outcome_kind) AS record,CAST(report_seq AS TEXT) AS payload_bytes FROM _fleet_sync_reports WHERE item_id=?1";
     let row = sqlx_core::query::query::<sqlx_turso::Turso>(sql)
         .bind(item.as_uuid().to_string())
         .fetch_one(&mut db)

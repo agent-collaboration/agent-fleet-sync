@@ -54,7 +54,7 @@ async fn relay_down_offline_recipient_and_all_real_engine_hops_preserve_custody(
     assert!(matches!(
         sender_status(&network, 1).await,
         OutboxStatusState::Known {
-            status: DeliveryStatus::Sent { .. },
+            status: DeliveryStatus::Sent,
             ..
         }
     ));
@@ -125,7 +125,7 @@ async fn accepted_answer_lost_then_corrupt_body_reconciles_without_resending() {
     assert!(matches!(
         sender_status(&network, 1).await,
         OutboxStatusState::Known {
-            status: DeliveryStatus::Sent { .. },
+            status: DeliveryStatus::Sent,
             ..
         }
     ));
@@ -192,7 +192,7 @@ async fn header_loss_before_first_gate_reconciles_same_digest_conflict_and_unkno
                 assert!(matches!(
                     sender_status(&network, 1).await,
                     OutboxStatusState::Known {
-                        status: DeliveryStatus::Sent { .. },
+                        status: DeliveryStatus::Sent,
                         ..
                     }
                 ));

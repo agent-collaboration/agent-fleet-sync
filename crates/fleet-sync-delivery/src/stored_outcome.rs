@@ -92,6 +92,9 @@ impl RefusalFields {
             Some("recipientRevoked") => DeliveryRefusal::RecipientRevoked,
             Some("droppedByPolicy") => DeliveryRefusal::DroppedByPolicy,
             Some("cancelSenderMismatch") => DeliveryRefusal::CancelSenderMismatch,
+            Some("notThisMachine") => DeliveryRefusal::NotThisMachine,
+            Some("notRecipient") => DeliveryRefusal::NotRecipient,
+            Some("tooOld") => DeliveryRefusal::TooOld,
             _ => return Err(DeliveryError::Corrupt { field }),
         })
     }
@@ -118,16 +121,14 @@ pub(crate) fn stored_cancel(
 
 pub(crate) fn stored_status<A: DeserializeOwned>(
     kind: Option<String>,
-    sequence: Option<u64>,
+    _sequence: Option<u64>,
     acceptance: Option<String>,
     refusal: RefusalFields,
 ) -> Result<DeliveryStatus<A>, DeliveryError> {
     let field = "stored status";
     Ok(match kind.as_deref() {
         Some("queued") => DeliveryStatus::Queued,
-        Some("sent") => DeliveryStatus::Sent {
-            seq: DeliverySeq::new(sequence.ok_or(DeliveryError::Corrupt { field })?),
-        },
+        Some("sent") => DeliveryStatus::Sent,
         Some("atRecipient") => DeliveryStatus::AtRecipient,
         Some("held") => DeliveryStatus::Held,
         Some("delivered") => DeliveryStatus::Delivered {
@@ -135,6 +136,7 @@ pub(crate) fn stored_status<A: DeserializeOwned>(
         },
         Some("uncertain") => DeliveryStatus::Uncertain,
         Some("expired") => DeliveryStatus::Expired,
+        Some("expiredAtUpgrade") => DeliveryStatus::ExpiredAtUpgrade,
         Some("cancelled") => DeliveryStatus::Cancelled,
         Some("refused") => DeliveryStatus::Refused {
             reason: refusal.decode()?,

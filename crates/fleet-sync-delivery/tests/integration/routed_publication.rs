@@ -210,14 +210,14 @@ async fn held_old_publish_keeps_its_route_and_stream_restart_delivers_both_froze
     assert!(matches!(
         sender_status(&network, 1).await,
         OutboxStatusState::Known {
-            status: DeliveryStatus::Sent { .. },
+            status: DeliveryStatus::Sent,
             ..
         }
     ));
     assert!(matches!(
         sender_status(&network, 2).await,
         OutboxStatusState::Known {
-            status: DeliveryStatus::Sent { .. },
+            status: DeliveryStatus::Sent,
             ..
         }
     ));

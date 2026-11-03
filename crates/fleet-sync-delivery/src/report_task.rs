@@ -65,9 +65,8 @@ where
             )
             .await?;
         match answer {
-            ReportResult::Applied {
-                item, acknowledged, ..
-            } if item == input.item && acknowledged >= input.report_seq => {}
+            ReportResult::Ack { report_seq } | ReportResult::Replayed { report_seq }
+                if report_seq >= input.report_seq => {}
             ReportResult::Refused { reason } => {
                 return Err(step_error(DeliveryError::Refused { reason }).into());
             }

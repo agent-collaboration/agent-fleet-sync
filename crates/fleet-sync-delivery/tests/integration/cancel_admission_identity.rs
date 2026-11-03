@@ -189,14 +189,11 @@ async fn relay_duplicate_cancel_names_canonical_identity_without_new_custody() {
     ));
     assert_eq!(stored_first_cancel(&relay, true).await, first_before);
     assert_eq!(same_id["kind"], "replayed");
-    assert_eq!(
-        same_id["value"]["status"],
-        json!({"kind":"sent","value":{"seq":1}})
-    );
+    assert_eq!(same_id["value"]["status"], json!({"kind":"sent"}));
     assert_eq!(
         another_id,
         json!({"kind":"cancelAlreadyRequested","value":{
-            "existing":first_reference(),"status":{"kind":"sent","value":{"seq":1}},
+            "existing":first_reference(),"status":{"kind":"sent"},
             "version":1,"cancel":{"kind":"pending"}
         }}),
         "relay must distinguish a different cancel ID from same-ID replay"

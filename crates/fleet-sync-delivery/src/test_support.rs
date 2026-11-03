@@ -1,4 +1,5 @@
 //! Read-only committed-state observations for process verification, excluded from normal builds.
+use crate::status_row::PublicationRow;
 use crate::{DeliveryError, checked_inspection_queries as queries};
 use crate::{
     DeliveryTypes, checked_queries,
@@ -18,6 +19,12 @@ pub struct DeliveryObservation {
     pub metadata: Option<String>,
     pub content: Option<String>,
     pub payload_bytes: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EventObservationKey {
+    machine: crate::PeerId,
+    version: crate::StatusVersion,
 }
 /// Call inside the owner's existing transaction; this executes only a SELECT.
 pub async fn snapshot<S, D: DeliveryTypes>(
@@ -62,6 +69,57 @@ where
                     .map_err(sql_error)?
                     .ok_or(DeliveryError::CustodyMissing)?;
                 Some(encode(&crate::inbox_row::decode_header::<D>(&row)?)?)
+            }
+            "report" => {
+                let sequence = observation.metadata.clone().ok_or(DeliveryError::Corrupt {
+                    field: "inspection report sequence",
+                })?;
+                let row =
+                    checked_queries::read_report(scope, observation.identity.clone(), sequence)
+                        .await
+                        .map_err(sql_error)?
+                        .ok_or(DeliveryError::CustodyMissing)?;
+                Some(encode(&crate::report_row::decode_report::<D>(&row)?)?)
+            }
+            "publication" => {
+                let target = observation.metadata.clone().ok_or(DeliveryError::Corrupt {
+                    field: "inspection publication target",
+                })?;
+                let row =
+                    checked_queries::read_publication(scope, observation.identity.clone(), target)
+                        .await
+                        .map_err(sql_error)?
+                        .ok_or(DeliveryError::CustodyMissing)?;
+                Some(encode(&row.publication::<D::Acceptance>()?)?)
+            }
+            "statusEvent" => {
+                let key: EventObservationKey = crate::custody_record::decode(
+                    observation.metadata.clone(),
+                    "inspection event key",
+                )?;
+                let row = checked_queries::read_status_revision(
+                    scope,
+                    observation.identity.clone(),
+                    key.version.value().to_string(),
+                    key.machine.as_uuid().to_string(),
+                )
+                .await
+                .map_err(sql_error)?
+                .ok_or(DeliveryError::CustodyMissing)?;
+                let publication = row.publication::<D::Acceptance>()?;
+                let cursor = crate::StatusCursor::new(crate::custody_record::integer(
+                    row.cursor,
+                    row.cursor_class,
+                    "inspection cursor",
+                )?);
+                observation.metadata = Some(cursor.value().to_string());
+                Some(encode(&crate::StatusEvent {
+                    cursor,
+                    item: publication.item,
+                    status: publication.status,
+                    version: publication.version,
+                    cancel: publication.cancel,
+                })?)
             }
             _ => observation.content,
         };

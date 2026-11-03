@@ -9,7 +9,12 @@ use sqlx_core::{
 
 #[derive(Debug)]
 pub(crate) struct StoredStatusStateRow {
-    pub record: Option<String>,
+    pub machine_id: Option<String>,
+    pub owner_route: Option<String>,
+    pub head_class: Option<String>,
+    pub head: Option<String>,
+    pub floor_class: Option<String>,
+    pub floor: Option<String>,
 }
 pub(crate) fn read_status_state<S>(
     scope: &mut S,
@@ -32,7 +37,12 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredStatusStateRow {
-                    record: row.try_get("record")?,
+                    machine_id: row.try_get("machine_id")?,
+                    owner_route: row.try_get("owner_route")?,
+                    head_class: row.try_get("head_class")?,
+                    head: row.try_get("head")?,
+                    floor_class: row.try_get("floor_class")?,
+                    floor: row.try_get("floor")?,
                 })
             })
             .transpose()
@@ -63,9 +73,20 @@ where
 #[derive(Debug)]
 pub(crate) struct StoredPublicationRow {
     pub machine_id: Option<String>,
+    pub item_id: Option<String>,
     pub version_class: Option<String>,
     pub version: Option<String>,
-    pub record: Option<String>,
+    pub status_kind: Option<String>,
+    pub status_acceptance: Option<String>,
+    pub refusal_kind: Option<String>,
+    pub refusal_code: Option<String>,
+    pub refusal_failure: Option<String>,
+    pub refusal_size_field: Option<String>,
+    pub refusal_digest: Option<String>,
+    pub refusal_item_id: Option<String>,
+    pub cancel_outcome: Option<String>,
+    pub cancel_too_late_at: Option<String>,
+    pub target: Option<String>,
 }
 pub(crate) fn read_publication<S>(
     scope: &mut S,
@@ -91,9 +112,20 @@ where
             .map(|row| {
                 Ok(StoredPublicationRow {
                     machine_id: row.try_get("machine_id")?,
+                    item_id: row.try_get("item_id")?,
                     version_class: row.try_get("version_class")?,
                     version: row.try_get("version")?,
-                    record: row.try_get("record")?,
+                    status_kind: row.try_get("status_kind")?,
+                    status_acceptance: row.try_get("status_acceptance")?,
+                    refusal_kind: row.try_get("refusal_kind")?,
+                    refusal_code: row.try_get("refusal_code")?,
+                    refusal_failure: row.try_get("refusal_failure")?,
+                    refusal_size_field: row.try_get("refusal_size_field")?,
+                    refusal_digest: row.try_get("refusal_digest")?,
+                    refusal_item_id: row.try_get("refusal_item_id")?,
+                    cancel_outcome: row.try_get("cancel_outcome")?,
+                    cancel_too_late_at: row.try_get("cancel_too_late_at")?,
+                    target: row.try_get("target")?,
                 })
             })
             .transpose()
@@ -178,12 +210,21 @@ where
 #[derive(Debug)]
 pub(crate) struct StoredStatusEventRow {
     pub machine_id: Option<String>,
+    pub cursor_class: Option<String>,
+    pub cursor: Option<String>,
     pub item_id: Option<String>,
     pub version_class: Option<String>,
     pub version: Option<String>,
-    pub cursor_class: Option<String>,
-    pub cursor: Option<String>,
-    pub record: Option<String>,
+    pub status_kind: Option<String>,
+    pub status_acceptance: Option<String>,
+    pub refusal_kind: Option<String>,
+    pub refusal_code: Option<String>,
+    pub refusal_failure: Option<String>,
+    pub refusal_size_field: Option<String>,
+    pub refusal_digest: Option<String>,
+    pub refusal_item_id: Option<String>,
+    pub cancel_outcome: Option<String>,
+    pub cancel_too_late_at: Option<String>,
 }
 pub(crate) fn read_status_events<S>(
     scope: &mut S,
@@ -211,12 +252,21 @@ where
             .map(|row| {
                 Ok(StoredStatusEventRow {
                     machine_id: row.try_get("machine_id")?,
+                    cursor_class: row.try_get("cursor_class")?,
+                    cursor: row.try_get("cursor")?,
                     item_id: row.try_get("item_id")?,
                     version_class: row.try_get("version_class")?,
                     version: row.try_get("version")?,
-                    cursor_class: row.try_get("cursor_class")?,
-                    cursor: row.try_get("cursor")?,
-                    record: row.try_get("record")?,
+                    status_kind: row.try_get("status_kind")?,
+                    status_acceptance: row.try_get("status_acceptance")?,
+                    refusal_kind: row.try_get("refusal_kind")?,
+                    refusal_code: row.try_get("refusal_code")?,
+                    refusal_failure: row.try_get("refusal_failure")?,
+                    refusal_size_field: row.try_get("refusal_size_field")?,
+                    refusal_digest: row.try_get("refusal_digest")?,
+                    refusal_item_id: row.try_get("refusal_item_id")?,
+                    cancel_outcome: row.try_get("cancel_outcome")?,
+                    cancel_too_late_at: row.try_get("cancel_too_late_at")?,
                 })
             })
             .collect()
@@ -269,12 +319,21 @@ where
             .map(|row| {
                 Ok(StoredStatusEventRow {
                     machine_id: row.try_get("machine_id")?,
+                    cursor_class: row.try_get("cursor_class")?,
+                    cursor: row.try_get("cursor")?,
                     item_id: row.try_get("item_id")?,
                     version_class: row.try_get("version_class")?,
                     version: row.try_get("version")?,
-                    cursor_class: row.try_get("cursor_class")?,
-                    cursor: row.try_get("cursor")?,
-                    record: row.try_get("record")?,
+                    status_kind: row.try_get("status_kind")?,
+                    status_acceptance: row.try_get("status_acceptance")?,
+                    refusal_kind: row.try_get("refusal_kind")?,
+                    refusal_code: row.try_get("refusal_code")?,
+                    refusal_failure: row.try_get("refusal_failure")?,
+                    refusal_size_field: row.try_get("refusal_size_field")?,
+                    refusal_digest: row.try_get("refusal_digest")?,
+                    refusal_item_id: row.try_get("refusal_item_id")?,
+                    cancel_outcome: row.try_get("cancel_outcome")?,
+                    cancel_too_late_at: row.try_get("cancel_too_late_at")?,
                 })
             })
             .transpose()
@@ -285,10 +344,19 @@ where
 pub(crate) struct StoredOwedPublicationRow {
     pub machine_id: Option<String>,
     pub item_id: Option<String>,
-    pub target: Option<String>,
     pub version_class: Option<String>,
     pub version: Option<String>,
-    pub record: Option<String>,
+    pub status_kind: Option<String>,
+    pub status_acceptance: Option<String>,
+    pub refusal_kind: Option<String>,
+    pub refusal_code: Option<String>,
+    pub refusal_failure: Option<String>,
+    pub refusal_size_field: Option<String>,
+    pub refusal_digest: Option<String>,
+    pub refusal_item_id: Option<String>,
+    pub cancel_outcome: Option<String>,
+    pub cancel_too_late_at: Option<String>,
+    pub target: Option<String>,
 }
 pub(crate) fn list_publications<S>(
     scope: &mut S,
@@ -310,10 +378,19 @@ where
                 Ok(StoredOwedPublicationRow {
                     machine_id: row.try_get("machine_id")?,
                     item_id: row.try_get("item_id")?,
-                    target: row.try_get("target")?,
                     version_class: row.try_get("version_class")?,
                     version: row.try_get("version")?,
-                    record: row.try_get("record")?,
+                    status_kind: row.try_get("status_kind")?,
+                    status_acceptance: row.try_get("status_acceptance")?,
+                    refusal_kind: row.try_get("refusal_kind")?,
+                    refusal_code: row.try_get("refusal_code")?,
+                    refusal_failure: row.try_get("refusal_failure")?,
+                    refusal_size_field: row.try_get("refusal_size_field")?,
+                    refusal_digest: row.try_get("refusal_digest")?,
+                    refusal_item_id: row.try_get("refusal_item_id")?,
+                    cancel_outcome: row.try_get("cancel_outcome")?,
+                    cancel_too_late_at: row.try_get("cancel_too_late_at")?,
+                    target: row.try_get("target")?,
                 })
             })
             .collect()

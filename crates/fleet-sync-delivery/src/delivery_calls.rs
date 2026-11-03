@@ -153,7 +153,7 @@ impl<D> ReportCall<D> {
 impl<D: DeliveryTypes> CallTarget for ReportCall<D> {
     const KIND: &'static str = "fleet-sync.delivery.report";
     type Request = RecipientReport<D>;
-    type Answer = ReportResult<D::Acceptance>;
+    type Answer = ReportResult;
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]

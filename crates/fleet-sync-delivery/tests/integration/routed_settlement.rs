@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, SyncTime, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use sqlx_core::row::Row;
@@ -29,7 +29,7 @@ async fn allowance_covers_four_maximum_routes_for_both_item_and_cancel() {
                 }
             }
         }
-        let rows = sqlx_core::query::query::<sqlx_turso::Turso>("SELECT item_id,target,record,version FROM _fleet_sync_status_owed ORDER BY item_id,version").fetch_all(scope.executor()).await?;
+        let rows = sqlx_core::query::query::<sqlx_turso::Turso>(include_str!("../support/sql/read_publication_headers.sql")).fetch_all(scope.executor()).await?;
         assert_eq!(rows.len(), 8, "four historical targets for item and cancel");
         let mut retained_bytes = 0usize;
         for (index, row) in rows.iter().enumerate() {
@@ -133,12 +133,12 @@ async fn authoritative_route_bounds_reject_corrupt_mail_publication_and_stream_s
         let fixture = Fixture::new().await;
         fixture.store.transaction(move |scope| Box::pin(async move {
             Mailbox::<_, TestTypes>::new(scope, peer(2), limits()).submit(peer(1), item(1, "body"), SyncTime::from_unix_millis(0), "valid".into(), None).await.map_err(storage_error)?;
-            let publication = StatusPublication { item:item_id(1), status:DeliveryStatus::Sent { seq:DeliverySeq::new(1) }, version:StatusVersion::new(1), cancel:None };
+            let publication = StatusPublication { item:item_id(1), status:DeliveryStatus::Sent, version:StatusVersion::new(1), cancel:None };
             StatusStream::<_, TestTypes>::new(scope, peer(1), "valid".into()).append(&publication).await.map_err(storage_error)?;
             let statement = match owner {
                 "mail" => "UPDATE _fleet_sync_mail_items SET record=json_set(record,'$.value.statusTarget.route',?1)",
-                "publication" => "UPDATE _fleet_sync_status_owed SET target=json_set(target,'$.value.route',?1)",
-                _ => "UPDATE _fleet_sync_status_state SET record=json_set(record,'$.ownerRoute',?1)",
+                "publication" => "UPDATE _fleet_sync_status_owed SET status_route=json_quote(?1)",
+                _ => "UPDATE _fleet_sync_status_state SET owner_route=json_quote(?1)",
             };
             sqlx_core::query::query::<sqlx_turso::Turso>(statement).bind("x".repeat(63)).execute(scope.executor()).await?;
             let result = match owner {

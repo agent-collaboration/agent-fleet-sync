@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 
 use durable_steps::{AtomicStore, SyncTime, storage::TransactionScope};
 use fleet_sync_delivery::*;
@@ -94,7 +94,7 @@ async fn ranked_replay_preserves_origin_and_old_publications_while_future_status
     assert!(PeerId::new(ORIGINAL_ROUTE.parse().unwrap()).is_err());
     assert!(
         matches!(submit_mail(&store, peer(1), ORIGINAL_ROUTE, Some(4), 1, "original body").await,
-        SubmitResult::Accepted { seq, version, .. } if seq.value()==1 && version.value()==1)
+        SubmitResult::Accepted { version, .. } if version.value()==1)
     );
     let original = stored_mail(&store, 1).await;
     let old_reference = status_reference(peer(1), ORIGINAL_ROUTE, 1, 1);
@@ -106,8 +106,8 @@ async fn ranked_replay_preserves_origin_and_old_publications_while_future_status
 
     assert!(
         matches!(submit_mail(&store, peer(3), SUCCESSOR_ROUTE, Some(5), 1, "original body").await,
-        SubmitResult::Replayed { status: DeliveryStatus::Sent { seq }, version, .. }
-            if seq.value()==1 && version.value()==1)
+        SubmitResult::Replayed { status: DeliveryStatus::Sent, version, .. }
+            if version.value()==1)
     );
     for (origin, route, rank) in [
         (peer(1), ORIGINAL_ROUTE, Some(4)),

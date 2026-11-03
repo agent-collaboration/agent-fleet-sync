@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, Engine, storage::TransactionScope, turso_store::TursoScope};
 use fleet_sync_delivery::*;
 use serde_json::{Value, json};
@@ -100,7 +100,7 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
         assert!(matches!(
             sender_status(&network, 1).await,
             OutboxStatusState::Known {
-                status: DeliveryStatus::Sent { .. },
+                status: DeliveryStatus::Sent,
                 ..
             }
         ));
@@ -320,7 +320,7 @@ async fn assert_settlement_fits_minimum<D: DeliveryTypes<StatusRoute = String>>(
                 }
             }
         }
-        let publications=query::<Turso>("SELECT target,record FROM _fleet_sync_status_owed").fetch_all(scope.executor()).await?;
+        let publications=query::<Turso>(include_str!("../support/sql/read_publication_headers.sql")).fetch_all(scope.executor()).await?;
         assert_eq!(publications.len(),8,"four retained routes for each item");
         let expected=json!({"kind":"refused","value":{"reason":terminal_refusal}});
         let mut bytes=serde_json::to_vec(&cancel(2,1)).unwrap().len();

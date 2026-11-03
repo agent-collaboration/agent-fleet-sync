@@ -26,9 +26,9 @@ async fn receive_snapshot(store: &TestStore) -> InboxReceiveSnapshot {
                 .into_iter()
                 .map(|row| row.try_get("record"))
                 .collect::<Result<Vec<String>, _>>()?;
-                let reports = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT record FROM _fleet_sync_reports ORDER BY item_id",
-                )
+                let reports = sqlx_core::query::query::<sqlx_turso::Turso>(include_str!(
+                    "../support/sql/read_report_headers.sql"
+                ))
                 .fetch_all(scope.executor())
                 .await?
                 .into_iter()

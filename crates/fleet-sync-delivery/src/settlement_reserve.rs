@@ -112,9 +112,7 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
         .ok_or(DeliveryConfigError::ReserveOverflow)?;
     let statuses = [
         DeliveryStatus::Queued,
-        DeliveryStatus::Sent {
-            seq: DeliverySeq::new(u64::MAX),
-        },
+        DeliveryStatus::Sent,
         DeliveryStatus::AtRecipient,
         DeliveryStatus::Held,
         DeliveryStatus::Delivered { acceptance: () },
@@ -140,6 +138,7 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
                 admitted_at: Some(time),
                 handed_off_at: Some(time),
                 last_report_seq: ReportSeq::new(u64::MAX),
+                status_route: Some("x".repeat(D::MAX_STATUS_ROUTE_BYTES as usize)),
                 recipient: peer,
                 valid_until: Some(time),
                 status: status.clone(),

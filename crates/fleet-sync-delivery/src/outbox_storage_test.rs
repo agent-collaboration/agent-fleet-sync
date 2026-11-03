@@ -53,14 +53,7 @@ async fn report_sequence_and_cancel_identity_survive_real_release_and_reopen() {
                     .map_err(storage_error)?;
                 for (identity, status, version, cancel_outcome) in [
                     (90, DeliveryStatus::Held, 11, None),
-                    (
-                        91,
-                        DeliveryStatus::Sent {
-                            seq: DeliverySeq::new(3),
-                        },
-                        1,
-                        Some(CancelResult::Pending),
-                    ),
+                    (91, DeliveryStatus::Sent, 1, Some(CancelResult::Pending)),
                 ] {
                     let Some(OutboxHeaderState::Item(header)) = outbox
                         .header_state(item_id(identity))

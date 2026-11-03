@@ -142,7 +142,7 @@ async fn a_persisted_consumer_condition_holds_the_original_until_release_after_e
     assert!(matches!(
         sender_status(&network, 1).await,
         OutboxStatusState::Known {
-            status: DeliveryStatus::Sent { .. },
+            status: DeliveryStatus::Sent,
             ..
         }
     ));

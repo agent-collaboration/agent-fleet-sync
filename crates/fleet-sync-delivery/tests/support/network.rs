@@ -10,16 +10,19 @@ pub type SubmitTask = SubmitItem<TestStore, sqlx_turso::Turso, TestTypes, TestCo
 pub type ReceiveTask = ReceiveItems<TestStore, sqlx_turso::Turso, TestTypes, TestConsumer>;
 pub type DeliverTask = DeliverLocally<TestStore, sqlx_turso::Turso, TestTypes, TestConsumer>;
 pub type ReportTask = ReportOutcome<TestStore, sqlx_turso::Turso, TestTypes>;
+pub type PushTask = PushItem<TestStore, sqlx_turso::Turso, TestTypes, PublishTask>;
 pub type PublishTask = PublishStatus<TestStore, sqlx_turso::Turso, TestTypes>;
 pub struct FetchBarrier {
     pub reached: Arc<tokio::sync::Notify>,
     pub release: Arc<tokio::sync::Notify>,
 }
 pub struct TestNetwork {
-    pub sender: Weak<TestStore>,
-    pub mailbox: Weak<TestStore>,
+    pub sender: Mutex<Weak<TestStore>>,
+    pub mailbox: Mutex<Weak<TestStore>>,
     pub recipient: Mutex<Weak<TestStore>>,
     pub publications: super::publication_network::PublicationRoutes,
+    pub fleet_push: AtomicBool,
+    pub push_barrier: Mutex<Option<FetchBarrier>>,
     pub relay_up: AtomicBool,
     pub lose_submit: AtomicBool,
     pub lose_fetch: AtomicBool,
@@ -48,6 +51,12 @@ fn unreachable() -> CallFailure {
     }
 }
 impl TestNetwork {
+    fn sender_store(&self) -> Arc<TestStore> {
+        self.sender.lock().unwrap().upgrade().unwrap()
+    }
+    fn mailbox_store(&self) -> Arc<TestStore> {
+        self.mailbox.lock().unwrap().upgrade().unwrap()
+    }
     pub async fn dispatch(
         &self,
         kind: &str,
@@ -64,9 +73,7 @@ impl TestNetwork {
                 let target: SubmitCall<TestTypes> = serde_json::from_value(target).unwrap();
                 let reference: DeliveryItemRef = serde_json::from_value(request).unwrap();
                 let resolved = self
-                    .sender
-                    .upgrade()
-                    .unwrap()
+                    .sender_store()
                     .transaction({
                         let reference = reference.clone();
                         move |scope| {
@@ -89,12 +96,23 @@ impl TestNetwork {
                             *self.deferred.lock().unwrap() = Some(resolved);
                             return Err(CallFailure::AnswerLost);
                         }
+                        let fleet_push = self.fleet_push.load(Ordering::SeqCst);
                         let answer = self
-                            .mailbox
-                            .upgrade()
-                            .unwrap()
+                            .mailbox_store()
                             .transaction(move |scope| {
                                 Box::pin(async move {
+                                    if fleet_push {
+                                        return Outbox::<_, TestTypes>::new(scope, limits())
+                                            .submit_relay::<PushTask>(
+                                                peer(1),
+                                                resolved.item,
+                                                peer(3),
+                                                "fixture-route".into(),
+                                                now,
+                                            )
+                                            .await
+                                            .map_err(storage_error);
+                                    }
                                     let answer =
                                         Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
                                             .submit(
@@ -125,9 +143,7 @@ impl TestNetwork {
                             return Err(unreachable());
                         }
                         let settled = self
-                            .mailbox
-                            .upgrade()
-                            .unwrap()
+                            .mailbox_store()
                             .transaction(move |scope| {
                                 Box::pin(async move {
                                     Mailbox::<_, TestTypes>::new(scope, target.mailbox, limits())
@@ -143,6 +159,49 @@ impl TestNetwork {
                 };
                 Ok(value(answer))
             }
+            PushCall::<TestTypes>::KIND => {
+                let target: PushCall<TestTypes> = serde_json::from_value(target).unwrap();
+                let reference: DeliveryItemRef = serde_json::from_value(request).unwrap();
+                let envelope = self
+                    .mailbox_store()
+                    .transaction(move |scope| {
+                        Box::pin(async move {
+                            Outbox::<_, TestTypes>::new(scope, limits())
+                                .resolve_push(&reference)
+                                .await
+                                .map_err(storage_error)
+                        })
+                    })
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let recipient = self.recipient.lock().unwrap().upgrade().unwrap();
+                let answer = recipient
+                    .transaction(move |scope| {
+                        Box::pin(async move {
+                            Inbox::<_, TestTypes>::new(scope, target.recipient, limits())
+                                .accept_push::<DeliverTask, ReportTask, _>(
+                                    envelope,
+                                    peer(3),
+                                    &TestConsumer,
+                                    now,
+                                )
+                                .await
+                                .map_err(storage_error)
+                        })
+                    })
+                    .await
+                    .unwrap();
+                let barrier = self.push_barrier.lock().unwrap().take();
+                if let Some(barrier) = barrier {
+                    barrier.reached.notify_one();
+                    barrier.release.notified().await;
+                }
+                if self.lose_receipt.swap(false, Ordering::SeqCst) {
+                    return Err(CallFailure::AnswerLost);
+                }
+                Ok(value(PushCall::<TestTypes>::validated_answer(answer)?))
+            }
             FetchCall::<TestTypes>::KIND => {
                 if self.unavailable_fetch.load(Ordering::SeqCst) {
                     return Err(CallFailure::AnswerLost);
@@ -153,9 +212,7 @@ impl TestNetwork {
                     .unwrap()
                     .push((call.clone(), request));
                 let mut answer = self
-                    .mailbox
-                    .upgrade()
-                    .unwrap()
+                    .mailbox_store()
                     .transaction(move |scope| {
                         Box::pin(async move {
                             let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
@@ -189,9 +246,7 @@ impl TestNetwork {
                 }
                 let request: ReceiptInput = serde_json::from_value(request).unwrap();
                 let answer = self
-                    .mailbox
-                    .upgrade()
-                    .unwrap()
+                    .mailbox_store()
                     .transaction(move |scope| {
                         Box::pin(async move {
                             let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
@@ -253,12 +308,17 @@ impl TestNetwork {
             }
             ReportCall::<TestTypes>::KIND => {
                 let report: RecipientReport<TestTypes> = serde_json::from_value(request).unwrap();
+                let fleet_push = self.fleet_push.load(Ordering::SeqCst);
                 let answer = self
-                    .mailbox
-                    .upgrade()
-                    .unwrap()
+                    .mailbox_store()
                     .transaction(move |scope| {
                         Box::pin(async move {
+                            if fleet_push {
+                                return Outbox::<_, TestTypes>::new(scope, limits())
+                                    .recipient_report::<PublishTask>(peer(2), report, now)
+                                    .await
+                                    .map_err(storage_error);
+                            }
                             let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
                                 .report(peer(2), report)
                                 .await
@@ -307,13 +367,15 @@ impl NetworkFixture {
         let recipient = Fixture::new().await;
         let status = Fixture::new().await;
         let routes = Arc::new(TestNetwork {
-            sender: Arc::downgrade(&sender.store),
-            mailbox: Arc::downgrade(&mailbox.store),
+            sender: Mutex::new(Arc::downgrade(&sender.store)),
+            mailbox: Mutex::new(Arc::downgrade(&mailbox.store)),
             recipient: Mutex::new(Arc::downgrade(&recipient.store)),
             publications: super::publication_network::PublicationRoutes::new(
                 &sender.store,
                 &status.store,
             ),
+            fleet_push: AtomicBool::new(false),
+            push_barrier: Mutex::new(None),
             relay_up: AtomicBool::new(true),
             lose_submit: AtomicBool::new(false),
             lose_fetch: AtomicBool::new(false),
@@ -369,6 +431,7 @@ impl NetworkFixture {
             .unwrap();
         engine.register(ReportTask::new(config)).unwrap();
         engine.register(PublishTask::new()).unwrap();
+        engine.register(PushTask::new(limits())).unwrap();
         engine
     }
     pub fn advance(&self) {

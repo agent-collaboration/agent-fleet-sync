@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, StoreError, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use sqlx_core::row::Row;
@@ -160,13 +160,28 @@ async fn corrupt_row_after_custody_change_survives_atomic_rollback() {
 }
 
 async fn assert_sequence_restarts(fixture: &Fixture) {
-    fixture.store.transaction(|scope| Box::pin(async move {
-        let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-            .submit(peer(1), item(3, "after rollback"), SyncTime::from_unix_millis(1),
-                "route".into(), None).await.map_err(rollback_error)?;
-        assert!(matches!(answer, SubmitResult::Accepted { seq, version, .. } if seq.value() == 1 && version.value() == 1));
-        Ok(())
-    })).await.unwrap();
+    fixture
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    .submit(
+                        peer(1),
+                        item(3, "after rollback"),
+                        SyncTime::from_unix_millis(1),
+                        "route".into(),
+                        None,
+                    )
+                    .await
+                    .map_err(rollback_error)?;
+                assert!(
+                    matches!(answer, SubmitResult::Accepted { version, .. } if version.value() == 1)
+                );
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

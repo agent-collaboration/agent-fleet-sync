@@ -65,6 +65,7 @@ pub(crate) fn decode_header<A: DeserializeOwned>(
         Some("item") => Ok(OutboxHeaderState::Item(OutboxHeader {
             id,
             digest,
+            status_route: row.status_route.clone(),
             relay: stored_enum(row.relay_machine_id.clone(), "outbox relay")?,
             submitter: row
                 .submitter_machine_id

@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, StoreError, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use sqlx_core::row::Row;
@@ -24,7 +24,7 @@ async fn custody_rows(store: &TestStore) -> Vec<String> {
         sqlx_core::query::query::<Turso>(
             "SELECT 'state:' || json_array(singleton,record) AS value FROM _fleet_sync_mail_state
              UNION ALL SELECT 'mail:' || json_array(item_id,stream,seq,live,capacity_slot,payload_bytes,settlement_bytes,record) FROM _fleet_sync_mail_items
-             UNION ALL SELECT 'owed:' || json_array(item_id,target,version,record) FROM _fleet_sync_status_owed
+             UNION ALL SELECT 'owed:' || json_array(item_id,target_kind,machine_id,status_route,version,status_kind,status_acceptance,cancel_outcome) FROM _fleet_sync_status_owed
              ORDER BY value"
         ).fetch_all(scope.executor()).await?.into_iter()
             .map(|row| row.try_get("value").map_err(StoreError::backend)).collect()
@@ -103,7 +103,7 @@ async fn reopened_alarm_discovers_owner_and_expires_custody_with_its_owed_public
                 peer(1), expiring_item(identity, deadline), SyncTime::from_unix_millis(0),
                 "fixture-route".into(), None,
             ).await.map_err(storage_error)?;
-            assert!(matches!(admitted, SubmitResult::Accepted { status: DeliveryStatus::Sent { .. }, version, .. } if version.value() == 1));
+            assert!(matches!(admitted, SubmitResult::Accepted { status: DeliveryStatus::Sent, version, .. } if version.value() == 1));
         }
         Ok(())
     })).await.unwrap();
@@ -129,9 +129,9 @@ async fn reopened_alarm_discovers_owner_and_expires_custody_with_its_owed_public
             assert!(matches!(statuses.first().unwrap().state,
                 ItemStatusState::Known { status: DeliveryStatus::Expired, version, .. } if version.value() == 2));
             assert!(matches!(statuses.get(1).unwrap().state,
-                ItemStatusState::Known { status: DeliveryStatus::Sent { .. }, version, .. } if version.value() == 1));
+                ItemStatusState::Known { status: DeliveryStatus::Sent, version, .. } if version.value() == 1));
             let row = sqlx_core::query::query::<Turso>(
-                "SELECT version,record FROM _fleet_sync_status_owed WHERE item_id=?1",
+                include_str!("../support/sql/read_publication_header.sql"),
             ).bind(item_id(1).as_uuid().to_string()).fetch_one(scope.executor()).await?;
             assert_eq!(row.try_get::<i64, _>("version").unwrap(), 2);
             let publication: StatusPublication<Acceptance> =

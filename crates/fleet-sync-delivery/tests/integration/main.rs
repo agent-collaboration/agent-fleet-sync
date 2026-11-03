@@ -2,6 +2,10 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+mod push_recovery;
+mod pushed_inbox;
+mod relay_outbox;
+mod row_metadata;
 mod scoped_status;
 mod typed_custody;
 
@@ -45,3 +49,23 @@ mod per_item;
 mod projection;
 
 mod status_acknowledgement;
+
+mod attempt_recovery;
+
+mod delivery_rollback;
+
+mod mailbox_custody;
+
+mod mailbox_deadlines;
+
+mod mailbox_recipient;
+
+mod mailbox_reopen;
+
+mod mailbox_succession;
+
+mod recipient_refusals;
+
+mod revision_retirement;
+
+mod routed_settlement;

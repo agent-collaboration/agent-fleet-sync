@@ -1,4 +1,4 @@
-SELECT item_id,
+SELECT status_route,item_id,
        typeof(live) AS live_class,
        CAST(live AS TEXT) AS live,
        typeof(payload_bytes) AS payload_bytes_class,

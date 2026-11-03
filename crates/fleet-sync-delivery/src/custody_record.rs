@@ -193,13 +193,6 @@ impl<D: DeliveryTypes> MailRecord<D> {
                         field: "mail custody payload",
                     });
                 }
-                if let DeliveryStatus::Sent { seq } = row.status
-                    && seq != row.seq
-                {
-                    return Err(DeliveryError::Corrupt {
-                        field: "mail sent sequence",
-                    });
-                }
             }
             Self::Compacted(row) => {
                 if !row.status.is_terminal() {

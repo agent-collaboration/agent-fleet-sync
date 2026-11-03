@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-mod support;
+use super::support;
 use durable_steps::{AtomicStore, StoreError, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use sqlx_core::row::Row;
@@ -93,7 +93,7 @@ async fn deadline_scan_is_atomic_leaves_fetched_custody_alone_and_publishes_the_
     network.mailbox.store.transaction(|scope| Box::pin(async move {
         let mut mailbox = Mailbox::<_, TestTypes>::new(scope, peer(2), limits());
         assert!(matches!(mailbox.query(&[item_id(1)]).await.map_err(storage_error)?.statuses[0].state,
-            ItemStatusState::Known { status: DeliveryStatus::Sent { .. }, version, .. } if version.value() == 1));
+            ItemStatusState::Known { status: DeliveryStatus::Sent, version, .. } if version.value() == 1));
         let row = sqlx_core::query::query::<sqlx_turso::Turso>(
             "SELECT version FROM _fleet_sync_status_owed WHERE item_id=?1",
         ).bind(item_id(1).as_uuid().to_string()).fetch_one(scope.executor()).await.map_err(StoreError::backend)?;

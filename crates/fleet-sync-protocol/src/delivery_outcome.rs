@@ -1,4 +1,4 @@
-use crate::{DeliveryItemRef, DeliverySeq, ItemDigest, ItemId};
+use crate::{DeliveryItemRef, ItemDigest, ItemId};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_RECIPIENT_REFUSAL_CODE_BYTES: usize = 64;
@@ -59,6 +59,9 @@ pub enum DeliveryRefusal {
     RecipientRevoked,
     DroppedByPolicy,
     CancelSenderMismatch,
+    NotThisMachine,
+    NotRecipient,
+    TooOld,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -111,12 +114,13 @@ impl DeliveryFailureKind {
 )]
 pub enum DeliveryStatus<A> {
     Queued,
-    Sent { seq: DeliverySeq },
+    Sent,
     AtRecipient,
     Held,
     Delivered { acceptance: A },
     Uncertain,
     Expired,
+    ExpiredAtUpgrade,
     Cancelled,
     Refused { reason: DeliveryRefusal },
 }
@@ -127,12 +131,13 @@ impl<A> DeliveryStatus<A> {
     pub const fn rank(&self) -> u8 {
         match self {
             Self::Queued => 0,
-            Self::Sent { .. } => 1,
+            Self::Sent => 1,
             Self::AtRecipient => 2,
             Self::Held => 3,
             Self::Delivered { .. }
             | Self::Uncertain
             | Self::Expired
+            | Self::ExpiredAtUpgrade
             | Self::Cancelled
             | Self::Refused { .. } => 4,
         }

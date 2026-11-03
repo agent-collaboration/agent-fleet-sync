@@ -142,9 +142,7 @@ async fn stored_bound_rejects_oversized_acceptance_after_sender_and_relay_releas
                     .publish_status(
                         StatusPublication {
                             item: item_id(1),
-                            status: DeliveryStatus::Sent {
-                                seq: DeliverySeq::new(1),
-                            },
+                            status: DeliveryStatus::Sent,
                             version: StatusVersion::new(1),
                             cancel: None,
                         },

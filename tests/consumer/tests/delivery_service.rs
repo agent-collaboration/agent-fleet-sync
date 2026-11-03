@@ -249,10 +249,7 @@ async fn native_relay_custody_and_status_stream_are_bound_to_the_authenticated_o
                 }
             })
             .await?,
-        DeliveryAnswer::Report(ReportResult::Applied {
-            status: DeliveryStatus::Delivered { .. },
-            ..
-        })
+        DeliveryAnswer::Report(ReportResult::Ack {report_seq}) if report_seq.value()==1
     ));
     sender
         .wait_publication(first, StatusVersion::new(3))
@@ -488,7 +485,7 @@ async fn native_retirement_reply_lost_after_commit_replays_once_after_process_re
                 }
             })
             .await?,
-        DeliveryAnswer::Report(ReportResult::Applied { .. })
+        DeliveryAnswer::Report(ReportResult::Ack { .. })
     ));
     sender
         .wait_publication(identity, StatusVersion::new(2))
