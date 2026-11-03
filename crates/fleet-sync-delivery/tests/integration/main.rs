@@ -4,6 +4,9 @@ mod support;
 
 mod checked_write_clocks;
 mod existing_record_removals;
+mod project_successor;
+mod push_expiry;
+mod push_expiry_recovery;
 mod push_recovery;
 mod pushed_inbox;
 mod record_retention;

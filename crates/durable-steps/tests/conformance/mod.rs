@@ -6,6 +6,7 @@ pub mod reborrow_cases;
 mod resume_cases;
 mod resume_rollback_case;
 mod resume_token_case;
+mod retry_bound_cases;
 pub mod retryable_cases;
 mod task_cases;
 mod task_fixtures;
@@ -87,6 +88,10 @@ where
     passed.push("NotSent after NoEffect cannot use the unsent timeout");
     retryable_cases::crash_during_no_effect_retry_is_uncertain(store.clone(), host.clone()).await?;
     passed.push("interrupted NoEffect retry is Uncertain without another send");
+    retry_bound_cases::retry_bounds(store.clone(), host.clone()).await?;
+    passed.push(
+        "domain retry bounds apply to Retry and Storage while default backoff stays unchanged",
+    );
     retryable_cases::retryable_preserves_earlier_possible_effect(store, host).await?;
     passed.push("Retryable preserves earlier possible effect and original deduplication identity");
     Ok(passed)

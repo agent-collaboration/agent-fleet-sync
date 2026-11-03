@@ -230,6 +230,21 @@ where
         if let Some(DeliveryEnvelope::Item(item)) = &record.payload {
             consumer.on_received(self.scope, item).await?;
         }
+        let expired_report = if matches!(record.header.progress, InboxProgress::Pending { .. })
+            && record.header.valid_until.is_some_and(|until| now >= until)
+        {
+            record.header.progress = InboxProgress::Final {
+                attempt: 0,
+                outcome: RecipientOutcome::Expired,
+            };
+            let report = self
+                .record_outcome(&mut record, RecipientOutcome::Expired, consumer, None, now)
+                .await?;
+            self.save(&record, now).await?;
+            report
+        } else {
+            None
+        };
         let mut effects = self
             .apply_pending_cancel(
                 record.header.cancel_target.unwrap_or(identity),
@@ -238,6 +253,7 @@ where
                 false,
             )
             .await?;
+        effects.reports.extend(expired_report);
         if let InboxProgress::Pending {
             attempt,
             not_before,

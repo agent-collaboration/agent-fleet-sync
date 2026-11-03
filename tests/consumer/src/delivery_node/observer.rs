@@ -42,12 +42,20 @@ impl<T: Task<Store = NodeStore>> Task for ObservedTask<T> {
         self.changed.notify_waiters();
         result
     }
-    fn before_resume<'s, 't>(
+    fn retry_not_later_than<'s, 't>(
         &'s self,
         scope: &'s mut <NodeStore as AtomicStore>::Scope<'t>,
         key: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Option<durable_steps::SyncTime>, StoreError>> {
+        self.inner.retry_not_later_than(scope, key)
+    }
+    fn before_resume<'s, 't>(
+        &'s self,
+        scope: &'s mut <NodeStore as AtomicStore>::Scope<'t>,
+        operation: &'s durable_steps::OperationId,
+        key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<T::Output>, StoreError>> {
-        self.inner.before_resume(scope, key)
+        self.inner.before_resume(scope, operation, key)
     }
     fn on_failed<'s, 't>(
         &'s self,

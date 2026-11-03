@@ -2,6 +2,7 @@ use crate::{
     DeliveryError, Outbox, PublicationRef, PushInput, PushResult, StatusPublicationResult,
     task_support::*, *,
 };
+use durable_steps::storage::{CallReach, JournalStorage, StepState};
 use durable_steps::{
     AtomicStore, BoxFuture, CallFailure, CallRetryReason, CallTarget, OperationContext,
     OperationFailure, RequestKey, Resume, StoreError, Task, storage::TransactionScope,
@@ -136,23 +137,69 @@ where
     fn before_resume<'s, 't>(
         &'s self,
         scope: &'s mut S::Scope<'t>,
+        operation: &'s durable_steps::OperationId,
         key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<()>, StoreError>> {
         Box::pin(async move {
             let item: ItemId = serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
-            if self.clock.now() >= crate::removal_deadline(item) {
+            let now = self.clock.now();
+            if now >= crate::removal_deadline(item) {
                 return Ok(Resume::Finish(()));
             }
 
-            let mut outbox = Outbox::<_, D>::new(scope, self.limits);
-            let header = outbox.header_state(item).await.map_err(store_error)?;
+            let header = Outbox::<_, D>::new(scope, self.limits)
+                .header_state(item)
+                .await
+                .map_err(store_error)?;
             match header {
                 Some(crate::outbox_record::OutboxHeaderState::Item(header))
                     if !header.status.is_terminal() && header.handed_off_at.is_none() =>
                 {
-                    Ok(Resume::Continue)
+                    if header.valid_until.is_none_or(|until| now < until) {
+                        return Ok(Resume::Continue);
+                    }
+                    let reach = match scope.step(*operation, 0).await? {
+                        // Replay the real answer before applying its receipt;
+                        // missing handed_off_at cannot erase a cached answer.
+                        Some(step) => match step.state {
+                            StepState::CallDone { .. } => return Ok(Resume::Continue),
+                            StepState::CallPending { attempt, .. }
+                                if step.name.as_str() == "push" =>
+                            {
+                                attempt.reach
+                            }
+                            _ => return Ok(Resume::Continue),
+                        },
+                        None => CallReach::NeverSent,
+                    };
+                    Outbox::<_, D>::new(scope, self.limits)
+                        .finish_push_at_deadline::<TPublish>(item, reach, now)
+                        .await
+                        .map_err(store_error)?;
+                    Ok(Resume::Finish(()))
                 }
                 _ => Ok(Resume::Finish(())),
+            }
+        })
+    }
+    fn retry_not_later_than<'s, 't>(
+        &'s self,
+        scope: &'s mut S::Scope<'t>,
+        key: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Option<SyncTime>, StoreError>> {
+        Box::pin(async move {
+            let item: ItemId = serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
+            match Outbox::<_, D>::new(scope, self.limits)
+                .header_state(item)
+                .await
+                .map_err(store_error)?
+            {
+                Some(crate::outbox_record::OutboxHeaderState::Item(header))
+                    if !header.status.is_terminal() && header.handed_off_at.is_none() =>
+                {
+                    Ok(header.valid_until)
+                }
+                _ => Ok(None),
             }
         })
     }

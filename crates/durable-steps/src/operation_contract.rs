@@ -33,9 +33,19 @@ pub trait Task: Send + Sync + 'static {
     fn before_resume<'s, 't>(
         &'s self,
         _scope: &'s mut <Self::Store as AtomicStore>::Scope<'t>,
+        _operation: &'s crate::OperationId,
         _request_key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<Self::Output>, StoreError>> {
         Box::pin(async { Ok(Resume::Continue) })
+    }
+    /// Bound the next retry in the transaction that stores its schedule.
+    /// A past bound makes work due now; it never schedules in the past.
+    fn retry_not_later_than<'s, 't>(
+        &'s self,
+        _scope: &'s mut <Self::Store as AtomicStore>::Scope<'t>,
+        _request_key: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Option<SyncTime>, StoreError>> {
+        Box::pin(async { Ok(None) })
     }
 }
 

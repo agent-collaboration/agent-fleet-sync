@@ -441,15 +441,26 @@ impl<T: Task, const VERSION: u32> Task for VersionedTask<T, VERSION> {
     ) -> durable_steps::BoxFuture<'s, Result<(), durable_steps::StoreError>> {
         self.0.on_failed(scope, key, failure)
     }
-    fn before_resume<'s, 't>(
+    fn retry_not_later_than<'s, 't>(
         &'s self,
         scope: &'s mut <Self::Store as AtomicStore>::Scope<'t>,
         key: &'s RequestKey,
     ) -> durable_steps::BoxFuture<
         's,
+        Result<Option<durable_steps::SyncTime>, durable_steps::StoreError>,
+    > {
+        self.0.retry_not_later_than(scope, key)
+    }
+    fn before_resume<'s, 't>(
+        &'s self,
+        scope: &'s mut <Self::Store as AtomicStore>::Scope<'t>,
+        operation: &'s durable_steps::OperationId,
+        key: &'s RequestKey,
+    ) -> durable_steps::BoxFuture<
+        's,
         Result<durable_steps::Resume<Self::Output>, durable_steps::StoreError>,
     > {
-        self.0.before_resume(scope, key)
+        self.0.before_resume(scope, operation, key)
     }
 }
 

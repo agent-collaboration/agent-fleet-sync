@@ -27,7 +27,7 @@ try {
       const body = await response.text();
       console.log(JSON.stringify({ path, status: response.status, body }));
       assert.equal(response.status, 200);
-      if (path === "/suite") assert.equal(JSON.parse(body).length, 20);
+      if (path === "/suite") assert.equal(JSON.parse(body).length, 21);
       else if (path === "/metadata-upgrade") assert.deepEqual(JSON.parse(body), [
         "v1 history and metadata survive upgrade",
         "repeat bootstrap preserves row ids",

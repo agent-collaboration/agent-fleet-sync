@@ -273,12 +273,20 @@ impl Task for PausedObservationTask {
             )
             .await
     }
-    fn before_resume<'s, 't>(
+    fn retry_not_later_than<'s, 't>(
         &'s self,
         scope: &'s mut TursoScope<'t, ObservationHost>,
         key: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Option<durable_steps::SyncTime>, StoreError>> {
+        self.inner.retry_not_later_than(scope, key)
+    }
+    fn before_resume<'s, 't>(
+        &'s self,
+        scope: &'s mut TursoScope<'t, ObservationHost>,
+        operation: &'s durable_steps::OperationId,
+        key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<()>, StoreError>> {
-        self.inner.before_resume(scope, key)
+        self.inner.before_resume(scope, operation, key)
     }
     fn on_failed<'s, 't>(
         &'s self,

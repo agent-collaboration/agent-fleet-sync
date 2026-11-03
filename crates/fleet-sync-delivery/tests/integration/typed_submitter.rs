@@ -216,10 +216,13 @@ async fn both_owner_kinds_survive_three_custody_records_replay_and_payload_relea
             .transaction(move |scope| {
                 Box::pin(async move {
                     Outbox::<_, TestTypes>::new(scope, limits())
-                        .resolve_push(&DeliveryItemRef {
-                            item: item_id(11),
-                            digest: envelope(owner, 11).digest().clone(),
-                        })
+                        .resolve_push(
+                            &DeliveryItemRef {
+                                item: item_id(11),
+                                digest: envelope(owner, 11).digest().clone(),
+                            },
+                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
+                        )
                         .await
                         .map_err(storage_error)
                 })

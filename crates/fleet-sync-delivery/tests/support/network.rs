@@ -36,6 +36,7 @@ pub struct TestNetwork {
     pub lose_report: AtomicBool,
     pub lose_publication: AtomicBool,
     pub sent_bodies: AtomicU64,
+    pub push_bodies: AtomicU64,
     pub settlements: AtomicU64,
     pub local_calls: AtomicU64,
     pub defer_submit: AtomicBool,
@@ -187,15 +188,18 @@ impl TestNetwork {
                     .transaction(move |scope| {
                         Box::pin(async move {
                             Outbox::<_, TestTypes>::new(scope, limits())
-                                .resolve_push(&reference)
+                                .resolve_push(&reference, now)
                                 .await
                                 .map_err(storage_error)
                         })
                     })
                     .await
-                    .unwrap()
                     .unwrap();
+                let Some(envelope) = envelope else {
+                    return Err(unreachable());
+                };
                 let recipient = self.recipient.lock().unwrap().upgrade().unwrap();
+                self.push_bodies.fetch_add(1, Ordering::SeqCst);
                 let answer = recipient
                     .transaction(move |scope| {
                         Box::pin(async move {
@@ -410,6 +414,7 @@ impl NetworkFixture {
             lose_report: AtomicBool::new(false),
             lose_publication: AtomicBool::new(false),
             sent_bodies: AtomicU64::new(0),
+            push_bodies: AtomicU64::new(0),
             settlements: AtomicU64::new(0),
             local_calls: AtomicU64::new(0),
             defer_submit: AtomicBool::new(false),

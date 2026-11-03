@@ -98,7 +98,7 @@ async fn handed_off_and_terminal_legacy_rows_keep_status_release_capacity_and_ke
         assert!(matches!(outbox.status(item_id(100)).await.map_err(storage_error)?.state,OutboxStatusState::Known {status:DeliveryStatus::Delivered {..},version,..} if version.value()==1));
         assert!(matches!(outbox.relay_query(Submitter::Machine(peer(1)),item_id(101)).await,Err(DeliveryError::Refused {..})));
         assert!(matches!(outbox.relay_settle::<RecordRemoval>(Submitter::Machine(peer(1)),item_id(101),ItemDigest::try_from("a".repeat(64)).unwrap(),startup_time()).await,Err(DeliveryError::Refused {..})));
-        assert!(matches!(outbox.resolve_push(&DeliveryItemRef {item:item_id(101),digest:ItemDigest::try_from("a".repeat(64)).unwrap()}).await,Err(DeliveryError::Refused {..})));
+        assert!(matches!(outbox.resolve_push(&DeliveryItemRef {item:item_id(101),digest:ItemDigest::try_from("a".repeat(64)).unwrap()}, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await,Err(DeliveryError::Refused {..})));
         let DeliveryEnvelope::Item(item)=item(2000,"new traffic") else {return Err(StoreError::backend("fixture item"));};
         assert!(matches!(outbox.enqueue(item,peer(3),Submitter::Machine(peer(1)),startup_time()).await.map_err(storage_error)?,OutboxAdmission::Queued {..}));
         Ok(())

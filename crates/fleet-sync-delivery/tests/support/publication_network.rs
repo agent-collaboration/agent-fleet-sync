@@ -153,4 +153,15 @@ impl PublicationRoutes {
             .unwrap()
             .insert(project, (holder, Arc::downgrade(store)));
     }
+    pub fn register_project_stream(
+        &self,
+        project: DatabaseId,
+        route: &str,
+        stream: &Arc<TestStore>,
+    ) {
+        self.streams.lock().unwrap().insert(
+            (Submitter::Project(project), route.to_owned()),
+            Arc::downgrade(stream),
+        );
+    }
 }

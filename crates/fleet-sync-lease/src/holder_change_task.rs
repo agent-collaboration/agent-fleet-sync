@@ -65,6 +65,7 @@ where
     fn before_resume<'s, 't>(
         &'s self,
         scope: &'s mut S::Scope<'t>,
+        _operation: &'s durable_steps::OperationId,
         key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<Self::Output>, StoreError>> {
         Box::pin(async move {

@@ -118,12 +118,16 @@ where
     pub async fn resolve_push(
         &mut self,
         reference: &DeliveryItemRef,
+        now: SyncTime,
     ) -> Result<Option<crate::ResolvedPush<D>>, DeliveryError> {
         let Some(record) = self.load(reference.item).await? else {
             return Ok(None);
         };
         if record.header.digest != reference.digest.as_str() {
             return Err(DeliveryError::DigestMismatch);
+        }
+        if record.header.valid_until.is_some_and(|until| now >= until) {
+            return Ok(None);
         }
         let Some(item) = record.payload else {
             return Ok(None);
@@ -132,6 +136,41 @@ where
             field: "push custody submitter",
         })?;
         Ok(Some(crate::ResolvedPush { submitter, item }))
+    }
+
+    pub(crate) async fn finish_push_at_deadline<TPublish>(
+        &mut self,
+        item: ItemId,
+        reach: durable_steps::storage::CallReach,
+        now: SyncTime,
+    ) -> Result<(), DeliveryError>
+    where
+        S: JournalScope,
+        TPublish: Task<Input = PublicationRef<D::StatusRoute>>,
+    {
+        let mut record = self
+            .load(item)
+            .await?
+            .ok_or(DeliveryError::CustodyMissing)?;
+        let never_accepted = matches!(
+            reach,
+            durable_steps::storage::CallReach::NeverSent
+                | durable_steps::storage::CallReach::NoEffect
+        );
+        if never_accepted {
+            record.header.status = DeliveryStatus::Expired;
+            record.header.version = next_version(record.header.version)?;
+        }
+        // Possible recipient reach waits for its truthful report. The body is
+        // never resent after expiry, and this attempt is never called unsent.
+        record.header.submit_attempted = true;
+        record.payload = None;
+        self.save(&record, now).await?;
+        if never_accepted {
+            self.owe_relay_status::<TPublish>(&record.header, now)
+                .await?;
+        }
+        Ok(())
     }
 
     #[expect(
