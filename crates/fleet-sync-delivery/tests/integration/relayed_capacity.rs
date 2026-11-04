@@ -53,15 +53,9 @@ async fn delivered_relayed_originals_release_payload_and_capacity_but_keep_repla
     let fixture = super::support::network::NetworkFixture::new().await;
     let room = u64::try_from(serde_json::to_vec(&packet(1, "session/a")).unwrap().len()).unwrap()
         + u64::from(limits().settlement_allowance());
-    let limited = DeliveryLimits::new::<TestTypes>(
-        100_000,
-        20,
-        100_000,
-        20,
-        room * 2,
-        limits().settlement_allowance(),
-    )
-    .unwrap();
+    let limited =
+        DeliveryLimits::new::<TestTypes>(100_000, 20, room * 2, limits().settlement_allowance())
+            .unwrap();
     fixture
         .recipient
         .store

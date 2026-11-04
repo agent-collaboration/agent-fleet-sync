@@ -1,9 +1,9 @@
-use super::support::{network::*, publication_order::*, *};
-use durable_steps::{AtomicStore, Engine, storage::TransactionScope};
+use super::support::{network::*, *};
+use durable_steps::AtomicStore;
 use fleet_sync_delivery::*;
 use sqlx_core::{query::query, row::Row};
 use sqlx_turso::Turso;
-use std::sync::{Arc, atomic::Ordering};
+use std::{sync::Arc, time::Duration};
 
 #[derive(Clone, Copy)]
 enum AppendOrder {
@@ -12,98 +12,114 @@ enum AppendOrder {
     LowerAfterAppliedHigher,
 }
 const BODY: &str = "publication order proof";
-async fn mailbox_state(network: &NetworkFixture) -> (String, i64) {
-    network.mailbox.store.transaction(|scope|Box::pin(async move {
-        let row=query::<Turso>("SELECT json_extract(record,'$.value.status.kind') AS status,json_extract(record,'$.value.version') AS version FROM _fleet_sync_mail_items WHERE item_id=?1")
-            .bind(item_id(1).as_uuid().to_string()).fetch_one(scope.executor()).await?;
-        Ok((row.try_get("status")?,row.try_get("version")?))
-    })).await.unwrap()
+fn canonical_publication(version: u64) -> StatusPublication<Acceptance> {
+    StatusPublication {
+        item: item_id(1),
+        version: StatusVersion::new(version),
+        cancel: None,
+        status: match version {
+            1 => DeliveryStatus::Sent,
+            2 => DeliveryStatus::AtRecipient,
+            _ => DeliveryStatus::Delivered {
+                acceptance: Acceptance {
+                    receipt: BODY.into(),
+                },
+            },
+        },
+    }
+}
+async fn append_status(store: Arc<TestStore>, publication: StatusPublication<Acceptance>) {
+    store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                StatusStream::<_, TestTypes>::new(
+                    scope,
+                    Submitter::Machine(peer(1)),
+                    "fixture-route".into(),
+                )
+                .append_and_admit::<PublishTask>(&publication, SyncTime::from_unix_millis(0))
+                .await
+                .map_err(storage_error)?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
 }
 async fn stream_state(network: &NetworkFixture) -> (Vec<i64>, Vec<i64>) {
+    use durable_steps::storage::TransactionScope;
     network.status.store.transaction(|scope|Box::pin(async move {
         let events=query::<Turso>("SELECT version FROM _fleet_sync_status_events WHERE item_id=?1 ORDER BY cursor").bind(item_id(1).as_uuid().to_string()).fetch_all(scope.executor()).await?;
         let debt=query::<Turso>("SELECT version FROM _fleet_sync_status_owed WHERE item_id=?1").bind(item_id(1).as_uuid().to_string()).fetch_all(scope.executor()).await?;
         Ok((events.iter().map(|row|row.try_get("version")).collect::<Result<Vec<_>,_>>()?,debt.iter().map(|row|row.try_get("version")).collect::<Result<Vec<_>,_>>()?))
     })).await.unwrap()
 }
-async fn deliver_and_report(network: &NetworkFixture) {
-    let engine = network.engine(&network.recipient);
-    for _ in 0..8 {
-        let driven = engine.drive_due().await.unwrap();
-        assert!(driven.failed.is_empty());
-        if mailbox_state(network).await == ("delivered".into(), 3) {
-            return;
-        }
-    }
-    assert_eq!(mailbox_state(network).await, ("delivered".into(), 3));
-}
 async fn scenario(order: AppendOrder) {
     let network = NetworkFixture::new().await;
-    network.enqueue(1, BODY).await;
-    drain(&network.engine(&network.sender)).await;
-    drain(&network.engine(&network.mailbox)).await;
-    drain(&network.engine(&network.status)).await;
-    network.receive(DeliveryStream::Items).await;
-    let received = network
-        .engine(&network.recipient)
-        .drive_due()
+    network
+        .sender
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let DeliveryEnvelope::Item(original) = item(1, BODY) else {
+                    return Err(durable_steps::StoreError::backend("fixture item"));
+                };
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                    .enqueue(
+                        original,
+                        peer(3),
+                        Submitter::Machine(peer(1)),
+                        SyncTime::from_unix_millis(0),
+                    )
+                    .await
+                    .map_err(storage_error)?;
+                Ok(())
+            })
+        })
         .await
         .unwrap();
-    assert_eq!(received.completed.len(), 1);
-    assert!(received.failed.is_empty());
-    let gate = Arc::new(PublicationAppendGate::new());
-    let mut held_engine = Engine::new(network.mailbox.store.clone(), network.mailbox.host.clone());
-    held_engine
-        .register(PausePublicationAppend::new(gate.clone()))
+    append_status(network.status.store.clone(), canonical_publication(1)).await;
+    drain(&network.engine(&network.status)).await;
+    let reached = Arc::new(tokio::sync::Notify::new());
+    let resume = Arc::new(tokio::sync::Notify::new());
+    let store = network.status.store.clone();
+    let ready = reached.clone();
+    let release = resume.clone();
+    // The caller prepares v2, then waits before its first real append. No
+    // storage lock is held, so the independent v3 caller can commit first.
+    let pending = canonical_publication(2);
+    let held = tokio::spawn(async move {
+        ready.notify_one();
+        release.notified().await;
+        append_status(store, pending).await;
+    });
+    tokio::time::timeout(Duration::from_secs(5), reached.notified())
+        .await
         .unwrap();
-    let held = tokio::spawn(async move { held_engine.drive_due().await });
-    gate.wait_until_held().await;
-    assert_eq!(mailbox_state(&network).await, ("atRecipient".into(), 2));
-    assert_eq!(
-        stream_state(&network).await.0,
-        vec![1],
-        "the held v2 must not have appended yet"
-    );
+    assert_eq!(stream_state(&network).await.0, vec![1]);
     match order {
         AppendOrder::InOrder => {
-            gate.resume_append();
-            assert!(held.await.unwrap().unwrap().failed.is_empty());
-            deliver_and_report(&network).await;
-            drain(&network.engine(&network.mailbox)).await;
+            resume.notify_one();
+            held.await.unwrap();
+            append_status(network.status.store.clone(), canonical_publication(3)).await;
         }
         AppendOrder::LowerAfterUnsentHigher | AppendOrder::LowerAfterAppliedHigher => {
-            deliver_and_report(&network).await;
-            let higher = network.engine(&network.mailbox).drive_due().await.unwrap();
-            assert!(higher.failed.is_empty());
+            append_status(network.status.store.clone(), canonical_publication(3)).await;
             assert_eq!(stream_state(&network).await, (vec![1, 3], vec![3]));
             if matches!(order, AppendOrder::LowerAfterAppliedHigher) {
                 drain(&network.engine(&network.status)).await;
             }
-            gate.resume_append();
-            assert!(held.await.unwrap().unwrap().failed.is_empty());
+            resume.notify_one();
+            held.await.unwrap();
         }
     }
-    let mut failures = Vec::new();
-    for _ in 0..6 {
-        failures.extend(
-            network
-                .engine(&network.status)
-                .drive_due()
-                .await
-                .unwrap()
-                .failed,
-        );
-        network.advance();
-    }
+    drain(&network.engine(&network.status)).await;
     let actual = sender_status(&network, 1).await;
     let observed = serde_json::to_value(&actual).unwrap();
     assert!(
         matches!(actual,OutboxStatusState::Known {status:DeliveryStatus::Delivered {acceptance},version,..} if version.value()==3&&acceptance.receipt==BODY),
-        "public sender must receive Delivered@3; observed {observed}"
+        "sender ledger lost the latest publication: {observed}"
     );
-    assert_eq!(mailbox_state(&network).await, ("delivered".into(), 3));
-    assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
-    assert!(failures.is_empty(), "publication failures: {failures:?}");
     assert!(stream_state(&network).await.1.is_empty());
 }
 #[tokio::test]

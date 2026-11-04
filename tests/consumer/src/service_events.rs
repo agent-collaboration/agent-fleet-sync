@@ -1,5 +1,4 @@
 use crate::TestResult;
-use fleet_sync_protocol::PeerId;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -42,8 +41,7 @@ impl ServiceEvents {
             .map_err(|_| "service event capture lock poisoned")?
             .clone())
     }
-    pub async fn wait_mailbox(&self, mailbox: PeerId, after: usize) -> TestResult<ServiceEvent> {
-        let identity = mailbox.as_uuid().to_string();
+    pub async fn wait_delivery(&self, after: usize) -> TestResult<ServiceEvent> {
         loop {
             let notified = self.changed.notified();
             tokio::pin!(notified);
@@ -54,8 +52,8 @@ impl ServiceEvents {
                 .filter(|event| {
                     event
                         .fields
-                        .get("mailbox")
-                        .is_some_and(|value| value.contains(&identity))
+                        .get("message")
+                        .is_some_and(|value| value.contains("delivery relay operation retry"))
                 })
                 .nth(after)
             {

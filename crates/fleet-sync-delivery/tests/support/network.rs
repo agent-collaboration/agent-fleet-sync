@@ -8,34 +8,25 @@ use std::{
 
 pub type SubmitTask =
     SubmitItem<TestStore, sqlx_turso::Turso, TestTypes, TestConsumer, FixtureBindings>;
-pub type ReceiveTask =
-    ReceiveItems<TestStore, sqlx_turso::Turso, TestTypes, TestConsumer, FixtureBindings>;
 pub type DeliverTask =
     DeliverLocally<TestStore, sqlx_turso::Turso, TestTypes, TestConsumer, FixtureBindings>;
 pub type ReportTask = ReportOutcome<TestStore, sqlx_turso::Turso, TestTypes, FixtureBindings>;
 pub type PushTask = PushItem<TestStore, sqlx_turso::Turso, TestTypes, PublishTask, FixtureBindings>;
 pub type PublishTask = PublishStatus<TestStore, sqlx_turso::Turso, TestTypes>;
-pub struct FetchBarrier {
+pub struct PushBarrier {
     pub reached: Arc<tokio::sync::Notify>,
     pub release: Arc<tokio::sync::Notify>,
 }
 pub struct TestNetwork {
     pub sender: Mutex<Weak<TestStore>>,
-    pub mailbox: Mutex<Weak<TestStore>>,
+    pub relay: Mutex<Weak<TestStore>>,
     pub recipient: Mutex<Weak<TestStore>>,
     pub publications: super::publication_network::PublicationRoutes,
-    pub fleet_push: AtomicBool,
     pub authenticated_submitter: Mutex<Submitter>,
     pub binding_refresh: Mutex<Option<Arc<tokio::sync::Notify>>>,
-    pub push_barrier: Mutex<Option<FetchBarrier>>,
+    pub push_barrier: Mutex<Option<PushBarrier>>,
     pub relay_up: AtomicBool,
     pub lose_submit: AtomicBool,
-    pub lose_fetch: AtomicBool,
-    pub fetch_barrier: Mutex<Option<FetchBarrier>>,
-    pub fetch_calls: Mutex<Vec<(CallId, FetchInput)>>,
-    pub invalid_fetch: AtomicBool,
-    pub unavailable_fetch: AtomicBool,
-    pub unavailable_receipt: AtomicBool,
     pub lose_receipt: AtomicBool,
     pub lose_delivery: AtomicBool,
     pub lose_report: AtomicBool,
@@ -44,6 +35,7 @@ pub struct TestNetwork {
     pub push_bodies: AtomicU64,
     pub settlements: AtomicU64,
     pub local_calls: AtomicU64,
+    pub report_calls: AtomicU64,
     pub defer_submit: AtomicBool,
     pub deferred: Mutex<Option<ResolvedSubmit<TestTypes>>>,
     pub local_answers: Mutex<VecDeque<LocalOutcome<Acceptance>>>,
@@ -60,8 +52,8 @@ impl TestNetwork {
     fn sender_store(&self) -> Arc<TestStore> {
         self.sender.lock().unwrap().upgrade().unwrap()
     }
-    fn mailbox_store(&self) -> Arc<TestStore> {
-        self.mailbox.lock().unwrap().upgrade().unwrap()
+    fn relay_store(&self) -> Arc<TestStore> {
+        self.relay.lock().unwrap().upgrade().unwrap()
     }
     pub async fn dispatch(
         &self,
@@ -107,42 +99,24 @@ impl TestNetwork {
                             *self.deferred.lock().unwrap() = Some(resolved);
                             return Err(CallFailure::AnswerLost);
                         }
-                        let fleet_push = self.fleet_push.load(Ordering::SeqCst);
                         let answer = self
-                            .mailbox_store()
+                            .relay_store()
                             .transaction(move |scope| {
                                 Box::pin(async move {
-                                    if fleet_push {
-                                        return Outbox::<_, TestTypes, _>::new(
-                                            scope,
-                                            limits(),
-                                            &FixtureBindings,
-                                        )
-                                        .submit_relay::<PushTask, RecordRemoval>(
-                                            authenticated_submitter,
-                                            resolved.item,
-                                            peer(3),
-                                            "fixture-route".into(),
-                                            now,
-                                        )
-                                        .await
-                                        .map_err(storage_error);
-                                    }
-                                    let answer =
-                                        Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                                            .submit(
-                                                peer(1),
-                                                resolved.item,
-                                                now,
-                                                "fixture-route".to_owned(),
-                                                None,
-                                            )
-                                            .await
-                                            .map_err(storage_error)?;
-                                    admit_publications::<_, TestTypes, PublishTask>(scope)
-                                        .await
-                                        .map_err(storage_error)?;
-                                    Ok(answer)
+                                    Outbox::<_, TestTypes, _>::new(
+                                        scope,
+                                        limits(),
+                                        &FixtureBindings,
+                                    )
+                                    .submit_relay::<PushTask, RecordRemoval>(
+                                        authenticated_submitter,
+                                        resolved.item,
+                                        peer(3),
+                                        "fixture-route".into(),
+                                        now,
+                                    )
+                                    .await
+                                    .map_err(storage_error)
                                 })
                             })
                             .await
@@ -166,32 +140,21 @@ impl TestNetwork {
                             return Err(unreachable());
                         }
                         let settled = self
-                            .mailbox_store()
+                            .relay_store()
                             .transaction({
-                                let fleet_push = self.fleet_push.load(Ordering::SeqCst);
                                 move |scope| {
                                     Box::pin(async move {
-                                        if fleet_push {
-                                            return Outbox::<_, TestTypes, _>::new(
-                                                scope,
-                                                limits(),
-                                                &FixtureBindings,
-                                            )
-                                            .relay_settle::<RecordRemoval>(
-                                                authenticated_submitter,
-                                                reference.item,
-                                                reference.digest,
-                                                now,
-                                            )
-                                            .await
-                                            .map_err(storage_error);
-                                        }
-                                        Mailbox::<_, TestTypes>::new(
+                                        Outbox::<_, TestTypes, _>::new(
                                             scope,
-                                            target.mailbox,
                                             limits(),
+                                            &FixtureBindings,
                                         )
-                                        .settle(reference.item, reference.digest)
+                                        .relay_settle::<RecordRemoval>(
+                                            authenticated_submitter,
+                                            reference.item,
+                                            reference.digest,
+                                            now,
+                                        )
                                         .await
                                         .map_err(storage_error)
                                     })
@@ -208,7 +171,7 @@ impl TestNetwork {
                 let target: PushCall<TestTypes> = serde_json::from_value(target).unwrap();
                 let reference: DeliveryItemRef = serde_json::from_value(request).unwrap();
                 let envelope = self
-                    .mailbox_store()
+                    .relay_store()
                     .transaction(move |scope| {
                         Box::pin(async move {
                             Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
@@ -267,70 +230,7 @@ impl TestNetwork {
                 }
                 Ok(value(PushCall::<TestTypes>::validated_answer(answer)?))
             }
-            FetchCall::<TestTypes>::KIND => {
-                if self.unavailable_fetch.load(Ordering::SeqCst) {
-                    return Err(CallFailure::AnswerLost);
-                }
-                let request: FetchInput = serde_json::from_value(request).unwrap();
-                self.fetch_calls
-                    .lock()
-                    .unwrap()
-                    .push((call.clone(), request));
-                let mut answer = self
-                    .mailbox_store()
-                    .transaction(move |scope| {
-                        Box::pin(async move {
-                            let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                                .fetch_with_budget(peer(2), request, now)
-                                .await
-                                .map_err(storage_error)?;
-                            admit_publications::<_, TestTypes, PublishTask>(scope)
-                                .await
-                                .map_err(storage_error)?;
-                            Ok(answer)
-                        })
-                    })
-                    .await
-                    .unwrap();
-                let barrier = self.fetch_barrier.lock().unwrap().take();
-                if let Some(barrier) = barrier {
-                    barrier.reached.notify_one();
-                    barrier.release.notified().await;
-                }
-                if self.invalid_fetch.swap(false, Ordering::SeqCst) {
-                    answer.stream = DeliveryStream::Controls;
-                }
-                if self.lose_fetch.swap(false, Ordering::SeqCst) {
-                    return Err(CallFailure::AnswerLost);
-                }
-                Ok(value(answer))
-            }
-            ReceivedCall::KIND => {
-                if self.unavailable_receipt.load(Ordering::SeqCst) {
-                    return Err(CallFailure::AnswerLost);
-                }
-                let request: ReceiptInput = serde_json::from_value(request).unwrap();
-                let answer = self
-                    .mailbox_store()
-                    .transaction(move |scope| {
-                        Box::pin(async move {
-                            let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                                .received(peer(2), request.stream, request.through, now)
-                                .await
-                                .map_err(storage_error)?;
-                            admit_publications::<_, TestTypes, PublishTask>(scope)
-                                .await
-                                .map_err(storage_error)?;
-                            Ok(answer)
-                        })
-                    })
-                    .await
-                    .unwrap();
-                if self.lose_receipt.swap(false, Ordering::SeqCst) {
-                    return Err(CallFailure::AnswerLost);
-                }
-                Ok(value(answer))
-            }
+
             DeliverCall::<TestTypes>::KIND => {
                 let reference: DeliveryItemRef = serde_json::from_value(request).unwrap();
                 let recipient = self.recipient.lock().unwrap().upgrade().unwrap();
@@ -386,33 +286,36 @@ impl TestNetwork {
             }
             ReportCall::<TestTypes>::KIND => {
                 let report: RecipientReport<TestTypes> = serde_json::from_value(request).unwrap();
-                let fleet_push = self.fleet_push.load(Ordering::SeqCst);
+                self.report_calls.fetch_add(1, Ordering::SeqCst);
                 let answer = self
-                    .mailbox_store()
+                    .relay_store()
                     .transaction(move |scope| {
                         Box::pin(async move {
-                            if fleet_push {
-                                return Outbox::<_, TestTypes, _>::new(
-                                    scope,
-                                    limits(),
-                                    &FixtureBindings,
-                                )
+                            Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                                 .recipient_report::<PublishTask>(peer(2), report, now)
                                 .await
-                                .map_err(storage_error);
-                            }
-                            let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                                .report(peer(2), report, now)
-                                .await
-                                .map_err(storage_error)?;
-                            admit_publications::<_, TestTypes, PublishTask>(scope)
-                                .await
-                                .map_err(storage_error)?;
-                            Ok(answer)
+                                .map_err(|error| match error {
+                                    DeliveryError::InvalidBatch => DeliveryError::Refused {
+                                        reason: DeliveryRefusal::ProcessingFailed {
+                                            kind: DeliveryFailureKind::ExecutionFailed,
+                                        },
+                                    },
+                                    error => error,
+                                })
+                                .map_err(delivery_rollback)
                         })
                     })
-                    .await
-                    .unwrap();
+                    .await;
+                let answer = match answer {
+                    Ok(answer) => Ok(answer),
+                    Err(error) => match classify_delivery_store_error(error) {
+                        DeliveryTransactionFailure::Refused(reason) => {
+                            Ok(ReportResult::Refused { reason })
+                        }
+                        failure => Err(failure),
+                    },
+                }
+                .unwrap();
                 if self.lose_report.swap(false, Ordering::SeqCst) {
                     return Err(CallFailure::AnswerLost);
                 }
@@ -437,7 +340,7 @@ impl TestNetwork {
 }
 pub struct NetworkFixture {
     pub sender: Fixture,
-    pub mailbox: Fixture,
+    pub relay: Fixture,
     pub recipient: Fixture,
     pub status: Fixture,
     pub routes: Arc<TestNetwork>,
@@ -445,29 +348,22 @@ pub struct NetworkFixture {
 impl NetworkFixture {
     pub async fn new() -> Self {
         let sender = Fixture::new().await;
-        let mailbox = Fixture::new().await;
+        let relay = Fixture::new().await;
         let recipient = Fixture::new().await;
         let status = Fixture::new().await;
         let routes = Arc::new(TestNetwork {
             sender: Mutex::new(Arc::downgrade(&sender.store)),
-            mailbox: Mutex::new(Arc::downgrade(&mailbox.store)),
+            relay: Mutex::new(Arc::downgrade(&relay.store)),
             recipient: Mutex::new(Arc::downgrade(&recipient.store)),
             publications: super::publication_network::PublicationRoutes::new(
                 &sender.store,
                 &status.store,
             ),
-            fleet_push: AtomicBool::new(false),
             authenticated_submitter: Mutex::new(Submitter::Machine(peer(1))),
             binding_refresh: Mutex::new(None),
             push_barrier: Mutex::new(None),
             relay_up: AtomicBool::new(true),
             lose_submit: AtomicBool::new(false),
-            lose_fetch: AtomicBool::new(false),
-            fetch_barrier: Mutex::new(None),
-            fetch_calls: Mutex::new(Vec::new()),
-            invalid_fetch: AtomicBool::new(false),
-            unavailable_fetch: AtomicBool::new(false),
-            unavailable_receipt: AtomicBool::new(false),
             lose_receipt: AtomicBool::new(false),
             lose_delivery: AtomicBool::new(false),
             lose_report: AtomicBool::new(false),
@@ -476,16 +372,17 @@ impl NetworkFixture {
             push_bodies: AtomicU64::new(0),
             settlements: AtomicU64::new(0),
             local_calls: AtomicU64::new(0),
+            report_calls: AtomicU64::new(0),
             defer_submit: AtomicBool::new(false),
             deferred: Mutex::new(None),
             local_answers: Mutex::new(VecDeque::new()),
         });
-        for fixture in [&sender, &mailbox, &recipient, &status] {
+        for fixture in [&sender, &relay, &recipient, &status] {
             assert!(fixture.host.routes.set(routes.clone()).is_ok());
         }
         Self {
             sender,
-            mailbox,
+            relay,
             recipient,
             status,
             routes,
@@ -504,14 +401,6 @@ impl NetworkFixture {
         engine
             .register(SubmitTask::new(
                 limits(),
-                consumer.clone(),
-                fixture.host.clone(),
-                std::sync::Arc::new(FixtureBindings),
-            ))
-            .unwrap();
-        engine
-            .register(ReceiveTask::new(
-                config,
                 consumer.clone(),
                 fixture.host.clone(),
                 std::sync::Arc::new(FixtureBindings),
@@ -544,7 +433,7 @@ impl NetworkFixture {
         engine
     }
     pub fn advance(&self) {
-        for fixture in [&self.sender, &self.mailbox, &self.recipient, &self.status] {
+        for fixture in [&self.sender, &self.relay, &self.recipient, &self.status] {
             fixture.host.clock.fetch_add(100_000, Ordering::SeqCst);
         }
     }
@@ -573,24 +462,6 @@ impl NetworkFixture {
             .await
             .unwrap();
     }
-    pub async fn receive(&self, stream: DeliveryStream) {
-        self.recipient
-            .store
-            .transaction(move |scope| {
-                Box::pin(async move {
-                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
-                        .begin_receive_and_admit::<ReceiveTask>(
-                            stream,
-                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                        )
-                        .await
-                        .map_err(storage_error)?;
-                    Ok(())
-                })
-            })
-            .await
-            .unwrap();
-    }
 }
 pub fn config() -> DeliveryTaskConfig {
     DeliveryTaskConfig {
@@ -599,8 +470,6 @@ pub fn config() -> DeliveryTaskConfig {
             limits: limits(),
         },
         relay: peer(3),
-        fetch_items: 10,
-        fetch_bytes: 100_000,
     }
 }
 

@@ -36,13 +36,6 @@ type SubmitTask = SubmitItem<
     consumer::NodeConsumer,
     SampleSenderBinding,
 >;
-type ReceiveTask = ReceiveItems<
-    NodeStore,
-    sqlx_turso::Turso,
-    SampleDelivery,
-    consumer::NodeConsumer,
-    SampleSenderBinding,
->;
 type DeliverTask = DeliverLocally<
     NodeStore,
     sqlx_turso::Turso,
@@ -70,15 +63,8 @@ pub enum NodeCommand {
         target: ItemId,
         recipient: PeerId,
     },
-    Receive {
-        stream: DeliveryStream,
-    },
     StatusFetch,
     Query {
-        mailbox: PeerId,
-        items: Vec<ItemId>,
-    },
-    Retire {
         mailbox: PeerId,
         items: Vec<ItemId>,
     },
@@ -89,9 +75,6 @@ pub enum NodeCommand {
         item: ItemId,
         side: CustodySide,
         kind: String,
-    },
-    WaitMailboxUnavailable {
-        hop: String,
     },
     WaitPendingCall {
         hop: String,
@@ -211,7 +194,6 @@ pub(crate) struct NodeState {
     effect_file: PathBuf,
     effect_lock: Mutex<()>,
     status_paused: AtomicBool,
-    unavailable: Mutex<Vec<(String, CallId)>>,
 }
 impl NodeState {
     fn local_config(&self) -> Result<LocalDeliveryConfig, DeliveryError> {
@@ -224,8 +206,6 @@ impl NodeState {
         Ok(DeliveryTaskConfig {
             local: self.local_config()?,
             relay: peer(3)?,
-            fetch_items: 100,
-            fetch_bytes: 1_000_000,
         })
     }
     async fn kick(&self) -> TestResult {
@@ -384,24 +364,7 @@ impl NodeState {
                 self.kick().await?;
                 return Ok(serde_json::to_value(admitted.0)?);
             }
-            NodeCommand::Receive { stream } => {
-                let now = self.object.host().now();
-                self.object
-                    .rule_transaction::<_, DeliveryError, _>(move |scope| {
-                        Box::pin(async move {
-                            Inbox::<_, SampleDelivery, _>::new(
-                                scope,
-                                config.owner,
-                                config.limits,
-                                &SampleSenderBinding,
-                            )
-                            .begin_receive_and_admit::<ReceiveTask>(stream, now)
-                            .await
-                        })
-                    })
-                    .await?;
-                self.kick().await?;
-            }
+
             NodeCommand::Release { item } => {
                 let now = self.object.host().now();
                 self.object
@@ -423,9 +386,6 @@ impl NodeState {
             NodeCommand::Inspect { item } => return self.inspect(item).await,
             NodeCommand::WaitStatus { item, side, kind } => {
                 return self.wait_status(item, side, &kind).await;
-            }
-            NodeCommand::WaitMailboxUnavailable { hop } => {
-                return self.wait_mailbox_unavailable(hop).await;
             }
             NodeCommand::WaitPendingCall { hop, attempts } => {
                 return self.wait_pending_call(hop, attempts).await;
@@ -502,18 +462,7 @@ impl NodeState {
                         .map_err(|error| format!("query: {error:?}"))?,
                 )?);
             }
-            NodeCommand::Retire { mailbox, items } => {
-                return Ok(serde_json::to_value(
-                    self.link
-                        .request(DeliveryRequest::Retire {
-                            call: new_call()?,
-                            mailbox,
-                            items,
-                        })
-                        .await
-                        .map_err(|error| format!("retire: {error:?}"))?,
-                )?);
-            }
+
             NodeCommand::Shutdown => {}
         }
         Ok(json!({"ok":true}))
@@ -577,7 +526,6 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
         effect_file: directory.join("effects.jsonl"),
         effect_lock: Mutex::new(()),
         status_paused: AtomicBool::new(false),
-        unavailable: Mutex::new(Vec::new()),
     });
     router
         .0
@@ -591,15 +539,6 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
             config.local.limits,
             consumer.clone(),
             host.clone(),
-            Arc::new(SampleSenderBinding),
-        ),
-        &state,
-    ))?;
-    engine.register(observer::ObservedTask::new(
-        ReceiveTask::new(
-            config,
-            consumer.clone(),
-            object.host(),
             Arc::new(SampleSenderBinding),
         ),
         &state,

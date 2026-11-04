@@ -1,8 +1,7 @@
 #![allow(clippy::unwrap_used)]
 use super::support;
-use durable_steps::{AtomicStore, SyncTime, storage::TransactionScope};
+use durable_steps::{AtomicStore, SyncTime};
 use fleet_sync_delivery::*;
-use sqlx_core::row::Row;
 use std::sync::atomic::Ordering;
 use support::{network::*, *};
 
@@ -64,15 +63,9 @@ async fn assert_sender_expired(network: &NetworkFixture) {
 async fn reach_scheduled_held(network: &NetworkFixture) {
     let engine = network.engine(&network.recipient);
     // Drive the real admitted work until its owner reports the scheduled wait.
-    let received = engine.drive_due().await.unwrap();
-    assert!(received.failed.is_empty());
-    let attempted = engine.drive_due().await.unwrap();
-    assert!(attempted.failed.is_empty());
-    let waiting = if attempted.retried.is_empty() {
-        engine.drive_due().await.unwrap()
-    } else {
-        attempted
-    };
+    let delivered = engine.drive_due().await.unwrap();
+    assert!(delivered.failed.is_empty());
+    let waiting = engine.drive_due().await.unwrap();
     assert!(waiting.failed.is_empty());
     assert_eq!(waiting.retried.len(), 1);
     drain(&engine).await;
@@ -107,7 +100,7 @@ async fn held_until_does_not_repeat_early_and_the_next_attempt_uses_a_fresh_call
         .push_back(LocalOutcome::Held {
             until: Some(SyncTime::from_unix_millis(50)),
         });
-    network.receive(DeliveryStream::Items).await;
+    drain(&network.engine(&network.relay)).await;
     reach_scheduled_held(&network).await;
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
     network.recipient.host.clock.store(49, Ordering::SeqCst);
@@ -135,14 +128,14 @@ async fn held_until_does_not_repeat_early_and_the_next_attempt_uses_a_fresh_call
         .unwrap();
 }
 #[tokio::test]
-async fn expiry_before_fetch_never_delivers_and_relay_publishes_final_expired() {
+async fn expiry_before_push_never_delivers_and_relay_publishes_final_expired() {
     let network = NetworkFixture::new().await;
     enqueue_expiring(&network, 50).await;
     drain(&network.engine(&network.sender)).await;
     network.advance();
-    network.receive(DeliveryStream::Items).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.recipient)).await;
-    drain(&network.engine(&network.mailbox)).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.status)).await;
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 0);
     assert_sender_expired(&network).await;
@@ -158,99 +151,12 @@ async fn expired_on_first_relay_admission_reaches_the_sender_after_the_submit_re
     assert!(
         matches!(sender_status(&network,1).await,OutboxStatusState::Known {status:DeliveryStatus::Expired,version,..} if version.value()==1)
     );
-    drain(&network.engine(&network.mailbox)).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.status)).await;
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 0);
     assert_sender_expired(&network).await;
 }
 
-#[tokio::test]
-async fn an_initial_expiry_publication_before_the_late_submit_receipt_keeps_the_same_snapshot() {
-    let network = NetworkFixture::new().await;
-    enqueue_expiring(&network, 50).await;
-    let input = network
-        .sender
-        .store
-        .transaction(|scope| {
-            Box::pin(async move {
-                let row = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT input FROM _fleet_sync_operations",
-                )
-                .fetch_one(scope.executor())
-                .await
-                .map_err(durable_steps::StoreError::backend)?;
-                let bytes: Vec<u8> = row
-                    .try_get("input")
-                    .map_err(durable_steps::StoreError::backend)?;
-                serde_json::from_slice::<SubmitInput>(&bytes)
-                    .map_err(durable_steps::StoreError::backend)
-            })
-        })
-        .await
-        .unwrap();
-    let reference = input.reference();
-    let resolved = network
-        .sender
-        .store
-        .transaction(move |scope| {
-            Box::pin(async move {
-                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
-                    .resolve_submit(&reference)
-                    .await
-                    .map_err(storage_error)
-            })
-        })
-        .await
-        .unwrap();
-    let answer = network
-        .mailbox
-        .store
-        .transaction(move |scope| {
-            Box::pin(async move {
-                let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .submit(
-                        peer(1),
-                        resolved.item,
-                        SyncTime::from_unix_millis(50),
-                        "fixture-route".to_owned(),
-                        None,
-                    )
-                    .await
-                    .map_err(storage_error)?;
-                admit_publications::<_, TestTypes, PublishTask>(scope)
-                    .await
-                    .map_err(storage_error)?;
-                Ok(answer)
-            })
-        })
-        .await
-        .unwrap();
-    // Real publication tasks commit Expired@1 before the late call answer is applied.
-    drain(&network.engine(&network.mailbox)).await;
-    drain(&network.engine(&network.status)).await;
-    assert!(
-        matches!(sender_status(&network,1).await,OutboxStatusState::Known {status:DeliveryStatus::Expired,version,..} if version.value()==1)
-    );
-    network
-        .sender
-        .store
-        .transaction(move |scope| {
-            Box::pin(async move {
-                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
-                    .mark_submitted(&input, answer, SyncTime::from_unix_millis(0))
-                    .await
-                    .map_err(storage_error)
-            })
-        })
-        .await
-        .unwrap();
-    assert!(
-        matches!(sender_status(&network,1).await,OutboxStatusState::Known {status:DeliveryStatus::Expired,version,..} if version.value()==1)
-    );
-    drain(&network.engine(&network.sender)).await;
-    assert_eq!(network.routes.sent_bodies.load(Ordering::SeqCst), 0);
-    assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 0);
-}
 #[tokio::test]
 async fn a_held_item_expires_before_its_later_consumer_deadline_without_a_second_effect() {
     let network = NetworkFixture::new().await;
@@ -264,12 +170,12 @@ async fn a_held_item_expires_before_its_later_consumer_deadline_without_a_second
         .push_back(LocalOutcome::Held {
             until: Some(SyncTime::from_unix_millis(100)),
         });
-    network.receive(DeliveryStream::Items).await;
+    drain(&network.engine(&network.relay)).await;
     reach_scheduled_held(&network).await;
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
     network.advance();
     drain(&network.engine(&network.recipient)).await;
-    drain(&network.engine(&network.mailbox)).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.status)).await;
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
     assert_sender_expired(&network).await;

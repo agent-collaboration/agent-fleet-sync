@@ -45,8 +45,6 @@ mod outbox_integrity;
 
 mod outbox_release_gate;
 
-mod per_item_compatibility;
-
 mod per_item_reopen;
 
 mod per_item_settlement;
@@ -54,8 +52,6 @@ mod per_item_settlement;
 mod projection_hooks;
 
 mod projection_recovery;
-
-mod routed_publication;
 
 #[path = "../support/per_item.rs"]
 mod per_item;
@@ -68,23 +64,11 @@ mod attempt_recovery;
 
 mod delivery_rollback;
 
-mod mailbox_custody;
-
-mod mailbox_deadlines;
-
-mod mailbox_recipient;
-
-mod mailbox_reopen;
-
-mod mailbox_succession;
-
 mod recipient_refusals;
 
 mod revision_retirement;
 
 mod routed_settlement;
-
-mod legacy_receive_checkpoint;
 
 mod local_cancel_routes;
 

@@ -44,7 +44,7 @@ async fn legacy_settle_refuses_other_machine_and_project_claims_before_custody()
         assert!(
             matches!(
                 answer,
-                OperationAnswer::Delivery(DeliveryAnswer::MailboxUnavailable {
+                OperationAnswer::Delivery(DeliveryAnswer::DeliveryUnavailable {
                     reason: DeliveryRefusal::NotSubmitter
                 })
             ),

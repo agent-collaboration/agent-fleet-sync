@@ -42,8 +42,6 @@ pub fn variable_limits(bytes: u64) -> DeliveryLimits {
         bytes,
         20,
         bytes,
-        20,
-        bytes,
         minimum_settlement_allowance::<VariableTypes>().unwrap(),
     )
     .unwrap()

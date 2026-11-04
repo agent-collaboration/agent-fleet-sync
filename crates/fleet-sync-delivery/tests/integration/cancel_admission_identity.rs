@@ -55,13 +55,13 @@ async fn relay_submit(fixture: &Fixture, id: u64) -> SubmitResult<Acceptance> {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .submit(
-                        peer(1),
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                    .submit_relay::<FixturePush<TestTypes>, RecordRemoval>(
+                        Submitter::Machine(peer(1)),
                         cancel(id, 1),
-                        SyncTime::from_unix_millis(0),
+                        peer(3),
                         "fixture-route".to_owned(),
-                        None,
+                        SyncTime::from_unix_millis(0),
                     )
                     .await
                     .map_err(storage_error)
@@ -71,16 +71,12 @@ async fn relay_submit(fixture: &Fixture, id: u64) -> SubmitResult<Acceptance> {
         .unwrap()
 }
 
-async fn stored_first_cancel(fixture: &Fixture, relayed: bool) -> String {
+async fn stored_first_cancel(fixture: &Fixture) -> String {
     fixture
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let statement = if relayed {
-                    "SELECT record FROM _fleet_sync_mail_items WHERE item_id=?1"
-                } else {
-                    include_str!("../support/sql/read_outbox_header.sql")
-                };
+                let statement="SELECT CAST(json_array(item_id,digest,payload,consumer_sender,submitter_kind,submitter_id,cancel_target_item_id,status_kind,status_version,status_route,valid_until,live,capacity_slot,payload_bytes,settlement_bytes,settlement_charge_bytes,last_report_seq,created_at,admitted_at,handed_off_at,updated_at) AS TEXT) AS record FROM _fleet_sync_outbox_items WHERE item_id=?1";
                 use sqlx_core::row::Row;
                 Ok(query::<Turso>(statement)
                     .bind(item_id(2).as_uuid().to_string())
@@ -130,7 +126,7 @@ async fn another_outbox_cancel_names_the_first_and_does_not_take_new_custody() {
         }
         let first = enqueue_cancel_at(&fixture, 2).await;
         assert!(matches!(first, OutboxAdmission::Queued { .. }));
-        let first_before = stored_first_cancel(&fixture, false).await;
+        let first_before = stored_first_cancel(&fixture).await;
         let same_id = serde_json::to_value(enqueue_cancel_at(&fixture, 2).await).unwrap();
         let another_id = serde_json::to_value(enqueue_cancel_at(&fixture, 3).await).unwrap();
         let new_custody = fixture
@@ -147,7 +143,7 @@ async fn another_outbox_cancel_names_the_first_and_does_not_take_new_custody() {
             .unwrap();
 
         assert!(matches!(new_custody.state, OutboxStatusState::Unknown));
-        assert_eq!(stored_first_cancel(&fixture, false).await, first_before);
+        assert_eq!(stored_first_cancel(&fixture).await, first_before);
         let status = if original_present {
             json!({"kind":"cancelled"})
         } else {
@@ -172,17 +168,24 @@ async fn relay_duplicate_cancel_names_canonical_identity_without_new_custody() {
     let relay = Fixture::new().await;
     let first = relay_submit(&relay, 2).await;
     assert!(matches!(first, SubmitResult::Accepted { .. }));
-    let first_before = stored_first_cancel(&relay, true).await;
+    let first_before = stored_first_cancel(&relay).await;
     let same_id = serde_json::to_value(relay_submit(&relay, 2).await).unwrap();
     let another_id = serde_json::to_value(relay_submit(&relay, 3).await).unwrap();
     let queried = relay
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .query(&[item_id(2), item_id(3)])
-                    .await
-                    .map_err(storage_error)
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
+                let mut statuses = Vec::new();
+                for identity in [2, 3] {
+                    statuses.push(
+                        outbox
+                            .relay_query(Submitter::Machine(peer(1)), item_id(identity))
+                            .await
+                            .map_err(storage_error)?,
+                    );
+                }
+                Ok(QueryResult { statuses })
             })
         })
         .await
@@ -192,14 +195,14 @@ async fn relay_duplicate_cancel_names_canonical_identity_without_new_custody() {
         queried.statuses[1].state,
         ItemStatusState::Unknown
     ));
-    assert_eq!(stored_first_cancel(&relay, true).await, first_before);
+    assert_eq!(stored_first_cancel(&relay).await, first_before);
     assert_eq!(same_id["kind"], "replayed");
     assert_eq!(same_id["value"]["status"], json!({"kind":"sent"}));
     assert_eq!(
         another_id,
         json!({"kind":"cancelAlreadyRequested","value":{
             "existing":first_reference(),"status":{"kind":"sent"},
-            "version":1,"cancel":{"kind":"pending"}
+            "version":1,"cancel":null
         }}),
         "relay must distinguish a different cancel ID from same-ID replay"
     );

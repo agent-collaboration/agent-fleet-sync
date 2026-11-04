@@ -2,7 +2,7 @@
 use super::support;
 use durable_steps::AtomicStore;
 use fleet_sync_delivery::*;
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::Arc;
 use support::{network::*, *};
 
 fn held_publication(item: u64, version: u64) -> StatusPublication<Acceptance> {
@@ -233,12 +233,28 @@ async fn lost_first_hop_retry_after_ack_reappends_above_floor_and_forward_only_c
     network.enqueue(1, "body").await;
     drain(&network.engine(&network.sender)).await;
     network
-        .routes
-        .lose_publication
-        .store(true, Ordering::SeqCst);
-    let lost = network.engine(&network.mailbox).drive_due().await.unwrap();
-    assert_eq!(lost.retried.len(), 1);
-    assert!(lost.failed.is_empty());
+        .status
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                StatusStream::<_, TestTypes>::new(
+                    scope,
+                    Submitter::Machine(peer(1)),
+                    "fixture-route".into(),
+                )
+                .append_and_admit::<PublishTask>(
+                    &held_publication(1, 1),
+                    SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+    // The upstream caller loses the committed answer before recording it;
+    // the actual public retry repeats precisely that append after the ack.
     let first = fetch_status_event_identities(&network.status, 0).await;
     assert_eq!(
         first,
@@ -264,8 +280,27 @@ async fn lost_first_hop_retry_after_ack_reappends_above_floor_and_forward_only_c
         })
         .await
         .unwrap();
-    network.advance();
-    drain(&network.engine(&network.mailbox)).await;
+    network
+        .status
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                StatusStream::<_, TestTypes>::new(
+                    scope,
+                    Submitter::Machine(peer(1)),
+                    "fixture-route".into(),
+                )
+                .append_and_admit::<PublishTask>(
+                    &held_publication(1, 1),
+                    SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
     assert_eq!(
         fetch_status_event_identities(&network.status, 0).await,
         vec![(StatusCursor::new(2), item_id(1), StatusVersion::new(1))]

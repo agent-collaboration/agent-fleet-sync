@@ -22,7 +22,7 @@ async fn cached_push_answer(replayed: bool) {
     seed(&network).await;
     if replayed {
         let pushed = network
-            .mailbox
+            .relay
             .store
             .transaction(|scope| {
                 Box::pin(async move {
@@ -77,14 +77,14 @@ async fn cached_push_answer(replayed: bool) {
             1
         );
     }
-    let operation = push_operation(&network.mailbox.store).await;
+    let operation = push_operation(&network.relay.store).await;
     let reached = Arc::new(tokio::sync::Notify::new());
-    let mut engine = Engine::new(network.mailbox.store.clone(), network.mailbox.host.clone());
+    let mut engine = Engine::new(network.relay.store.clone(), network.relay.host.clone());
     engine
         .register(PausedPush {
             inner: PushTask::new(
                 limits(),
-                network.mailbox.host.clone(),
+                network.relay.host.clone(),
                 std::sync::Arc::new(FixtureBindings),
             ),
             reached: reached.clone(),
@@ -95,7 +95,7 @@ async fn cached_push_answer(replayed: bool) {
         .await
         .unwrap();
     network
-        .mailbox
+        .relay
         .store
         .transaction(move |scope| {
             Box::pin(async move {
@@ -120,7 +120,7 @@ async fn cached_push_answer(replayed: bool) {
         store,
         host,
         directory,
-    } = network.mailbox;
+    } = network.relay;
     assert_eq!(Arc::strong_count(&store), 1);
     drop(store);
     let store = Arc::new(
@@ -128,14 +128,14 @@ async fn cached_push_answer(replayed: bool) {
             .await
             .unwrap(),
     );
-    *network.routes.mailbox.lock().unwrap() = Arc::downgrade(&store);
-    network.mailbox = Fixture {
+    *network.routes.relay.lock().unwrap() = Arc::downgrade(&store);
+    network.relay = Fixture {
         store,
         host,
         directory,
     };
     clock(&network, 100_000);
-    let resumed = network.engine(&network.mailbox).drive_due().await.unwrap();
+    let resumed = network.engine(&network.relay).drive_due().await.unwrap();
     assert_eq!(resumed.completed.len(), 1);
     assert!(resumed.failed.is_empty());
     publish(&network).await;
@@ -172,10 +172,10 @@ async fn lost_receipt_at_deadline_keeps_sent_and_a_later_real_delivered_report_r
     let network = NetworkFixture::new().await;
     seed(&network).await;
     network.routes.lose_receipt.store(true, Ordering::SeqCst);
-    let engine = network.engine(&network.mailbox);
+    let engine = network.engine(&network.relay);
     assert_eq!(engine.drive_due().await.unwrap().retried.len(), 1);
-    let operation = push_operation(&network.mailbox.store).await;
-    network.mailbox.store.transaction(move |scope|Box::pin(async move {
+    let operation = push_operation(&network.relay.store).await;
+    network.relay.store.transaction(move |scope|Box::pin(async move {
         assert!(matches!(scope.step(operation,0).await?.unwrap().state,StepState::CallPending {attempt,..} if attempt.reach==CallReach::MayHaveReached));
         Ok(())
     })).await.unwrap();
@@ -199,7 +199,7 @@ async fn lost_receipt_at_deadline_keeps_sent_and_a_later_real_delivered_report_r
         1,
         "uncertain reach must not resend payload after expiry"
     );
-    network.mailbox.store.transaction(|scope|Box::pin(async move {
+    network.relay.store.transaction(|scope|Box::pin(async move {
         let row=query::<Turso>("SELECT status_kind,payload,submit_attempted,handed_off_at FROM _fleet_sync_outbox_items").fetch_one(scope.executor()).await?;
         assert_eq!(row.try_get::<String,_>("status_kind")?,"sent");
         assert!(row.try_get::<Option<String>,_>("payload")?.is_none());
@@ -225,7 +225,7 @@ async fn lost_receipt_without_a_report_stays_sent_until_its_original_removal_dea
     let network = NetworkFixture::new().await;
     seed(&network).await;
     network.routes.lose_receipt.store(true, Ordering::SeqCst);
-    let engine = network.engine(&network.mailbox);
+    let engine = network.engine(&network.relay);
     assert_eq!(engine.drive_due().await.unwrap().retried.len(), 1);
     clock(&network, 100_000);
     assert_eq!(engine.drive_due().await.unwrap().completed.len(), 1);
@@ -238,7 +238,7 @@ async fn lost_receipt_without_a_report_stays_sent_until_its_original_removal_dea
         }
     ));
     network
-        .mailbox
+        .relay
         .store
         .transaction(|scope| {
             Box::pin(async move {
@@ -259,7 +259,7 @@ async fn lost_receipt_without_a_report_stays_sent_until_its_original_removal_dea
     clock(&network, deadline);
     assert_eq!(engine.drive_due().await.unwrap().completed.len(), 1);
     network
-        .mailbox
+        .relay
         .store
         .transaction(|scope| {
             Box::pin(async move {
@@ -281,30 +281,30 @@ async fn interrupted_dispatch_at_the_deadline_keeps_sent_without_resending_then_
     use std::{sync::Arc, time::Duration};
     let network = NetworkFixture::new().await;
     seed(&network).await;
-    let operation = push_operation(&network.mailbox.store).await;
+    let operation = push_operation(&network.relay.store).await;
     let reached = Arc::new(tokio::sync::Notify::new());
-    *network.routes.push_barrier.lock().unwrap() = Some(FetchBarrier {
+    *network.routes.push_barrier.lock().unwrap() = Some(PushBarrier {
         reached: reached.clone(),
         release: Arc::new(tokio::sync::Notify::new()),
     });
     let driver = tokio::spawn({
-        let engine = network.engine(&network.mailbox);
+        let engine = network.engine(&network.relay);
         async move { engine.drive_due().await }
     });
     tokio::time::timeout(Duration::from_secs(10), reached.notified())
         .await
         .unwrap();
-    network.mailbox.store.transaction(move |scope|Box::pin(async move {
+    network.relay.store.transaction(move |scope|Box::pin(async move {
         assert!(matches!(scope.step(operation,0).await?.unwrap().state,StepState::CallPending {attempt,..} if attempt.reach==CallReach::Dispatching));
         Ok(())
     })).await.unwrap();
     driver.abort();
     assert!(driver.await.unwrap_err().is_cancelled());
     clock(&network, 100_000);
-    let recovered = network.engine(&network.mailbox).drive_due().await.unwrap();
+    let recovered = network.engine(&network.relay).drive_due().await.unwrap();
     assert_eq!(recovered.completed.len(), 1);
     network
-        .mailbox
+        .relay
         .store
         .transaction(|scope| {
             Box::pin(async move {

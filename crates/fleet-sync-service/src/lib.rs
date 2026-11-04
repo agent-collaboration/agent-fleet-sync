@@ -15,15 +15,15 @@ mod install_host;
 #[cfg(feature = "test-support")]
 mod install_page_probe;
 #[cfg(feature = "test-support")]
-mod retirement_reply_probe;
-#[cfg(feature = "test-support")]
 mod schema_support_probe;
 mod source_host;
 pub use source_host::AttachedSource;
 mod registry_host;
 mod replication_host;
 mod routed_calls;
+mod service_clock;
 mod service_contract;
+pub use service_clock::ServiceClock;
 mod service_handle;
 mod service_runtime;
 mod service_state;
@@ -31,13 +31,14 @@ mod session_handler;
 mod websocket_server;
 
 pub use call_router::{ServiceCalls, ServiceHost, ServiceObject, ServiceScope};
-pub use service_contract::{ConsumerHandler, ServiceConsumer, ServiceError, ServiceOptions};
+pub use service_contract::{
+    ConsumerHandler, RelayDeliveryConfig, ServiceConsumer, ServiceError, ServiceOptions,
+};
 pub use service_handle::ImportSeedRequest;
 pub use service_runtime::{FleetService, ServiceHandle};
 
-mod delivery_deadlines;
-mod delivery_owner;
 mod delivery_publication;
+mod delivery_relay;
 mod delivery_requests;
 
 #[cfg(feature = "test-support")]

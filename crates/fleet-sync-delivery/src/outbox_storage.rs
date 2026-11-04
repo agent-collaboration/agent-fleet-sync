@@ -124,70 +124,81 @@ where
                 version,
                 cancel,
             })),
-            Some("item") => Ok(OutboxHeaderState::Item(OutboxHeader {
-                id,
-                digest,
-                status_route: row.status_route.clone(),
-                relay: stored_enum(row.relay_machine_id.clone(), "outbox relay")?,
-                submitter: sender.submitter,
-                consumer_sender: row.consumer_sender.clone(),
-                recipient: stored_enum(row.recipient_machine_id.clone(), "outbox recipient")?,
-                created_at: stored_time(
-                    row.created_at.clone(),
-                    row.created_at_class.clone(),
-                    "outbox created at",
-                )?
-                .ok_or(DeliveryError::Corrupt {
-                    field: "outbox created at",
-                })?,
-                admitted_at: stored_time(
-                    row.admitted_at.clone(),
-                    row.admitted_at_class.clone(),
-                    "outbox admitted at",
-                )?,
-                handed_off_at: stored_time(
-                    row.handed_off_at.clone(),
-                    row.handed_off_at_class.clone(),
-                    "outbox handed off at",
-                )?,
-                last_report_seq: ReportSeq::new(integer(
-                    row.last_report_seq.clone(),
-                    row.last_report_seq_class.clone(),
-                    "outbox report sequence",
-                )?),
-                valid_until: stored_time(
-                    row.valid_until.clone(),
-                    row.valid_until_class.clone(),
-                    "outbox valid until",
-                )?,
-                status,
-                version,
-                submit_attempted: stored_bool(
-                    row.submit_attempted.clone(),
-                    row.submit_attempted_class.clone(),
-                    "outbox submit attempted",
-                )?,
-                cancel,
-                cancel_target: row
-                    .cancel_target_item_id
-                    .clone()
-                    .map(|value| stored_enum(Some(value), "outbox cancel target"))
-                    .transpose()?,
-                acceptance_bound,
-                settlement_bytes: u32::try_from(integer(
-                    row.settlement_bytes.clone(),
-                    row.settlement_bytes_class.clone(),
-                    "outbox settlement reserve",
-                )?)
-                .map_err(|_| DeliveryError::Corrupt {
-                    field: "outbox settlement reserve",
-                })?,
-                capacity_slot: stored_bool(
-                    row.capacity_slot.clone(),
-                    row.capacity_slot_class.clone(),
-                    "outbox capacity slot",
-                )?,
-            })),
+            Some("item") => {
+                if let Some(raw) = &row.status_route {
+                    let route: D::StatusRoute =
+                        decode(Some(raw.clone()), "stored outbox status route")?;
+                    crate::delivery_sizes::check_status_route::<D>(&route).map_err(|_| {
+                        DeliveryError::Corrupt {
+                            field: "stored outbox status route bounds",
+                        }
+                    })?;
+                }
+                Ok(OutboxHeaderState::Item(OutboxHeader {
+                    id,
+                    digest,
+                    status_route: row.status_route.clone(),
+                    relay: stored_enum(row.relay_machine_id.clone(), "outbox relay")?,
+                    submitter: sender.submitter,
+                    consumer_sender: row.consumer_sender.clone(),
+                    recipient: stored_enum(row.recipient_machine_id.clone(), "outbox recipient")?,
+                    created_at: stored_time(
+                        row.created_at.clone(),
+                        row.created_at_class.clone(),
+                        "outbox created at",
+                    )?
+                    .ok_or(DeliveryError::Corrupt {
+                        field: "outbox created at",
+                    })?,
+                    admitted_at: stored_time(
+                        row.admitted_at.clone(),
+                        row.admitted_at_class.clone(),
+                        "outbox admitted at",
+                    )?,
+                    handed_off_at: stored_time(
+                        row.handed_off_at.clone(),
+                        row.handed_off_at_class.clone(),
+                        "outbox handed off at",
+                    )?,
+                    last_report_seq: ReportSeq::new(integer(
+                        row.last_report_seq.clone(),
+                        row.last_report_seq_class.clone(),
+                        "outbox report sequence",
+                    )?),
+                    valid_until: stored_time(
+                        row.valid_until.clone(),
+                        row.valid_until_class.clone(),
+                        "outbox valid until",
+                    )?,
+                    status,
+                    version,
+                    submit_attempted: stored_bool(
+                        row.submit_attempted.clone(),
+                        row.submit_attempted_class.clone(),
+                        "outbox submit attempted",
+                    )?,
+                    cancel,
+                    cancel_target: row
+                        .cancel_target_item_id
+                        .clone()
+                        .map(|value| stored_enum(Some(value), "outbox cancel target"))
+                        .transpose()?,
+                    acceptance_bound,
+                    settlement_bytes: u32::try_from(integer(
+                        row.settlement_bytes.clone(),
+                        row.settlement_bytes_class.clone(),
+                        "outbox settlement reserve",
+                    )?)
+                    .map_err(|_| DeliveryError::Corrupt {
+                        field: "outbox settlement reserve",
+                    })?,
+                    capacity_slot: stored_bool(
+                        row.capacity_slot.clone(),
+                        row.capacity_slot_class.clone(),
+                        "outbox capacity slot",
+                    )?,
+                }))
+            }
             _ => Err(DeliveryError::Corrupt {
                 field: "outbox record kind",
             }),

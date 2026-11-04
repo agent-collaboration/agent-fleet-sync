@@ -149,38 +149,36 @@ impl<O: OperationContext<Store = TestStore>> InterceptContext<'_, O> {
                 self.store
                     .transaction(|scope| {
                         Box::pin(async move {
+                            let answer = accept_fixture_push(
+                                scope,
+                                limits(),
+                                cancel(2, 1),
+                                &TestConsumer,
+                                SyncTime::from_unix_millis(0),
+                            )
+                            .await
+                            .map_err(storage_error)?;
+                            assert!(matches!(answer, PushResult::Accepted { .. }));
                             let mut inbox = Inbox::<_, TestTypes, _>::new(
                                 scope,
                                 peer(2),
                                 limits(),
                                 &FixtureBindings,
                             );
-                            let cycle = inbox
-                                .begin_receive(
-                                    DeliveryStream::Controls,
-                                    fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                                )
-                                .await
-                                .map_err(storage_error)?
-                                .unwrap();
-                            let effects = inbox
-                                .store_batch(
-                                    cycle,
-                                    FetchResult {
-                                        stream: DeliveryStream::Controls,
-                                        entries: vec![FetchEntry::Item {
-                                            seq: DeliverySeq::new(1),
-                                            item: cancel(2, 1),
-                                        }],
-                                        through: DeliverySeq::new(1),
-                                    },
-                                    &TestConsumer,
-                                    SyncTime::from_unix_millis(0),
-                                )
-                                .await
-                                .map_err(storage_error)?;
-                            assert!(effects.attempts.is_empty());
-                            assert!(effects.reports.is_empty());
+                            assert!(
+                                inbox
+                                    .pending_report(item_id(1))
+                                    .await
+                                    .map_err(storage_error)?
+                                    .is_none()
+                            );
+                            assert!(
+                                inbox
+                                    .pending_report(item_id(2))
+                                    .await
+                                    .map_err(storage_error)?
+                                    .is_none()
+                            );
                             Ok(())
                         })
                     })

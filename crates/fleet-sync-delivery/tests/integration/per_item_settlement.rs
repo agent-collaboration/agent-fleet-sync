@@ -9,73 +9,85 @@ use support::*;
 
 #[tokio::test]
 async fn ordinary_admission_uses_small_bound_while_large_kind_reserves_global() {
-    let fixture = Fixture::new().await;
-    fixture
-        .store
-        .transaction(|scope| {
-            Box::pin(async move {
-                let small_capacity = variable_limits(50_000);
-                for identity in 1..=3 {
-                    assert!(matches!(
-                        Outbox::<_, VariableTypes, _>::new(scope, small_capacity, &FixtureBindings)
-                            .enqueue(
-                                variable_item(identity, "small"),
-                                peer(3),
-                                fleet_sync_delivery::Submitter::Machine(peer(1)),
-                                SyncTime::from_unix_millis(0)
-                            )
-                            .await
-                            .map_err(storage_error)?,
-                        OutboxAdmission::Queued { .. }
-                    ));
-                    assert!(matches!(
-                        Mailbox::<_, VariableTypes>::new(scope, peer(2), small_capacity)
-                            .submit(
-                                peer(1),
-                                DeliveryEnvelope::Item(variable_item(identity, "small")),
-                                now(),
-                                "route".into(),
-                                None
-                            )
-                            .await
-                            .map_err(storage_error)?,
-                        SubmitResult::Accepted { .. }
-                    ));
-                }
-                assert!(matches!(
-                    Outbox::<_, VariableTypes, _>::new(scope, small_capacity, &FixtureBindings)
-                        .enqueue(
-                            variable_item(4, "large"),
-                            peer(3),
-                            fleet_sync_delivery::Submitter::Machine(peer(1)),
-                            SyncTime::from_unix_millis(0)
-                        )
-                        .await
-                        .map_err(storage_error)?,
-                    OutboxAdmission::Refused {
-                        reason: DeliveryRefusal::MailboxFull
+    for sender in [true, false] {
+        let fixture = Fixture::new().await;
+        fixture
+            .store
+            .transaction(move |scope| {
+                Box::pin(async move {
+                    let configured = variable_limits(50_000);
+                    for identity in 1..=3 {
+                        let mut outbox =
+                            Outbox::<_, VariableTypes, _>::new(scope, configured, &FixtureBindings);
+                        if sender {
+                            assert!(matches!(
+                                outbox
+                                    .enqueue(
+                                        variable_item(identity, "small"),
+                                        peer(3),
+                                        Submitter::Machine(peer(1)),
+                                        now()
+                                    )
+                                    .await
+                                    .map_err(storage_error)?,
+                                OutboxAdmission::Queued { .. }
+                            ));
+                        } else {
+                            assert!(matches!(
+                                outbox
+                                    .submit_relay::<FixturePush<VariableTypes>, RecordRemoval>(
+                                        Submitter::Machine(peer(1)),
+                                        DeliveryEnvelope::Item(variable_item(identity, "small")),
+                                        peer(3),
+                                        "route".into(),
+                                        now()
+                                    )
+                                    .await
+                                    .map_err(storage_error)?,
+                                SubmitResult::Accepted { .. }
+                            ));
+                        }
                     }
-                ));
-                assert!(matches!(
-                    Mailbox::<_, VariableTypes>::new(scope, peer(2), small_capacity)
-                        .submit(
-                            peer(1),
-                            DeliveryEnvelope::Item(variable_item(4, "large")),
-                            now(),
-                            "route".into(),
-                            None
-                        )
-                        .await
-                        .map_err(storage_error)?,
-                    SubmitResult::Refused {
-                        reason: DeliveryRefusal::MailboxFull
+                    let mut outbox =
+                        Outbox::<_, VariableTypes, _>::new(scope, configured, &FixtureBindings);
+                    if sender {
+                        assert!(matches!(
+                            outbox
+                                .enqueue(
+                                    variable_item(4, "large"),
+                                    peer(3),
+                                    Submitter::Machine(peer(1)),
+                                    now()
+                                )
+                                .await
+                                .map_err(storage_error)?,
+                            OutboxAdmission::Refused {
+                                reason: DeliveryRefusal::MailboxFull
+                            }
+                        ));
+                    } else {
+                        assert!(matches!(
+                            outbox
+                                .submit_relay::<FixturePush<VariableTypes>, RecordRemoval>(
+                                    Submitter::Machine(peer(1)),
+                                    DeliveryEnvelope::Item(variable_item(4, "large")),
+                                    peer(3),
+                                    "route".into(),
+                                    now()
+                                )
+                                .await
+                                .map_err(storage_error)?,
+                            SubmitResult::Refused {
+                                reason: DeliveryRefusal::MailboxFull
+                            }
+                        ));
                     }
-                ));
-                Ok(())
+                    Ok(())
+                })
             })
-        })
-        .await
-        .unwrap();
+            .await
+            .unwrap();
+    }
 }
 
 #[tokio::test]
@@ -101,15 +113,19 @@ async fn invalid_body_bound_is_refused_before_any_custody_write() {
                     Err(DeliveryError::Config(_))
                 ));
                 assert!(matches!(
-                    Mailbox::<_, VariableTypes>::new(scope, peer(2), variable_limits(100_000_000))
-                        .submit(
-                            peer(1),
-                            DeliveryEnvelope::Item(variable_item(1, "invalid")),
-                            now(),
-                            "route".into(),
-                            None
-                        )
-                        .await,
+                    Outbox::<_, VariableTypes, _>::new(
+                        scope,
+                        variable_limits(100_000_000),
+                        &FixtureBindings
+                    )
+                    .submit_relay::<FixturePush<VariableTypes>, RecordRemoval>(
+                        Submitter::Machine(peer(1)),
+                        DeliveryEnvelope::Item(variable_item(1, "invalid")),
+                        peer(3),
+                        "route".into(),
+                        now()
+                    )
+                    .await,
                     Err(DeliveryError::Config(_))
                 ));
                 let row = sqlx_core::query::query::<sqlx_turso::Turso>(
@@ -188,116 +204,40 @@ async fn stored_bound_rejects_oversized_acceptance_after_sender_and_relay_releas
 }
 
 #[tokio::test]
-async fn mixed_fetch_uses_actual_reserves_and_stops_exactly_at_room_boundary() {
+async fn pushed_items_use_actual_reserves_and_refuse_at_room_boundary() {
+    type Attempt = DeliverLocally<
+        TestStore,
+        sqlx_turso::Turso,
+        VariableTypes,
+        VariableConsumer,
+        FixtureBindings,
+    >;
+    type Report = ReportOutcome<TestStore, sqlx_turso::Turso, VariableTypes, FixtureBindings>;
     let fixture = Fixture::new().await;
-    fixture
-        .store
-        .transaction(|scope| {
-            Box::pin(async move {
-                let limits = variable_limits(100_000_000);
-                for (identity, body) in [(1, "small"), (2, "large"), (3, "small")] {
-                    Mailbox::<_, VariableTypes>::new(scope, peer(2), limits)
-                        .submit(
-                            peer(1),
-                            DeliveryEnvelope::Item(variable_item(identity, body)),
-                            now(),
-                            "route".into(),
-                            None,
-                        )
-                        .await
-                        .map_err(storage_error)?;
-                }
-                let rows = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT settlement_bytes FROM _fleet_sync_mail_items ORDER BY item_id",
-                )
-                .fetch_all(scope.executor())
-                .await?;
-                let mut first_two_room = 0;
-                for (index, body) in ["small", "large"].into_iter().enumerate() {
-                    let seq = index as u64 + 1;
-                    let entry = FetchEntry::Item {
-                        seq: DeliverySeq::new(seq),
-                        item: DeliveryEnvelope::Item(variable_item(seq, body)),
-                    };
-                    first_two_room += serde_json::to_vec(&entry).unwrap().len() as u64
-                        + rows[index].try_get::<i64, _>("settlement_bytes")? as u64;
-                }
-                let request = FetchInput {
-                    stream: DeliveryStream::Items,
-                    after: DeliverySeq::new(0),
-                    max_items: 10,
-                    max_bytes: 100_000_000,
-                    inbox_room_bytes: Some(first_two_room - 1),
-                };
-                let below = Mailbox::<_, VariableTypes>::new(scope, peer(2), limits)
-                    .fetch_with_budget(peer(2), request, now())
-                    .await
-                    .map_err(storage_error)?;
-                assert_eq!(below.entries.len(), 1);
-                let exact = Mailbox::<_, VariableTypes>::new(scope, peer(2), limits)
-                    .fetch_with_budget(
-                        peer(2),
-                        FetchInput {
-                            inbox_room_bytes: Some(first_two_room),
-                            ..request
-                        },
-                        now(),
-                    )
-                    .await
-                    .map_err(storage_error)?;
-                assert_eq!(exact.entries.len(), 2);
-                assert_eq!(exact.through, DeliverySeq::new(2));
-                let mut inbox =
-                    Inbox::<_, VariableTypes, _>::new(scope, peer(2), limits, &FixtureBindings);
-                let cycle = inbox
-                    .begin_receive(
-                        DeliveryStream::Items,
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?
-                    .unwrap();
-                let budget = inbox
-                    .receive_request(cycle, 10, 100_000_000)
-                    .await
-                    .map_err(storage_error)?;
-                assert_eq!(budget.max_items, 10);
-                assert_eq!(budget.inbox_room_bytes, Some(100_000_000));
-                let effects = inbox
-                    .store_batch(cycle, exact, &VariableConsumer, now())
-                    .await
-                    .map_err(storage_error)?;
-                assert_eq!(effects.attempts.len(), 2);
-                let rows = sqlx_core::query::query::<sqlx_turso::Turso>(include_str!(
-                    "../support/sql/read_inbox_headers.sql"
-                ))
-                .fetch_all(scope.executor())
-                .await?;
-                assert!(rows[0].try_get::<i64, _>("settlement_bytes")? < 50_000);
-                assert!(rows[1].try_get::<i64, _>("settlement_bytes")? > 1_049_600);
-                let header: serde_json::Value =
-                    serde_json::from_str(&rows[0].try_get::<String, _>("record")?).unwrap();
-                assert_eq!(header["acceptanceBound"], 64);
-                // A head item larger than total room stays unfetched, as with the legacy byte cap.
-                let stalled = Mailbox::<_, VariableTypes>::new(scope, peer(2), limits)
-                    .fetch_with_budget(
-                        peer(2),
-                        FetchInput {
-                            after: DeliverySeq::new(1),
-                            inbox_room_bytes: Some(50_000),
-                            ..request
-                        },
-                        now(),
-                    )
-                    .await
-                    .map_err(storage_error)?;
-                assert!(stalled.entries.is_empty());
-                assert_eq!(stalled.through, DeliverySeq::new(1));
-                Ok(())
-            })
-        })
-        .await
-        .unwrap();
+    fixture.store.transaction(|scope|Box::pin(async move {
+        let answer=Inbox::<_,VariableTypes,_>::new(scope,peer(2),variable_limits(100_000_000),&FixtureBindings)
+            .accept_push::<Attempt,Report,RecordRemoval,_>(Submitter::Machine(peer(1)),DeliveryEnvelope::Item(variable_item(1,"small")),peer(3),&VariableConsumer,now()).await.map_err(storage_error)?;
+        assert!(matches!(answer,PushResult::Accepted {..}));
+        let row=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT payload_bytes,settlement_charge_bytes,acceptance_bound FROM _fleet_sync_inbox_items").fetch_one(scope.executor()).await?;
+        let payload=row.try_get::<i64,_>("payload_bytes")?;
+        let reserve=row.try_get::<i64,_>("settlement_charge_bytes")?;
+        assert_eq!(row.try_get::<i64,_>("acceptance_bound")?,64);
+        assert!(u64::try_from(reserve).unwrap()<u64::from(minimum_settlement_allowance::<VariableTypes>().unwrap())/10,"small receipt uses its own bound, not the global ceiling");
+        let limited=variable_limits(u64::try_from(payload+reserve).unwrap());
+        for (identity,body) in [(2,"large"),(3,"small")] {
+            let refused=Inbox::<_,VariableTypes,_>::new(scope,peer(2),limited,&FixtureBindings)
+                .accept_push::<Attempt,Report,RecordRemoval,_>(Submitter::Machine(peer(1)),DeliveryEnvelope::Item(variable_item(identity,body)),peer(3),&VariableConsumer,now()).await.map_err(storage_error)?;
+            assert!(matches!(refused,PushResult::Refused {reason:DeliveryRefusal::MailboxFull}));
+        }
+        let row=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT count(*) AS rows FROM _fleet_sync_inbox_items").fetch_one(scope.executor()).await?;
+        assert_eq!(row.try_get::<i64,_>("rows")?,1);
+        let control=DeliveryCancel::<VariableTypes>::new(item_id(4),"sender".into(),Recipient {peer:peer(2),address:"inbox".into()},None,CancelBody {target:item_id(1)}).unwrap();
+        let accepted=Inbox::<_,VariableTypes,_>::new(scope,peer(2),limited,&FixtureBindings)
+            .accept_push::<Attempt,Report,RecordRemoval,_>(Submitter::Machine(peer(1)),DeliveryEnvelope::Cancel(control),peer(3),&VariableConsumer,now()).await.map_err(storage_error)?;
+        assert!(matches!(accepted,PushResult::Accepted {..}),"the original reserve still pays for its control at capacity");
+        assert!(matches!(Inbox::<_,VariableTypes,_>::new(scope,peer(2),limited,&FixtureBindings).local_outcome(item_id(1)).await.map_err(storage_error)?,Some(RecipientOutcome::Prevented {cancel}) if cancel==item_id(4)));
+        Ok(())
+    })).await.unwrap();
 }
 
 #[tokio::test]
@@ -401,51 +341,52 @@ async fn per_item_bound_survives_reopen_and_legacy_absence_uses_global() {
 }
 
 #[tokio::test]
-async fn relay_validates_stored_bound_after_received_releases_body() {
+async fn relay_validates_stored_bound_after_push_receipt_releases_body() {
     let fixture = Fixture::new().await;
     fixture
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let limits = variable_limits(100_000_000);
-                let mut mailbox = Mailbox::<_, VariableTypes>::new(scope, peer(2), limits);
-                mailbox
-                    .submit(
-                        peer(1),
-                        DeliveryEnvelope::Item(variable_item(1, "small")),
-                        now(),
-                        "route".into(),
-                        None,
-                    )
-                    .await
-                    .map_err(storage_error)?;
-                let batch = mailbox
-                    .fetch(
+                let configured = variable_limits(100_000_000);
+                let envelope = DeliveryEnvelope::Item(variable_item(1, "small"));
+                let reference = DeliveryItemRef {
+                    item: envelope.id(),
+                    digest: envelope.digest().clone(),
+                };
+                let mut relay =
+                    Outbox::<_, VariableTypes, _>::new(scope, configured, &FixtureBindings);
+                assert!(matches!(
+                    relay
+                        .submit_relay::<FixturePush<VariableTypes>, RecordRemoval>(
+                            Submitter::Machine(peer(1)),
+                            envelope,
+                            peer(3),
+                            "route".into(),
+                            now()
+                        )
+                        .await
+                        .map_err(storage_error)?,
+                    SubmitResult::Accepted { .. }
+                ));
+                relay
+                    .receipt::<FixturePublication<VariableTypes>>(
                         peer(2),
-                        DeliveryStream::Items,
-                        DeliverySeq::new(0),
-                        1,
-                        10_000,
+                        &reference,
+                        PushResult::Accepted { accepted_at: now() },
                         now(),
                     )
-                    .await
-                    .map_err(storage_error)?;
-                mailbox
-                    .received(peer(2), DeliveryStream::Items, batch.through, now())
                     .await
                     .map_err(storage_error)?;
                 let row = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT record FROM _fleet_sync_mail_items",
+                    "SELECT payload,acceptance_bound FROM _fleet_sync_outbox_items",
                 )
                 .fetch_one(scope.executor())
                 .await?;
-                let record: serde_json::Value =
-                    serde_json::from_str(&row.try_get::<String, _>("record")?).unwrap();
-                assert!(record["value"]["payload"].is_null());
-                assert_eq!(record["value"]["acceptanceBound"], 64);
+                assert!(row.try_get::<Option<String>, _>("payload")?.is_none());
+                assert_eq!(row.try_get::<i64, _>("acceptance_bound")?, 64);
                 assert!(matches!(
-                    Mailbox::<_, VariableTypes>::new(scope, peer(2), limits)
-                        .report(
+                    Outbox::<_, VariableTypes, _>::new(scope, configured, &FixtureBindings)
+                        .recipient_report::<FixturePublication<VariableTypes>>(
                             peer(2),
                             RecipientReport {
                                 item: item_id(1),
@@ -456,7 +397,7 @@ async fn relay_validates_stored_bound_after_received_releases_body() {
                                     }
                                 }
                             },
-                            fleet_sync_protocol::SyncTime::from_unix_millis(0)
+                            now()
                         )
                         .await,
                     Err(DeliveryError::Refused {
@@ -474,28 +415,109 @@ async fn relay_validates_stored_bound_after_received_releases_body() {
 
 #[tokio::test]
 async fn cancel_consumes_original_small_reserve_without_global_charge() {
-    let fixture = Fixture::new().await;
-    fixture.store.transaction(|scope| Box::pin(async move {
-        let limits=variable_limits(50_000);
-        Outbox::<_,VariableTypes, _>::new(scope,limits, &FixtureBindings).enqueue(variable_item(1,"small"), peer(3), fleet_sync_delivery::Submitter::Machine(peer(1)), SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
-        Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).submit(peer(1),DeliveryEnvelope::Item(variable_item(1,"small")),now(),"route".into(),None).await.map_err(storage_error)?;
-        for owner in ["outbox","mail"] {
-            let query=if owner=="outbox" { "SELECT settlement_bytes FROM _fleet_sync_outbox_items" } else { "SELECT settlement_bytes FROM _fleet_sync_mail_items" };
-            let before=sqlx_core::query::query::<sqlx_turso::Turso>(query).fetch_one(scope.executor()).await?.try_get::<i64,_>("settlement_bytes")?;
-            let control=DeliveryCancel::<VariableTypes>::new(item_id(2),"sender".into(),Recipient {peer:peer(2),address:"inbox".into()},None,CancelBody { target:item_id(1) }).unwrap();
-            let charge=serde_json::to_vec(&DeliveryEnvelope::Cancel(DeliveryCancel::<VariableTypes>::new(item_id(2),"sender".into(),Recipient {peer:peer(2),address:"inbox".into()},None,CancelBody { target:item_id(1) }).unwrap())).unwrap().len() as i64;
-            if owner=="outbox" { assert!(matches!(Outbox::<_,VariableTypes, _>::new(scope,limits, &FixtureBindings).enqueue_cancel(control, peer(3), fleet_sync_delivery::Submitter::Machine(peer(1)), SyncTime::from_unix_millis(0), &VariableConsumer).await.map_err(storage_error)?,OutboxAdmission::Queued { .. })); }
-            else { assert!(matches!(Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).submit(peer(1),DeliveryEnvelope::Cancel(control),now(),"route".into(),None).await.map_err(storage_error)?,SubmitResult::Accepted { .. })); }
-            let query=if owner=="outbox" { include_str!("../support/sql/read_outbox_headers.sql") } else { "SELECT settlement_bytes,record FROM _fleet_sync_mail_items ORDER BY item_id" };
-            let rows=sqlx_core::query::query::<sqlx_turso::Turso>(query).fetch_all(scope.executor()).await?;
-            assert_eq!(rows.len(),2);
-            // The withdrawn sender's SQL charge is zero; its durable balance still pays the control.
-            let original:serde_json::Value=serde_json::from_str(&rows[0].try_get::<String,_>("record")?).unwrap();
-            assert_eq!(original["value"]["settlementBytes"],before-charge);
-            assert_eq!(rows[1].try_get::<i64,_>("settlement_bytes")?,0);
-            let cancel:serde_json::Value=serde_json::from_str(&rows[1].try_get::<String,_>("record")?).unwrap();
-            assert_eq!(cancel["value"]["acceptanceBound"],64);
-        }
-        Ok(())
-    })).await.unwrap();
+    for sender in [true, false] {
+        let fixture = Fixture::new().await;
+        fixture
+            .store
+            .transaction(move |scope| {
+                Box::pin(async move {
+                    let configured = variable_limits(50_000);
+                    let mut outbox =
+                        Outbox::<_, VariableTypes, _>::new(scope, configured, &FixtureBindings);
+                    if sender {
+                        outbox
+                            .enqueue(
+                                variable_item(1, "small"),
+                                peer(3),
+                                Submitter::Machine(peer(1)),
+                                now(),
+                            )
+                            .await
+                            .map_err(storage_error)?;
+                    } else {
+                        outbox
+                            .submit_relay::<FixturePush<VariableTypes>, RecordRemoval>(
+                                Submitter::Machine(peer(1)),
+                                DeliveryEnvelope::Item(variable_item(1, "small")),
+                                peer(3),
+                                "route".into(),
+                                now(),
+                            )
+                            .await
+                            .map_err(storage_error)?;
+                    }
+                    let before = sqlx_core::query::query::<sqlx_turso::Turso>(
+                        "SELECT settlement_bytes FROM _fleet_sync_outbox_items",
+                    )
+                    .fetch_one(scope.executor())
+                    .await?
+                    .try_get::<i64, _>("settlement_bytes")?;
+                    let control = DeliveryEnvelope::Cancel(
+                        DeliveryCancel::<VariableTypes>::new(
+                            item_id(2),
+                            "sender".into(),
+                            Recipient {
+                                peer: peer(2),
+                                address: "inbox".into(),
+                            },
+                            None,
+                            CancelBody { target: item_id(1) },
+                        )
+                        .unwrap(),
+                    );
+                    let charge =
+                        i64::try_from(serde_json::to_vec(&control).unwrap().len()).unwrap();
+                    let mut outbox =
+                        Outbox::<_, VariableTypes, _>::new(scope, configured, &FixtureBindings);
+                    if sender {
+                        let DeliveryEnvelope::Cancel(control) = control else {
+                            return Err(durable_steps::StoreError::backend("fixture control"));
+                        };
+                        assert!(matches!(
+                            outbox
+                                .enqueue_cancel(
+                                    control,
+                                    peer(3),
+                                    Submitter::Machine(peer(1)),
+                                    now(),
+                                    &VariableConsumer
+                                )
+                                .await
+                                .map_err(storage_error)?,
+                            OutboxAdmission::Queued { .. }
+                        ));
+                    } else {
+                        assert!(matches!(
+                            outbox
+                                .submit_relay::<FixturePush<VariableTypes>, RecordRemoval>(
+                                    Submitter::Machine(peer(1)),
+                                    control,
+                                    peer(3),
+                                    "route".into(),
+                                    now()
+                                )
+                                .await
+                                .map_err(storage_error)?,
+                            SubmitResult::Accepted { .. }
+                        ));
+                    }
+                    let rows = sqlx_core::query::query::<sqlx_turso::Turso>(include_str!(
+                        "../support/sql/read_outbox_headers.sql"
+                    ))
+                    .fetch_all(scope.executor())
+                    .await?;
+                    assert_eq!(rows.len(), 2);
+                    let original: serde_json::Value =
+                        serde_json::from_str(&rows[0].try_get::<String, _>("record")?).unwrap();
+                    assert_eq!(original["value"]["settlementBytes"], before - charge);
+                    assert_eq!(rows[1].try_get::<i64, _>("settlement_bytes")?, 0);
+                    let control: serde_json::Value =
+                        serde_json::from_str(&rows[1].try_get::<String, _>("record")?).unwrap();
+                    assert_eq!(control["value"]["acceptanceBound"], 64);
+                    Ok(())
+                })
+            })
+            .await
+            .unwrap();
+    }
 }

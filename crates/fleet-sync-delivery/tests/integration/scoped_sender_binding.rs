@@ -337,7 +337,6 @@ async fn failed_rollback_never_claims_a_binding_is_safe_to_refresh() {
 async fn submit_dispatch_binding_miss_retries_without_settling_the_fleet_custody() {
     use std::sync::atomic::Ordering;
     let network = NetworkFixture::new().await;
-    network.routes.fleet_push.store(true, Ordering::SeqCst);
     *network.routes.authenticated_submitter.lock().unwrap() = Submitter::Machine(peer(9));
     let reference = network
         .sender
@@ -366,7 +365,7 @@ async fn submit_dispatch_binding_miss_retries_without_settling_the_fleet_custody
         })
         .await
         .unwrap();
-    let before = counts(&network.mailbox.store).await;
+    let before = counts(&network.relay.store).await;
     let answer = network
         .routes
         .dispatch(
@@ -380,7 +379,7 @@ async fn submit_dispatch_binding_miss_retries_without_settling_the_fleet_custody
     assert!(
         matches!(answer,Err(durable_steps::CallFailure::Retryable {reason}) if reason.code=="senderBindingUnknown")
     );
-    assert_eq!(counts(&network.mailbox.store).await, before);
+    assert_eq!(counts(&network.relay.store).await, before);
     assert_eq!(network.routes.settlements.load(Ordering::SeqCst), 0);
 }
 

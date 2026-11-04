@@ -65,7 +65,7 @@
     "migrations/0009_typed_report_records.sql": "c0e2513ebbaee9d5dddd9142dca9502993d64acaa9be10a37f0392b6d137b5fc",
     "migrations/0010_restore_status_owed_machine_index.sql": "0d5e0879dfcf320b8b0d37b16ff28e7974cf0d504f76aa93c7124b4d773173aa",
     "migrations/0011_delivery_backfill_markers.sql": "f1b81fb66ae8f5ef044238710f0dbda7dc44253019637a8587e71e82a2129f9a",
-    "sql/read_delivery_snapshot.sql": "249e30fbde3c8df651162db45e365c9e480d21acd874a2de76054924330d81fc",
+    "sql/read_delivery_snapshot.sql": "474a5aa3bc11f75ace8c183f63a5e07a5e7db8b33833ff8cd13f58dc945af676",
     "src/checked_inspection_queries.rs": "234763ffc60fb2cf96f98724a04240ca677129331bb6bc4fceb06b50a2af478f"
   },
   "queries_digest": "c392e5d173c94753f3c98f280b86f48b862a06242132a71391a0f25f7e4a00be",

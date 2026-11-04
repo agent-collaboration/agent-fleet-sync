@@ -32,7 +32,6 @@ fn envelope() -> DeliveryItem<TestTypes> {
 async fn cold_recipient_signals_refresh_outside_custody_before_any_timer_then_retries_real_push_once()
  {
     let network = NetworkFixture::new().await;
-    network.routes.fleet_push.store(true, Ordering::SeqCst);
     *network.routes.authenticated_submitter.lock().unwrap() = Submitter::Machine(peer(9));
     network.routes.publications.register(
         "fixture-route",
@@ -40,14 +39,14 @@ async fn cold_recipient_signals_refresh_outside_custody_before_any_timer_then_re
         &network.sender.store,
         &network.status.store,
     );
-    for fixture in [&network.sender, &network.mailbox, &network.recipient] {
+    for fixture in [&network.sender, &network.relay, &network.recipient] {
         fixture
             .store
             .transaction(|scope| Box::pin(async move { create_binding_directory(scope).await }))
             .await
             .unwrap();
     }
-    for fixture in [&network.sender, &network.mailbox] {
+    for fixture in [&network.sender, &network.relay] {
         fixture
             .store
             .transaction(|scope| {
@@ -102,7 +101,7 @@ async fn cold_recipient_signals_refresh_outside_custody_before_any_timer_then_re
             .await
             .unwrap();
     });
-    let relay_engine = network.engine(&network.mailbox);
+    let relay_engine = network.engine(&network.relay);
     let first = relay_engine.drive_due().await.unwrap();
     assert_eq!(first.retried.len(), 1);
     assert!(first.failed.is_empty());
@@ -115,8 +114,8 @@ async fn cold_recipient_signals_refresh_outside_custody_before_any_timer_then_re
         0,
         "refresh must not depend on a timer tick"
     );
-    let operation = push_operation(&network.mailbox.store).await;
-    network.mailbox.store.transaction(move|scope|Box::pin(async move {
+    let operation = push_operation(&network.relay.store).await;
+    network.relay.store.transaction(move|scope|Box::pin(async move {
         assert!(matches!(scope.step(operation,0).await?.unwrap().state,StepState::CallPending {attempt,..} if attempt.reach==CallReach::NoEffect));
         let row=query::<Turso>("SELECT payload,status_kind FROM _fleet_sync_outbox_items").fetch_one(scope.executor()).await?;
         assert!(row.try_get::<Option<String>,_>("payload")?.is_some()); assert_eq!(row.try_get::<String,_>("status_kind")?,"sent"); Ok(())

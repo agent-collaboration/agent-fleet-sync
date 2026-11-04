@@ -5,7 +5,6 @@ pub mod interleaving;
 pub mod legacy_submitters;
 pub mod network;
 pub mod publication_network;
-pub mod publication_order;
 pub mod push_checkpoint;
 pub mod push_expiry;
 pub mod sender_binding;
@@ -26,6 +25,32 @@ use std::sync::{
 
 pub type TestStore = TursoStore<TestHost>;
 pub type RecordRemoval = RemoveDeliveryRecord<TestStore, sqlx_turso::Turso>;
+pub type FixturePublication<D> = PublishStatus<TestStore, sqlx_turso::Turso, D>;
+pub type FixturePush<D> =
+    PushItem<TestStore, sqlx_turso::Turso, D, FixturePublication<D>, FixtureBindings>;
+pub async fn accept_fixture_push<C>(
+    scope: &mut durable_steps::turso_store::TursoScope<'_, TestHost>,
+    configured: DeliveryLimits,
+    envelope: DeliveryEnvelope<TestTypes>,
+    consumer: &C,
+    now: SyncTime,
+) -> Result<PushResult<Acceptance>, DeliveryError>
+where
+    C: Send + Sync + 'static,
+    for<'transaction> C: DeliveryConsumer<
+            durable_steps::turso_store::TursoScope<'transaction, TestHost>,
+            Protocol = TestProtocol,
+        >,
+{
+    Inbox::<_, TestTypes, _>::new(scope, peer(2), configured, &FixtureBindings)
+        .accept_push::<
+            DeliverLocally<TestStore, sqlx_turso::Turso, TestTypes, C, FixtureBindings>,
+            network::ReportTask,
+            RecordRemoval,
+            _,
+        >(Submitter::Machine(peer(1)), envelope, peer(3), consumer, now)
+        .await
+}
 pub struct TestTypes;
 pub struct TestProtocol;
 impl ConsumerProtocol for TestProtocol {
@@ -178,22 +203,14 @@ pub fn limits() -> DeliveryLimits {
         100_000,
         20,
         100_000,
-        20,
-        100_000,
         minimum_settlement_allowance::<TestTypes>().unwrap(),
     )
     .unwrap()
 }
-pub fn configured_limits(
-    mailbox_bytes: u64,
-    mailbox_items: u64,
-    inbox_bytes: u64,
-) -> DeliveryLimits {
+pub fn configured_limits(outbox_bytes: u64, outbox_items: u64, inbox_bytes: u64) -> DeliveryLimits {
     DeliveryLimits::new::<TestTypes>(
-        mailbox_bytes,
-        mailbox_items,
-        100_000,
-        20,
+        outbox_bytes,
+        outbox_items,
         inbox_bytes,
         minimum_settlement_allowance::<TestTypes>().unwrap(),
     )

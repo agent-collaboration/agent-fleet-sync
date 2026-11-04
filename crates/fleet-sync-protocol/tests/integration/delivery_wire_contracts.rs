@@ -6,8 +6,8 @@ const ITEM: &str = "01900000-0000-7000-8000-000000000001";
 const PEER: &str = "019eef00-0000-7000-8000-000000000002";
 
 #[test]
-fn an_unavailable_mailbox_is_distinct_from_an_item_refusal() {
-    let wire = json!({"kind":"delivery","value":{"kind":"mailboxUnavailable","value":{
+fn an_unavailable_delivery_owner_is_distinct_from_an_item_refusal() {
+    let wire = json!({"kind":"delivery","value":{"kind":"deliveryUnavailable","value":{
         "reason":{"kind":"processingFailed","value":{"kind":"custodyCorrupt"}}
     }}});
     let decoded = serde_json::from_value::<OperationAnswer>(wire.clone());
@@ -27,19 +27,17 @@ fn call() -> Value {
 
 // Literal wire contracts are the oracle, including the required Settle claim.
 #[test]
-fn all_eight_delivery_request_bodies_cross_the_operation_envelope() {
+fn all_current_delivery_request_bodies_cross_the_operation_envelope() {
     let requests = [
         json!({"kind":"submit","value":{"call":call(),"item":{"kind":"item","value":{
             "id":ITEM,"sender":{"kind":"machine","value":"019eef00-0000-7000-8000-000000000001"},"recipient":{"peer":PEER,"address":null},
             "validUntil":null,"body":null,
             "digest":"0b7f9c7c2a2a8e71b3220266466dd262a878ca97fae28786dbbe6686b8964da0"
         }}}}),
-        json!({"kind":"fetch","value":{"call":call(),"stream":"items","after":0,"maxItems":4,"maxBytes":4096}}),
-        json!({"kind":"received","value":{"call":call(),"stream":"controls","through":9}}),
         json!({"kind":"report","value":{"call":call(),"report":{"item":ITEM,"reportSeq":2,"outcome":{"kind":"delivered","value":{"acceptance":null}}}}}),
         json!({"kind":"statusFetch","value":{"call":call(),"after":7,"limit":4}}),
+        json!({"kind":"statusAck","value":{"call":call(),"through":7}}),
         json!({"kind":"query","value":{"call":call(),"mailbox":PEER,"items":[ITEM]}}),
-        json!({"kind":"retire","value":{"call":call(),"mailbox":PEER,"items":[ITEM]}}),
         json!({"kind":"settle","value":{"call":call(),"mailbox":PEER,"submitter":{"kind":"machine","value":PEER},"item":ITEM,"digest":"0b7f9c7c2a2a8e71b3220266466dd262a878ca97fae28786dbbe6686b8964da0"}}),
     ];
     let mut failures = Vec::new();
@@ -54,16 +52,13 @@ fn all_eight_delivery_request_bodies_cross_the_operation_envelope() {
 }
 
 #[test]
-fn all_eight_delivery_answers_preserve_their_typed_bodies() {
+fn all_current_delivery_answers_preserve_their_typed_bodies() {
     let answers = [
+        json!({"kind":"statusAck","value":{"kind":"acknowledged","value":{"floor":7}}}),
         json!({"kind":"submit","value":{"kind":"accepted","value":{"status":{"kind":"sent"},"version":1,"cancel":null}}}),
-        json!({"kind":"fetch","value":{"stream":"controls","entries":[{"kind":"retired","value":{"seq":2,"items":[ITEM]}}],"through":2}}),
-        json!({"kind":"received","value":{"stream":"controls","releasedThrough":2}}),
         json!({"kind":"report","value":{"kind":"ack","value":{"reportSeq":2}}}),
         json!({"kind":"statusFetch","value":{"events":[{"cursor":5,"item":ITEM,"status":{"kind":"held"},"version":3,"cancel":null}],"through":5}}),
         json!({"kind":"query","value":{"statuses":[{"item":ITEM,"state":{"kind":"known","value":{"digest":"0b7f9c7c2a2a8e71b3220266466dd262a878ca97fae28786dbbe6686b8964da0","status":{"kind":"held"},"version":3,"cancel":null}}}]}}),
-        json!({"kind":"retire","value":{"retired":[ITEM],"unknown":[],"notCurrentTarget":[]}}),
-        json!({"kind":"retire","value":{"retired":[],"unknown":[],"notCurrentTarget":[ITEM]}}),
         json!({"kind":"settle","value":{"kind":"settled","value":{"reason":"custodyUnresolvable","version":1}}}),
         json!({"kind":"settle","value":{"kind":"replayed","value":{"status":{"kind":"held"},"version":3,"cancel":null}}}),
         json!({"kind":"settle","value":{"kind":"itemConflict","value":{"existing":"0b7f9c7c2a2a8e71b3220266466dd262a878ca97fae28786dbbe6686b8964da0"}}}),

@@ -160,50 +160,29 @@ pub(crate) async fn read_committed_state(fixture: &Fixture) -> CommittedState {
         .unwrap()
 }
 
-pub(crate) fn projection_batch(envelope: DeliveryEnvelope<TestTypes>) -> FetchResult<TestTypes> {
-    FetchResult {
-        stream: envelope.stream(),
-        entries: vec![FetchEntry::Item {
-            seq: DeliverySeq::new(1),
-            item: envelope,
-        }],
-        through: DeliverySeq::new(1),
-    }
-}
-
-pub(crate) async fn receive_projection_item(
+pub(crate) async fn push_projection_item(
     fixture: &Fixture,
     consumer: Arc<ProjectionConsumer>,
     envelope: DeliveryEnvelope<TestTypes>,
     abort: bool,
-) -> Result<ReceiveInput, StoreError> {
+) -> Result<PushResult<Acceptance>, StoreError> {
     fixture
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut inbox =
-                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
-                let input = inbox
-                    .begin_receive(
-                        envelope.stream(),
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?
-                    .unwrap();
-                inbox
-                    .store_batch(
-                        input,
-                        projection_batch(envelope),
-                        consumer.as_ref(),
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
+                let answer = accept_fixture_push(
+                    scope,
+                    limits(),
+                    envelope,
+                    consumer.as_ref(),
+                    SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)?;
                 if abort {
                     return Err(StoreError::backend("abort after custody and projections"));
                 }
-                Ok(input)
+                Ok(answer)
             })
         })
         .await

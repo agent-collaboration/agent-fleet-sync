@@ -209,32 +209,6 @@ where
             .ok_or(DeliveryError::CustodyMissing)?;
         self.save_header(header, row.payload, now).await
     }
-    pub(crate) async fn state(&mut self) -> Result<InboxState, DeliveryError> {
-        let state: InboxState = match queries::read_inbox_state(self.scope)
-            .await
-            .map_err(sql_error)?
-        {
-            Some(row) => decode(row.record, "inbox state")?,
-            None => InboxState::new(self.owner),
-        };
-        state.validate(self.owner)?;
-        Ok(state)
-    }
-    pub(crate) async fn save_state(
-        &mut self,
-        state: &InboxState,
-        now: SyncTime,
-    ) -> Result<(), DeliveryError> {
-        state.validate(self.owner)?;
-        queries::write_inbox_state(
-            self.scope,
-            encode(state)?,
-            now.unix_millis().to_string(),
-            now.unix_millis().to_string(),
-        )
-        .await
-        .map_err(sql_error)
-    }
     pub async fn resolve_delivery(
         &mut self,
         reference: &DeliveryItemRef,

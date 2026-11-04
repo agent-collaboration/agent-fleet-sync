@@ -22,8 +22,6 @@ pub fn delivery_limits() -> Result<DeliveryLimits, DeliveryConfigError> {
         10_000_000,
         200,
         10_000_000,
-        200,
-        10_000_000,
         minimum_settlement_allowance::<SampleDelivery>()?,
     )
 }

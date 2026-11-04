@@ -139,53 +139,7 @@ impl CallRouter for NodeRouter {
                     }),
                 }
             }
-            FetchCall::<SampleDelivery>::KIND => {
-                let target: FetchCall<SampleDelivery> = decoded(target)?;
-                if target.mailbox != config.owner
-                    || target.relay != state.remote_config().map_err(|_| unreachable())?.relay
-                {
-                    return Err(unreachable());
-                }
-                let request: FetchInput = decoded(request)?;
-                let answer = state
-                    .link
-                    .request(DeliveryRequest::Fetch {
-                        call,
-                        stream: request.stream,
-                        after: request.after,
-                        max_items: request.max_items,
-                        max_bytes: request.max_bytes,
-                        inbox_room_bytes: request.inbox_room_bytes,
-                    })
-                    .await?;
-                match answer {
-                    DeliveryAnswer::Fetch(answer) => encoded(answer),
-                    DeliveryAnswer::MailboxUnavailable { .. } => Err(CallFailure::AnswerLost),
-                    _ => Err(CallFailure::AnswerLost),
-                }
-            }
-            ReceivedCall::KIND => {
-                let target: ReceivedCall = decoded(target)?;
-                if target.mailbox != config.owner
-                    || target.relay != state.remote_config().map_err(|_| unreachable())?.relay
-                {
-                    return Err(unreachable());
-                }
-                let request: ReceiptInput = decoded(request)?;
-                let answer = state
-                    .link
-                    .request(DeliveryRequest::Received {
-                        call,
-                        stream: request.stream,
-                        through: request.through,
-                    })
-                    .await?;
-                match answer {
-                    DeliveryAnswer::Received(answer) => encoded(answer),
-                    DeliveryAnswer::MailboxUnavailable { .. } => Err(CallFailure::AnswerLost),
-                    _ => Err(CallFailure::AnswerLost),
-                }
-            }
+
             ReportCall::<SampleDelivery>::KIND => {
                 let target: ReportCall<SampleDelivery> = decoded(target)?;
                 if target.mailbox != config.owner

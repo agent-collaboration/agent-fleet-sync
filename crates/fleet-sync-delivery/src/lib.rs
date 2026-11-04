@@ -20,20 +20,13 @@ mod delivery_calls;
 mod delivery_contract;
 mod delivery_rollback;
 mod inbox_cancellation;
-mod inbox_cycles;
 mod inbox_delivery;
 mod inbox_local;
 mod inbox_push;
-mod inbox_receive;
 mod inbox_record;
 mod inbox_retirement;
 mod inbox_row;
 mod inbox_storage;
-mod mail_storage;
-mod mailbox_custody;
-mod mailbox_deadlines;
-mod mailbox_failure;
-mod mailbox_rules;
 mod outbox_record;
 mod outbox_rules;
 mod outbox_status;
@@ -56,14 +49,10 @@ pub use delivery_rollback::{
 pub use fleet_sync_protocol::*;
 pub use inbox_record::{
     DeliveryAttempt, DeliveryCheck, InboxEffects, LocalCancelAdmission, LocalItemAdmission,
-    ReceiveInput, ReportRef, ResolvedDelivery,
+    ReportRef, ResolvedDelivery,
 };
 pub use inbox_retirement::{LocalRetirement, LocalRetirementRefusal};
 pub use inbox_storage::Inbox;
-pub use mailbox_failure::{
-    MailboxCorruption, MailboxFailureDisposition, MailboxOperation, mailbox_failure_disposition,
-};
-pub use mailbox_rules::Mailbox;
 pub use outbox_record::{
     OutboxAdmission, OutboxStatus, OutboxStatusState, ResolvedPush, ResolvedSubmit, SubmitInput,
 };
@@ -82,9 +71,6 @@ pub use deliver_task::DeliverLocally;
 pub use publication_task::PublishStatus;
 pub use report_task::ReportOutcome;
 
-mod receive_task;
-pub use receive_task::ReceiveItems;
-
 mod submit_task;
 pub use submit_task::SubmitItem;
 mod push_task;
@@ -93,14 +79,14 @@ pub use push_task::{PushCall, PushItem};
 mod outbox_admission;
 mod outbox_relay;
 mod record_retention;
+mod relay_schema;
 mod relay_sender_authority;
 pub use outbox_record::PushInput;
 pub use record_retention::{
     DELIVERY_RETENTION_MILLIS, RemoveDeliveryRecord, admit_existing_record_removals,
     admit_record_removal, item_is_too_old, removal_deadline,
 };
-
-mod mailbox_settlement;
+pub use relay_schema::retire_relay_host_tables;
 
 mod delivery_sizes;
 

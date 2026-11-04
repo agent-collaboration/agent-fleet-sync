@@ -1,6 +1,5 @@
 use crate::{
-    DeliveryConfigError, custody_record::*, delivery_sizes::canonical_size, inbox_record::*,
-    outbox_record::*, *,
+    DeliveryConfigError, delivery_sizes::canonical_size, inbox_record::*, outbox_record::*, *,
 };
 use serde::Serialize;
 
@@ -126,7 +125,6 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
         },
     ];
     let mut outbox_header = 0;
-    let mut mailbox_header = 0;
     let mut publication = 0;
     for status in statuses {
         let delivered = matches!(status, DeliveryStatus::Delivered { .. });
@@ -158,36 +156,6 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
             delivered,
             maximum,
         )?);
-        mailbox_header = mailbox_header.max(with_route::<D>(with_acceptance(
-            &MailRecord::<NoDelivery>::Live(LiveMail {
-                id: item,
-                digest: digest.clone(),
-                origin: peer,
-                status_target: CurrentStatusTarget {
-                    peer,
-                    route: (),
-                    rank: Some(u64::MAX),
-                },
-                stream: DeliveryStream::Controls,
-                seq: DeliverySeq::new(u64::MAX),
-                payload: None,
-                status: status.clone(),
-                version: StatusVersion::new(u64::MAX),
-                last_report_seq: ReportSeq::new(u64::MAX),
-                accepted_at: time,
-                fetched: false,
-                released_at: Some(time),
-                cancel: Some(CancelResult::TooLate {
-                    at: TooLateAt::Uncertain,
-                }),
-                cancel_target: Some(item),
-                acceptance_bound,
-                settlement_bytes: u32::MAX,
-                capacity_slot: false,
-            }),
-            delivered,
-            maximum,
-        )?)?);
         publication = publication.max(with_route::<D>(with_acceptance(
             &(
                 PublicationTarget::StatusStream {
@@ -270,8 +238,6 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
     }
     const PUBLISHED_STATUS_RANKS: u64 = 4;
     let retained_publications = 2 * PUBLISHED_STATUS_RANKS * publication;
-    let headers = (2 * outbox_header)
-        .max(2 * mailbox_header + retained_publications)
-        .max(2 * inbox_header + 2 * report);
+    let headers = (2 * outbox_header + retained_publications).max(2 * inbox_header + 2 * report);
     u32::try_from(headers + cancel_bytes).map_err(|_| DeliveryConfigError::ReserveOverflow)
 }

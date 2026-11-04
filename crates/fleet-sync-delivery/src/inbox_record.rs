@@ -279,14 +279,6 @@ pub(crate) enum ControlOutcome {
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ReceiveInput {
-    pub peer: PeerId,
-    pub stream: DeliveryStream,
-    pub cycle: ReceiveCycle,
-    pub after: DeliverySeq,
-}
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeliveryAttempt {
     pub item: ItemId,
     pub attempt: u64,
@@ -311,77 +303,6 @@ pub enum LocalItemAdmission {
 pub struct ReportRef {
     pub item: ItemId,
     pub report_seq: ReportSeq,
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct StreamState {
-    pub received: DeliverySeq,
-    pub acknowledged: DeliverySeq,
-    pub next_cycle: ReceiveCycle,
-    pub active: Option<ReceiveInput>,
-    pub rerun_requested: bool,
-}
-impl StreamState {
-    pub fn new() -> Self {
-        Self {
-            received: DeliverySeq::new(0),
-            acknowledged: DeliverySeq::new(0),
-            next_cycle: ReceiveCycle::new(1),
-            active: None,
-            rerun_requested: false,
-        }
-    }
-}
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct InboxState {
-    pub owner: PeerId,
-    pub items: StreamState,
-    pub controls: StreamState,
-}
-impl InboxState {
-    pub fn new(owner: PeerId) -> Self {
-        Self {
-            owner,
-            items: StreamState::new(),
-            controls: StreamState::new(),
-        }
-    }
-    pub fn stream(&mut self, stream: DeliveryStream) -> &mut StreamState {
-        match stream {
-            DeliveryStream::Items => &mut self.items,
-            DeliveryStream::Controls => &mut self.controls,
-        }
-    }
-    pub fn validate(&self, owner: PeerId) -> Result<(), DeliveryError> {
-        if owner != self.owner {
-            return Err(DeliveryError::Corrupt {
-                field: "inbox owner",
-            });
-        }
-        for (stream, state) in [
-            (DeliveryStream::Items, self.items),
-            (DeliveryStream::Controls, self.controls),
-        ] {
-            if state.acknowledged > state.received
-                || state.next_cycle.value() == 0
-                || state.next_cycle.value() > i64::MAX as u64
-                || state.active.is_some_and(|run| {
-                    run.peer != owner
-                        || run.stream != stream
-                        || run.cycle >= state.next_cycle
-                        || run.after > state.received
-                })
-                || state.rerun_requested && state.active.is_none()
-            {
-                return Err(DeliveryError::Corrupt {
-                    field: "inbox receive cycle",
-                });
-            }
-        }
-        Ok(())
-    }
 }
 
 /// A local cancel may replay another ID's canonical control for the same target.

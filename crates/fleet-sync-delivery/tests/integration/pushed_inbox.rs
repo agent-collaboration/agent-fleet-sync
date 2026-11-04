@@ -189,8 +189,6 @@ async fn wrong_machine_and_full_inbox_pushes_leave_no_custody_projection_or_atte
                     let tiny = DeliveryLimits::new::<TestTypes>(
                         100_000,
                         20,
-                        100_000,
-                        20,
                         1,
                         minimum_settlement_allowance::<TestTypes>().unwrap(),
                     )

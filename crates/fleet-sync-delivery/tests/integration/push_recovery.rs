@@ -88,12 +88,11 @@ async fn payload(store: &TestStore, table: &str) -> Option<String> {
 #[tokio::test]
 async fn lost_submit_and_push_answers_reopen_each_holder_and_keep_one_delivery() {
     let network = NetworkFixture::new().await;
-    network.routes.fleet_push.store(true, Ordering::SeqCst);
     network.routes.lose_submit.store(true, Ordering::SeqCst);
     network.enqueue(1, "one durable body").await;
     let NetworkFixture {
         mut sender,
-        mut mailbox,
+        mut relay,
         mut recipient,
         status,
         routes,
@@ -101,7 +100,7 @@ async fn lost_submit_and_push_answers_reopen_each_holder_and_keep_one_delivery()
     let first = engine(&sender).drive_due().await.unwrap();
     assert_eq!(first.retried.len(), 1);
     assert!(payload(&sender.store, "outbox").await.is_some());
-    assert!(payload(&mailbox.store, "outbox").await.is_some());
+    assert!(payload(&relay.store, "outbox").await.is_some());
     sender = reopened(sender).await;
     *routes.sender.lock().unwrap() = Arc::downgrade(&sender.store);
     routes
@@ -113,45 +112,42 @@ async fn lost_submit_and_push_answers_reopen_each_holder_and_keep_one_delivery()
         1
     );
     assert!(payload(&sender.store, "outbox").await.is_none());
-    mailbox = reopened(mailbox).await;
-    *routes.mailbox.lock().unwrap() = Arc::downgrade(&mailbox.store);
+    relay = reopened(relay).await;
+    *routes.relay.lock().unwrap() = Arc::downgrade(&relay.store);
     let reached = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Notify::new());
-    *routes.push_barrier.lock().unwrap() = Some(FetchBarrier {
+    *routes.push_barrier.lock().unwrap() = Some(PushBarrier {
         reached: reached.clone(),
         release,
     });
     let driver = tokio::spawn({
-        let engine = engine(&mailbox);
+        let engine = engine(&relay);
         async move { engine.drive_due().await }
     });
     tokio::time::timeout(Duration::from_secs(5), reached.notified())
         .await
         .unwrap();
     assert!(payload(&recipient.store, "inbox").await.is_some());
-    assert!(payload(&mailbox.store, "outbox").await.is_some());
+    assert!(payload(&relay.store, "outbox").await.is_some());
     driver.abort();
     assert!(driver.await.unwrap_err().is_cancelled());
     recipient = reopened(recipient).await;
     *routes.recipient.lock().unwrap() = Arc::downgrade(&recipient.store);
-    mailbox = reopened(mailbox).await;
-    *routes.mailbox.lock().unwrap() = Arc::downgrade(&mailbox.store);
-    mailbox.host.clock.store(100_000, Ordering::SeqCst);
-    assert_eq!(
-        engine(&mailbox).drive_due().await.unwrap().completed.len(),
-        1
-    );
-    assert!(payload(&mailbox.store, "outbox").await.is_none());
-    mailbox.store.transaction(|scope|Box::pin(async move {
+    relay = reopened(relay).await;
+    *routes.relay.lock().unwrap() = Arc::downgrade(&relay.store);
+    relay.host.clock.store(100_000, Ordering::SeqCst);
+    assert_eq!(engine(&relay).drive_due().await.unwrap().completed.len(), 1);
+    assert!(payload(&relay.store, "outbox").await.is_none());
+    relay.store.transaction(|scope|Box::pin(async move {
         let row=query::<Turso>("SELECT status_kind,(SELECT count(*) FROM _fleet_sync_status_owed) AS owed FROM _fleet_sync_outbox_items WHERE item_id=?1").bind(item_id(1).as_uuid().to_string()).fetch_one(scope.executor()).await?;
         assert_eq!(row.try_get::<String,_>("status_kind")?,"atRecipient");
         assert_eq!(row.try_get::<i64,_>("owed")?,1);
         Ok(())
     })).await.unwrap();
-    mailbox = reopened(mailbox).await;
-    *routes.mailbox.lock().unwrap() = Arc::downgrade(&mailbox.store);
+    relay = reopened(relay).await;
+    *routes.relay.lock().unwrap() = Arc::downgrade(&relay.store);
     routes.lose_publication.store(true, Ordering::SeqCst);
-    assert_eq!(engine(&mailbox).drive_due().await.unwrap().retried.len(), 1);
+    assert_eq!(engine(&relay).drive_due().await.unwrap().retried.len(), 1);
     sender
         .store
         .transaction(|scope| {
@@ -172,8 +168,8 @@ async fn lost_submit_and_push_answers_reopen_each_holder_and_keep_one_delivery()
         })
         .await
         .unwrap();
-    mailbox.host.clock.fetch_add(100_000, Ordering::SeqCst);
-    engine(&mailbox).drive_due().await.unwrap();
+    relay.host.clock.fetch_add(100_000, Ordering::SeqCst);
+    engine(&relay).drive_due().await.unwrap();
     recipient.host.clock.store(100_000, Ordering::SeqCst);
     routes.lose_delivery.store(true, Ordering::SeqCst);
     assert_eq!(
@@ -187,7 +183,7 @@ async fn lost_submit_and_push_answers_reopen_each_holder_and_keep_one_delivery()
         engine(&recipient).drive_due().await.unwrap();
     }
     for _ in 0..3 {
-        engine(&mailbox).drive_due().await.unwrap();
+        engine(&relay).drive_due().await.unwrap();
     }
     assert_eq!(routes.local_calls.load(Ordering::SeqCst), 1);
     sender
@@ -219,7 +215,6 @@ async fn no_capacity_push_retries_without_cached_answer_and_lands_once_after_cap
         storage::{JournalStorage, StepState},
     };
     let network = NetworkFixture::new().await;
-    network.routes.fleet_push.store(true, Ordering::SeqCst);
     let fill = network
         .recipient
         .store
@@ -264,7 +259,7 @@ async fn no_capacity_push_retries_without_cached_answer_and_lands_once_after_cap
         1
     );
     let push = network
-        .mailbox
+        .relay
         .store
         .transaction(|scope| {
             Box::pin(async move {
@@ -280,19 +275,19 @@ async fn no_capacity_push_retries_without_cached_answer_and_lands_once_after_cap
         })
         .await
         .unwrap();
-    let first = engine(&network.mailbox).drive_due().await.unwrap();
+    let first = engine(&network.relay).drive_due().await.unwrap();
     assert_eq!(
         first.retried,
         vec![push],
         "no-capacity Push was cached or failed terminally"
     );
     assert!(first.completed.is_empty() && first.failed.is_empty());
-    network.mailbox.store.transaction(move|scope|Box::pin(async move {
+    network.relay.store.transaction(move|scope|Box::pin(async move {
         let checkpoint=scope.step(push,0).await?.ok_or(durable_steps::StoreError::backend("missing push checkpoint"))?;
         assert!(matches!(checkpoint.state,StepState::CallPending {attempt,..} if attempt.retry_reason.as_ref().is_some_and(|reason|reason.code=="noCapacity")),"no-capacity answer was cached as CallDone");
         Ok(())
     })).await.unwrap();
-    assert!(payload(&network.mailbox.store, "outbox").await.is_some());
+    assert!(payload(&network.relay.store, "outbox").await.is_some());
     network
         .recipient
         .store
@@ -322,14 +317,10 @@ async fn no_capacity_push_retries_without_cached_answer_and_lands_once_after_cap
         .unwrap();
     network.advance();
     assert_eq!(
-        engine(&network.mailbox)
-            .drive_due()
-            .await
-            .unwrap()
-            .completed,
+        engine(&network.relay).drive_due().await.unwrap().completed,
         vec![push]
     );
-    assert!(payload(&network.mailbox.store, "outbox").await.is_none());
+    assert!(payload(&network.relay.store, "outbox").await.is_none());
     assert_eq!(
         engine(&network.recipient)
             .drive_due()
@@ -340,7 +331,7 @@ async fn no_capacity_push_retries_without_cached_answer_and_lands_once_after_cap
         1
     );
     engine(&network.recipient).drive_due().await.unwrap();
-    engine(&network.mailbox).drive_due().await.unwrap();
+    engine(&network.relay).drive_due().await.unwrap();
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
     network
         .recipient

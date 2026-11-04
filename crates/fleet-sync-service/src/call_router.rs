@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
-pub type ServiceHost = TokioHost<ServiceCalls>;
+pub type ServiceHost = TokioHost<ServiceCalls, crate::ServiceClock>;
 pub type ServiceObject = TokioObject<ServiceHost>;
 pub type ServiceScope<'transaction> = TursoScope<'transaction, ServiceHost>;
 

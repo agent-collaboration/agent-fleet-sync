@@ -1,96 +1,37 @@
-use crate::{ServiceConsumer, ServiceError, ServiceHandle, delivery_owner::DeliveryObject};
+use crate::{ServiceConsumer, ServiceError, ServiceHandle};
 use fleet_sync_delivery::test_support::{DeliveryObservation, snapshot};
-use fleet_sync_protocol::{ConsumerProtocol, PeerId};
+use fleet_sync_protocol::{ConsumerProtocol, DeliveryTypes};
 use fleet_sync_session::PeerAuthenticator;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct DeliveryServiceSnapshot {
-    pub mailbox: Vec<DeliveryObservation>,
-    pub origin: Vec<DeliveryObservation>,
+    pub relay: Vec<DeliveryObservation>,
 }
 impl<
     P: ConsumerProtocol,
     C: ServiceConsumer<P>,
-    A: PeerAuthenticator<
-            Material = String,
-            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
-        >,
+    A: PeerAuthenticator<Material = String, Route = <P::Delivery as DeliveryTypes>::StatusRoute>,
 > ServiceHandle<P, C, A>
 {
-    /// Observe a registered mailbox's successful native acquisition, without initializing it.
-    pub async fn wait_delivery_owner(&self, mailbox: PeerId) -> Result<(), ServiceError> {
-        let slot = self
-            .state
-            .delivery
-            .lock()
-            .await
-            .get(&DeliveryObject::Mailbox(mailbox))
-            .cloned()
-            .ok_or_else(|| ServiceError::rule("delivery mailbox is not registered"))?;
-        let mut acquired = slot.acquired.subscribe();
-        loop {
-            if slot.owner.get().is_some() {
-                return Ok(());
-            }
-            acquired.changed().await.map_err(ServiceError::rule)?;
-        }
+    pub async fn wake_delivery(&self) -> Result<(), ServiceError> {
+        use runtime_primitives::{Clock, WakeScheduler};
+        let host = self.state.registry.host();
+        host.wake_at(host.now()).await.map_err(ServiceError::rule)
     }
-
-    /// Immediate test-only read through acquired owners. Wait for an inventoried
-    /// mailbox with `wait_delivery_owner` before requiring its rows after restart.
-    /// No peer frames expose either observation seam.
-    pub async fn delivery_snapshot(
-        &self,
-        mailbox: PeerId,
-        origin: PeerId,
-    ) -> Result<DeliveryServiceSnapshot, ServiceError> {
-        let (mailbox, origin) = {
-            let owners = self.state.delivery.lock().await;
-            (
-                owners
-                    .get(&DeliveryObject::Mailbox(mailbox))
-                    .and_then(|slot| slot.owner.get())
-                    .cloned(),
-                owners
-                    .get(&DeliveryObject::Status(
-                        fleet_sync_protocol::Submitter::Machine(origin),
-                    ))
-                    .and_then(|slot| slot.owner.get())
-                    .cloned(),
-            )
-        };
-        Ok(DeliveryServiceSnapshot {
-            mailbox: match mailbox {
-                Some(owner) => {
-                    let binding = self.state.consumer.clone();
-                    owner
-                        .object
-                        .rule_transaction(move |scope| {
-                            Box::pin(async move {
-                                snapshot::<_, P::Delivery, _>(scope, binding.as_ref()).await
-                            })
-                        })
-                        .await
-                        .map_err(ServiceError::rule)?
-                }
-                None => Vec::new(),
-            },
-            origin: match origin {
-                Some(owner) => {
-                    let binding = self.state.consumer.clone();
-                    owner
-                        .object
-                        .rule_transaction(move |scope| {
-                            Box::pin(async move {
-                                snapshot::<_, P::Delivery, _>(scope, binding.as_ref()).await
-                            })
-                        })
-                        .await
-                        .map_err(ServiceError::rule)?
-                }
-                None => Vec::new(),
-            },
-        })
+    /// Read committed relay custody and status through their one existing owner.
+    pub async fn delivery_snapshot(&self) -> Result<DeliveryServiceSnapshot, ServiceError> {
+        let binding = self.state.consumer.clone();
+        let relay = self
+            .state
+            .registry
+            .rule_transaction(move |scope| {
+                Box::pin(
+                    async move { snapshot::<_, P::Delivery, _>(scope, binding.as_ref()).await },
+                )
+            })
+            .await
+            .map_err(ServiceError::rule)?;
+        Ok(DeliveryServiceSnapshot { relay })
     }
 }

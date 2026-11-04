@@ -1,7 +1,6 @@
 use crate::{
     ServiceConsumer, ServiceObject,
     call_router::{lost, unreachable},
-    delivery_owner::DeliveryObject,
     service_state::ServiceState,
 };
 use durable_steps::{AtomicStore, CallFailure, CallRetryReason, StoreError};
@@ -34,13 +33,9 @@ impl<
             serde_json::from_value(request).map_err(lost)?;
         let answer = match target.target {
             PublicationTarget::StatusStream { sender, route } => {
-                let owner = self
-                    .delivery_owner(DeliveryObject::Status(sender))
-                    .await
-                    .map_err(|_| unreachable())?;
-                let now = owner.object.host().now();
-                match owner.object.rule_transaction(move|scope|Box::pin(async move {StatusStream::<_,P::Delivery>::new(scope,sender,route).append_and_admit::<PublishStatus<ServiceObject,Turso,P::Delivery>>(&publication,now).await})).await {
-                    Ok(_)=>{owner.object.host().wake_at(owner.object.host().now()).await.map_err(lost)?;StatusPublicationResult::Applied},
+                let now = self.registry.host().now();
+                match self.registry.rule_transaction(move|scope|Box::pin(async move {StatusStream::<_,P::Delivery>::new(scope,sender,route).append_and_admit::<PublishStatus<ServiceObject,Turso,P::Delivery>>(&publication,now).await})).await {
+                    Ok(_)=>{self.registry.host().wake_at(self.registry.host().now()).await.map_err(lost)?;StatusPublicationResult::Applied},
                     Err(DeliveryError::Refused{reason})=>StatusPublicationResult::Refused{reason},
                     Err(_)=>return Err(unreachable()),
                 }

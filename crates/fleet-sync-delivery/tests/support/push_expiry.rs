@@ -11,7 +11,7 @@ pub fn at(milliseconds: i64) -> SyncTime {
 pub fn clock(network: &NetworkFixture, milliseconds: i64) {
     for fixture in [
         &network.sender,
-        &network.mailbox,
+        &network.relay,
         &network.recipient,
         &network.status,
     ] {
@@ -22,7 +22,6 @@ pub fn clock(network: &NetworkFixture, milliseconds: i64) {
     }
 }
 pub async fn seed(network: &NetworkFixture) {
-    network.routes.fleet_push.store(true, Ordering::SeqCst);
     network
         .sender
         .store
@@ -80,6 +79,6 @@ pub async fn recipient_rows(network: &NetworkFixture) -> (i64, i64) {
     })).await.unwrap()
 }
 pub async fn publish(network: &NetworkFixture) {
-    drain(&network.engine(&network.mailbox)).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.status)).await;
 }

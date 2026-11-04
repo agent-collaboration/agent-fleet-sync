@@ -12,10 +12,9 @@ use super::support::retention::*;
 #[tokio::test]
 async fn pending_hop_and_local_tasks_finish_after_removal_without_redispatch_or_recreating_rows() {
     let mut network = super::support::network::NetworkFixture::new().await;
-    network.routes.fleet_push.store(true, Ordering::SeqCst);
     network.enqueue(1, "pending sender").await;
     network
-        .mailbox
+        .relay
         .store
         .transaction(|scope| {
             Box::pin(async move {
@@ -54,13 +53,13 @@ async fn pending_hop_and_local_tasks_finish_after_removal_without_redispatch_or_
         })
         .await
         .unwrap();
-    for fixture in [&network.sender, &network.mailbox, &network.recipient] {
+    for fixture in [&network.sender, &network.relay, &network.recipient] {
         defer_delivery_work(fixture, day(61)).await;
     }
     for role in 0..3 {
         let fixture = match role {
             0 => &network.sender,
-            1 => &network.mailbox,
+            1 => &network.relay,
             _ => &network.recipient,
         };
         fixture
@@ -79,9 +78,9 @@ async fn pending_hop_and_local_tasks_finish_after_removal_without_redispatch_or_
                 &network.sender
             }
             1 => {
-                network.mailbox = reopen(network.mailbox).await;
-                *network.routes.mailbox.lock().unwrap() = Arc::downgrade(&network.mailbox.store);
-                &network.mailbox
+                network.relay = reopen(network.relay).await;
+                *network.routes.relay.lock().unwrap() = Arc::downgrade(&network.relay.store);
+                &network.relay
             }
             _ => {
                 network.recipient = reopen(network.recipient).await;
@@ -204,11 +203,7 @@ async fn actual_pending_report_finishes_after_removal_and_reopen_without_recreat
             .await
             .is_empty()
     );
-    assert!(
-        identities(&network.mailbox.store, "outbox")
-            .await
-            .is_empty()
-    );
+    assert!(identities(&network.relay.store, "outbox").await.is_empty());
     network
         .recipient
         .store

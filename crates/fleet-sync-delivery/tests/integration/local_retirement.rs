@@ -226,35 +226,25 @@ async fn terminal_relayed_original_is_refused_without_mutation() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
+                let answer = accept_fixture_push(
+                    scope,
+                    limits(),
+                    DeliveryEnvelope::Item(local_item(1)),
+                    &TestConsumer,
+                    SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)?;
+                assert!(matches!(answer, PushResult::Accepted { .. }));
                 let mut inbox =
                     Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
-                let cycle = inbox
-                    .begin_receive(
-                        DeliveryStream::Items,
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?
-                    .unwrap();
-                let effects = inbox
-                    .store_batch(
-                        cycle,
-                        FetchResult {
-                            stream: DeliveryStream::Items,
-                            entries: vec![FetchEntry::Item {
-                                seq: DeliverySeq::new(1),
-                                item: DeliveryEnvelope::Item(local_item(1)),
-                            }],
-                            through: DeliverySeq::new(1),
-                        },
-                        &TestConsumer,
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
                 inbox
                     .record_failure(
-                        effects.attempts[0],
+                        DeliveryAttempt {
+                            item: item_id(1),
+                            attempt: 0,
+                            not_before: SyncTime::from_unix_millis(0),
+                        },
                         DeliveryFailureKind::ExecutionFailed,
                         &TestConsumer,
                         SyncTime::from_unix_millis(0),

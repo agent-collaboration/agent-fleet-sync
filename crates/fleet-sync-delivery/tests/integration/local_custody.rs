@@ -54,36 +54,27 @@ async fn compact_local_headers_authorize_cancels_and_preserve_identity() {
                         )
                         .unwrap(),
                     );
+                    let answer = accept_fixture_push(
+                        scope,
+                        limits(),
+                        cancel,
+                        &TestConsumer,
+                        SyncTime::from_unix_millis(0),
+                    )
+                    .await
+                    .map_err(storage_error)?;
+                    assert!(matches!(answer, PushResult::Accepted { .. }));
                     let mut inbox =
                         Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
-                    let cycle = inbox
-                        .begin_receive(
-                            DeliveryStream::Controls,
-                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                        )
+                    let reference = inbox
+                        .pending_report(item_id(2))
                         .await
                         .map_err(storage_error)?
-                        .unwrap();
-                    let effects = inbox
-                        .store_batch(
-                            cycle,
-                            FetchResult {
-                                stream: DeliveryStream::Controls,
-                                entries: vec![FetchEntry::Item {
-                                    seq: DeliverySeq::new(1),
-                                    item: cancel,
-                                }],
-                                through: DeliverySeq::new(1),
-                            },
-                            &TestConsumer,
-                            SyncTime::from_unix_millis(0),
-                        )
-                        .await
-                        .map_err(storage_error)?;
-                    assert!(effects.attempts.is_empty());
-                    assert_eq!(effects.reports.len(), 1);
+                        .ok_or_else(|| {
+                            durable_steps::StoreError::backend("control must owe a report")
+                        })?;
                     let report = inbox
-                        .resolve_report(effects.reports[0])
+                        .resolve_report(reference)
                         .await
                         .map_err(storage_error)?;
                     if authorized {

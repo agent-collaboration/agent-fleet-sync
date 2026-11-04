@@ -53,37 +53,27 @@ async fn receive_snapshot(store: &TestStore) -> InboxReceiveSnapshot {
         .unwrap()
 }
 
-async fn receive_cancel_before_target(store: &TestStore) {
+async fn push_cancel_before_target(store: &TestStore) {
     store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut inbox =
-                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
-                let input = inbox
-                    .begin_receive(
-                        DeliveryStream::Controls,
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?
-                    .unwrap();
-                let effects = inbox
-                    .store_batch(
-                        input,
-                        FetchResult {
-                            stream: DeliveryStream::Controls,
-                            entries: vec![FetchEntry::Item {
-                                seq: DeliverySeq::new(1),
-                                item: cancel(PENDING_CANCEL, 1),
-                            }],
-                            through: DeliverySeq::new(1),
-                        },
-                        &TestConsumer,
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
-                assert!(effects.attempts.is_empty() && effects.reports.is_empty());
+                let answer = accept_fixture_push(
+                    scope,
+                    limits(),
+                    cancel(PENDING_CANCEL, 1),
+                    &TestConsumer,
+                    SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)?;
+                assert!(matches!(answer, PushResult::Accepted { .. }));
+                assert!(
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                        .pending_report(item_id(PENDING_CANCEL))
+                        .await
+                        .map_err(storage_error)?
+                        .is_none()
+                );
                 Ok(())
             })
         })
@@ -91,44 +81,25 @@ async fn receive_cancel_before_target(store: &TestStore) {
         .unwrap();
 }
 
-async fn receive_original_after_cancel(
+async fn push_original_after_cancel(
     store: &TestStore,
-) -> Result<InboxEffects, durable_steps::StoreError> {
+) -> Result<PushResult<Acceptance>, durable_steps::StoreError> {
     store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut inbox =
-                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
-                let input = inbox
-                    .begin_receive(
-                        DeliveryStream::Items,
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?
-                    .unwrap();
-                match inbox
-                    .store_batch(
-                        input,
-                        FetchResult {
-                            stream: DeliveryStream::Items,
-                            entries: vec![FetchEntry::Item {
-                                seq: DeliverySeq::new(1),
-                                item: item(1, "original after cancel"),
-                            }],
-                            through: DeliverySeq::new(1),
-                        },
-                        &TestConsumer,
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
+                match accept_fixture_push(
+                    scope,
+                    limits(),
+                    item(1, "original after cancel"),
+                    &TestConsumer,
+                    SyncTime::from_unix_millis(0),
+                )
+                .await
                 {
-                    // Preserve the public DeliveryError variant across the store's
-                    // error boundary while letting the real transaction roll back.
                     Err(DeliveryError::Corrupt { field }) => {
                         Err(durable_steps::StoreError::Corrupt {
                             field: field.into(),
-                            message: "public inbox receive refused corrupt custody".into(),
+                            message: "public pushed inbox refused corrupt custody".into(),
                         })
                     }
                     result => result.map_err(storage_error),
@@ -156,7 +127,7 @@ async fn malformed_pending_cancel_identity_is_refused_without_committed_effects(
     for (name, spelling) in cases {
         assert_ne!(spelling, canonical, "noncanonical control must change text");
         let fixture = Fixture::new().await;
-        receive_cancel_before_target(&fixture.store).await;
+        push_cancel_before_target(&fixture.store).await;
         fixture
             .store
             .transaction(move |scope| {
@@ -177,7 +148,7 @@ async fn malformed_pending_cancel_identity_is_refused_without_committed_effects(
         let before = receive_snapshot(&fixture.store).await;
         assert_eq!(before.headers.len(), 1);
         assert!(before.reports.is_empty());
-        let result = receive_original_after_cancel(&fixture.store).await;
+        let result = push_original_after_cancel(&fixture.store).await;
         let refused = matches!(result, Err(durable_steps::StoreError::Corrupt { ref field, .. }) if field == "inbox cancel identity");
         let after = receive_snapshot(&fixture.store).await;
         println!(
@@ -195,10 +166,9 @@ async fn malformed_pending_cancel_identity_is_refused_without_committed_effects(
 #[tokio::test]
 async fn canonical_pending_cancel_applies_when_its_original_arrives() {
     let fixture = Fixture::new().await;
-    receive_cancel_before_target(&fixture.store).await;
-    let effects = receive_original_after_cancel(&fixture.store).await.unwrap();
-    assert!(effects.attempts.is_empty());
-    assert_eq!(effects.reports.len(), 2);
+    push_cancel_before_target(&fixture.store).await;
+    let answer = push_original_after_cancel(&fixture.store).await.unwrap();
+    assert!(matches!(answer, PushResult::Accepted { .. }));
     fixture.store.transaction(|scope| Box::pin(async move {
         let mut inbox = Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
         assert!(matches!(inbox.local_outcome(item_id(1)).await.map_err(storage_error)?, Some(RecipientOutcome::Prevented { cancel }) if cancel == item_id(PENDING_CANCEL)));
@@ -209,88 +179,18 @@ async fn canonical_pending_cancel_applies_when_its_original_arrives() {
 }
 
 #[tokio::test]
-async fn empty_cycles_are_fresh_and_overlapping_triggers_coalesce() {
-    let fixture = Fixture::new().await;
-    fixture
-        .store
-        .transaction(|scope| {
-            Box::pin(async move {
-                let mut inbox =
-                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
-                let first = inbox
-                    .begin_receive(
-                        DeliveryStream::Items,
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?
-                    .unwrap();
-                assert!(
-                    inbox
-                        .begin_receive(
-                            DeliveryStream::Items,
-                            fleet_sync_protocol::SyncTime::from_unix_millis(0)
-                        )
-                        .await
-                        .map_err(storage_error)?
-                        .is_none()
-                );
-                assert!(
-                    inbox
-                        .begin_receive(
-                            DeliveryStream::Items,
-                            fleet_sync_protocol::SyncTime::from_unix_millis(0)
-                        )
-                        .await
-                        .map_err(storage_error)?
-                        .is_none()
-                );
-                let rerun = inbox
-                    .finish_receive(first, fleet_sync_protocol::SyncTime::from_unix_millis(0))
-                    .await
-                    .map_err(storage_error)?
-                    .unwrap();
-                assert_eq!(rerun.cycle.value(), first.cycle.value() + 1);
-                assert!(
-                    inbox
-                        .finish_receive(rerun, fleet_sync_protocol::SyncTime::from_unix_millis(0))
-                        .await
-                        .map_err(storage_error)?
-                        .is_none()
-                );
-                let fresh = inbox
-                    .begin_receive(
-                        DeliveryStream::Items,
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?
-                    .unwrap();
-                assert!(fresh.cycle > rerun.cycle);
-                assert_eq!(fresh.after.value(), 0);
-                Ok(())
-            })
-        })
-        .await
-        .unwrap();
-}
-
-#[tokio::test]
 async fn a_full_inbox_still_stores_a_reserved_cancel_from_controls() {
     let fixture = Fixture::new().await;
     fixture.store.transaction(|scope|Box::pin(async move {
         let original=item(1,"held original");
         let configured=configured_limits(100_000,20,serde_json::to_vec(&original).unwrap().len() as u64+u64::from(limits().settlement_allowance()));
-        let DeliveryEnvelope::Item(original)=original else {return Err(durable_steps::StoreError::backend("fixture is not an item"));};
-        let mut inbox=Inbox::<_,TestTypes, _>::new(scope,peer(2),configured, &FixtureBindings);
-        inbox.enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
-        let items=inbox.begin_receive(DeliveryStream::Items, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?.unwrap();
-        let controls=inbox.begin_receive(DeliveryStream::Controls, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?.unwrap();
-        assert_eq!(inbox.receive_budget(items,10,100_000).await.map_err(storage_error)?.0,0);
-        assert_eq!(inbox.receive_budget(controls,10,100_000).await.map_err(storage_error)?.0,10);
-        let effects=inbox.store_batch(controls,FetchResult{stream:DeliveryStream::Controls,entries:vec![FetchEntry::Item{seq:DeliverySeq::new(1),item:cancel(2,1)}],through:DeliverySeq::new(1)},&TestConsumer,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
-        assert!(effects.attempts.is_empty());
-        assert!(matches!(inbox.local_outcome(item_id(1)).await.map_err(storage_error)?,Some(RecipientOutcome::Prevented{cancel}) if cancel==item_id(2)));
+        let DeliveryEnvelope::Item(original)=original else {return Err(durable_steps::StoreError::backend("fixture item"));};
+        Inbox::<_,TestTypes,_>::new(scope,peer(2),configured,&FixtureBindings).enqueue_local(original,&TestConsumer,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
+        let full=accept_fixture_push(scope,configured,item(3,"cannot fit"),&TestConsumer,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
+        assert!(matches!(full,PushResult::Refused {reason:DeliveryRefusal::MailboxFull}));
+        let answer=accept_fixture_push(scope,configured,cancel(2,1),&TestConsumer,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
+        assert!(matches!(answer,PushResult::Accepted {..}));
+        assert!(matches!(Inbox::<_,TestTypes,_>::new(scope,peer(2),configured,&FixtureBindings).local_outcome(item_id(1)).await.map_err(storage_error)?,Some(RecipientOutcome::Prevented {cancel}) if cancel==item_id(2)));
         Ok(())
     })).await.unwrap();
 }

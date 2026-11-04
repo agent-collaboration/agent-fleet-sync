@@ -2,7 +2,7 @@
 #[path = "../support/local_observation.rs"]
 mod local_observation;
 use super::support;
-use durable_steps::{AtomicStore, Engine, JournalScope, storage::TransactionScope};
+use durable_steps::{AtomicStore, Engine, storage::TransactionScope};
 use fleet_sync_delivery::*;
 use local_observation::*;
 use sqlx_core::row::Row;
@@ -108,60 +108,24 @@ async fn held_and_refused_attempts_project_distinct_local_observations() {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, ObservationTypes, _>::new(
-                    scope,
-                    peer(2),
-                    limits(),
-                    &FixtureBindings,
-                );
-                let input = inbox
-                    .begin_receive(
-                        DeliveryStream::Items,
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(durable_steps::StoreError::backend)?
-                    .unwrap();
-                let entries = [1, 2]
-                    .into_iter()
-                    .map(|id| FetchEntry::Item {
-                        seq: DeliverySeq::new(id),
-                        item: DeliveryEnvelope::Item(
-                            DeliveryItem::<ObservationTypes>::new(
-                                item_id(id),
-                                "sender".into(),
-                                Recipient {
-                                    peer: peer(2),
-                                    address: "inbox".into(),
-                                },
-                                None,
-                                "body".into(),
-                            )
-                            .unwrap(),
-                        ),
-                    })
-                    .collect();
-                let effects = inbox
-                    .store_batch(
-                        input,
-                        FetchResult {
-                            stream: DeliveryStream::Items,
-                            entries,
-                            through: DeliverySeq::new(2),
-                        },
-                        consumer.as_ref(),
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(durable_steps::StoreError::backend)?;
-                for attempt in effects.attempts {
-                    scope
-                        .admit::<ObservationTask>(
-                            &delivery_request_key(&(attempt.item, attempt.attempt)).unwrap(),
-                            &attempt,
+                for identity in [1, 2] {
+                    let envelope = DeliveryEnvelope::Item(
+                        DeliveryItem::<ObservationTypes>::new(
+                            item_id(identity),
+                            "sender".into(),
+                            Recipient {
+                                peer: peer(2),
+                                address: "inbox".into(),
+                            },
+                            None,
+                            "body".into(),
                         )
+                        .unwrap(),
+                    );
+                    let answer = push_observation_envelope(scope, envelope, consumer.as_ref())
                         .await
                         .map_err(durable_steps::StoreError::backend)?;
+                    assert!(matches!(answer, PushResult::Accepted { .. }));
                 }
                 Ok(())
             })
@@ -364,48 +328,27 @@ async fn expiry_terminal_failure_and_cancellation_record_no_local_observation() 
                     )
                     .unwrap(),
                 );
-                let input = inbox
-                    .begin_receive(
-                        DeliveryStream::Items,
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(durable_steps::StoreError::backend)?
-                    .unwrap();
-                inbox
-                    .store_batch(
-                        input,
-                        FetchResult {
-                            stream: DeliveryStream::Items,
-                            entries: vec![
-                                FetchEntry::Item {
-                                    seq: DeliverySeq::new(1),
-                                    item: original,
-                                },
-                                FetchEntry::Item {
-                                    seq: DeliverySeq::new(2),
-                                    item: DeliveryEnvelope::Item(
-                                        DeliveryItem::<ObservationTypes>::new(
-                                            item_id(2),
-                                            "sender".into(),
-                                            Recipient {
-                                                peer: peer(2),
-                                                address: "inbox".into(),
-                                            },
-                                            None,
-                                            "body".into(),
-                                        )
-                                        .unwrap(),
-                                    ),
-                                },
-                            ],
-                            through: DeliverySeq::new(2),
-                        },
-                        consumer.as_ref(),
-                        SyncTime::from_unix_millis(0),
-                    )
+                let answer = push_observation_envelope(scope, original, consumer.as_ref())
                     .await
                     .map_err(durable_steps::StoreError::backend)?;
+                assert!(matches!(answer, PushResult::Accepted { .. }));
+                let repeat = DeliveryEnvelope::Item(
+                    DeliveryItem::<ObservationTypes>::new(
+                        item_id(2),
+                        "sender".into(),
+                        Recipient {
+                            peer: peer(2),
+                            address: "inbox".into(),
+                        },
+                        None,
+                        "body".into(),
+                    )
+                    .unwrap(),
+                );
+                let answer = push_observation_envelope(scope, repeat, consumer.as_ref())
+                    .await
+                    .map_err(durable_steps::StoreError::backend)?;
+                assert!(matches!(answer, PushResult::Replayed { .. }));
                 let cancellation = DeliveryEnvelope::Cancel(
                     DeliveryCancel::<ObservationTypes>::new(
                         item_id(4),
@@ -419,30 +362,10 @@ async fn expiry_terminal_failure_and_cancellation_record_no_local_observation() 
                     )
                     .unwrap(),
                 );
-                let input = inbox
-                    .begin_receive(
-                        DeliveryStream::Controls,
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(durable_steps::StoreError::backend)?
-                    .unwrap();
-                inbox
-                    .store_batch(
-                        input,
-                        FetchResult {
-                            stream: DeliveryStream::Controls,
-                            entries: vec![FetchEntry::Item {
-                                seq: DeliverySeq::new(1),
-                                item: cancellation,
-                            }],
-                            through: DeliverySeq::new(1),
-                        },
-                        consumer.as_ref(),
-                        SyncTime::from_unix_millis(0),
-                    )
+                let answer = push_observation_envelope(scope, cancellation, consumer.as_ref())
                     .await
                     .map_err(durable_steps::StoreError::backend)?;
+                assert!(matches!(answer, PushResult::Accepted { .. }));
                 Ok(())
             })
         })

@@ -109,10 +109,9 @@ enum CancelKind {
 async fn submit_cancel(
     fixture: &Fixture,
     route: CancelRoute,
-    replay: Option<ReceiveInput>,
     kind: CancelKind,
     consumer: Arc<CancelConsumer>,
-) -> Result<Option<ReceiveInput>, StoreError> {
+) -> Result<(), StoreError> {
     fixture
         .store
         .transaction(move |scope| {
@@ -148,30 +147,23 @@ async fn submit_cancel(
                             )
                             .await
                             .map_err(storage_error)?;
-                        Ok(None)
+                        Ok(())
                     }
                     CancelRoute::Remote => {
-                        let input = match replay {
-                            Some(input) => input,
-                            None => inbox
-                                .begin_receive(
-                                    DeliveryStream::Controls,
-                                    fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                                )
-                                .await
-                                .map_err(storage_error)?
-                                .unwrap(),
-                        };
-                        inbox
-                            .store_batch(
-                                input,
-                                projection::projection_batch(DeliveryEnvelope::Cancel(cancel)),
-                                consumer.as_ref(),
-                                SyncTime::from_unix_millis(1),
-                            )
-                            .await
-                            .map_err(storage_error)?;
-                        Ok(Some(input))
+                        let answer = accept_fixture_push(
+                            scope,
+                            limits(),
+                            DeliveryEnvelope::Cancel(cancel),
+                            consumer.as_ref(),
+                            SyncTime::from_unix_millis(1),
+                        )
+                        .await
+                        .map_err(storage_error)?;
+                        assert!(matches!(
+                            answer,
+                            PushResult::Accepted { .. } | PushResult::Replayed { .. }
+                        ));
+                        Ok(())
                     }
                 }
             })
@@ -224,14 +216,11 @@ async fn assert_target_projection(fixture: &Fixture) {
 async fn prove_replay(
     fixture: &Fixture,
     route: CancelRoute,
-    input: Option<ReceiveInput>,
     kind: CancelKind,
     consumer: Arc<CancelConsumer>,
 ) {
     let before = read_committed_state(fixture).await;
-    submit_cancel(fixture, route, input, kind, consumer)
-        .await
-        .unwrap();
+    submit_cancel(fixture, route, kind, consumer).await.unwrap();
     assert_eq!(read_committed_state(fixture).await, before);
     assert_target_projection(fixture).await;
 }
@@ -253,15 +242,9 @@ async fn prove_too_late(route: CancelRoute) {
         Some(RecipientOutcome::Delivered { .. })
     ));
     let consumer = Arc::new(CancelConsumer::default());
-    let receive = submit_cancel(
-        fixture,
-        route,
-        None,
-        CancelKind::Authorized,
-        consumer.clone(),
-    )
-    .await
-    .unwrap();
+    submit_cancel(fixture, route, CancelKind::Authorized, consumer.clone())
+        .await
+        .unwrap();
     assert!(matches!(
         outcome(fixture, 2).await,
         Some(RecipientOutcome::TooLate { cancel, at: TooLateAt::Delivered })
@@ -272,7 +255,7 @@ async fn prove_too_late(route: CancelRoute) {
         CancelRoute::Local => assert!(snapshot(fixture).await.reports.is_empty()),
         CancelRoute::Remote => assert_eq!(snapshot(fixture).await.reports.len(), 1),
     }
-    prove_replay(fixture, route, receive, CancelKind::Authorized, consumer).await;
+    prove_replay(fixture, route, CancelKind::Authorized, consumer).await;
 }
 
 #[tokio::test]
@@ -290,7 +273,7 @@ async fn prove_pending_control(kind: CancelKind) {
         prepare_projection_table(&fixture).await;
         require_local_attempt(enqueue_original(&fixture, 1, limits()).await).unwrap();
         let consumer = Arc::new(CancelConsumer::default());
-        let receive = submit_cancel(&fixture, route, None, kind, consumer.clone())
+        submit_cancel(&fixture, route, kind, consumer.clone())
             .await
             .unwrap();
         let stored = outcome(&fixture, 2).await.unwrap();
@@ -307,7 +290,7 @@ async fn prove_pending_control(kind: CancelKind) {
             CancelKind::Expired => assert!(matches!(stored, RecipientOutcome::Expired)),
         }
         assert_target_projection(&fixture).await;
-        prove_replay(&fixture, route, receive, kind, consumer).await;
+        prove_replay(&fixture, route, kind, consumer).await;
     }
 }
 #[tokio::test]
@@ -333,21 +316,15 @@ async fn a_refused_target_projection_rolls_back_control_and_both_hooks() {
         let custody_before = snapshot(&fixture).await;
         let consumer = Arc::new(CancelConsumer::default());
         consumer.refuse_cancel.store(true, Ordering::SeqCst);
-        let error = submit_cancel(
-            &fixture,
-            route,
-            None,
-            CancelKind::Authorized,
-            consumer.clone(),
-        )
-        .await
-        .err()
-        .unwrap();
+        let error = submit_cancel(&fixture, route, CancelKind::Authorized, consumer.clone())
+            .await
+            .err()
+            .unwrap();
         assert!(error.to_string().contains("cancel projection refused"));
         assert_eq!(read_committed_state(&fixture).await, before);
         assert_eq!(snapshot(&fixture).await, custody_before);
         consumer.refuse_cancel.store(false, Ordering::SeqCst);
-        submit_cancel(&fixture, route, None, CancelKind::Authorized, consumer)
+        submit_cancel(&fixture, route, CancelKind::Authorized, consumer)
             .await
             .unwrap();
         assert_target_projection(&fixture).await;

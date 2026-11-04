@@ -7,6 +7,127 @@ use std::sync::atomic::Ordering;
 use support::{network::*, *};
 
 #[tokio::test]
+async fn failed_preserved_outcome_projection_rolls_back_push_promotion_and_report_debt() {
+    use super::projection::{ProjectionConsumer, prepare_projection_table, read_committed_state};
+    let fixture = Fixture::new().await;
+    require_local_attempt(enqueue_original(&fixture, 1, limits()).await).unwrap();
+    enqueue_cancel(&fixture, 2, 1).await;
+    prepare_projection_table(&fixture).await;
+    let before = snapshot(&fixture).await;
+    let consumer = std::sync::Arc::new(ProjectionConsumer::default());
+    consumer.refuse_outcome.store(true, Ordering::SeqCst);
+    let error = fixture
+        .store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                accept_fixture_push(
+                    scope,
+                    limits(),
+                    DeliveryEnvelope::Item(local_item(1)),
+                    consumer.as_ref(),
+                    SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("outcome projection refused"));
+    assert_eq!(snapshot(&fixture).await, before);
+    assert!(read_committed_state(&fixture).await.projections.is_empty());
+}
+
+#[tokio::test]
+async fn push_promotes_a_prevented_local_original_and_reports_once_across_reopen() {
+    let mut network = NetworkFixture::new().await;
+    require_local_attempt(enqueue_original(&network.recipient, 1, limits()).await).unwrap();
+    enqueue_cancel(&network.recipient, 2, 1).await;
+    assert!(matches!(outcome(&network.recipient, 1).await,
+        Some(RecipientOutcome::Prevented { cancel }) if cancel == item_id(2)));
+    assert!(snapshot(&network.recipient).await.reports.is_empty());
+
+    network.enqueue(1, "local body").await;
+    drain(&network.engine(&network.sender)).await;
+    drain(&network.engine(&network.relay)).await;
+    let promoted = snapshot(&network.recipient).await;
+    assert_eq!(
+        promoted.reports.len(),
+        1,
+        "Push must owe the preserved outcome"
+    );
+    network.recipient = reopen(network.recipient).await;
+    *network.routes.recipient.lock().unwrap() = std::sync::Arc::downgrade(&network.recipient.store);
+    assert_eq!(snapshot(&network.recipient).await, promoted);
+    network
+        .recipient
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                assert!(matches!(
+                    accept_fixture_push(
+                        scope,
+                        limits(),
+                        DeliveryEnvelope::Item(local_item(1)),
+                        &TestConsumer,
+                        SyncTime::from_unix_millis(0)
+                    )
+                    .await
+                    .map_err(storage_error)?,
+                    PushResult::Replayed { .. }
+                ));
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        snapshot(&network.recipient).await,
+        promoted,
+        "replay must not renew report debt"
+    );
+    let report = network
+        .engine(&network.recipient)
+        .drive_due()
+        .await
+        .unwrap();
+    assert_eq!(
+        report.failed.len(),
+        1,
+        "a terminal refusal must finish the Report operation"
+    );
+    assert!(report.retried.is_empty());
+    assert_eq!(network.routes.report_calls.load(Ordering::SeqCst), 1);
+    network.recipient = reopen(network.recipient).await;
+    *network.routes.recipient.lock().unwrap() = std::sync::Arc::downgrade(&network.recipient.store);
+    for millis in [60_001, 3_600_000, 86_400_000] {
+        network.recipient.host.clock.store(millis, Ordering::SeqCst);
+        drain(&network.engine(&network.recipient)).await;
+    }
+    assert_eq!(
+        network.routes.report_calls.load(Ordering::SeqCst),
+        1,
+        "reopen must not retry a terminal Report"
+    );
+    drain(&network.engine(&network.relay)).await;
+    drain(&network.engine(&network.status)).await;
+    assert!(matches!(
+        sender_status(&network, 1).await,
+        OutboxStatusState::Known {
+            status: DeliveryStatus::Cancelled,
+            ..
+        }
+    ));
+    assert_eq!(
+        snapshot(&network.recipient).await.reports.len(),
+        1,
+        "refused report evidence remains until retention"
+    );
+    assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
 async fn local_admission_leaves_relayed_cancel_pending_until_normal_completion() {
     let network = NetworkFixture::new().await;
     // This is a real remote-control custody setup, not the local cancel entry.
@@ -15,33 +136,25 @@ async fn local_admission_leaves_relayed_cancel_pending_until_normal_completion()
         .store
         .transaction(|scope| {
             Box::pin(async move {
+                let answer = accept_fixture_push(
+                    scope,
+                    limits(),
+                    DeliveryEnvelope::Cancel(local_cancel(2, 1, "remote sender")),
+                    &TestConsumer,
+                    SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)?;
+                assert!(matches!(answer, PushResult::Accepted { .. }));
                 let mut inbox =
                     Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
-                let cycle = inbox
-                    .begin_receive(
-                        DeliveryStream::Controls,
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?
-                    .unwrap();
-                let effects = inbox
-                    .store_batch(
-                        cycle,
-                        FetchResult {
-                            stream: DeliveryStream::Controls,
-                            entries: vec![FetchEntry::Item {
-                                seq: DeliverySeq::new(1),
-                                item: DeliveryEnvelope::Cancel(local_cancel(2, 1, "remote sender")),
-                            }],
-                            through: DeliverySeq::new(1),
-                        },
-                        &TestConsumer,
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
-                assert!(effects.attempts.is_empty() && effects.reports.is_empty());
+                assert!(
+                    inbox
+                        .pending_report(item_id(2))
+                        .await
+                        .map_err(storage_error)?
+                        .is_none()
+                );
                 Ok(())
             })
         })
@@ -119,34 +232,25 @@ async fn local_cancel_of_a_relayed_original_returns_its_real_report_obligation()
         .store
         .transaction(|scope| {
             Box::pin(async move {
+                let answer = accept_fixture_push(
+                    scope,
+                    limits(),
+                    DeliveryEnvelope::Item(local_item(1)),
+                    &TestConsumer,
+                    SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)?;
+                assert!(matches!(answer, PushResult::Accepted { .. }));
                 let mut inbox =
                     Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
-                let cycle = inbox
-                    .begin_receive(
-                        DeliveryStream::Items,
-                        fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?
-                    .unwrap();
-                let effects = inbox
-                    .store_batch(
-                        cycle,
-                        FetchResult {
-                            stream: DeliveryStream::Items,
-                            entries: vec![FetchEntry::Item {
-                                seq: DeliverySeq::new(1),
-                                item: DeliveryEnvelope::Item(local_item(1)),
-                            }],
-                            through: DeliverySeq::new(1),
-                        },
-                        &TestConsumer,
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
-                assert_eq!(effects.attempts.len(), 1);
-                assert!(effects.reports.is_empty());
+                assert!(
+                    inbox
+                        .pending_report(item_id(1))
+                        .await
+                        .map_err(storage_error)?
+                        .is_none()
+                );
                 Ok(())
             })
         })

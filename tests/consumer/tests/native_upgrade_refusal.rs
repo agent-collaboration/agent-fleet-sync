@@ -52,6 +52,7 @@ async fn service_refusal(reason: AuthRefusal, status: &str, value: &str) -> Test
     let receiver = ReceiverId::new(durable_steps::Uuid::now_v7())?;
     let service = FleetService::<SampleProtocol, _, _>::open(
         ServiceOptions {
+            clock: std::sync::Arc::new(runtime_primitives::SystemClock),
             directory: directory.path().join("service"),
             delivery: None,
             receiver,

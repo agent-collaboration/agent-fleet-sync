@@ -4,8 +4,6 @@ use serde::Serialize;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryLimits {
-    pub(crate) mailbox_payload_bytes: u64,
-    pub(crate) mailbox_items: u64,
     pub(crate) outbox_bytes: u64,
     pub(crate) outbox_items: u64,
     pub(crate) inbox_bytes: u64,
@@ -24,16 +22,12 @@ pub enum DeliveryConfigError {
 }
 impl DeliveryLimits {
     pub fn new<D: DeliveryTypes>(
-        mailbox_payload_bytes: u64,
-        mailbox_items: u64,
         outbox_bytes: u64,
         outbox_items: u64,
         inbox_bytes: u64,
         settlement_allowance: u32,
     ) -> Result<Self, DeliveryConfigError> {
         let limits = Self {
-            mailbox_payload_bytes,
-            mailbox_items,
             outbox_bytes,
             outbox_items,
             inbox_bytes,
@@ -66,12 +60,6 @@ impl DeliveryLimits {
             .checked_sub(global)
             .and_then(|extra| extra.checked_add(per_item))
             .ok_or(DeliveryConfigError::ReserveOverflow)
-    }
-    pub const fn mailbox_payload_bytes(&self) -> u64 {
-        self.mailbox_payload_bytes
-    }
-    pub const fn mailbox_items(&self) -> u64 {
-        self.mailbox_items
     }
     pub const fn outbox_bytes(&self) -> u64 {
         self.outbox_bytes

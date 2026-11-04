@@ -388,7 +388,6 @@ async fn a_failed_caller_transaction_rolls_back_the_first_submitter_binding() {
 async fn missing_or_corrupt_sender_custody_reaches_the_existing_unresolvable_outcome() {
     for corrupt in [false, true] {
         let network = NetworkFixture::new().await;
-        network.routes.fleet_push.store(true, Ordering::SeqCst);
         network.enqueue(1, "owned body").await;
         network
             .sender
@@ -422,7 +421,7 @@ async fn missing_or_corrupt_sender_custody_reaches_the_existing_unresolvable_out
             }
         ));
         assert!(matches!(
-            settle(&network.mailbox.store, 9, 1).await,
+            settle(&network.relay.store, 9, 1).await,
             SettleResult::ItemConflict { .. }
         ));
     }

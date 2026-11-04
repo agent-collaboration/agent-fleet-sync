@@ -2,25 +2,24 @@
 
 Apply `DELIVERY_MIGRATOR` alongside application migrations in the same host-owned migration transaction before calling delivery rules.
 
-Enrollment calls `Mailbox::open()` for both a new recipient and a readmitted
-installation. Repeated opens preserve the mailbox's sequences, recorded answers
-and owed publications. Items refused by `close()` remain terminal; new IDs can be
-submitted after `open()`.
+A machine Outbox submits to the relay's Outbox. The relay owns custody until a
+real Push receipt or recipient Report establishes the next holder's commit.
+Recipients accept Push in their Inbox and journal local delivery and Reports in
+the same transaction. The Mailbox role, Fetch/Received cycle and Retire operation
+have been removed.
 
-`DeliveryTypes::StatusRoute` is an owned, serializable host address. Its canonical
-encoded bytes must fit `MAX_STATUS_ROUTE_BYTES`; the settlement allowance includes
-the current route and all four possible historical publications per item and cancel.
-The host supplies the submitting peer's authenticated route to `Mailbox::submit`,
-with an optional rank. A same-digest replay moves only the current status target
-when its rank is present and strictly higher (`None` sorts below `Some(0)`).
-The host leaves session and human mail unranked. Immutable origin and payload stay
-unchanged; a different digest always conflicts.
+The host supplies the authenticated Submitter and status route to
+`Outbox::submit_relay`. SenderBinding validates the consumer's frozen sender in
+the supplied custody transaction. A Machine route stays pinned; a Project stream
+is owned by the Project identity independently of its current holder's route.
+`DeliveryTypes::StatusRoute` is a serializable host address whose canonical
+encoded bytes fit `MAX_STATUS_ROUTE_BYTES`.
 
-Each sender's `StatusStream` keeps its own verified owner route. Committed
-`PublicationRef` and `PublishCall` values retain the full target through both hops,
-including after a target move. Retirement follows the live current target and
-returns per-item `retired`, `unknown`, and `notCurrentTarget` lists. Saved call
-receipts replay first; compacted items remain retired and never regain a target.
+Relay hosts call `retire_relay_host_tables` explicitly after applying the delivery
+migrator. It drops obsolete relay tables transactionally and idempotently. Machine
+hosts do not call it. Migration files remain unchanged; machine cleanup belongs
+to the machine cutover. Records retain their UUIDv7 creation deadline and are
+removed after 60 days by `RemoveDeliveryRecord`.
 
 ## Status-event acknowledgement
 
@@ -50,7 +49,7 @@ that deletion.
 Pass the delivery consumer to `Inbox::enqueue_local` or
 `enqueue_local_and_admit`. A pending local cancel is resolved in the same custody
 transaction before a new original can be offered for delivery. Relayed controls
-are left to their existing receive and completion paths.
+are left to their existing Push and completion paths.
 
 Both methods return `LocalItemAdmission`: `Attempt(DeliveryAttempt)` is a fresh
 pending item, `Replayed` is existing same-digest custody with no new hooks or rows,
@@ -78,5 +77,10 @@ return `None`. Authorization refusal is a recorded outcome. Changed digests retu
 Fully local custody needs no receive sequence or acknowledgement and produces no
 remote report. Local control rows and links remain stored for replay and count
 against the inbox byte cap, including terminal controls. A compact original has
-no charged settlement reserve. Control retirement and compaction need a separate
-retention policy.
+no charged settlement reserve. The shared 60-day record-removal task owns their retention.
+
+A matching Push upgrades Local custody to Relayed with its relay route. A preserved
+final original outcome owes one Report; later Push replays do not renew it. If the
+recipient reports a local-only cancel that the relay never admitted, the host
+returns a terminal processing refusal. The Report task records the failure and
+does not retry or deliver the original again.

@@ -119,7 +119,7 @@ where
                 InboxEffects::default(),
             ));
         }
-        if let Some(existing) = self.load(item.id()).await? {
+        if let Some(mut existing) = self.load(item.id()).await? {
             if existing.header.legacy_read_only {
                 return Ok((
                     PushResult::Refused {
@@ -139,11 +139,23 @@ where
                     InboxEffects::default(),
                 ));
             }
+            let mut effects = InboxEffects::default();
+            if matches!(existing.header.route, InboxRoute::Local)
+                && existing.header.submitter == Some(verified.owner())
+            {
+                existing.header.route = InboxRoute::Relayed;
+                existing.header.relay = Some(relay);
+                if let InboxProgress::Final { outcome, .. } = &existing.header.progress {
+                    let preserved = copy_wire(outcome)?;
+                    effects.reports.extend(
+                        self.record_outcome(&mut existing, preserved, consumer, None, now)
+                            .await?,
+                    );
+                }
+                self.save(&existing, now).await?;
+            }
             let (status, cancel) = inbox_status(&existing.header)?;
-            return Ok((
-                PushResult::Replayed { status, cancel },
-                InboxEffects::default(),
-            ));
+            return Ok((PushResult::Replayed { status, cancel }, effects));
         }
         if let DeliveryEnvelope::Cancel(cancel) = &item
             && let Some(link) = self.pending_cancel(cancel.target()).await?

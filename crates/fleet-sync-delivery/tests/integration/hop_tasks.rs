@@ -60,12 +60,12 @@ async fn relay_down_offline_recipient_and_all_real_engine_hops_preserve_custody(
     ));
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 0);
     network
-        .mailbox
+        .relay
         .store
         .transaction(|scope| {
             Box::pin(async move {
                 let row = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT payload_bytes FROM _fleet_sync_mail_items",
+                    "SELECT payload_bytes FROM _fleet_sync_outbox_items",
                 )
                 .fetch_one(scope.executor())
                 .await
@@ -76,21 +76,21 @@ async fn relay_down_offline_recipient_and_all_real_engine_hops_preserve_custody(
         })
         .await
         .unwrap();
-    network.receive(DeliveryStream::Items).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.recipient)).await;
-    drain(&network.engine(&network.mailbox)).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.status)).await;
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
     assert!(
         matches!(sender_status(&network,1).await,OutboxStatusState::Known{status:DeliveryStatus::Delivered{acceptance},..} if acceptance.receipt=="unique body only in custody")
     );
     network
-        .mailbox
+        .relay
         .store
         .transaction(|scope| {
             Box::pin(async move {
                 let row = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT payload_bytes FROM _fleet_sync_mail_items",
+                    "SELECT payload_bytes FROM _fleet_sync_outbox_items",
                 )
                 .fetch_one(scope.executor())
                 .await
@@ -162,17 +162,17 @@ async fn header_loss_before_first_gate_reconciles_same_digest_conflict_and_unkno
         if let Some(body) = relay_body {
             let body = body.to_owned();
             network
-                .mailbox
+                .relay
                 .store
                 .transaction(move |scope| {
                     Box::pin(async move {
-                        Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                            .submit(
-                                peer(1),
+                        Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                            .submit_relay::<FixturePush<TestTypes>, RecordRemoval>(
+                                Submitter::Machine(peer(1)),
                                 item(1, &body),
-                                SyncTime::from_unix_millis(0),
+                                peer(3),
                                 "fixture-route".to_owned(),
-                                None,
+                                SyncTime::from_unix_millis(0),
                             )
                             .await
                             .map_err(storage_error)?;
@@ -331,12 +331,12 @@ async fn atomic_settlement_fences_a_submit_that_was_already_in_flight() {
         1
     );
     let delayed = network.routes.deferred.lock().unwrap().take().unwrap();
-    network.mailbox.store.transaction(move|scope|Box::pin(async move {
-        assert!(matches!(Mailbox::<_,TestTypes>::new(scope,peer(2),limits()).submit(peer(1),delayed.item,SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None).await.map_err(storage_error)?,SubmitResult::Replayed{status:DeliveryStatus::Refused{reason:DeliveryRefusal::ProcessingFailed{kind}},version,..} if kind.as_str()=="custodyUnresolvable"&&version.value()==1));
-        let row=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT stream,seq,live,capacity_slot,payload_bytes FROM _fleet_sync_mail_items").fetch_one(scope.executor()).await.map_err(durable_steps::StoreError::backend)?;
-        assert_eq!(row.try_get::<Option<String>,_>("stream").unwrap(),None);assert_eq!(row.try_get::<Option<i64>,_>("seq").unwrap(),None);assert_eq!(row.try_get::<i64,_>("live").unwrap(),0);assert_eq!(row.try_get::<i64,_>("capacity_slot").unwrap(),0);assert_eq!(row.try_get::<i64,_>("payload_bytes").unwrap(),0);Ok(())
+    network.relay.store.transaction(move|scope|Box::pin(async move {
+        assert!(matches!(Outbox::<_,TestTypes,_>::new(scope,limits(),&FixtureBindings).submit_relay::<FixturePush<TestTypes>,RecordRemoval>(Submitter::Machine(peer(1)),delayed.item,peer(3), "fixture-route".to_owned(),SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,SubmitResult::Replayed{status:DeliveryStatus::Refused{reason:DeliveryRefusal::ProcessingFailed{kind}},version,..} if kind.as_str()=="custodyUnresolvable"&&version.value()==1));
+        let row=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT record_kind,live,capacity_slot,payload_bytes,payload FROM _fleet_sync_outbox_items").fetch_one(scope.executor()).await.map_err(durable_steps::StoreError::backend)?;
+        assert_eq!(row.try_get::<String,_>("record_kind").unwrap(),"recovered");assert!(row.try_get::<Option<String>,_>("payload").unwrap().is_none());assert_eq!(row.try_get::<i64,_>("live").unwrap(),0);assert_eq!(row.try_get::<i64,_>("capacity_slot").unwrap(),0);assert_eq!(row.try_get::<i64,_>("payload_bytes").unwrap(),0);Ok(())
     })).await.unwrap();
-    network.receive(DeliveryStream::Items).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.recipient)).await;
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 0);
     assert!(

@@ -37,7 +37,7 @@ where
         Ok(admission)
     }
     /// Admit an original only after resolving any pending Local control.
-    /// Relayed controls keep their existing receive and completion paths.
+    /// Relayed controls keep their existing Push and completion paths.
     /// An Attempt payload has already been admitted as T before this returns.
     pub async fn enqueue_local_and_admit<T, TRetention, C>(
         &mut self,

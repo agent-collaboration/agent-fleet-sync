@@ -135,35 +135,6 @@
       ]
     },
     {
-      "name": "read_inbox_state",
-      "sql": "sql/read_inbox_state.sql",
-      "result": "optional",
-      "parameters": [],
-      "row": "StoredCustodyStateRow"
-    },
-    {
-      "name": "write_inbox_state",
-      "sql": "sql/write_inbox_state.sql",
-      "result": "execute",
-      "parameters": [
-        {
-          "name": "record",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "created_at",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "updated_at",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
       "name": "read_outbox_accounting",
       "sql": "sql/read_outbox_accounting.sql",
       "result": "one",

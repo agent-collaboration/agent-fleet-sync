@@ -196,14 +196,21 @@ async fn cancelling_an_original_held_before_the_first_submit_withdraws_it_withou
     drain(&sender_engine(&network)).await;
     assert_eq!(network.routes.sent_bodies.load(Ordering::SeqCst), 0);
     network
-        .mailbox
+        .relay
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let result = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .query(&[item_id(1), item_id(2)])
-                    .await
-                    .map_err(storage_error)?;
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
+                let mut statuses = Vec::new();
+                for identity in [1, 2] {
+                    statuses.push(
+                        outbox
+                            .relay_query(Submitter::Machine(peer(1)), item_id(identity))
+                            .await
+                            .map_err(storage_error)?,
+                    );
+                }
+                let result = QueryResult { statuses };
                 assert!(
                     result
                         .statuses

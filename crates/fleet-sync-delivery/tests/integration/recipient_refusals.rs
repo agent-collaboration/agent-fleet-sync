@@ -48,8 +48,6 @@ impl DeliveryConsumer<TursoScope<'_, TestHost>> for ProjectionConsumer {
         sender == item.sender()
     }
 }
-type ProjectedReceive =
-    ReceiveItems<TestStore, Turso, TestTypes, ProjectionConsumer, FixtureBindings>;
 type ProjectedDeliver =
     DeliverLocally<TestStore, Turso, TestTypes, ProjectionConsumer, FixtureBindings>;
 
@@ -111,14 +109,6 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
             network.recipient.host.clone(),
         );
         recipient
-            .register(ProjectedReceive::new(
-                config(),
-                Arc::new(ProjectionConsumer),
-                network.recipient.host.clone(),
-                std::sync::Arc::new(FixtureBindings),
-            ))
-            .unwrap();
-        recipient
             .register(ProjectedDeliver::new(
                 config().local,
                 Arc::new(ProjectionConsumer),
@@ -133,8 +123,8 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
                 std::sync::Arc::new(FixtureBindings),
             ))
             .unwrap();
-        network.receive(DeliveryStream::Items).await;
-        for _ in 0..2 {
+        drain(&network.engine(&network.relay)).await;
+        for _ in 0..1 {
             let report = recipient.drive_due().await.unwrap();
             assert!(report.failed.is_empty() && report.retried.is_empty());
         }
@@ -174,20 +164,18 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
             "real owed report changed the code"
         );
         drain(&recipient).await;
-        drain(&network.engine(&network.mailbox)).await;
+        drain(&network.engine(&network.relay)).await;
         drain(&network.engine(&network.status)).await;
         let mailbox = network
-            .mailbox
+            .relay
             .store
             .transaction(|scope| {
                 Box::pin(async move {
-                    let result = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                        .query(&[item_id(1)])
+                    let result = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                        .relay_query(Submitter::Machine(peer(1)), item_id(1))
                         .await
                         .map_err(storage_error)?;
-                    let ItemStatusState::Known { status, .. } =
-                        &result.statuses.first().unwrap().state
-                    else {
+                    let ItemStatusState::Known { status, .. } = &result.state else {
                         return Err(durable_steps::StoreError::backend(
                             "missing real mailbox status",
                         ));
@@ -205,7 +193,7 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
         assert!(status.is_terminal());
         assert_eq!(serde_json::to_value(status).unwrap(), expected_status);
         let fetched = network
-            .status
+            .relay
             .store
             .transaction(|scope| {
                 Box::pin(async move {
@@ -257,7 +245,29 @@ async fn coded_recipient_refusal_survives_native_delivery_report_status_and_repl
             .await
             .unwrap();
         assert_eq!(projection, [expected_outcome]);
-        network.receive(DeliveryStream::Items).await;
+        let replay = network
+            .recipient
+            .store
+            .transaction(|scope| {
+                Box::pin(async move {
+                    accept_fixture_push(
+                        scope,
+                        limits(),
+                        item(1, "body refused by native recipient"),
+                        &TestConsumer,
+                        SyncTime::from_unix_millis(0),
+                    )
+                    .await
+                    .map_err(storage_error)
+                })
+            })
+            .await
+            .unwrap();
+        assert!(matches!(replay, PushResult::Replayed { .. }));
+        assert_eq!(
+            serde_json::to_value(replay).unwrap()["value"]["status"],
+            expected_status
+        );
         network.advance();
         drain(&recipient).await;
         drain(&network.engine(&network.sender)).await;
@@ -304,80 +314,60 @@ async fn canonical_cancel_refusal_fits_the_exact_minimum() {
     .await;
 }
 
-async fn assert_settlement_fits_minimum<D: DeliveryTypes<StatusRoute = String>>(
+async fn assert_settlement_fits_minimum<
+    D: DeliveryTypes<Sender = String, Body = String, Address = String, StatusRoute = String>,
+>(
     terminal_refusal: DeliveryRefusal,
 ) {
     let minimum = minimum_settlement_allowance::<D>().unwrap();
     assert!(
-        matches!(DeliveryLimits::new::<D>(100_000,20,100_000,20,100_000,minimum-1),
-        Err(DeliveryConfigError::SettlementAllowanceTooSmall { supplied, minimum:required })
-        if supplied==minimum-1 && required==minimum)
+        matches!(DeliveryLimits::new::<D>(100_000,20,100_000,minimum-1),Err(DeliveryConfigError::SettlementAllowanceTooSmall {supplied,minimum:required}) if supplied==minimum-1&&required==minimum)
     );
     let fixture = Fixture::new().await;
-    fixture.store.transaction(move |scope| Box::pin(async move {
-        let configured=DeliveryLimits::new::<D>(100_000,20,100_000,20,100_000,minimum).unwrap();
-        let mut mailbox=Mailbox::<_,D>::new(scope,peer(2),configured);
+    fixture.store.transaction(move |scope|Box::pin(async move {
+        let configured=DeliveryLimits::new::<D>(100_000,20,100_000,minimum).unwrap();
         for identity in [1,2] {
-            let envelope=if identity==1 { item(1,"body") } else { cancel(2,1) };
-            let envelope=serde_json::from_value(serde_json::to_value(envelope).unwrap()).unwrap();
-            mailbox.submit(peer(1),envelope,SyncTime::from_unix_millis(0),"a".repeat(62),Some(0)).await.map_err(storage_error)?;
-        }
-        for (rank,marker) in [(1,'b'),(2,'c'),(3,'d')] {
-            for identity in [1,2] {
-                let envelope=if identity==1 { item(1,"body") } else { cancel(2,1) };
-                let envelope=serde_json::from_value(serde_json::to_value(envelope).unwrap()).unwrap();
-                mailbox.submit(peer(u128::from(rank)+2),envelope,SyncTime::from_unix_millis(0),
-                    marker.to_string().repeat(62),Some(rank)).await.map_err(storage_error)?;
-                if rank==1 {
-                    let stream=if identity==1 { DeliveryStream::Items } else { DeliveryStream::Controls };
-                    let batch=mailbox.fetch(peer(2),stream,DeliverySeq::new(0),10,100_000,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
-                    mailbox.received(peer(2),stream,batch.through,SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
-                } else {
-                    let outcome=if rank==2 { RecipientOutcome::Held } else {
-                        RecipientOutcome::Refused { reason:terminal_refusal.clone() }
-                    };
-                    mailbox.report(peer(2),RecipientReport { item:item_id(identity),report_seq:ReportSeq::new(rank),outcome }, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
-                }
+            let envelope=if identity==1 {item(1,"body")} else {cancel(2,1)};
+            let envelope:DeliveryEnvelope<D>=serde_json::from_value(serde_json::to_value(envelope).unwrap()).unwrap();
+            let reference=DeliveryItemRef {item:envelope.id(),digest:envelope.digest().clone()};
+            let mut relay=Outbox::<_,D,_>::new(scope,configured,&FixtureBindings);
+            assert!(matches!(relay.submit_relay::<FixturePush<D>,RecordRemoval>(Submitter::Machine(peer(1)),envelope,peer(3),"a".repeat(62),SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,SubmitResult::Accepted {..}));
+            relay.receipt::<FixturePublication<D>>(peer(2),&reference,PushResult::Accepted {accepted_at:SyncTime::from_unix_millis(0)},SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
+            for (sequence,outcome) in [(1,RecipientOutcome::Held),(2,RecipientOutcome::Refused {reason:terminal_refusal.clone()})] {
+                assert!(matches!(relay.recipient_report::<FixturePublication<D>>(peer(2),RecipientReport {item:item_id(identity),report_seq:ReportSeq::new(sequence),outcome},SyncTime::from_unix_millis(0)).await.map_err(storage_error)?,ReportResult::Ack {..}));
             }
         }
         let publications=query::<Turso>(include_str!("../support/sql/read_publication_headers.sql")).fetch_all(scope.executor()).await?;
-        assert_eq!(publications.len(),8,"four retained routes for each item");
+        assert_eq!(publications.len(),2,"one current publication per item at the fixed Project/Machine route");
         let expected=json!({"kind":"refused","value":{"reason":terminal_refusal}});
-        let mut bytes=serde_json::to_vec(&cancel(2,1)).unwrap().len();
+        let mut actual_bytes=serde_json::to_vec(&cancel(2,1)).unwrap().len();
         let mut maximum_publication_bytes=0;
-        let mut terminal_publications=0;
         for row in publications {
-            let target:String=row.try_get("target")?; let record:String=row.try_get("record")?;
+            let target:String=row.try_get("target")?;
+            let record:String=row.try_get("record")?;
             let mut publication:Value=serde_json::from_str(&record).unwrap();
-            if publication.pointer("/status/kind").unwrap()=="refused" {
-                assert_eq!(*publication.get("status").unwrap(),expected);
-                terminal_publications+=1;
-            }
-            let publication_bytes=target.len()+record.len()+3;
+            assert_eq!(*publication.get("status").unwrap(),expected);
+            actual_bytes+=target.len()+record.len()+3;
             *publication.get_mut("version").unwrap()=json!(i64::MAX);
             maximum_publication_bytes=maximum_publication_bytes.max(target.len()+serde_json::to_vec(&publication).unwrap().len()+3);
-            bytes+=publication_bytes;
         }
-        assert_eq!(terminal_publications,2,"both final item/control statuses keep the terminal refusal");
+        // Read actual typed row values independently of the allowance's Rust
+        // placeholder representation. This is a logical value-byte bound, not
+        // a SQLite page or index-size claim.
+        let rows=query::<Turso>("SELECT status_kind,settlement_bytes,CAST(json_array(status_route,item_id,live,payload_bytes,settlement_charge_bytes,payload,capacity_slot,record_kind,consumer_sender,digest,relay_machine_id,submitter_kind,submitter_id,recipient_machine_id,valid_until,status_kind,status_sequence,status_acceptance,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,status_version,last_report_seq,submit_attempted,cancel_outcome,cancel_too_late_at,cancel_target_item_id,acceptance_bound,settlement_bytes,failure_kind,created_at,admitted_at,handed_off_at,updated_at) AS TEXT) AS retained FROM _fleet_sync_outbox_items").fetch_all(scope.executor()).await?;
+        assert_eq!(rows.len(),2);
         let mut reserved=0;
         let mut header_bytes=0;
-        for row in query::<Turso>("SELECT record,settlement_bytes FROM _fleet_sync_mail_items").fetch_all(scope.executor()).await? {
-            let record:String=row.try_get("record")?;
-            let mut header:Value=serde_json::from_str(&record).unwrap();
-            assert_eq!(*header.pointer("/value/status").unwrap(),expected);
+        for row in rows {
+            assert_eq!(row.try_get::<String,_>("status_kind")?,"refused");
             reserved+=row.try_get::<i64,_>("settlement_bytes")?;
-            bytes+=record.len();
-            *header.pointer_mut("/value/version").unwrap()=json!(i64::MAX);
-            header_bytes+=serde_json::to_vec(&header).unwrap().len();
+            header_bytes+=row.try_get::<String,_>("retained")?.len();
         }
+        actual_bytes+=header_bytes;
         assert_eq!(reserved+i64::try_from(serde_json::to_vec(&cancel(2,1)).unwrap().len()).unwrap(),i64::from(minimum));
-        assert!(bytes<=usize::try_from(minimum).unwrap(),"actual retained refusal settlement {bytes} exceeds exact configured minimum {minimum}");
-        // The allowance promises four maximum publications for both headers,
-        // even though this history retains smaller earlier statuses as well.
-        // Bound the reference snapshots' versions at the supported maximum;
-        // the actual stored history and its measured bytes remain unchanged.
+        assert!(actual_bytes<=usize::try_from(minimum).unwrap(),"retained typed settlement {actual_bytes} exceeds minimum {minimum}");
         let required=header_bytes+8*maximum_publication_bytes+serde_json::to_vec(&cancel(2,1)).unwrap().len();
-        assert!(required<=usize::try_from(minimum).unwrap(),"four maximum publications require {required} bytes, exceeding exact configured minimum {minimum}");
+        assert!(required<=usize::try_from(minimum).unwrap(),"bounded status snapshots require {required}, exceeding minimum {minimum}");
         Ok(())
     })).await.unwrap();
 }

@@ -45,3 +45,5 @@ pub use delivery_protocol::{SampleDelivery, delivery_limits};
 
 #[cfg(feature = "test-support")]
 pub mod delivery_node;
+
+mod service_clock;

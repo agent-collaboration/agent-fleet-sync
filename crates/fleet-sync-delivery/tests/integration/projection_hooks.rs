@@ -18,10 +18,10 @@ async fn received_projection_commits_once_and_replay_writes_nothing() {
     let fixture = Fixture::new().await;
     prepare_projection_table(&fixture).await;
     let consumer = Arc::new(ProjectionConsumer::default());
-    let input =
-        receive_projection_item(&fixture, consumer.clone(), item(1, "incoming body"), false)
-            .await
-            .unwrap();
+    let answer = push_projection_item(&fixture, consumer.clone(), item(1, "incoming body"), false)
+        .await
+        .unwrap();
+    assert!(matches!(answer, PushResult::Accepted { .. }));
     let before = read_committed_state(&fixture).await;
     assert_eq!(before.custody.len(), 1);
     assert_eq!(
@@ -32,46 +32,14 @@ async fn received_projection_commits_once_and_replay_writes_nothing() {
             "incoming body".into()
         )]
     );
-    fixture
-        .store
-        .transaction(move |scope| {
-            Box::pin(async move {
-                let effects =
-                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
-                        .store_batch(
-                            input,
-                            projection_batch(item(1, "incoming body")),
-                            consumer.as_ref(),
-                            SyncTime::from_unix_millis(0),
-                        )
-                        .await
-                        .map_err(storage_error)?;
-                assert!(effects.attempts.is_empty() && effects.reports.is_empty());
-                let duplicate = FetchResult {
-                    stream: DeliveryStream::Items,
-                    entries: vec![FetchEntry::Item {
-                        seq: DeliverySeq::new(2),
-                        item: item(1, "incoming body"),
-                    }],
-                    through: DeliverySeq::new(2),
-                };
-                let effects =
-                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
-                        .store_batch(
-                            input,
-                            duplicate,
-                            consumer.as_ref(),
-                            SyncTime::from_unix_millis(0),
-                        )
-                        .await
-                        .map_err(storage_error)?;
-                assert!(effects.attempts.is_empty() && effects.reports.is_empty());
-                Ok(())
-            })
-        })
-        .await
-        .unwrap();
-    assert_eq!(read_committed_state(&fixture).await, before);
+    for _ in 0..2 {
+        let replay =
+            push_projection_item(&fixture, consumer.clone(), item(1, "incoming body"), false)
+                .await
+                .unwrap();
+        assert!(matches!(replay, PushResult::Replayed { .. }));
+        assert_eq!(read_committed_state(&fixture).await, before);
+    }
 }
 
 #[tokio::test]
@@ -85,7 +53,7 @@ async fn received_hook_error_and_later_abort_roll_back_custody_and_projection() 
             .store(refuse_hook, Ordering::SeqCst);
         let before = read_committed_state(&fixture).await;
         assert!(
-            receive_projection_item(
+            push_projection_item(
                 &fixture,
                 consumer.clone(),
                 item(1, "incoming body"),
@@ -96,7 +64,7 @@ async fn received_hook_error_and_later_abort_roll_back_custody_and_projection() 
         );
         assert_eq!(read_committed_state(&fixture).await, before);
         consumer.refuse_received.store(false, Ordering::SeqCst);
-        receive_projection_item(&fixture, consumer, item(1, "incoming body"), false)
+        push_projection_item(&fixture, consumer, item(1, "incoming body"), false)
             .await
             .unwrap();
         let after = read_committed_state(&fixture).await;
@@ -342,101 +310,31 @@ async fn malformed_digest_failure_projects_and_hook_error_rolls_back_both() {
 }
 
 #[tokio::test]
-async fn receive_time_refusal_projects_once_when_local_custody_becomes_relayed() {
-    let fixture = Fixture::new().await;
-    prepare_projection_table(&fixture).await;
-    let attempt = fixture
-        .store
-        .transaction(|scope| {
-            Box::pin(async move {
-                let DeliveryEnvelope::Item(original) = item(1, "original") else {
-                    return Err(StoreError::backend("fixture item"));
-                };
-                let mut inbox =
-                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
-                let attempt = inbox
-                    .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
-                    .await
-                    .map_err(storage_error)
-                    .and_then(require_local_attempt)?;
-                inbox
-                    .record_failure(
-                        attempt,
-                        DeliveryFailureKind::ExecutionFailed,
-                        &TestConsumer,
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
-                Ok(attempt)
-            })
-        })
-        .await
-        .unwrap();
-    let consumer = Arc::new(ProjectionConsumer::default());
-    let input = receive_projection_item(&fixture, consumer.clone(), item(1, "original"), false)
-        .await
-        .unwrap();
-    let before = read_committed_state(&fixture).await;
-    assert_eq!(before.reports.len(), 1);
-    assert_eq!(
-        outcome_values(&before),
-        vec![
-            serde_json::json!({"kind":"refused","value":{"reason":{"kind":"processingFailed","value":{"kind":"executionFailed"}}}})
-        ]
-    );
-    fixture
-        .store
-        .transaction(move |scope| {
-            Box::pin(async move {
-                let mut inbox =
-                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
-                inbox
-                    .store_batch(
-                        input,
-                        projection_batch(item(1, "original")),
-                        consumer.as_ref(),
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
-                inbox
-                    .record_failure(
-                        attempt,
-                        DeliveryFailureKind::ExecutionFailed,
-                        consumer.as_ref(),
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
-                Ok(())
-            })
-        })
-        .await
-        .unwrap();
-    assert_eq!(read_committed_state(&fixture).await, before);
-}
-
-#[tokio::test]
 async fn cancellation_projects_original_and_control_in_one_transaction() {
     let fixture = Fixture::new().await;
     prepare_projection_table(&fixture).await;
     let consumer = Arc::new(ProjectionConsumer::default());
-    receive_projection_item(&fixture, consumer.clone(), item(1, "original"), false)
-        .await
-        .unwrap();
+    assert!(matches!(
+        push_projection_item(&fixture, consumer.clone(), item(1, "original"), false)
+            .await
+            .unwrap(),
+        PushResult::Accepted { .. }
+    ));
     let before = read_committed_state(&fixture).await;
     consumer.refuse_outcome.store(true, Ordering::SeqCst);
     assert!(
-        receive_projection_item(&fixture, consumer.clone(), cancel(2, 1), false)
+        push_projection_item(&fixture, consumer.clone(), cancel(2, 1), false)
             .await
             .is_err()
     );
     assert_eq!(read_committed_state(&fixture).await, before);
     consumer.refuse_outcome.store(false, Ordering::SeqCst);
-    let input = receive_projection_item(&fixture, consumer.clone(), cancel(2, 1), false)
-        .await
-        .unwrap();
+    assert!(matches!(
+        push_projection_item(&fixture, consumer.clone(), cancel(2, 1), false)
+            .await
+            .unwrap(),
+        PushResult::Accepted { .. }
+    ));
     let after = read_committed_state(&fixture).await;
     assert_eq!(after.reports.len(), 2);
     let expected =
@@ -451,27 +349,15 @@ async fn cancellation_projects_original_and_control_in_one_transaction() {
         vec![
             (item_id(1).as_uuid().to_string(), "received"),
             (item_id(1).as_uuid().to_string(), "outcome"),
-            (item_id(2).as_uuid().to_string(), "outcome")
+            (item_id(2).as_uuid().to_string(), "outcome"),
         ]
     );
-    fixture
-        .store
-        .transaction(move |scope| {
-            Box::pin(async move {
-                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
-                    .store_batch(
-                        input,
-                        projection_batch(cancel(2, 1)),
-                        consumer.as_ref(),
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
-                Ok(())
-            })
-        })
-        .await
-        .unwrap();
+    assert!(matches!(
+        push_projection_item(&fixture, consumer, cancel(2, 1), false)
+            .await
+            .unwrap(),
+        PushResult::Replayed { .. }
+    ));
     assert_eq!(read_committed_state(&fixture).await, after);
 }
 
@@ -513,7 +399,7 @@ async fn control_outcomes_preserve_too_late_refusal_and_expiry() {
             )
             .unwrap(),
         );
-        receive_projection_item(&network.recipient, consumer, cancellation, false)
+        push_projection_item(&network.recipient, consumer, cancellation, false)
             .await
             .unwrap();
         let after = read_committed_state(&network.recipient).await;

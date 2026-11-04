@@ -471,7 +471,7 @@ async fn project_publication_waits_without_a_holder_then_resolves_the_current_ma
         .await
         .unwrap();
     fixture
-        .mailbox
+        .relay
         .store
         .transaction(move |scope| {
             Box::pin(async move {
@@ -492,11 +492,11 @@ async fn project_publication_waits_without_a_holder_then_resolves_the_current_ma
         })
         .await
         .unwrap();
-    let engine = fixture.engine(&fixture.mailbox);
+    let engine = fixture.engine(&fixture.relay);
     let first = engine.drive_due().await.unwrap();
     assert!(first.failed.is_empty());
     let owed = fixture
-        .mailbox
+        .relay
         .store
         .transaction(|scope| {
             Box::pin(async move {

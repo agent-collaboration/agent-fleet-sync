@@ -7,6 +7,22 @@ use sqlx_core::{query::query, row::Row};
 use support::*;
 
 #[tokio::test]
+async fn stored_relay_route_bounds_are_checked_before_status_read() {
+    for raw in [serde_json::to_string(&"x".repeat(63)).unwrap(), "{".into()] {
+        let fixture = Fixture::new().await;
+        fixture.store.transaction(move |scope|Box::pin(async move {
+            Outbox::<_,TestTypes,_>::new(scope,limits(),&FixtureBindings)
+                .submit_relay::<FixturePush<TestTypes>,RecordRemoval>(crate::Submitter::Machine(peer(1)),item(1,"route integrity"),peer(3),"valid".into(),SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
+            query::<sqlx_turso::Turso>("UPDATE _fleet_sync_outbox_items SET status_route=?1").bind(raw).execute(scope.executor()).await?;
+            let answer=Outbox::<_,TestTypes,_>::new(scope,limits(),&FixtureBindings)
+                .relay_query(crate::Submitter::Machine(peer(1)),item_id(1)).await;
+            assert!(matches!(answer,Err(crate::DeliveryError::Corrupt {..})),"a stored invalid relay route must be corruption before any status is returned");
+            Ok(())
+        })).await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn report_sequence_and_cancel_identity_survive_real_release_and_reopen() {
     let Fixture {
         store,

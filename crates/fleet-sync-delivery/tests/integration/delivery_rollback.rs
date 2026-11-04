@@ -1,40 +1,69 @@
 #![allow(clippy::unwrap_used)]
-use super::support;
-use durable_steps::{AtomicStore, StoreError, storage::TransactionScope};
+use super::support::*;
+use durable_steps::{
+    AtomicStore, OperationFailure, StoreError, storage::TransactionScope, turso_store::TursoScope,
+};
 use fleet_sync_delivery::*;
-use sqlx_core::row::Row;
-use support::*;
+use sqlx_core::{query::query, row::Row};
+use sqlx_turso::Turso;
 
-use fleet_sync_delivery::delivery_rollback as rollback_error;
+async fn custody_counts(fixture: &Fixture) -> (i64, i64, i64, i64) {
+    fixture.store.transaction(|scope|Box::pin(async move {
+        let row=query::<Turso>("SELECT (SELECT count(*) FROM _fleet_sync_outbox_items) AS items,(SELECT count(*) FROM _fleet_sync_status_owed) AS owed,(SELECT count(*) FROM _fleet_sync_status_events) AS events,(SELECT count(*) FROM _fleet_sync_operations) AS operations").fetch_one(scope.executor()).await?;
+        Ok((row.try_get("items")?,row.try_get("owed")?,row.try_get("events")?,row.try_get("operations")?))
+    })).await.unwrap()
+}
 
-async fn custody_counts(fixture: &Fixture) -> (i64, i64, i64) {
+async fn admit_and_receipt(scope: &mut TursoScope<'_, TestHost>) -> Result<(), DeliveryError> {
+    let envelope = item(1, "pending custody");
+    let reference = DeliveryItemRef {
+        item: envelope.id(),
+        digest: envelope.digest().clone(),
+    };
+    let mut relay = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
+    relay
+        .submit_relay::<FixturePush<TestTypes>, RecordRemoval>(
+            Submitter::Machine(peer(1)),
+            envelope,
+            peer(3),
+            "route".into(),
+            SyncTime::from_unix_millis(0),
+        )
+        .await?;
+    relay
+        .receipt::<FixturePublication<TestTypes>>(
+            peer(2),
+            &reference,
+            PushResult::Accepted {
+                accepted_at: SyncTime::from_unix_millis(0),
+            },
+            SyncTime::from_unix_millis(0),
+        )
+        .await?;
+    Ok(())
+}
+
+async fn assert_fresh_relay_after_rollback(fixture: &Fixture) {
     fixture
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let items = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT count(*) AS count FROM _fleet_sync_mail_items",
-                )
-                .fetch_one(scope.executor())
-                .await?
-                .try_get("count")?;
-                let publications = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT count(*) AS count FROM _fleet_sync_status_owed",
-                )
-                .fetch_one(scope.executor())
-                .await?
-                .try_get("count")?;
-                let operations = sqlx_core::query::query::<sqlx_turso::Turso>(
-                    "SELECT count(*) AS count FROM _fleet_sync_operations",
-                )
-                .fetch_one(scope.executor())
-                .await?
-                .try_get("count")?;
-                Ok((items, publications, operations))
+                let answer = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                    .submit_relay::<FixturePush<TestTypes>, RecordRemoval>(
+                        Submitter::Machine(peer(1)),
+                        item(3, "after rollback"),
+                        peer(3),
+                        "route".into(),
+                        SyncTime::from_unix_millis(1),
+                    )
+                    .await
+                    .map_err(delivery_rollback)?;
+                assert!(matches!(answer,SubmitResult::Accepted {version,..} if version.value()==1));
+                Ok(())
             })
         })
         .await
-        .unwrap()
+        .unwrap();
 }
 
 #[tokio::test]
@@ -44,144 +73,71 @@ async fn refusal_after_custody_change_survives_atomic_rollback() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let mut mailbox = Mailbox::<_, TestTypes>::new(scope, peer(2), limits());
-                mailbox
-                    .submit(
-                        peer(1),
-                        item(1, "pending custody"),
-                        SyncTime::from_unix_millis(0),
-                        "route".into(),
-                        None,
-                    )
-                    .await
-                    .map_err(rollback_error)?;
-                admit_publications::<
-                    _,
-                    TestTypes,
-                    PublishStatus<TestStore, sqlx_turso::Turso, TestTypes>,
-                >(scope)
-                .await
-                .map_err(rollback_error)?;
-                let oversized = DeliveryEnvelope::Item(
-                    DeliveryItem::<TestTypes>::new(
-                        item_id(2),
-                        "x".repeat(100),
-                        Recipient {
-                            peer: peer(2),
-                            address: "inbox".into(),
+                admit_and_receipt(scope).await.map_err(delivery_rollback)?;
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                    .recipient_report::<FixturePublication<TestTypes>>(
+                        peer(2),
+                        RecipientReport {
+                            item: item_id(1),
+                            report_seq: ReportSeq::new(1),
+                            outcome: RecipientOutcome::Delivered {
+                                acceptance: Acceptance {
+                                    receipt: "x".repeat(128),
+                                },
+                            },
                         },
-                        None,
-                        "small".into(),
-                    )
-                    .unwrap(),
-                );
-                Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .submit(
-                        peer(1),
-                        oversized,
                         SyncTime::from_unix_millis(0),
-                        "route".into(),
-                        None,
                     )
                     .await
-                    .map_err(rollback_error)?;
+                    .map_err(delivery_rollback)?;
                 Ok(())
             })
         })
         .await;
-    assert_eq!(custody_counts(&fixture).await, (0, 0, 0));
+    assert_eq!(custody_counts(&fixture).await, (0, 0, 0, 0));
     assert!(
         matches!(result, Err(StoreError::StepRollback { .. })),
         "typed refusal was lost: {result:?}"
     );
-    let failure = classify_delivery_store_error(result.unwrap_err());
-    let disposition =
-        mailbox_failure_disposition::<TestTypes>(peer(2), MailboxOperation::Submit, failure);
     assert!(matches!(
-        disposition,
-        MailboxFailureDisposition::Answer {
-            answer: DeliveryAnswer::Submit(SubmitResult::Refused {
-                reason: DeliveryRefusal::TooLarge {
-                    field: DeliverySizeField::Sender
-                }
-            }),
-            corruption: None,
-        }
+        classify_delivery_store_error(result.unwrap_err()),
+        DeliveryTransactionFailure::Refused(DeliveryRefusal::TooLarge {
+            field: DeliverySizeField::Acceptance
+        })
     ));
-    assert_sequence_restarts(&fixture).await;
+    assert_fresh_relay_after_rollback(&fixture).await;
 }
 
 #[tokio::test]
 async fn corrupt_row_after_custody_change_survives_atomic_rollback() {
     let fixture = Fixture::new().await;
-    let result = fixture.store.transaction(|scope| Box::pin(async move {
-        Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-            .submit(peer(1), item(1, "pending custody"), SyncTime::from_unix_millis(0),
-                "route".into(), None).await.map_err(rollback_error)?;
-        admit_publications::<_, TestTypes, PublishStatus<TestStore, sqlx_turso::Turso, TestTypes>>(scope)
-            .await.map_err(rollback_error)?;
-        sqlx_core::query::query::<sqlx_turso::Turso>(
-            "UPDATE _fleet_sync_mail_items SET record=json_set(record,'$.value.payload',NULL),payload_bytes=0",
-        ).execute(scope.executor()).await?;
-        Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-            .query(&[item_id(1)]).await.map_err(rollback_error)?;
-        Ok(())
-    })).await;
-    assert_eq!(custody_counts(&fixture).await, (0, 0, 0));
+    let result = fixture
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                admit_and_receipt(scope).await.map_err(delivery_rollback)?;
+                query::<Turso>(
+                    "UPDATE _fleet_sync_outbox_items SET recipient_machine_id='broken recipient'",
+                )
+                .execute(scope.executor())
+                .await?;
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                    .relay_query(Submitter::Machine(peer(1)), item_id(1))
+                    .await
+                    .map_err(delivery_rollback)?;
+                Ok(())
+            })
+        })
+        .await;
+    assert_eq!(custody_counts(&fixture).await, (0, 0, 0, 0));
     assert!(
         matches!(result, Err(StoreError::StepRollback { .. })),
         "typed corruption was lost: {result:?}"
     );
-    let failure = classify_delivery_store_error(result.unwrap_err());
     assert!(
-        matches!(&failure, DeliveryTransactionFailure::Corrupt { field } if field == "mail custody state")
+        matches!(classify_delivery_store_error(result.unwrap_err()),DeliveryTransactionFailure::Corrupt {field} if !field.is_empty())
     );
-    match mailbox_failure_disposition::<TestTypes>(peer(2), MailboxOperation::Query, failure) {
-        MailboxFailureDisposition::Answer { answer, corruption } => {
-            assert!(matches!(
-                answer,
-                DeliveryAnswer::MailboxUnavailable {
-                    reason: DeliveryRefusal::ProcessingFailed {
-                        kind: DeliveryFailureKind::CustodyCorrupt
-                    }
-                }
-            ));
-            let corruption = corruption.unwrap();
-            assert_eq!(corruption.mailbox, peer(2));
-            assert_ne!(corruption.mailbox, peer(3));
-            assert_eq!(corruption.field, "mail custody state");
-        }
-        disposition => assert!(
-            matches!(disposition, MailboxFailureDisposition::Answer { .. }),
-            "custody corruption must answer unavailable"
-        ),
-    }
-    assert_sequence_restarts(&fixture).await;
-}
-
-async fn assert_sequence_restarts(fixture: &Fixture) {
-    fixture
-        .store
-        .transaction(|scope| {
-            Box::pin(async move {
-                let answer = Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .submit(
-                        peer(1),
-                        item(3, "after rollback"),
-                        SyncTime::from_unix_millis(1),
-                        "route".into(),
-                        None,
-                    )
-                    .await
-                    .map_err(rollback_error)?;
-                assert!(
-                    matches!(answer, SubmitResult::Accepted { version, .. } if version.value() == 1)
-                );
-                Ok(())
-            })
-        })
-        .await
-        .unwrap();
+    assert_fresh_relay_after_rollback(&fixture).await;
 }
 
 #[tokio::test]
@@ -191,21 +147,10 @@ async fn failed_store_rollback_overrides_the_delivery_marker() {
         .store
         .transaction::<(), _>(|scope| {
             Box::pin(async move {
-                Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .submit(
-                        peer(1),
-                        item(1, "must disappear"),
-                        SyncTime::from_unix_millis(0),
-                        "route".into(),
-                        None,
-                    )
-                    .await
-                    .map_err(rollback_error)?;
+                admit_and_receipt(scope).await.map_err(delivery_rollback)?;
                 // End the real transaction so the store's required rollback itself fails.
-                sqlx_core::query::query::<sqlx_turso::Turso>("ROLLBACK")
-                    .execute(scope.executor())
-                    .await?;
-                Err(rollback_error(DeliveryError::Refused {
+                query::<Turso>("ROLLBACK").execute(scope.executor()).await?;
+                Err(delivery_rollback(DeliveryError::Refused {
                     reason: DeliveryRefusal::MailboxFull,
                 }))
             })
@@ -214,19 +159,14 @@ async fn failed_store_rollback_overrides_the_delivery_marker() {
         .unwrap_err();
     assert!(matches!(&error, StoreError::Backend { .. }));
     assert!(matches!(
-        mailbox_failure_disposition::<TestTypes>(
-            peer(2),
-            MailboxOperation::Submit,
-            classify_delivery_store_error(error)
-        ),
-        MailboxFailureDisposition::Unhandled(DeliveryTransactionFailure::OutcomeUnknown(_))
+        classify_delivery_store_error(error),
+        DeliveryTransactionFailure::OutcomeUnknown(_)
     ));
-    assert_eq!(custody_counts(&fixture).await, (0, 0, 0));
+    assert_eq!(custody_counts(&fixture).await, (0, 0, 0, 0));
 }
 
 #[test]
 fn malformed_and_lookalike_markers_never_refuse_or_quarantine() {
-    use durable_steps::OperationFailure;
     for (code, detail) in [
         ("delivery_refused", "{}"),
         ("delivery_refused", r#"{"kind":"mailboxFull","extra":1}"#),
@@ -235,8 +175,11 @@ fn malformed_and_lookalike_markers_never_refuse_or_quarantine() {
             r#"{"kind":"tooLarge","value":{"field":"unknown"}}"#,
         ),
         ("delivery_custody_corrupt", r#"{"field":""}"#),
-        ("delivery_custody_corrupt", r#"{"field":"mail\nstate"}"#),
-        ("delivery_custody_corrupt", r#"{"field":"mail","extra":1}"#),
+        ("delivery_custody_corrupt", r#"{"field":"custody\nstate"}"#),
+        (
+            "delivery_custody_corrupt",
+            r#"{"field":"custody","extra":1}"#,
+        ),
         ("delivery_custody_corrupt", "null"),
     ] {
         let failure = classify_delivery_store_error(StoreError::StepRollback {
@@ -246,19 +189,15 @@ fn malformed_and_lookalike_markers_never_refuse_or_quarantine() {
             }),
         });
         assert!(matches!(
-            &failure,
+            failure,
             DeliveryTransactionFailure::OutcomeUnknown(StoreError::Corrupt { .. })
-        ));
-        assert!(matches!(
-            mailbox_failure_disposition::<TestTypes>(peer(2), MailboxOperation::Submit, failure),
-            MailboxFailureDisposition::Unhandled(_)
         ));
     }
     for error in [
         StoreError::backend(r#"delivery_refused {"kind":"mailboxFull"}"#),
         StoreError::Corrupt {
             field: "delivery_custody_corrupt".into(),
-            message: "mail state".into(),
+            message: "custody state".into(),
         },
         StoreError::StepRollback {
             failure: Box::new(OperationFailure::Refused {
@@ -268,85 +207,8 @@ fn malformed_and_lookalike_markers_never_refuse_or_quarantine() {
         },
     ] {
         assert!(matches!(
-            mailbox_failure_disposition::<TestTypes>(
-                peer(2),
-                MailboxOperation::Submit,
-                classify_delivery_store_error(error)
-            ),
-            MailboxFailureDisposition::Unhandled(DeliveryTransactionFailure::OutcomeUnknown(_))
+            classify_delivery_store_error(error),
+            DeliveryTransactionFailure::OutcomeUnknown(_)
         ));
-    }
-}
-
-#[test]
-fn disposition_preserves_the_operation_and_leaves_infrastructure_unhandled() {
-    for operation in [
-        MailboxOperation::Submit,
-        MailboxOperation::Report,
-        MailboxOperation::Fetch,
-        MailboxOperation::Received,
-        MailboxOperation::Query,
-        MailboxOperation::Retire,
-        MailboxOperation::Settle,
-    ] {
-        let failure = classify_delivery_store_error(rollback_error(DeliveryError::Refused {
-            reason: DeliveryRefusal::MailboxFull,
-        }));
-        let disposition = mailbox_failure_disposition::<TestTypes>(peer(2), operation, failure);
-        match operation {
-            MailboxOperation::Submit => assert!(matches!(
-                disposition,
-                MailboxFailureDisposition::Answer {
-                    answer: DeliveryAnswer::Submit(SubmitResult::Refused {
-                        reason: DeliveryRefusal::MailboxFull
-                    }),
-                    corruption: None
-                }
-            )),
-            MailboxOperation::Report => assert!(matches!(
-                disposition,
-                MailboxFailureDisposition::Answer {
-                    answer: DeliveryAnswer::Report(ReportResult::Refused {
-                        reason: DeliveryRefusal::MailboxFull
-                    }),
-                    corruption: None
-                }
-            )),
-            _ => assert!(matches!(
-                disposition,
-                MailboxFailureDisposition::Unhandled(DeliveryTransactionFailure::Refused(
-                    DeliveryRefusal::MailboxFull
-                ))
-            )),
-        }
-        let corrupt = classify_delivery_store_error(rollback_error(DeliveryError::Corrupt {
-            field: "mail state",
-        }));
-        assert!(
-            matches!(mailbox_failure_disposition::<TestTypes>(peer(2), operation, corrupt),
-            MailboxFailureDisposition::Answer { corruption: Some(MailboxCorruption { mailbox, .. }), .. } if mailbox == peer(2))
-        );
-        for error in [
-            DeliveryError::InvalidBatch,
-            DeliveryError::CallConflict,
-            DeliveryError::Encoding("encoding".into()),
-            DeliveryError::SequenceExhausted,
-            DeliveryError::InboxFull,
-            DeliveryError::CustodyMissing,
-            DeliveryError::DigestMismatch,
-            DeliveryError::ProcessingFailed {
-                kind: DeliveryFailureKind::CustodyCorrupt,
-            },
-            DeliveryError::Storage("storage".into()),
-        ] {
-            assert!(matches!(
-                mailbox_failure_disposition::<TestTypes>(
-                    peer(2),
-                    operation,
-                    classify_delivery_store_error(rollback_error(error))
-                ),
-                MailboxFailureDisposition::Unhandled(DeliveryTransactionFailure::OutcomeUnknown(_))
-            ));
-        }
     }
 }

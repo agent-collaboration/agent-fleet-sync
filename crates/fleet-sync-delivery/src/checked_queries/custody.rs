@@ -231,58 +231,6 @@ where
 }
 
 #[derive(Debug)]
-pub(crate) struct StoredCustodyStateRow {
-    pub record: Option<String>,
-}
-pub(crate) fn read_inbox_state<S>(
-    scope: &mut S,
-) -> impl std::future::Future<Output = Result<Option<StoredCustodyStateRow>, sqlx_core::Error>> + Send
-where
-    S: TransactionScope,
-    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
-    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
-    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
-{
-    async move {
-        let statement = query::<S::Database>(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/sql/read_inbox_state.sql"
-        )));
-        let row = statement.fetch_optional(scope.executor()).await?;
-        row.as_ref()
-            .map(|row| {
-                Ok(StoredCustodyStateRow {
-                    record: row.try_get("record")?,
-                })
-            })
-            .transpose()
-    }
-}
-pub(crate) fn write_inbox_state<S>(
-    scope: &mut S,
-    record: String,
-    created_at: String,
-    updated_at: String,
-) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
-where
-    S: TransactionScope,
-    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
-    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
-{
-    async move {
-        let statement = query::<S::Database>(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/sql/write_inbox_state.sql"
-        )))
-        .bind(record)
-        .bind(created_at)
-        .bind(updated_at);
-        statement.execute(scope.executor()).await?;
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
 pub(crate) struct StoredCustodyAccountingRow {
     pub items: Option<String>,
     pub bytes: Option<String>,

@@ -10,18 +10,12 @@ use support::*;
 #[tokio::test]
 async fn owed_publication_refuses_a_stored_non_v7_peer_before_admitting_a_task() {
     let fixture = Fixture::new().await;
-    fixture.store.transaction(|scope| Box::pin(async move {
-        Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-            .submit(peer(1), item(1, "body"), SyncTime::from_unix_millis(0), "fixture-route".to_owned(), None)
-            .await.map_err(storage_error)?;
-        let target = serde_json::json!({"kind":"peer","value":{"peer":"019eef00-0000-4000-8000-000000000001"}}).to_string();
-        sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_status_owed SET submitter_kind='machine',submitter_id=COALESCE(json_extract(?1,'$.value.sender'),json_extract(?1,'$.value.peer')),target_kind=json_extract(?1,'$.kind'),status_route=COALESCE(?1 -> '$.value.route',status_route)")
-            .bind(target).execute(scope.executor()).await?;
-        let result = admit_publications::<_, TestTypes, PublishTask>(scope).await;
-        assert!(matches!(result, Err(DeliveryError::Corrupt { .. })));
-        let row = sqlx_core::query::query::<sqlx_turso::Turso>("SELECT count(*) AS count FROM _fleet_sync_operations")
-            .fetch_one(scope.executor()).await?;
-        assert_eq!(row.try_get::<i64, _>("count")?, 0);
+    fixture.store.transaction(|scope|Box::pin(async move {
+        StatusStream::<_,TestTypes>::new(scope,Submitter::Machine(peer(1)),"fixture-route".into()).append(&StatusPublication {item:item_id(1),status:DeliveryStatus::Sent,version:StatusVersion::new(1),cancel:None},SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
+        sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_status_owed SET submitter_id='019eef00-0000-4000-8000-000000000001'").execute(scope.executor()).await?;
+        assert!(matches!(admit_publications::<_,TestTypes,PublishTask>(scope).await,Err(DeliveryError::Corrupt {..})));
+        let row=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT count(*) AS count FROM _fleet_sync_operations").fetch_one(scope.executor()).await?;
+        assert_eq!(row.try_get::<i64,_>("count")?,0);
         Ok(())
     })).await.unwrap();
 }
@@ -33,79 +27,52 @@ async fn an_old_publication_completion_cannot_retire_a_newer_owed_revision() {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .submit(
-                        peer(1),
-                        item(1, "body"),
+                let mut stream = StatusStream::<_, TestTypes>::new(
+                    scope,
+                    Submitter::Machine(peer(1)),
+                    "fixture-route".into(),
+                );
+                let (_, old) = stream
+                    .append(
+                        &StatusPublication {
+                            item: item_id(1),
+                            status: DeliveryStatus::Sent,
+                            version: StatusVersion::new(1),
+                            cancel: None,
+                        },
                         SyncTime::from_unix_millis(0),
-                        "fixture-route".to_owned(),
-                        None,
                     )
                     .await
                     .map_err(storage_error)?;
-                Ok(())
-            })
-        })
-        .await
-        .unwrap();
-    let old = PublicationRef {
-        item: item_id(1),
-        version: StatusVersion::new(1),
-        target: PublicationTarget::StatusStream {
-            sender: fleet_sync_delivery::Submitter::Machine(peer(1)),
-            route: "fixture-route".into(),
-        },
-    };
-    let first_read = old.clone();
-    fixture
-        .store
-        .transaction(move |scope| {
-            Box::pin(async move {
+                let old = old.unwrap();
                 assert!(
-                    resolve_publication::<_, TestTypes>(scope, first_read)
+                    resolve_publication::<_, TestTypes>(scope, old.clone())
                         .await
                         .map_err(storage_error)?
                         .is_some()
                 );
-                let mut mailbox = Mailbox::<_, TestTypes>::new(scope, peer(2), limits());
-                mailbox
-                    .fetch(
-                        peer(2),
-                        DeliveryStream::Items,
-                        DeliverySeq::new(0),
-                        1,
-                        100_000,
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
-                mailbox
-                    .received(
-                        peer(2),
-                        DeliveryStream::Items,
-                        DeliverySeq::new(1),
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
-                Ok(())
-            })
-        })
-        .await
-        .unwrap();
-    fixture
-        .store
-        .transaction(move |scope| {
-            Box::pin(async move {
-                let newer = PublicationRef {
-                    version: StatusVersion::new(2),
-                    ..old.clone()
-                };
+                let (_, newer) = StatusStream::<_, TestTypes>::new(
+                    scope,
+                    Submitter::Machine(peer(1)),
+                    "fixture-route".into(),
+                )
+                .append(
+                    &StatusPublication {
+                        item: item_id(1),
+                        status: DeliveryStatus::AtRecipient,
+                        version: StatusVersion::new(2),
+                        cancel: None,
+                    },
+                    SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)?;
+                let newer = newer.unwrap();
                 retire_publication::<_, TestTypes>(scope, old.clone())
                     .await
                     .map_err(storage_error)?;
                 assert!(
-                    resolve_publication::<_, TestTypes>(scope, old.clone())
+                    resolve_publication::<_, TestTypes>(scope, old)
                         .await
                         .map_err(storage_error)?
                         .is_none()
@@ -142,10 +109,9 @@ async fn held_then_delivered_coalesces_one_owed_report_and_old_completion_preser
         .lock()
         .unwrap()
         .push_back(LocalOutcome::Held { until: None });
-    network.receive(DeliveryStream::Items).await;
+    drain(&network.engine(&network.relay)).await;
     let recipient = network.engine(&network.recipient);
-    recipient.drive_due().await.unwrap(); // Receive stores body and admits local delivery.
-    recipient.drive_due().await.unwrap(); // Held outcome owes first report.
+    recipient.drive_due().await.unwrap(); // Pushed custody now records Held and owes its report.
     network.routes.relay_up.store(false, Ordering::SeqCst);
     let waiting = recipient.drive_due().await.unwrap();
     assert!(waiting.failed.is_empty());
@@ -211,7 +177,7 @@ async fn held_then_delivered_coalesces_one_owed_report_and_old_completion_preser
     network.routes.relay_up.store(true, Ordering::SeqCst);
     network.advance();
     drain(&recipient).await;
-    drain(&network.engine(&network.mailbox)).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.status)).await;
     network
         .sender

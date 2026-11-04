@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used)]
 use super::support;
 use durable_steps::{
-    AtomicStore, BoxFuture, CallResult, CallTarget, Engine, JournalScope, OperationContext,
-    OperationFailure, RequestKey, Resume, StepError, StepName, StoreError, Task,
-    storage::TransactionScope, turso_store::TursoScope,
+    AtomicStore, BoxFuture, CallResult, CallTarget, Engine, OperationContext, OperationFailure,
+    RequestKey, Resume, StepError, StepName, StoreError, Task, storage::TransactionScope,
+    turso_store::TursoScope,
 };
 use fleet_sync_delivery::*;
 use sqlx_core::row::Row;
@@ -198,30 +198,28 @@ async fn stored_item_bound_sanitizes_call_checkpoint_before_reopen_without_resen
         let mut network = NetworkFixture::new().await;
         network.enqueue(1, body).await;
         drain(&network.engine(&network.sender)).await;
-        let batch = network
-            .mailbox
+        let reference = DeliveryItemRef {
+            item: item_id(1),
+            digest: item(1, body).digest().clone(),
+        };
+        let lookup = reference.clone();
+        let resolved = network
+            .relay
             .store
-            .transaction(|scope| {
+            .transaction(move |scope| {
                 Box::pin(async move {
-                    Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                        .fetch(
-                            peer(2),
-                            DeliveryStream::Items,
-                            DeliverySeq::new(0),
-                            1,
-                            10_000,
-                            SyncTime::from_unix_millis(0),
-                        )
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                        .resolve_push(&lookup, SyncTime::from_unix_millis(0))
                         .await
                         .map_err(storage_error)
                 })
             })
             .await
+            .unwrap()
             .unwrap();
-        let batch: FetchResult<LocalTypes> =
-            serde_json::from_value(serde_json::to_value(batch).unwrap()).unwrap();
-        let through = batch.through;
-        network
+        let envelope: DeliveryEnvelope<LocalTypes> =
+            serde_json::from_value(serde_json::to_value(resolved.item).unwrap()).unwrap();
+        let pushed = network
             .recipient
             .store
             .transaction(move |scope| {
@@ -231,44 +229,33 @@ async fn stored_item_bound_sanitizes_call_checkpoint_before_reopen_without_resen
                     )
                     .execute(scope.executor())
                     .await?;
-                    let mut inbox =
-                        Inbox::<_, LocalTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
-                    let input = inbox
-                        .begin_receive(
-                            DeliveryStream::Items,
-                            fleet_sync_protocol::SyncTime::from_unix_millis(0),
-                        )
-                        .await
-                        .map_err(storage_error)?
-                        .unwrap();
-                    let effects = inbox
-                        .store_batch(input, batch, &LocalConsumer, SyncTime::from_unix_millis(0))
-                        .await
-                        .map_err(storage_error)?;
-                    for attempt in effects.attempts {
-                        scope
-                            .admit::<LocalTask>(
-                                &delivery_request_key(&(attempt.item, attempt.attempt)).unwrap(),
-                                &attempt,
+                    let answer =
+                        Inbox::<_, LocalTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+                            .accept_push::<LocalTask, LocalReport, RecordRemoval, _>(
+                                resolved.submitter,
+                                envelope,
+                                peer(3),
+                                &LocalConsumer,
+                                SyncTime::from_unix_millis(0),
                             )
                             .await
-                            .map_err(StoreError::backend)?;
-                    }
-                    Ok(())
+                            .map_err(storage_error)?;
+                    assert!(matches!(answer, PushResult::Accepted { .. }));
+                    Ok(answer)
                 })
             })
             .await
             .unwrap();
         network
-            .mailbox
+            .relay
             .store
             .transaction(move |scope| {
                 Box::pin(async move {
-                    Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                        .received(
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                        .receipt::<PublishTask>(
                             peer(2),
-                            DeliveryStream::Items,
-                            through,
+                            &reference,
+                            pushed,
                             SyncTime::from_unix_millis(0),
                         )
                         .await
@@ -423,7 +410,7 @@ async fn stored_item_bound_sanitizes_call_checkpoint_before_reopen_without_resen
             })
             .await
             .unwrap();
-        drain(&network.engine(&network.mailbox)).await;
+        drain(&network.engine(&network.relay)).await;
         drain(&network.engine(&network.status)).await;
         let status = sender_status(&network, 1).await;
         assert_eq!(

@@ -99,6 +99,20 @@ pub type ObservationStore = TursoStore<ObservationHost>;
 type RecordRemoval = RemoveDeliveryRecord<ObservationStore, Turso>;
 pub type ObservationTask =
     DeliverLocally<ObservationStore, Turso, ObservationTypes, ObservationConsumer, FixtureBindings>;
+pub async fn push_observation_envelope(
+    scope: &mut TursoScope<'_, ObservationHost>,
+    envelope: DeliveryEnvelope<ObservationTypes>,
+    consumer: &ObservationConsumer,
+) -> Result<PushResult<Acceptance>, DeliveryError> {
+    Inbox::<_, ObservationTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+        .accept_push::<
+            ObservationTask,
+            ReportOutcome<ObservationStore, Turso, ObservationTypes, FixtureBindings>,
+            RecordRemoval,
+            _,
+        >(Submitter::Machine(peer(1)), envelope, peer(3), consumer, SyncTime::from_unix_millis(0))
+        .await
+}
 pub struct ObservationHost {
     pub clock: AtomicU64,
     identities: AtomicU64,

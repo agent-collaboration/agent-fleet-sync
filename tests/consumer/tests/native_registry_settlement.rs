@@ -46,6 +46,7 @@ async fn open_registry_service(directory: &Path) -> TestResult<(NativeService, C
     let service_path = directory.join("service");
     let service = FleetService::<SampleProtocol, _, _>::open(
         ServiceOptions {
+            clock: std::sync::Arc::new(runtime_primitives::SystemClock),
             directory: service_path.clone(),
             delivery: None,
             receiver,

@@ -71,10 +71,6 @@ async fn state(store: &TestStore) -> OutboxStatusState<Acceptance> {
 #[tokio::test]
 async fn successor_resend_delivers_through_push_report_and_current_project_holder_publication() {
     let network = NetworkFixture::new().await;
-    network
-        .routes
-        .fleet_push
-        .store(true, std::sync::atomic::Ordering::SeqCst);
     let successor = Fixture::new().await;
     queue(&network.sender.store).await;
     queue(&successor.store).await;
@@ -94,7 +90,7 @@ async fn successor_resend_delivers_through_push_report_and_current_project_holde
         .publications
         .set_project_holder(project(), peer(9), &successor.store);
     let answer = network
-        .mailbox
+        .relay
         .store
         .transaction(|scope| {
             Box::pin(async move {
@@ -140,9 +136,9 @@ async fn successor_resend_delivers_through_push_report_and_current_project_holde
         })
         .await
         .unwrap();
-    drain(&network.engine(&network.mailbox)).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.recipient)).await;
-    drain(&network.engine(&network.mailbox)).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.status)).await;
     assert!(matches!(
         state(&successor.store).await,

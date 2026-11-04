@@ -8,33 +8,27 @@ use sqlx_core::row::Row;
 use support::*;
 
 #[tokio::test]
-async fn released_and_compacted_mail_reopen_with_explicit_and_legacy_bounds() {
-    for compact in [false, true] {
+async fn released_and_terminal_relay_records_reopen_with_explicit_and_legacy_bounds() {
+    for terminal in [false, true] {
         let Fixture {
             store,
             host,
             directory,
         } = Fixture::new().await;
-        store.transaction(move |scope| Box::pin(async move {
-            let limits=variable_limits(100_000_000);
-            let mut mailbox=Mailbox::<_,VariableTypes>::new(scope,peer(2),limits);
+        store.transaction(move |scope|Box::pin(async move {
+            let configured=variable_limits(100_000_000);
             for identity in [1,2] {
-                mailbox.submit(peer(1),DeliveryEnvelope::Item(variable_item(identity,"small")),now(),"route".into(),None).await.map_err(storage_error)?;
+                let envelope=DeliveryEnvelope::Item(variable_item(identity,"small"));
+                let reference=DeliveryItemRef {item:envelope.id(),digest:envelope.digest().clone()};
+                let mut relay=Outbox::<_,VariableTypes,_>::new(scope,configured,&FixtureBindings);
+                relay.submit_relay::<FixturePush<VariableTypes>,RecordRemoval>(Submitter::Machine(peer(1)),envelope,peer(3),"route".into(),now()).await.map_err(storage_error)?;
+                relay.receipt::<FixturePublication<VariableTypes>>(peer(2),&reference,PushResult::Accepted {accepted_at:now()},now()).await.map_err(storage_error)?;
+                if terminal {relay.recipient_report::<FixturePublication<VariableTypes>>(peer(2),RecipientReport {item:item_id(identity),report_seq:ReportSeq::new(1),outcome:RecipientOutcome::Delivered {acceptance:Acceptance {receipt:"ok".into()}}},now()).await.map_err(storage_error)?;}
             }
-            let batch=mailbox.fetch(peer(2),DeliveryStream::Items,DeliverySeq::new(0),2,10_000,now()).await.map_err(storage_error)?;
-            mailbox.received(peer(2),DeliveryStream::Items,batch.through,now()).await.map_err(storage_error)?;
-            if compact {
-                for identity in [1,2] {
-                    mailbox.report(peer(2),RecipientReport { item:item_id(identity),report_seq:ReportSeq::new(1),outcome:RecipientOutcome::Delivered { acceptance:Acceptance { receipt:"ok".into() } } }, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await.map_err(storage_error)?;
-                }
-                let result=mailbox.retire(peer(1),&call("compact-bounds"),&[item_id(1),item_id(2)]).await.map_err(storage_error)?;
-                assert_eq!(result.retired.len(),2);
-            }
-            // Persist an old-format record alongside the explicit-bound record.
-            sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_mail_items SET record=json_remove(record,'$.value.acceptanceBound') WHERE item_id=?1").bind(item_id(2).as_uuid().to_string()).execute(scope.executor()).await?;
-            if !compact {
-                let legacy=minimum_settlement_allowance::<VariableTypes>().unwrap();
-                sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_mail_items SET record=json_set(record,'$.value.settlementBytes',?1),settlement_bytes=?1 WHERE item_id=?2").bind(i64::from(legacy)).bind(item_id(2).as_uuid().to_string()).execute(scope.executor()).await?;
+            sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_outbox_items SET acceptance_bound=NULL WHERE item_id=?1").bind(item_id(2).as_uuid().to_string()).execute(scope.executor()).await?;
+            if !terminal {
+                let global=i64::from(minimum_settlement_allowance::<VariableTypes>().unwrap());
+                sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_outbox_items SET settlement_bytes=?1,settlement_charge_bytes=?1 WHERE item_id=?2").bind(global).bind(item_id(2).as_uuid().to_string()).execute(scope.executor()).await?;
             }
             Ok(())
         })).await.unwrap();
@@ -42,26 +36,24 @@ async fn released_and_compacted_mail_reopen_with_explicit_and_legacy_bounds() {
         let reopened = TestStore::open_and_migrate(directory.path().join("delivery.db"), host)
             .await
             .unwrap();
-        reopened.transaction(move |scope| Box::pin(async move {
-            let limits=variable_limits(100_000_000);
+        reopened.transaction(move |scope|Box::pin(async move {
+            let configured=variable_limits(100_000_000);
             for identity in [1,2] {
-                let row=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT record FROM _fleet_sync_mail_items WHERE item_id=?1").bind(item_id(identity).as_uuid().to_string()).fetch_one(scope.executor()).await?;
-                let record:serde_json::Value=serde_json::from_str(&row.try_get::<String,_>("record")?).unwrap();
-                assert_eq!(record["kind"],if compact {"compacted"} else {"live"});
-                assert!(record["value"]["payload"].is_null());
-                assert_eq!(record["value"].get("acceptanceBound").and_then(serde_json::Value::as_u64),if identity==1 {Some(64)} else {None});
-                Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).query(&[item_id(identity)]).await.map_err(storage_error)?;
-                let result=Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).report(peer(2),RecipientReport { item:item_id(identity),report_seq:ReportSeq::new(2),outcome:RecipientOutcome::Delivered { acceptance:Acceptance { receipt:"x".repeat(100) } } }, fleet_sync_protocol::SyncTime::from_unix_millis(0)).await;
-                if identity==1 { assert!(matches!(result,Err(DeliveryError::Refused { reason:DeliveryRefusal::TooLarge { field:DeliverySizeField::Acceptance } }))); }
-                else { result.map_err(storage_error)?; }
+                let row=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT payload,acceptance_bound,status_kind FROM _fleet_sync_outbox_items WHERE item_id=?1").bind(item_id(identity).as_uuid().to_string()).fetch_one(scope.executor()).await?;
+                assert!(row.try_get::<Option<String>,_>("payload")?.is_none());
+                assert_eq!(row.try_get::<Option<i64>,_>("acceptance_bound")?,if identity==1 {Some(64)} else {None});
+                assert_eq!(row.try_get::<String,_>("status_kind")?,if terminal {"delivered"} else {"atRecipient"});
+                let mut relay=Outbox::<_,VariableTypes,_>::new(scope,configured,&FixtureBindings);
+                relay.relay_query(Submitter::Machine(peer(1)),item_id(identity)).await.map_err(storage_error)?;
+                let result=relay.recipient_report::<FixturePublication<VariableTypes>>(peer(2),RecipientReport {item:item_id(identity),report_seq:ReportSeq::new(2),outcome:RecipientOutcome::Delivered {acceptance:Acceptance {receipt:"x".repeat(100)}}},now()).await;
+                if identity==1 {assert!(matches!(result,Err(DeliveryError::Refused {reason:DeliveryRefusal::TooLarge {field:DeliverySizeField::Acceptance}})));}
+                else {result.map_err(storage_error)?;}
             }
-            if compact {
-                // Challenge the compacted-row decoder too: the old shape accepts
-                // this globally valid receipt, the explicit small bound rejects it.
-                let status=serde_json::to_string(&DeliveryStatus::Delivered {acceptance:Acceptance {receipt:"x".repeat(100)}}).unwrap();
-                sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_mail_items SET record=json_set(record,'$.value.status',json(?1))").bind(status).execute(scope.executor()).await?;
-                assert!(matches!(Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).query(&[item_id(1)]).await,Err(DeliveryError::Corrupt { .. })));
-                Mailbox::<_,VariableTypes>::new(scope,peer(2),limits).query(&[item_id(2)]).await.map_err(storage_error)?;
+            if terminal {
+                let acceptance=serde_json::to_string(&Acceptance {receipt:"x".repeat(100)}).unwrap();
+                sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_outbox_items SET status_acceptance=?1").bind(acceptance).execute(scope.executor()).await?;
+                assert!(matches!(Outbox::<_,VariableTypes,_>::new(scope,configured,&FixtureBindings).relay_query(Submitter::Machine(peer(1)),item_id(1)).await,Err(DeliveryError::Corrupt {..})));
+                Outbox::<_,VariableTypes,_>::new(scope,configured,&FixtureBindings).relay_query(Submitter::Machine(peer(1)),item_id(2)).await.map_err(storage_error)?;
             }
             Ok(())
         })).await.unwrap();

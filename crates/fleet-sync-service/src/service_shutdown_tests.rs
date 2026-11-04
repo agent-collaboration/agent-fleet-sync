@@ -117,6 +117,7 @@ async fn shutdown_refuses_buffered_calls_before_joining_their_dispatcher() -> Te
     });
     let service = FleetService::<NoConsumer, _, _>::open(
         ServiceOptions {
+            clock: std::sync::Arc::new(runtime_primitives::SystemClock),
             directory: directory.path().to_owned(),
             delivery: None,
             receiver,

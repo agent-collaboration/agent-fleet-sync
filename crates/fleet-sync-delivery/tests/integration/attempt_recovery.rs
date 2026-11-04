@@ -12,9 +12,8 @@ async fn non_deduplicating_local_answer_loss_is_uncertain_and_never_repeated() {
     network.enqueue(1, "one possible effect").await;
     drain(&network.engine(&network.sender)).await;
     network.routes.lose_delivery.store(true, Ordering::SeqCst);
-    network.receive(DeliveryStream::Items).await;
+    drain(&network.engine(&network.relay)).await;
     let recipient = network.engine(&network.recipient);
-    assert_eq!(recipient.drive_due().await.unwrap().completed.len(), 1);
     let report = recipient.drive_due().await.unwrap();
     assert_eq!(report.failed.len(), 1);
     assert!(matches!(
@@ -24,7 +23,7 @@ async fn non_deduplicating_local_answer_loss_is_uncertain_and_never_repeated() {
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
     network.advance();
     drain(&network.engine(&network.recipient)).await;
-    drain(&network.engine(&network.mailbox)).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.status)).await;
     assert!(matches!(
         sender_status(&network, 1).await,
@@ -33,7 +32,7 @@ async fn non_deduplicating_local_answer_loss_is_uncertain_and_never_repeated() {
             ..
         }
     ));
-    network.receive(DeliveryStream::Items).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.recipient)).await;
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
 }
@@ -55,7 +54,7 @@ async fn oversized_local_receipt_is_uncertain_at_call_checkpoint_and_after_resta
                 receipt: "oversized".repeat(1024),
             },
         });
-    network.receive(DeliveryStream::Items).await;
+    drain(&network.engine(&network.relay)).await;
     let reached = std::sync::Arc::new(tokio::sync::Notify::new());
     let engine = std::sync::Arc::new(interleaved_engine(
         &network,
@@ -64,8 +63,7 @@ async fn oversized_local_receipt_is_uncertain_at_call_checkpoint_and_after_resta
             resume: std::sync::Arc::new(tokio::sync::Notify::new()),
         },
     ));
-    // Receive commits first; the next operation pauses after durable CallDone.
-    assert_eq!(engine.drive_due().await.unwrap().completed.len(), 1);
+    // Push is committed; the first local operation pauses after durable CallDone.
     let worker = tokio::spawn(async move { engine.drive_due().await });
     tokio::time::timeout(std::time::Duration::from_secs(10), reached.notified())
         .await
@@ -100,7 +98,7 @@ async fn oversized_local_receipt_is_uncertain_at_call_checkpoint_and_after_resta
     // A new Engine recovers the saved answer after the interrupted drive lease.
     network.advance();
     drain(&network.engine(&network.recipient)).await;
-    drain(&network.engine(&network.mailbox)).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.status)).await;
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
     assert!(matches!(
@@ -127,7 +125,7 @@ async fn oversized_local_receipt_is_uncertain_at_call_checkpoint_and_after_resta
         })
         .await
         .unwrap();
-    network.receive(DeliveryStream::Items).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&network.engine(&network.recipient)).await;
     assert_eq!(network.routes.local_calls.load(Ordering::SeqCst), 1);
 }
@@ -155,14 +153,6 @@ fn interleaved_engine(
         ))
         .unwrap();
     engine
-        .register(ReceiveTask::new(
-            config(),
-            std::sync::Arc::new(TestConsumer),
-            network.recipient.host.clone(),
-            std::sync::Arc::new(FixtureBindings),
-        ))
-        .unwrap();
-    engine
 }
 #[tokio::test]
 async fn a_release_after_the_saved_held_answer_survives_until_outcome_once() {
@@ -175,7 +165,7 @@ async fn a_release_after_the_saved_held_answer_survives_until_outcome_once() {
         .lock()
         .unwrap()
         .push_back(LocalOutcome::Held { until: None });
-    network.receive(DeliveryStream::Items).await;
+    drain(&network.engine(&network.relay)).await;
     drain(&interleaved_engine(
         &network,
         support::interleaving::AfterAnswer::Release,
@@ -205,10 +195,9 @@ async fn cancel_waiting_for_a_saved_delivered_answer_becomes_too_late() {
     let network = NetworkFixture::new().await;
     network.enqueue(1, "delivered before outcome").await;
     drain(&network.engine(&network.sender)).await;
-    network.receive(DeliveryStream::Items).await;
+    drain(&network.engine(&network.relay)).await;
     let engine = interleaved_engine(&network, support::interleaving::AfterAnswer::Cancel);
     assert_eq!(engine.drive_due().await.unwrap().completed.len(), 1);
-    assert!(engine.drive_due().await.unwrap().failed.is_empty());
     network
         .recipient
         .store
@@ -242,19 +231,20 @@ async fn cancel_waiting_for_a_saved_held_answer_prevents_the_original_in_the_out
     let network = NetworkFixture::new().await;
     network.enqueue(1, "held before cancel").await;
     drain(&network.engine(&network.sender)).await;
+    drain(&network.engine(&network.relay)).await;
     // Controls arrives at the recipient later, while the relay already owns the cancel.
     network
-        .mailbox
+        .relay
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Mailbox::<_, TestTypes>::new(scope, peer(2), limits())
-                    .submit(
-                        peer(1),
+                Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                    .submit_relay::<FixturePush<TestTypes>, RecordRemoval>(
+                        Submitter::Machine(peer(1)),
                         cancel(2, 1),
-                        SyncTime::from_unix_millis(0),
+                        peer(3),
                         "fixture-route".to_owned(),
-                        None,
+                        SyncTime::from_unix_millis(0),
                     )
                     .await
                     .map_err(storage_error)?;
@@ -269,10 +259,9 @@ async fn cancel_waiting_for_a_saved_held_answer_prevents_the_original_in_the_out
         .lock()
         .unwrap()
         .push_back(LocalOutcome::Held { until: None });
-    network.receive(DeliveryStream::Items).await;
+
     let engine = interleaved_engine(&network, support::interleaving::AfterAnswer::Cancel);
     assert_eq!(engine.drive_due().await.unwrap().completed.len(), 1);
-    assert!(engine.drive_due().await.unwrap().failed.is_empty());
     network.recipient.store.transaction(|scope|Box::pin(async move {
         let mut inbox=Inbox::<_,TestTypes, _>::new(scope,peer(2),limits(), &FixtureBindings);
         assert!(matches!(inbox.local_outcome(item_id(1)).await.map_err(storage_error)?,Some(RecipientOutcome::Prevented {cancel}) if cancel==item_id(2)));
@@ -292,10 +281,9 @@ async fn cancel_waiting_for_an_uncertain_attempt_becomes_too_late() {
     let network = NetworkFixture::new().await;
     network.enqueue(1, "possible effect").await;
     drain(&network.engine(&network.sender)).await;
-    network.receive(DeliveryStream::Items).await;
+    drain(&network.engine(&network.relay)).await;
     network.routes.lose_delivery.store(true, Ordering::SeqCst);
     let engine = interleaved_engine(&network, support::interleaving::AfterAnswer::Cancel);
-    assert_eq!(engine.drive_due().await.unwrap().completed.len(), 1);
     assert_eq!(engine.drive_due().await.unwrap().failed.len(), 1);
     network
         .recipient

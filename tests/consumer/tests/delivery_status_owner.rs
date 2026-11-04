@@ -17,7 +17,8 @@ fn call() -> TestResult<CallId> {
 }
 
 #[tokio::test]
-async fn status_stream_corruption_keeps_the_service_error_path_and_mailbox_healthy() -> TestResult {
+async fn status_stream_corruption_keeps_the_service_error_path_and_relay_custody_healthy()
+-> TestResult {
     let directory = tempfile::tempdir()?;
     let process = ServiceProcess::start(directory.path()).await?;
     let mut control = process
@@ -44,12 +45,7 @@ async fn status_stream_corruption_keeps_the_service_error_path_and_mailbox_healt
     drop(socket);
     process.stop(&mut control).await?;
     let mut connection = sqlx_turso::TursoConnectOptions::new()
-        .filename(
-            directory
-                .path()
-                .join("service")
-                .join(format!("delivery-status-{}.db", peer.as_uuid())),
-        )
+        .filename(directory.path().join("service").join("registry.db"))
         .create_if_missing(false)
         .connect()
         .await?;

@@ -14,10 +14,10 @@ async fn offline_push_is_due_at_its_deadline_and_publishes_expired_without_a_rec
     let network = NetworkFixture::new().await;
     seed(&network).await;
     network.routes.relay_up.store(false, Ordering::SeqCst);
-    let engine = network.engine(&network.mailbox);
+    let engine = network.engine(&network.relay);
     assert_eq!(engine.drive_due().await.unwrap().retried.len(), 1);
-    let operation = push_operation(&network.mailbox.store).await;
-    network.mailbox.store.transaction(move |scope|Box::pin(async move {
+    let operation = push_operation(&network.relay.store).await;
+    network.relay.store.transaction(move |scope|Box::pin(async move {
         assert!(matches!(scope.operation(operation).await?.unwrap().execution,OperationExecution::Running {next_attempt_at,..} if next_attempt_at==at(DEADLINE)),"backoff must be bounded by valid_until");
         Ok(())
     })).await.unwrap();
@@ -27,7 +27,7 @@ async fn offline_push_is_due_at_its_deadline_and_publishes_expired_without_a_rec
     let expired = engine.drive_due().await.unwrap();
     assert_eq!(expired.completed.len(), 1);
     assert!(expired.failed.is_empty());
-    network.mailbox.store.transaction(|scope|Box::pin(async move {
+    network.relay.store.transaction(|scope|Box::pin(async move {
         let row=query::<Turso>("SELECT status_kind,status_version,payload,handed_off_at FROM _fleet_sync_outbox_items").fetch_one(scope.executor()).await?;
         assert_eq!(row.try_get::<String,_>("status_kind")?,"expired");
         assert_eq!(row.try_get::<i64,_>("status_version")?,2);
@@ -57,7 +57,7 @@ async fn expiry_before_the_first_push_dispatch_leaves_no_recipient_custody_or_wo
     let network = NetworkFixture::new().await;
     seed(&network).await;
     clock(&network, DEADLINE);
-    let completed = network.engine(&network.mailbox).drive_due().await.unwrap();
+    let completed = network.engine(&network.relay).drive_due().await.unwrap();
     assert_eq!(completed.completed.len(), 1);
     assert!(completed.failed.is_empty());
     publish(&network).await;
@@ -78,7 +78,7 @@ async fn after_a_real_handoff_the_recipient_still_owns_deadline_expiry() {
     seed(&network).await;
     assert_eq!(
         network
-            .engine(&network.mailbox)
+            .engine(&network.relay)
             .drive_due()
             .await
             .unwrap()
@@ -113,7 +113,7 @@ async fn payload_resolved_before_expiry_arrives_after_it_without_admitting_local
     let network = NetworkFixture::new().await;
     seed(&network).await;
     let reference = network
-        .mailbox
+        .relay
         .store
         .transaction(|scope| {
             Box::pin(async move {
@@ -133,7 +133,7 @@ async fn payload_resolved_before_expiry_arrives_after_it_without_admitting_local
         .unwrap();
     let lookup = reference.clone();
     let pushed = network
-        .mailbox
+        .relay
         .store
         .transaction(move |scope| {
             Box::pin(async move {
@@ -149,7 +149,7 @@ async fn payload_resolved_before_expiry_arrives_after_it_without_admitting_local
     clock(&network, DEADLINE);
     let expired_lookup = reference.clone();
     network
-        .mailbox
+        .relay
         .store
         .transaction(move |scope| {
             Box::pin(async move {
@@ -175,7 +175,7 @@ async fn payload_resolved_before_expiry_arrives_after_it_without_admitting_local
         Ok(answer)
     })).await.unwrap();
     network
-        .mailbox
+        .relay
         .store
         .transaction(move |scope| {
             Box::pin(async move {

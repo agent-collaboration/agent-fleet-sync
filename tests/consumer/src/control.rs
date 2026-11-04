@@ -11,6 +11,10 @@ use tokio::sync::watch;
 pub type ConsumerHandle = ServiceHandle<SampleProtocol, Consumer, FixtureAuthenticator>;
 #[derive(Serialize, Deserialize)]
 pub enum ControlRequest {
+    #[cfg(feature = "test-support")]
+    AdvanceClock {
+        to: SyncTime,
+    },
     Schema(crate::SchemaControlRequest),
     CopyFault(crate::CopyFaultRequest),
     AttachSource {
@@ -37,31 +41,16 @@ pub enum ControlRequest {
     WaitSourceUnattached {
         receiver: ReceiverId,
     },
+
     #[cfg(feature = "test-support")]
-    WaitDeliveryOwner {
-        mailbox: PeerId,
-    },
+    DeliverySnapshot,
+
     #[cfg(feature = "test-support")]
-    DeliverySnapshot {
-        mailbox: PeerId,
-        origin: PeerId,
-    },
+    HoldDeliveryWrite,
     #[cfg(feature = "test-support")]
-    CorruptDeliveryCustody {
-        mailbox: PeerId,
-        item: ItemId,
-    },
+    ReleaseDeliveryWrite,
     #[cfg(feature = "test-support")]
-    HoldDeliveryWrite {
-        mailbox: PeerId,
-    },
-    #[cfg(feature = "test-support")]
-    ReleaseDeliveryWrite {
-        mailbox: PeerId,
-    },
-    #[cfg(feature = "test-support")]
-    WaitMailboxEvent {
-        mailbox: PeerId,
+    WaitDeliveryEvent {
         after: usize,
     },
     #[cfg(feature = "test-support")]
@@ -143,10 +132,7 @@ pub enum ControlRequest {
     AllowPeer {
         peer: PeerId,
     },
-    #[cfg(feature = "test-support")]
-    HoldNextRetirementReply,
-    #[cfg(feature = "test-support")]
-    WaitRetirementReplyCommitted,
+
     ConfigureStatusRoute {
         peer: PeerId,
         route: String,
@@ -171,11 +157,7 @@ pub enum ControlAnswer {
     Staged(fleet_sync_receiver::InstallPageReceipt),
     #[cfg(feature = "test-support")]
     DeliverySnapshot(fleet_sync_service::DeliveryServiceSnapshot),
-    #[cfg(feature = "test-support")]
-    CorruptedDelivery {
-        record: String,
-        payload_bytes: i64,
-    },
+
     #[cfg(feature = "test-support")]
     ServiceEvent(crate::ServiceEvent),
     #[cfg(feature = "test-support")]
@@ -208,11 +190,11 @@ pub enum ControlAnswer {
     },
 }
 pub(crate) struct ControlState {
+    pub clock: Arc<crate::service_clock::FixtureClock>,
     #[cfg(feature = "test-support")]
     pub delivery_directory: std::path::PathBuf,
     #[cfg(feature = "test-support")]
-    pub delivery_locks:
-        tokio::sync::Mutex<std::collections::BTreeMap<PeerId, sqlx_turso::TursoConnection>>,
+    pub delivery_lock: tokio::sync::Mutex<Option<sqlx_turso::TursoConnection>>,
     #[cfg(feature = "test-support")]
     pub events: Arc<crate::service_events::ServiceEvents>,
     pub consumer: Arc<Consumer>,
@@ -229,6 +211,12 @@ impl ControlState {
     pub async fn dispatch(&self, request: ControlRequest) -> ControlAnswer {
         let result: crate::TestResult<ControlAnswer> = async {
             Ok(match request {
+                #[cfg(feature = "test-support")]
+                ControlRequest::AdvanceClock { to } => {
+                    self.clock.advance(to)?;
+                    self.service.wake_delivery().await?;
+                    ControlAnswer::Ok
+                }
                 ControlRequest::Schema(request) => self.schema_control(request).await?,
                 ControlRequest::CopyFault(request) => self.copy_fault(request).await?,
                 ControlRequest::AttachSource {
@@ -304,52 +292,45 @@ impl ControlState {
                     )
                     .await??,
                 ),
+
                 #[cfg(feature = "test-support")]
-                ControlRequest::WaitDeliveryOwner { mailbox } => {
-                    self.service.wait_delivery_owner(mailbox).await?;
-                    ControlAnswer::Ok
-                },
-                #[cfg(feature = "test-support")]
-                ControlRequest::DeliverySnapshot { mailbox, origin } => {
-                    ControlAnswer::DeliverySnapshot(
-                        self.service.delivery_snapshot(mailbox, origin).await?,
-                    )
+                ControlRequest::DeliverySnapshot => {
+                    ControlAnswer::DeliverySnapshot(self.service.delivery_snapshot().await?)
                 }
+
                 #[cfg(feature = "test-support")]
-                ControlRequest::CorruptDeliveryCustody { mailbox, item } => {
-                    use sqlx_turso::sqlx::{ConnectOptions, Connection, Row};
-                    let mut db = sqlx_turso::TursoConnectOptions::new()
-                        .filename(self.delivery_directory.join(format!("delivery-mailbox-{}.db", mailbox.as_uuid())))
-                        .create_if_missing(false).connect().await?;
-                    let row = sqlx_core::query::query::<sqlx_turso::Turso>("SELECT record,payload_bytes FROM _fleet_sync_mail_items WHERE item_id=?1")
-                        .bind(item.as_uuid().to_string()).fetch_one(&mut db).await?;
-                    let record: String = row.try_get("record")?;
-                    let payload_bytes: i64 = row.try_get("payload_bytes")?;
-                    sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_mail_items SET record=json_set(record,'$.value.payload',NULL),payload_bytes=0 WHERE item_id=?1")
-                        .bind(item.as_uuid().to_string()).execute(&mut db).await?;
-                    db.close().await?;
-                    ControlAnswer::CorruptedDelivery { record, payload_bytes }
-                }
-                #[cfg(feature = "test-support")]
-                ControlRequest::HoldDeliveryWrite { mailbox } => {
-                    let db = crate::delivery_faults::lock_mailbox(&self.delivery_directory, mailbox).await?;
-                    if self.delivery_locks.lock().await.insert(mailbox, db).is_some() {
+                ControlRequest::HoldDeliveryWrite => {
+                    let mut slot = self.delivery_lock.lock().await;
+                    if slot.is_some() {
                         return Err("delivery write barrier already held".into());
                     }
+                    *slot =
+                        Some(crate::delivery_faults::lock_relay(&self.delivery_directory).await?);
                     ControlAnswer::Ok
                 }
                 #[cfg(feature = "test-support")]
-                ControlRequest::ReleaseDeliveryWrite { mailbox } => {
+                ControlRequest::ReleaseDeliveryWrite => {
                     use sqlx_turso::sqlx::Connection;
-                    let mut db = self.delivery_locks.lock().await.remove(&mailbox).ok_or("no held delivery write")?;
-                    sqlx_core::query::query::<sqlx_turso::Turso>("ROLLBACK").execute(&mut db).await?;
+                    let mut db = self
+                        .delivery_lock
+                        .lock()
+                        .await
+                        .take()
+                        .ok_or("no held delivery write")?;
+                    sqlx_core::query::query::<sqlx_turso::Turso>("ROLLBACK")
+                        .execute(&mut db)
+                        .await?;
                     db.close().await?;
                     ControlAnswer::Ok
                 }
                 #[cfg(feature = "test-support")]
-                ControlRequest::WaitMailboxEvent { mailbox, after } => ControlAnswer::ServiceEvent(self.events.wait_mailbox(mailbox, after).await?),
+                ControlRequest::WaitDeliveryEvent { after } => {
+                    ControlAnswer::ServiceEvent(self.events.wait_delivery(after).await?)
+                }
                 #[cfg(feature = "test-support")]
-                ControlRequest::ServiceEvents => ControlAnswer::ServiceEvents(self.events.snapshot()?),
+                ControlRequest::ServiceEvents => {
+                    ControlAnswer::ServiceEvents(self.events.snapshot()?)
+                }
                 ControlRequest::RequestCount => ControlAnswer::RequestCount(
                     self.consumer.handled_requests.load(Ordering::SeqCst),
                 ),
@@ -541,16 +522,7 @@ impl ControlState {
                     self.authenticator.set_allowed(peer, true).await;
                     ControlAnswer::Ok
                 }
-                #[cfg(feature = "test-support")]
-                ControlRequest::HoldNextRetirementReply => {
-                    self.service.hold_next_retirement_reply().await?;
-                    ControlAnswer::Ok
-                }
-                #[cfg(feature = "test-support")]
-                ControlRequest::WaitRetirementReplyCommitted => {
-                    self.service.wait_retirement_reply_committed().await?;
-                    ControlAnswer::Ok
-                }
+
                 ControlRequest::ConfigureStatusRoute { peer, route } => {
                     self.authenticator.set_route(peer, route).await;
                     ControlAnswer::Ok

@@ -90,57 +90,6 @@ impl<D: DeliveryTypes> DeliverCall<D> {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct FetchInput {
-    pub stream: DeliveryStream,
-    pub after: DeliverySeq,
-    pub max_items: u32,
-    pub max_bytes: u64,
-    /// Absent preserves the legacy payload-only fetch budget.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub inbox_room_bytes: Option<u64>,
-}
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ReceiptInput {
-    pub stream: DeliveryStream,
-    pub through: DeliverySeq,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
-pub struct FetchCall<D> {
-    pub relay: PeerId,
-    pub mailbox: PeerId,
-    #[serde(skip)]
-    payload: PhantomData<fn() -> D>,
-}
-impl<D> FetchCall<D> {
-    pub const fn new(relay: PeerId, mailbox: PeerId) -> Self {
-        Self {
-            relay,
-            mailbox,
-            payload: PhantomData,
-        }
-    }
-}
-impl<D: DeliveryTypes> CallTarget for FetchCall<D> {
-    const KIND: &'static str = "fleet-sync.delivery.fetch";
-    type Request = FetchInput;
-    type Answer = FetchResult<D>;
-}
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ReceivedCall {
-    pub relay: PeerId,
-    pub mailbox: PeerId,
-}
-impl CallTarget for ReceivedCall {
-    const KIND: &'static str = "fleet-sync.delivery.received";
-    type Request = ReceiptInput;
-    type Answer = ReceivedResult;
-}
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
 pub struct ReportCall<D> {

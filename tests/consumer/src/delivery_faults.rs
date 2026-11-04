@@ -1,11 +1,10 @@
 use crate::TestResult;
-use fleet_sync_protocol::PeerId;
 use sqlx_turso::{TursoConnection, sqlx::ConnectOptions};
 use std::path::Path;
 
-pub(crate) async fn lock_mailbox(directory: &Path, mailbox: PeerId) -> TestResult<TursoConnection> {
+pub(crate) async fn lock_relay(directory: &Path) -> TestResult<TursoConnection> {
     let mut connection = sqlx_turso::TursoConnectOptions::new()
-        .filename(directory.join(format!("delivery-mailbox-{}.db", mailbox.as_uuid())))
+        .filename(directory.join("registry.db"))
         .create_if_missing(false)
         .connect()
         .await?;
