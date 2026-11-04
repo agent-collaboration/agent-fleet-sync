@@ -4,6 +4,7 @@ mod support;
 
 mod checked_write_clocks;
 mod existing_record_removals;
+mod project_status_routes;
 mod project_successor;
 mod push_expiry;
 mod push_expiry_recovery;

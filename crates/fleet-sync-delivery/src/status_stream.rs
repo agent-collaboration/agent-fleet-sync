@@ -149,10 +149,13 @@ where
                 field: "stored stream route bounds",
             }
         })?;
+        // Project delivery resolves the current holder from its identity; its
+        // stored route is frozen metadata. Machine streams remain route-bound.
         if state.sender != self.sender
             || state.head.value() > i64::MAX as u64
             || state.floor > state.head
-            || canonical_encode(&state.owner_route)? != canonical_encode(&self.owner_route)?
+            || (matches!(self.sender, crate::Submitter::Machine(_))
+                && canonical_encode(&state.owner_route)? != canonical_encode(&self.owner_route)?)
         {
             return Err(DeliveryError::Corrupt {
                 field: "status stream owner or cursor",
