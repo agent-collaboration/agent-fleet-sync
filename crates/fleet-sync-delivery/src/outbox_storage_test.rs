@@ -7,6 +7,65 @@ use sqlx_core::{query::query, row::Row};
 use support::*;
 
 #[tokio::test]
+async fn sender_not_enrolled_submit_receipt_remains_terminal_after_reopen() {
+    let Fixture {
+        store,
+        host,
+        directory,
+    } = Fixture::new().await;
+    store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let DeliveryEnvelope::Item(original) = item(1, "refused sender") else {
+                    return Err(durable_steps::StoreError::backend("original fixture"));
+                };
+                let input = SubmitInput {
+                    item: original.id(),
+                    digest: original.digest().clone(),
+                    relay: peer(3),
+                    mailbox: peer(2),
+                };
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings);
+                outbox
+                    .enqueue(
+                        original,
+                        peer(3),
+                        Submitter::Machine(peer(1)),
+                        SyncTime::from_unix_millis(0),
+                    )
+                    .await
+                    .map_err(storage_error)?;
+                outbox
+                    .mark_submitted(
+                        &input,
+                        SubmitResult::Refused {
+                            reason: DeliveryRefusal::SenderNotEnrolled,
+                        },
+                        SyncTime::from_unix_millis(1),
+                    )
+                    .await
+                    .map_err(storage_error)?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+    drop(store);
+    let reopened = TestStore::open_and_migrate(directory.path().join("delivery.db"), host)
+        .await
+        .unwrap();
+    reopened.transaction(|scope|Box::pin(async move {
+        let answer=Outbox::<_,TestTypes,_>::new(scope,limits(),&FixtureBindings).status(item_id(1)).await.map_err(storage_error)?;
+        assert!(matches!(answer.state,OutboxStatusState::Known {status:DeliveryStatus::Refused {reason:DeliveryRefusal::SenderNotEnrolled},..}));
+        let row=query::<sqlx_turso::Turso>("SELECT refusal_kind,payload,payload_bytes FROM _fleet_sync_outbox_items WHERE item_id=?1").bind(item_key(item_id(1))).fetch_one(scope.executor()).await?;
+        assert_eq!(row.try_get::<String,_>("refusal_kind")?,"senderNotEnrolled");
+        assert!(row.try_get::<Option<String>,_>("payload")?.is_none());
+        assert_eq!(row.try_get::<i64,_>("payload_bytes")?,0);
+        Ok(())
+    })).await.unwrap();
+}
+
+#[tokio::test]
 async fn stored_relay_route_bounds_are_checked_before_status_read() {
     for raw in [serde_json::to_string(&"x".repeat(63)).unwrap(), "{".into()] {
         let fixture = Fixture::new().await;

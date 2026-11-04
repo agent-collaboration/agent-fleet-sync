@@ -90,6 +90,7 @@ impl RefusalFields {
             Some("mailboxFull") => DeliveryRefusal::MailboxFull,
             Some("recipientUnknown") => DeliveryRefusal::RecipientUnknown,
             Some("recipientRevoked") => DeliveryRefusal::RecipientRevoked,
+            Some("senderNotEnrolled") => DeliveryRefusal::SenderNotEnrolled,
             Some("droppedByPolicy") => DeliveryRefusal::DroppedByPolicy,
             Some("cancelSenderMismatch") => DeliveryRefusal::CancelSenderMismatch,
             Some("notThisMachine") => DeliveryRefusal::NotThisMachine,

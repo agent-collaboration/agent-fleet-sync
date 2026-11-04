@@ -12,6 +12,24 @@ fn decoded_no_capacity_is_retryable_and_never_a_terminal_push_answer() {
     assert!(
         matches!(PushCall::<NoDelivery>::validated_answer(PushResult::<()>::Accepted {accepted_at:SyncTime::from_unix_millis(7)}),Ok(PushResult::Accepted {accepted_at}) if accepted_at.unix_millis()==7)
     );
+    for wire in [
+        r#"{"kind":"recipientRevoked"}"#,
+        r#"{"kind":"senderNotEnrolled"}"#,
+    ] {
+        let reason: DeliveryRefusal = serde_json::from_str(wire).unwrap();
+        assert!(
+            DeliveryStatus::<()>::Refused {
+                reason: reason.clone()
+            }
+            .is_terminal()
+        );
+        assert!(
+            matches!(PushCall::<NoDelivery>::validated_answer(PushResult::<()>::Refused {reason:reason.clone()}),Ok(PushResult::Refused {reason:stored}) if stored==reason)
+        );
+        assert!(
+            matches!(SubmitCall::<NoDelivery>::validated_answer(DispatchOutcome::Answered(SubmitResult::<()>::Refused {reason:reason.clone()})),Ok(DispatchOutcome::Answered(SubmitResult::Refused {reason:stored})) if stored==reason)
+        );
+    }
 }
 
 #[test]

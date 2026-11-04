@@ -57,6 +57,7 @@ pub enum DeliveryRefusal {
     CancelAlreadyRequested { existing: DeliveryItemRef },
     RecipientUnknown,
     RecipientRevoked,
+    SenderNotEnrolled,
     DroppedByPolicy,
     CancelSenderMismatch,
     NotThisMachine,
@@ -195,3 +196,7 @@ pub enum DeliverySizeField {
     Acceptance,
     StatusRoute,
 }
+
+#[cfg(test)]
+#[path = "delivery_outcome_test.rs"]
+mod tests;
