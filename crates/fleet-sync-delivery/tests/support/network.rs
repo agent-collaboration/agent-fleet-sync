@@ -294,28 +294,11 @@ impl TestNetwork {
                             Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
                                 .recipient_report::<PublishTask>(peer(2), report, now)
                                 .await
-                                .map_err(|error| match error {
-                                    DeliveryError::InvalidBatch => DeliveryError::Refused {
-                                        reason: DeliveryRefusal::ProcessingFailed {
-                                            kind: DeliveryFailureKind::ExecutionFailed,
-                                        },
-                                    },
-                                    error => error,
-                                })
-                                .map_err(delivery_rollback)
+                                .map_err(storage_error)
                         })
                     })
-                    .await;
-                let answer = match answer {
-                    Ok(answer) => Ok(answer),
-                    Err(error) => match classify_delivery_store_error(error) {
-                        DeliveryTransactionFailure::Refused(reason) => {
-                            Ok(ReportResult::Refused { reason })
-                        }
-                        failure => Err(failure),
-                    },
-                }
-                .unwrap();
+                    .await
+                    .unwrap();
                 if self.lose_report.swap(false, Ordering::SeqCst) {
                     return Err(CallFailure::AnswerLost);
                 }
@@ -429,7 +412,11 @@ impl NetworkFixture {
                 std::sync::Arc::new(FixtureBindings),
             ))
             .unwrap();
-        engine.register(RecordRemoval::new()).unwrap();
+        engine
+            .register(RecordRemoval::new(
+                fleet_sync_delivery::DeliveryHostRole::Machine,
+            ))
+            .unwrap();
         engine
     }
     pub fn advance(&self) {

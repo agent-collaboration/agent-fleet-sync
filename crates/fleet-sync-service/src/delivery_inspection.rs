@@ -26,9 +26,14 @@ impl<
             .state
             .registry
             .rule_transaction(move |scope| {
-                Box::pin(
-                    async move { snapshot::<_, P::Delivery, _>(scope, binding.as_ref()).await },
-                )
+                Box::pin(async move {
+                    snapshot::<_, P::Delivery, _>(
+                        scope,
+                        fleet_sync_delivery::DeliveryHostRole::Relay,
+                        binding.as_ref(),
+                    )
+                    .await
+                })
             })
             .await
             .map_err(ServiceError::rule)?;

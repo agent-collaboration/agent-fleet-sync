@@ -42,9 +42,14 @@ async fn released_live_service_sources_backfill_from_host_mapping_without_changi
                 insert_binding(scope, 90, SERVICE_A, peer(9)).await?;
                 insert_binding(scope, 91, SERVICE_B, peer(8)).await?;
                 assert_eq!(
-                    backfill_submitters::<TestTypes, _, _>(scope, &FixtureBindings, startup_time())
-                        .await
-                        .map_err(storage_error)?,
+                    backfill_submitters::<TestTypes, _, _>(
+                        scope,
+                        fleet_sync_delivery::DeliveryHostRole::Machine,
+                        &FixtureBindings,
+                        startup_time()
+                    )
+                    .await
+                    .map_err(storage_error)?,
                     4
                 );
                 for (identity, expected, inbox) in [
@@ -102,10 +107,13 @@ async fn unavailable_backfill(conflict: bool) {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Ok(
-                    backfill_submitters::<TestTypes, _, _>(scope, &FixtureBindings, startup_time())
-                        .await,
+                Ok(backfill_submitters::<TestTypes, _, _>(
+                    scope,
+                    fleet_sync_delivery::DeliveryHostRole::Machine,
+                    &FixtureBindings,
+                    startup_time(),
                 )
+                .await)
             })
         })
         .await

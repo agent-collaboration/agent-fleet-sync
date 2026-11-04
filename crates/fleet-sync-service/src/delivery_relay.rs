@@ -35,14 +35,19 @@ pub(crate) async fn install<P: ConsumerProtocol, C: ServiceConsumer<P>>(
                     .map_err(fleet_sync_delivery::delivery_rollback)?;
                 fleet_sync_delivery::backfill_submitters::<P::Delivery, _, _>(
                     scope,
+                    fleet_sync_delivery::DeliveryHostRole::Relay,
                     bindings.as_ref(),
                     now,
                 )
                 .await
                 .map_err(fleet_sync_delivery::delivery_rollback)?;
-                fleet_sync_delivery::admit_existing_record_removals::<_, RelayRemoval>(scope, now)
-                    .await
-                    .map_err(StoreError::backend)?;
+                fleet_sync_delivery::admit_existing_record_removals::<_, RelayRemoval>(
+                    scope,
+                    fleet_sync_delivery::DeliveryHostRole::Relay,
+                    now,
+                )
+                .await
+                .map_err(StoreError::backend)?;
                 Ok(())
             })
         })
@@ -53,6 +58,8 @@ pub(crate) async fn install<P: ConsumerProtocol, C: ServiceConsumer<P>>(
         object.host(),
         binding,
     ))?;
-    engine.register(RelayRemoval::new())?;
+    engine.register(RelayRemoval::new(
+        fleet_sync_delivery::DeliveryHostRole::Relay,
+    ))?;
     Ok(())
 }

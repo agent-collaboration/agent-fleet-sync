@@ -146,6 +146,13 @@
           "nullable": false
         }
       ]
+    },
+    {
+      "name": "read_relay_submitter_backfill_rows",
+      "sql": "sql/read_relay_submitter_backfill_rows.sql",
+      "result": "many",
+      "row": "StoredSubmitterBackfillRow",
+      "parameters": []
     }
   ]
 }

@@ -70,10 +70,13 @@ async fn undecodable_source_names_its_row_and_writes_nothing_even_if_the_caller_
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                Ok(
-                    backfill_submitters::<TestTypes, _, _>(scope, &FixtureBindings, startup_time())
-                        .await,
+                Ok(backfill_submitters::<TestTypes, _, _>(
+                    scope,
+                    fleet_sync_delivery::DeliveryHostRole::Machine,
+                    &FixtureBindings,
+                    startup_time(),
                 )
+                .await)
             })
         })
         .await
@@ -115,9 +118,13 @@ async fn handed_off_and_terminal_legacy_rows_keep_status_release_capacity_and_ke
         .transaction(|scope| {
             Box::pin(async move {
                 assert_eq!(
-                    admit_existing_record_removals::<_, RecordRemoval>(scope, startup_time())
-                        .await
-                        .map_err(storage_error)?,
+                    admit_existing_record_removals::<_, RecordRemoval>(
+                        scope,
+                        fleet_sync_delivery::DeliveryHostRole::Machine,
+                        startup_time()
+                    )
+                    .await
+                    .map_err(storage_error)?,
                     105
                 );
                 Ok(())
@@ -126,7 +133,11 @@ async fn handed_off_and_terminal_legacy_rows_keep_status_release_capacity_and_ke
         .await
         .unwrap();
     let mut engine = durable_steps::Engine::new(fixture.store.clone(), fixture.host.clone());
-    engine.register(RecordRemoval::new()).unwrap();
+    engine
+        .register(RecordRemoval::new(
+            fleet_sync_delivery::DeliveryHostRole::Machine,
+        ))
+        .unwrap();
     fixture.host.clock.store(
         u64::try_from(BIRTH + 60 * DAY - 1).unwrap(),
         std::sync::atomic::Ordering::SeqCst,
@@ -163,7 +174,13 @@ async fn backfill_child_checkpoint() -> Result<(), Box<dyn std::error::Error>> {
     let host = host_at(startup_time());
     let mut real = TursoScope::new(&mut transaction, host.as_ref());
     let mut scope = BackfillCheckpointScope { inner: &mut real };
-    backfill_submitters::<TestTypes, _, _>(&mut scope, &FixtureBindings, startup_time()).await?;
+    backfill_submitters::<TestTypes, _, _>(
+        &mut scope,
+        fleet_sync_delivery::DeliveryHostRole::Machine,
+        &FixtureBindings,
+        startup_time(),
+    )
+    .await?;
     Err("backfill returned without observing an uncommitted mapped row".into())
 }
 

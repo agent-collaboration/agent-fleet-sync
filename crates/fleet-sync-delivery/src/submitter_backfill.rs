@@ -193,6 +193,7 @@ where
 )]
 pub fn backfill_submitters<'scope, D, S, B>(
     scope: &'scope mut S,
+    role: crate::DeliveryHostRole,
     binding: &'scope B,
     now: SyncTime,
 ) -> impl std::future::Future<Output = Result<usize, DeliveryError>> + Send + 'scope
@@ -209,9 +210,13 @@ where
         if crate::backfill_state::completed(scope, "submitters").await? {
             return Ok(0);
         }
-        let rows = queries::read_submitter_backfill_rows(scope)
-            .await
-            .map_err(sql_error)?;
+        let rows = match role {
+            crate::DeliveryHostRole::Machine => queries::read_submitter_backfill_rows(scope).await,
+            crate::DeliveryHostRole::Relay => {
+                queries::read_relay_submitter_backfill_rows(scope).await
+            }
+        }
+        .map_err(sql_error)?;
         let changes = plan::<S, D, B>(scope, binding, rows).await?;
         let count = changes.len();
         for change in changes {

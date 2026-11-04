@@ -57,6 +57,36 @@ async fn push_promotes_a_prevented_local_original_and_reports_once_across_reopen
         1,
         "Push must owe the preserved outcome"
     );
+    network
+        .recipient
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
+                let reference = inbox
+                    .pending_report(item_id(1))
+                    .await
+                    .map_err(storage_error)?
+                    .unwrap();
+                assert_eq!(reference.report_seq, ReportSeq::new(2));
+                let report = inbox
+                    .resolve_report(reference)
+                    .await
+                    .map_err(storage_error)?;
+                assert_eq!(
+                    serde_json::to_value(report).unwrap(),
+                    serde_json::json!({
+                        "item":item_id(1),"reportSeq":2,
+                        "outcome":{"kind":"prevented","value":{"cancel":item_id(2)}}
+                    }),
+                    "promotion changed the preserved cancellation report"
+                );
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
     network.recipient = reopen(network.recipient).await;
     *network.routes.recipient.lock().unwrap() = std::sync::Arc::downgrade(&network.recipient.store);
     assert_eq!(snapshot(&network.recipient).await, promoted);
@@ -96,6 +126,19 @@ async fn push_promotes_a_prevented_local_original_and_reports_once_across_reopen
         report.failed.len(),
         1,
         "a terminal refusal must finish the Report operation"
+    );
+    let expected_failure = durable_steps::OperationFailure::Refused {
+        code: "executionFailed".into(),
+        detail: DeliveryError::Refused {
+            reason: DeliveryRefusal::ProcessingFailed {
+                kind: DeliveryFailureKind::ExecutionFailed,
+            },
+        }
+        .to_string(),
+    };
+    assert_eq!(
+        report.failed.first().map(|(_, failure)| failure),
+        Some(&expected_failure)
     );
     assert!(report.retried.is_empty());
     assert_eq!(network.routes.report_calls.load(Ordering::SeqCst), 1);

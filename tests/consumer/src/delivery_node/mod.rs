@@ -279,7 +279,11 @@ impl NodeState {
                                 _,
                                 SampleDelivery,
                                 _,
-                            >(scope, &SampleSenderBinding))
+                            >(
+                                scope,
+                                fleet_sync_delivery::DeliveryHostRole::Machine,
+                                &SampleSenderBinding,
+                            ))
                         })
                         .await?,
                 )?);
@@ -504,12 +508,21 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
                     .run_direct(None, scope.executor(), false)
                     .await
                     .map_err(StoreError::backend)?;
-                backfill_submitters::<SampleDelivery, _, _>(scope, &SampleSenderBinding, now)
-                    .await
-                    .map_err(delivery_rollback)?;
-                admit_existing_record_removals::<_, RecordRemoval>(scope, now)
-                    .await
-                    .map_err(StoreError::backend)?;
+                backfill_submitters::<SampleDelivery, _, _>(
+                    scope,
+                    fleet_sync_delivery::DeliveryHostRole::Machine,
+                    &SampleSenderBinding,
+                    now,
+                )
+                .await
+                .map_err(delivery_rollback)?;
+                admit_existing_record_removals::<_, RecordRemoval>(
+                    scope,
+                    fleet_sync_delivery::DeliveryHostRole::Machine,
+                    now,
+                )
+                .await
+                .map_err(StoreError::backend)?;
                 Ok(())
             })
         })
@@ -556,7 +569,9 @@ pub async fn run(directory: &Path, owner: u128) -> TestResult {
         ReportTask::new(config, host.clone(), Arc::new(SampleSenderBinding)),
         &state,
     ))?;
-    engine.register(RecordRemoval::new())?;
+    engine.register(RecordRemoval::new(
+        fleet_sync_delivery::DeliveryHostRole::Machine,
+    ))?;
     let (shutdown, stopped) = watch::channel(false);
     let runner = TokioRunner::new(Arc::new(engine), host);
     let runner_task = tokio::spawn(async move { runner.run(stopped).await });

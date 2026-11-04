@@ -24,6 +24,9 @@ where
             "DROP TABLE IF EXISTS _fleet_sync_delivery_receipts",
             "DROP TABLE IF EXISTS _fleet_sync_inbox_state",
             "DROP TABLE IF EXISTS _fleet_sync_outbox_status",
+            "DROP TABLE IF EXISTS _fleet_sync_reports",
+            "DROP TABLE IF EXISTS _fleet_sync_inbox_cancel_links",
+            "DROP TABLE IF EXISTS _fleet_sync_inbox_items",
         ] {
             sqlx_core::query::query::<S::Database>(statement)
                 .execute(scope.executor())

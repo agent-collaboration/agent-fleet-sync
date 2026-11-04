@@ -314,6 +314,24 @@ where
                     report_seq: report.report_seq,
                 });
             }
+            let cancel_identity = match &report.outcome {
+                RecipientOutcome::Prevented { cancel }
+                | RecipientOutcome::TooLate { cancel, .. } => Some(*cancel),
+                _ => None,
+            };
+            if let Some(cancel) = cancel_identity {
+                match self.validate_relay_cancel(&record.header, cancel).await {
+                    Ok(()) => {}
+                    Err(DeliveryError::InvalidBatch) => {
+                        return Ok(ReportResult::Refused {
+                            reason: DeliveryRefusal::ProcessingFailed {
+                                kind: DeliveryFailureKind::ExecutionFailed,
+                            },
+                        });
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
             let is_cancel = record.header.cancel_target.is_some();
             let (status, cancel) = match report.outcome {
                 RecipientOutcome::Held => (DeliveryStatus::Held, None),
@@ -329,15 +347,11 @@ where
                     None,
                 ),
                 RecipientOutcome::Refused { reason } => (DeliveryStatus::Refused { reason }, None),
-                RecipientOutcome::Prevented { cancel } => {
-                    self.validate_relay_cancel(&record.header, cancel).await?;
-                    (
-                        DeliveryStatus::Cancelled,
-                        is_cancel.then_some(CancelResult::Prevented),
-                    )
-                }
-                RecipientOutcome::TooLate { cancel, at } => {
-                    self.validate_relay_cancel(&record.header, cancel).await?;
+                RecipientOutcome::Prevented { .. } => (
+                    DeliveryStatus::Cancelled,
+                    is_cancel.then_some(CancelResult::Prevented),
+                ),
+                RecipientOutcome::TooLate { at, .. } => {
                     if is_cancel {
                         (
                             DeliveryStatus::Cancelled,

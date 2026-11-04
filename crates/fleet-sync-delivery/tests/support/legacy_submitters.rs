@@ -75,9 +75,14 @@ pub async fn startup(store: &TestStore) -> Result<usize, DeliveryError> {
     store
         .transaction(|scope| {
             Box::pin(async move {
-                backfill_submitters::<TestTypes, _, _>(scope, &FixtureBindings, startup_time())
-                    .await
-                    .map_err(storage_error)
+                backfill_submitters::<TestTypes, _, _>(
+                    scope,
+                    fleet_sync_delivery::DeliveryHostRole::Machine,
+                    &FixtureBindings,
+                    startup_time(),
+                )
+                .await
+                .map_err(storage_error)
             })
         })
         .await

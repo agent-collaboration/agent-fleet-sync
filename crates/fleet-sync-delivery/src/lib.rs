@@ -18,6 +18,7 @@ mod checked_queries;
 mod custody_record;
 mod delivery_calls;
 mod delivery_contract;
+mod delivery_host_role;
 mod delivery_rollback;
 mod inbox_cancellation;
 mod inbox_delivery;
@@ -43,6 +44,7 @@ pub use submitter_backfill::backfill_submitters;
 mod task_support;
 
 pub use delivery_contract::*;
+pub use delivery_host_role::DeliveryHostRole;
 pub use delivery_rollback::{
     DeliveryTransactionFailure, classify_delivery_store_error, delivery_rollback,
 };

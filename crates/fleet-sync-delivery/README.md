@@ -15,8 +15,13 @@ is owned by the Project identity independently of its current holder's route.
 `DeliveryTypes::StatusRoute` is a serializable host address whose canonical
 encoded bytes fit `MAX_STATUS_ROUTE_BYTES`.
 
+Hosts choose `DeliveryHostRole::Machine` or `Relay` explicitly for the removal
+task, startup scan, submitter backfill and inspection. The Fleet uses Relay;
+Copy stores install no delivery tables. Relay paths read only Outbox and status
+tables. Machine paths retain their existing Inbox, reports and applied cursor.
+
 Relay hosts call `retire_relay_host_tables` explicitly after applying the delivery
-migrator. It drops obsolete relay tables transactionally and idempotently. Machine
+migrator. It drops all ten unused tables transactionally and idempotently. Machine
 hosts do not call it. Migration files remain unchanged; machine cleanup belongs
 to the machine cutover. Records retain their UUIDv7 creation deadline and are
 removed after 60 days by `RemoveDeliveryRecord`.
@@ -81,6 +86,7 @@ no charged settlement reserve. The shared 60-day record-removal task owns their 
 
 A matching Push upgrades Local custody to Relayed with its relay route. A preserved
 final original outcome owes one Report; later Push replays do not renew it. If the
-recipient reports a local-only cancel that the relay never admitted, the host
-returns a terminal processing refusal. The Report task records the failure and
+recipient reports a local-only cancel that the relay never admitted,
+`recipient_report` returns a typed terminal processing refusal without writes.
+Storage and corruption errors remain errors. The Report task records the failure and
 does not retry or deliver the original again.

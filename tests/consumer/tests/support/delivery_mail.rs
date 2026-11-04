@@ -86,6 +86,12 @@ pub async fn stopped_relay_row(
         .create_if_missing(false)
         .connect()
         .await?;
+    let absent=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT count(*) AS remaining FROM sqlite_schema WHERE type='table' AND name IN ('_fleet_sync_mail_items','_fleet_sync_mail_controls','_fleet_sync_mail_state','_fleet_sync_mail_cancel_links','_fleet_sync_delivery_receipts','_fleet_sync_inbox_state','_fleet_sync_outbox_status','_fleet_sync_inbox_items','_fleet_sync_inbox_cancel_links','_fleet_sync_reports')").fetch_one(&mut db).await?;
+    assert_eq!(
+        absent.try_get::<i64, _>("remaining")?,
+        0,
+        "relay host retained machine or Mailbox tables"
+    );
     let row = sqlx_core::query::query::<sqlx_turso::Turso>(
         "SELECT * FROM _fleet_sync_outbox_items WHERE item_id=?1",
     )

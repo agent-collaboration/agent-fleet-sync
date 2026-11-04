@@ -8,6 +8,117 @@ use sqlx_core::{query::query, row::Row};
 use sqlx_turso::Turso;
 type PushTask = PushItem<TestStore, Turso, TestTypes, PublishTask, FixtureBindings>;
 
+#[tokio::test]
+async fn unadmitted_cancel_reports_return_typed_refusal_without_any_transaction_write() {
+    let relay = Fixture::new().await;
+    assert!(matches!(
+        admit(&relay.store, 1, "locally prevented", 1, 2).await,
+        SubmitResult::Accepted { .. }
+    ));
+    for outcome in [
+        RecipientOutcome::Prevented { cancel: item_id(2) },
+        RecipientOutcome::TooLate {
+            cancel: item_id(2),
+            at: TooLateAt::Delivered,
+        },
+    ] {
+        relay
+            .store
+            .transaction(move |scope| {
+                Box::pin(async move {
+                    let before = query::<Turso>("SELECT total_changes() AS changes")
+                        .fetch_one(scope.executor())
+                        .await?
+                        .try_get::<i64, _>("changes")?;
+                    let answer = Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                        .recipient_report::<PublishTask>(
+                            peer(2),
+                            RecipientReport {
+                                item: item_id(1),
+                                report_seq: ReportSeq::new(2),
+                                outcome,
+                            },
+                            SyncTime::from_unix_millis(12),
+                        )
+                        .await
+                        .map_err(storage_error)?;
+                    assert!(matches!(
+                        answer,
+                        ReportResult::Refused {
+                            reason: DeliveryRefusal::ProcessingFailed {
+                                kind: DeliveryFailureKind::ExecutionFailed
+                            }
+                        }
+                    ));
+                    let after = query::<Turso>("SELECT total_changes() AS changes")
+                        .fetch_one(scope.executor())
+                        .await?
+                        .try_get::<i64, _>("changes")?;
+                    assert_eq!(
+                        after, before,
+                        "a terminal cancel-validation refusal wrote to the caller's transaction"
+                    );
+                    Ok(())
+                })
+            })
+            .await
+            .unwrap();
+    }
+    // An unavailable validation table is still a backend error, not a refusal.
+    relay
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                query::<Turso>(
+                    "UPDATE _fleet_sync_outbox_items SET last_report_seq=-1 WHERE item_id=?1",
+                )
+                .bind(item_id(1).as_uuid().to_string())
+                .execute(scope.executor())
+                .await?;
+                assert!(matches!(
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                        .recipient_report::<PublishTask>(
+                            peer(2),
+                            RecipientReport {
+                                item: item_id(1),
+                                report_seq: ReportSeq::new(2),
+                                outcome: RecipientOutcome::Prevented { cancel: item_id(2) }
+                            },
+                            SyncTime::from_unix_millis(12)
+                        )
+                        .await,
+                    Err(DeliveryError::Corrupt { .. }) | Err(DeliveryError::CorruptRow { .. })
+                ));
+                query::<Turso>(
+                    "UPDATE _fleet_sync_outbox_items SET last_report_seq=0 WHERE item_id=?1",
+                )
+                .bind(item_id(1).as_uuid().to_string())
+                .execute(scope.executor())
+                .await?;
+                query::<Turso>("DROP TABLE _fleet_sync_outbox_cancel_links")
+                    .execute(scope.executor())
+                    .await?;
+                assert!(matches!(
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FixtureBindings)
+                        .recipient_report::<PublishTask>(
+                            peer(2),
+                            RecipientReport {
+                                item: item_id(1),
+                                report_seq: ReportSeq::new(2),
+                                outcome: RecipientOutcome::Prevented { cancel: item_id(2) }
+                            },
+                            SyncTime::from_unix_millis(12)
+                        )
+                        .await,
+                    Err(DeliveryError::Storage(_))
+                ));
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+}
+
 fn reference(identity: u64, body: &str) -> DeliveryItemRef {
     DeliveryItemRef {
         item: item_id(identity),

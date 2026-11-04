@@ -235,3 +235,43 @@ where
         Ok(())
     }
 }
+pub(crate) fn read_relay_submitter_backfill_rows<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<StoredSubmitterBackfillRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_relay_submitter_backfill_rows.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredSubmitterBackfillRow {
+                    source: row.try_get("source")?,
+                    row_key: row.try_get("row_key")?,
+                    item_id: row.try_get("item_id")?,
+                    item_class: row.try_get("item_class")?,
+                    submitter_kind: row.try_get("submitter_kind")?,
+                    submitter_kind_class: row.try_get("submitter_kind_class")?,
+                    submitter_id: row.try_get("submitter_id")?,
+                    submitter_id_class: row.try_get("submitter_id_class")?,
+                    consumer_sender: row.try_get("consumer_sender")?,
+                    consumer_sender_class: row.try_get("consumer_sender_class")?,
+                    payload_present: row.try_get("payload_present")?,
+                    record_kind: row.try_get("record_kind")?,
+                    status_kind: row.try_get("status_kind")?,
+                    progress: row.try_get("progress")?,
+                    submit_attempted: row.try_get("submit_attempted")?,
+                    live: row.try_get("live")?,
+                    legacy_read_only: row.try_get("legacy_read_only")?,
+                })
+            })
+            .collect()
+    }
+}

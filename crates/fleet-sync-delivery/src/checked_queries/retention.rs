@@ -58,3 +58,29 @@ where
         Ok(())
     }
 }
+pub(crate) fn read_relay_existing_custody<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<StoredExistingCustodyRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_relay_existing_custody.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(StoredExistingCustodyRow {
+                    source: row.try_get("source")?,
+                    row_key: row.try_get("row_key")?,
+                    item_id: row.try_get("item_id")?,
+                })
+            })
+            .collect()
+    }
+}

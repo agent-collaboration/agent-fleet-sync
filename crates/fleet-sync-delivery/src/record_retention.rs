@@ -32,6 +32,7 @@ pub fn item_is_too_old(item: ItemId, now: SyncTime) -> bool {
 )]
 pub fn admit_existing_record_removals<'scope, S, T>(
     scope: &'scope mut S,
+    role: crate::DeliveryHostRole,
     now: SyncTime,
 ) -> impl std::future::Future<Output = Result<usize, DeliveryError>> + Send + 'scope
 where
@@ -46,9 +47,11 @@ where
         if crate::backfill_state::completed(scope, "record-removals").await? {
             return Ok(0);
         }
-        let rows = queries::read_existing_custody(scope)
-            .await
-            .map_err(sql_error)?;
+        let rows = match role {
+            crate::DeliveryHostRole::Machine => queries::read_existing_custody(scope).await,
+            crate::DeliveryHostRole::Relay => queries::read_relay_existing_custody(scope).await,
+        }
+        .map_err(sql_error)?;
         let mut items = Vec::with_capacity(rows.len());
         // Validate every key before making the first journal mutation.
         for row in rows {
@@ -176,16 +179,15 @@ where
 }
 
 pub struct RemoveDeliveryRecord<S, Db> {
+    role: crate::DeliveryHostRole,
     store: PhantomData<fn() -> (S, Db)>,
 }
 impl<S, Db> RemoveDeliveryRecord<S, Db> {
-    pub const fn new() -> Self {
-        Self { store: PhantomData }
-    }
-}
-impl<S, Db> Default for RemoveDeliveryRecord<S, Db> {
-    fn default() -> Self {
-        Self::new()
+    pub const fn new(role: crate::DeliveryHostRole) -> Self {
+        Self {
+            role,
+            store: PhantomData,
+        }
     }
 }
 impl<S, Db> Task for RemoveDeliveryRecord<S, Db>
@@ -210,6 +212,7 @@ where
         let item = *item;
         let now = ctx.now();
         let deadline = removal_deadline(item);
+        let role = self.role;
         ctx.local(step("remove_at_creation_deadline")?, move |scope| {
             Box::pin(async move {
                 if now < deadline {
@@ -230,22 +233,26 @@ where
                     .await
                     .map_err(sql_error)
                     .map_err(step_error)?;
-                queries::drop_inbox_reports(scope, item_key(item))
-                    .await
-                    .map_err(sql_error)
-                    .map_err(step_error)?;
-                queries::remove_retained_inbox_links(scope, item_key(item))
-                    .await
-                    .map_err(sql_error)
-                    .map_err(step_error)?;
+                if role == crate::DeliveryHostRole::Machine {
+                    queries::drop_inbox_reports(scope, item_key(item))
+                        .await
+                        .map_err(sql_error)
+                        .map_err(step_error)?;
+                    queries::remove_retained_inbox_links(scope, item_key(item))
+                        .await
+                        .map_err(sql_error)
+                        .map_err(step_error)?;
+                }
                 queries::remove_retained_outbox_links(scope, item_key(item))
                     .await
                     .map_err(sql_error)
                     .map_err(step_error)?;
-                queries::drop_inbox_item(scope, item_key(item))
-                    .await
-                    .map_err(sql_error)
-                    .map_err(step_error)?;
+                if role == crate::DeliveryHostRole::Machine {
+                    queries::drop_inbox_item(scope, item_key(item))
+                        .await
+                        .map_err(sql_error)
+                        .map_err(step_error)?;
+                }
                 queries::remove_retained_outbox(scope, item_key(item))
                     .await
                     .map_err(sql_error)

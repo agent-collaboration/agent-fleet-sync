@@ -23,6 +23,13 @@
           "nullable": false
         }
       ]
+    },
+    {
+      "name": "read_relay_existing_custody",
+      "sql": "sql/read_relay_existing_custody.sql",
+      "result": "many",
+      "row": "StoredExistingCustodyRow",
+      "parameters": []
     }
   ]
 }

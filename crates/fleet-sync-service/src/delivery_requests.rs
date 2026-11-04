@@ -1,7 +1,7 @@
 use crate::{ServiceConsumer, ServiceError, delivery_relay::*, service_state::ServiceState};
 use durable_steps::AtomicStore;
 use fleet_sync_delivery::{
-    DeliveryError, DeliveryTransactionFailure, Outbox, StatusStream, classify_delivery_store_error,
+    DeliveryTransactionFailure, Outbox, StatusStream, classify_delivery_store_error,
     delivery_rollback,
 };
 use fleet_sync_protocol::*;
@@ -61,15 +61,7 @@ impl<
                                     .recipient_report::<RelayPublication<P::Delivery>>(
                                         peer, report, now,
                                     )
-                                    .await
-                                    .map_err(|error| match error {
-                                        DeliveryError::InvalidBatch => DeliveryError::Refused {
-                                            reason: DeliveryRefusal::ProcessingFailed {
-                                                kind: DeliveryFailureKind::ExecutionFailed,
-                                            },
-                                        },
-                                        error => error,
-                                    })?,
+                                    .await?,
                             )),
                             DeliveryRequest::Query { items, .. } => {
                                 let mut statuses = Vec::with_capacity(items.len());

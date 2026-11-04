@@ -37,6 +37,7 @@ struct PublicationObservationKey {
 /// Call inside the owner's existing transaction; this executes only a SELECT.
 pub async fn snapshot<S, D: DeliveryTypes, B>(
     scope: &mut S,
+    role: crate::DeliveryHostRole,
     binding: &B,
 ) -> Result<Vec<DeliveryObservation>, DeliveryError>
 where
@@ -47,9 +48,11 @@ where
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    let rows = queries::read_delivery_snapshot(scope)
-        .await
-        .map_err(sql_error)?;
+    let rows = match role {
+        crate::DeliveryHostRole::Machine => queries::read_delivery_snapshot(scope).await,
+        crate::DeliveryHostRole::Relay => queries::read_relay_delivery_snapshot(scope).await,
+    }
+    .map_err(sql_error)?;
     let mut observations = Vec::with_capacity(rows.len());
     for row in rows {
         let mut observation = DeliveryObservation {
