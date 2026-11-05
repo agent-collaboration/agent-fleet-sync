@@ -1,6 +1,6 @@
 use crate::{
-    DeliveryError, DeliveryLimits, GateDecision, checked_queries as queries, custody_record::*,
-    outbox_record::*,
+    DeliveryError, DeliveryLimits, GateDecision, custody_record::*,
+    delivery_storage_rows as queries, outbox_record::*,
 };
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::*;

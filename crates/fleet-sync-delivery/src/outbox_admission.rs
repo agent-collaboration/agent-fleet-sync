@@ -1,4 +1,4 @@
-use crate::{DeliveryError, checked_queries as queries, custody_record::*, outbox_record::*};
+use crate::{DeliveryError, custody_record::*, delivery_storage_rows as queries, outbox_record::*};
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::*;
 use sqlx_core::{

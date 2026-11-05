@@ -2,8 +2,8 @@
   "migrations": [
     "migrations"
   ],
-  "output": "src/checked_queries/custody.rs",
-  "metadata": "checked-custody-query-metadata.json",
+  "output": "src/delivery_storage_rows/custody_records.rs",
+  "metadata": "custody-records-query-metadata.json",
   "queries": [
     {
       "name": "write_outbox_item",

@@ -61,10 +61,12 @@ where
         &mut self,
         item: ItemId,
     ) -> Result<Option<crate::Submitter>, DeliveryError> {
-        let Some(row) =
-            crate::checked_queries::read_relay_submitter(self.scope, item.as_uuid().to_string())
-                .await
-                .map_err(crate::custody_record::sql_error)?
+        let Some(row) = crate::delivery_storage_rows::read_relay_submitter(
+            self.scope,
+            item.as_uuid().to_string(),
+        )
+        .await
+        .map_err(crate::custody_record::sql_error)?
         else {
             return Ok(None);
         };

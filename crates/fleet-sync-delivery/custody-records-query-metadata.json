@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-status-queries.json": "47a2ba50ed981a7447cceff94369a8213216ac6edfebe9206a49b0fa6f85c89c",
+    "custody-records-queries.json": "542d375a959194e71d6de9d0a4694d5a46d502445a2a5418c693a88e627fa18e",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -65,112 +65,36 @@
     "migrations/0009_typed_report_records.sql": "c0e2513ebbaee9d5dddd9142dca9502993d64acaa9be10a37f0392b6d137b5fc",
     "migrations/0010_restore_status_owed_machine_index.sql": "0d5e0879dfcf320b8b0d37b16ff28e7974cf0d504f76aa93c7124b4d773173aa",
     "migrations/0011_delivery_backfill_markers.sql": "f1b81fb66ae8f5ef044238710f0dbda7dc44253019637a8587e71e82a2129f9a",
-    "sql/drop_status_events.sql": "3b833bedc849ea589df325a459e8ce0b8e77a343e5be31c9320b71f08fc56eab",
-    "sql/list_publications.sql": "52a4fa62dc2f9ae407a8b0f027da0bb613524781446eabea3b46919897541b42",
-    "sql/read_publication.sql": "a618e546bfebe5449de8f768986a72bfdcef5ed0aabf6031f5a70d8676aab612",
-    "sql/read_status_events.sql": "52c7571e5c14f646cb4fc560241be66181ec570caad999bc81397cab33028211",
-    "sql/read_status_revision.sql": "9d556746add7d74606f2e33d917cffb6b817280db3cfbf2a52b3f2f0761e6777",
-    "sql/read_status_state.sql": "39d4054384b4bfbd3a235640c23a583b2159d7d1c6ec6e267959462eb92df4c8",
-    "sql/retire_publication.sql": "ecd99d1485755640fc1af9137dd39673e407175e48663dd09c80607e9d802129",
-    "sql/write_publication.sql": "923c218299916ca4371cabe46a20292a15796e41edea1ada07cab7afeabd7fdc",
-    "sql/write_status_event.sql": "e9f2de91548abf9163d74161bef731f60256d2bbdfd3ff0ffc1fbefa187575b2",
-    "sql/write_status_state.sql": "5d211a71131c9f77107482683b434349ce12451a196ddef878f001e71572bd5a",
-    "src/checked_queries/status.rs": "609464dc37ca326745c458038905f98311f4adf0f4560624c042756a2df5c0db"
+    "sql/drop_inbox_cancel_link.sql": "4377a26c27c954d92d5e38c1e63c55b57956745206ca0bd0509b83fcb83e794b",
+    "sql/drop_inbox_item.sql": "058ff3f7aa917adc1b5a4f49df608b4eff4ea4ee0c0d6ac24cba3fe0c6bcc8f1",
+    "sql/read_inbox_accounting.sql": "ef1a2b79018cbffd8ef6f2c78078b53010c968c4b8ec889ddd59cd7ea621f0f1",
+    "sql/read_inbox_cancel_link.sql": "87dfc88a66698f62bc0a400c2194707e95150b6e815212db18e35e3c4f595071",
+    "sql/read_inbox_item.sql": "c588aa7fe4a11d62007e819fb9f22de9c34630174375fd7d01abefd777609a18",
+    "sql/read_outbox_accounting.sql": "deec9d75232de22911be67ad648e0510e76dedbef2dce3c1d65fc4022e8c3d0f",
+    "sql/read_outbox_cancel_link.sql": "8e2fe6e7af6c484923c6b325fce8ecbdabfe0dc7054c2a606db8200a0d71773d",
+    "sql/read_outbox_status.sql": "b6db7ab26769fbae97930423dca2d660a69ec8ee03693d35573986cc50e3483b",
+    "sql/remove_retained_events.sql": "96afe5bce791fc6c97ac43469079a05ba4f8ddf1ce030af3812d7e7634671d16",
+    "sql/remove_retained_inbox_links.sql": "dabdc4721761e5b091fa5f587e114a5cfca7dbcfff65e460ba4389d8c0aba32b",
+    "sql/remove_retained_outbox_links.sql": "9554d664f055972e32e634f141cfebf8562bfcde80b096db7b5d72064a5f3123",
+    "sql/remove_retained_status.sql": "9968dc80dd61dbc8c172d92ac6305c09986a064901614d686e67870bb3d45f66",
+    "sql/write_inbox_cancel_link.sql": "6a4f095202b56bc7b3ffcacd974a17a975f94dd5d8d4e142895ecdb1b8cab204",
+    "sql/write_inbox_item.sql": "6a63c1cff763ac9c0f5113223915e241dd6623bc0cff9059f0a696faf8ca7734",
+    "sql/write_outbox_cancel_link.sql": "8c40505b10ee62d4f90fa3ff25bf000cadedddad2c6df5847a0ad94c537d389d",
+    "sql/write_outbox_item.sql": "9c54eeb3ea5ed5c66ca45baaf78da93d04277fb1bf2f0c431d65302d2475517f",
+    "sql/write_outbox_status.sql": "be56e9db06ca526864f2de386a3f9dfac57e47336e222c5bbda36815fd074557",
+    "src/delivery_storage_rows/custody_records.rs": "df91171340ee5978375ffeb2d079bd20ea5a7ed6864b66b5d89f26ede51670ee"
   },
-  "queries_digest": "6179bc76d27e8d8e70b633915fc601a17b90da30d34009f995973730801b4fad",
+  "queries_digest": "6329bce0022e2cb1fa7a6125358a7b9c40eca3c4b4472407e1d30ef099998ff0",
   "queries": [
     {
-      "name": "read_status_state",
-      "bind_slots": 2,
-      "columns": [
-        {
-          "name": "id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        },
-        {
-          "name": "submitter_kind",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "submitter_id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "owner_route",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "head_class",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "typeof"
-        },
-        {
-          "name": "head",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        },
-        {
-          "name": "floor_class",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "typeof"
-        },
-        {
-          "name": "floor",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        }
-      ]
-    },
-    {
-      "name": "write_status_state",
-      "bind_slots": 5,
+      "name": "write_outbox_item",
+      "bind_slots": 9,
       "columns": []
     },
     {
-      "name": "read_publication",
-      "bind_slots": 2,
+      "name": "read_inbox_item",
+      "bind_slots": 1,
       "columns": [
-        {
-          "name": "id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        },
-        {
-          "name": "submitter_kind",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "submitter_id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
         {
           "name": "item_id",
           "sql_type": "TEXT",
@@ -179,28 +103,210 @@
           "type_source": "driver"
         },
         {
-          "name": "version_class",
+          "name": "live_class",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "typeof"
         },
         {
-          "name": "version",
+          "name": "live",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "cast"
         },
         {
-          "name": "status_kind",
+          "name": "payload_bytes_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "payload_bytes",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "settlement_charge_bytes_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "settlement_charge_bytes",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "payload",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "driver"
         },
         {
-          "name": "status_acceptance",
+          "name": "digest",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "consumer_sender",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "legacy_read_only_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "legacy_read_only",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "submitter_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "submitter_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "recipient_machine_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "recipient_address",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "relay_machine_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "cancel_target_item_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "valid_until_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "valid_until",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "stream",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "route",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "progress",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "attempt_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "attempt",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "not_before_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "not_before",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "outcome_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "outcome_acceptance",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "outcome_cancel_item_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "outcome_too_late_at",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -249,28 +355,168 @@
           "type_source": "driver"
         },
         {
-          "name": "cancel_outcome",
+          "name": "report_seq_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "report_seq",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "acceptance_bound_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "acceptance_bound",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "settlement_bytes_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "settlement_bytes",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "release_requested_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "release_requested",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "created_at_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "created_at",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "accepted_at_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "accepted_at",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "delivered_at_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "delivered_at",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        }
+      ]
+    },
+    {
+      "name": "drop_inbox_item",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "write_inbox_item",
+      "bind_slots": 9,
+      "columns": []
+    },
+    {
+      "name": "read_outbox_accounting",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "items",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "bytes",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        }
+      ]
+    },
+    {
+      "name": "read_inbox_accounting",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "items",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "bytes",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        }
+      ]
+    },
+    {
+      "name": "read_outbox_cancel_link",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "target",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "driver"
         },
         {
-          "name": "cancel_too_late_at",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "target_kind",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "status_route",
+          "name": "cancel_item",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -279,291 +525,12 @@
       ]
     },
     {
-      "name": "write_publication",
-      "bind_slots": 6,
-      "columns": []
-    },
-    {
-      "name": "retire_publication",
-      "bind_slots": 3,
-      "columns": []
-    },
-    {
-      "name": "write_status_event",
-      "bind_slots": 8,
-      "columns": []
-    },
-    {
-      "name": "read_status_events",
+      "name": "write_outbox_cancel_link",
       "bind_slots": 4,
-      "columns": [
-        {
-          "name": "id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        },
-        {
-          "name": "submitter_kind",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "submitter_id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "cursor_class",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "typeof"
-        },
-        {
-          "name": "cursor",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        },
-        {
-          "name": "item_id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "version_class",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "typeof"
-        },
-        {
-          "name": "version",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        },
-        {
-          "name": "status_kind",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "status_acceptance",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_kind",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_code",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_failure",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_size_field",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_digest",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_item_id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "cancel_outcome",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "cancel_too_late_at",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "drop_status_events",
-      "bind_slots": 3,
       "columns": []
     },
     {
-      "name": "read_status_revision",
-      "bind_slots": 4,
-      "columns": [
-        {
-          "name": "id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        },
-        {
-          "name": "submitter_kind",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "submitter_id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "cursor_class",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "typeof"
-        },
-        {
-          "name": "cursor",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        },
-        {
-          "name": "item_id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "version_class",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "typeof"
-        },
-        {
-          "name": "version",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        },
-        {
-          "name": "status_kind",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "status_acceptance",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_kind",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_code",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_failure",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_size_field",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_digest",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_item_id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "cancel_outcome",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "cancel_too_late_at",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        }
-      ]
-    },
-    {
-      "name": "list_publications",
+      "name": "read_outbox_status",
       "bind_slots": 0,
       "columns": [
         {
@@ -574,125 +541,75 @@
           "type_source": "cast"
         },
         {
-          "name": "submitter_kind",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "submitter_id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "item_id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "version_class",
+          "name": "cursor_class",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "typeof"
         },
         {
-          "name": "version",
+          "name": "cursor",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "cast"
-        },
+        }
+      ]
+    },
+    {
+      "name": "write_outbox_status",
+      "bind_slots": 3,
+      "columns": []
+    },
+    {
+      "name": "read_inbox_cancel_link",
+      "bind_slots": 1,
+      "columns": [
         {
-          "name": "status_kind",
+          "name": "target",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "driver"
         },
         {
-          "name": "status_acceptance",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_kind",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_code",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_failure",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_size_field",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_digest",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "refusal_item_id",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "cancel_outcome",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "cancel_too_late_at",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "target_kind",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "driver"
-        },
-        {
-          "name": "status_route",
+          "name": "cancel_item",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "driver"
         }
       ]
+    },
+    {
+      "name": "write_inbox_cancel_link",
+      "bind_slots": 4,
+      "columns": []
+    },
+    {
+      "name": "drop_inbox_cancel_link",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "remove_retained_status",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "remove_retained_events",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "remove_retained_inbox_links",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "remove_retained_outbox_links",
+      "bind_slots": 1,
+      "columns": []
     }
   ]
 }

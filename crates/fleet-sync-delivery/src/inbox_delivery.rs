@@ -1,6 +1,6 @@
 use crate::{
     DeliveryAttempt, DeliveryCheck, DeliveryConsumer, DeliveryError, InboxEffects, LocalOutcome,
-    ReportRef, checked_queries as queries, custody_record::*, inbox_record::*,
+    ReportRef, custody_record::*, delivery_storage_rows as queries, inbox_record::*,
     inbox_storage::Inbox,
 };
 use durable_steps::{JournalScope, Task, storage::TransactionScope};

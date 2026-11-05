@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-retention-queries.json": "4a4d9d46708242e4185c1d42df7dbc331820234bf215493d3c865f52cd78e9c7",
+    "custody-backfill-queries.json": "cf328ea488528085541606b6beb2a4d9514d6ed158d4a4e624b8f0a48e3ea9f9",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -65,15 +65,46 @@
     "migrations/0009_typed_report_records.sql": "c0e2513ebbaee9d5dddd9142dca9502993d64acaa9be10a37f0392b6d137b5fc",
     "migrations/0010_restore_status_owed_machine_index.sql": "0d5e0879dfcf320b8b0d37b16ff28e7974cf0d504f76aa93c7124b4d773173aa",
     "migrations/0011_delivery_backfill_markers.sql": "f1b81fb66ae8f5ef044238710f0dbda7dc44253019637a8587e71e82a2129f9a",
-    "sql/read_existing_custody.sql": "d75270ea3b5b073d85af3c7297d5bf20425fe5401711b6d9c70d815de985931a",
-    "sql/read_relay_existing_custody.sql": "ad88d48b2e8f566dd5d301f430ccabcc26ef91e4f02ae623aaf37f82bf90e65a",
-    "sql/remove_retained_outbox.sql": "0696c7c176d75dcef275e525f15fc4e25740099fadc0799be481009a8c63df16",
-    "src/checked_queries/retention.rs": "16f46dbbea96e2cba560fa91faad87964ed162223fc60171e23c26b6a380e0cc"
+    "sql/bind_inbox_submitter.sql": "9b8734088ad7f6bac98d1a7e0aacb587548bbbaf6898e2ef5429038e75b1caba",
+    "sql/bind_outbox_submitter.sql": "df33284e23304f6ce4396983eb16ea6d853d3ddac2888940e3c1171531c1dae1",
+    "sql/compact_final_inbox.sql": "12061c2a51ba0bbc462bbe33e57e4c55344c5fe193caf3539002a006fa1922c7",
+    "sql/complete_delivery_backfill.sql": "c197bc255fefdac72f799834fa0a7271e0311986f11f5cc65c4cd233b8ded05a",
+    "sql/mark_legacy_inbox.sql": "d0611b0159f19c2081ad8591d4eda01210f8ad91f5f06af3daf15655cf916964",
+    "sql/mark_legacy_outbox.sql": "9a7ef5756cc386b0c181cfef30866d64d7bac527f33b5195056d31cb6a9938ed",
+    "sql/read_delivery_backfill.sql": "aca6bd0b142d1771cffe457b79c07cdd1ec4aec1261b4438d95d6fbed9a89262",
+    "sql/read_relay_submitter_backfill_rows.sql": "c20c814bf66bd8f426dc746a727aa9cb85bc90d8f3bbfbc64f0cbb2a6b94c7c4",
+    "sql/read_submitter_backfill_rows.sql": "e2c8a8a9691c2d7c4be7e90998aecaf23ac3f8ed6d42929e2f11a444c4b7a5e9",
+    "src/delivery_storage_rows/custody_backfill.rs": "bd1b69bf055ba49e411b4984070834bf673c46ee2f277c95b90ab2e977f253d2"
   },
-  "queries_digest": "f33c3ed70edccdc97bda27389cda385ae3ccdf68dc0a48cb7133d90bf7d887c3",
+  "queries_digest": "1e9fbb830715bc33482dbd2d94ccea31fc1841cdaa8b11675268d73e90e77ddb",
   "queries": [
     {
-      "name": "read_existing_custody",
+      "name": "read_delivery_backfill",
+      "bind_slots": 1,
+      "columns": [
+        {
+          "name": "id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "name",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "complete_delivery_backfill",
+      "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "read_submitter_backfill_rows",
       "bind_slots": 0,
       "columns": [
         {
@@ -92,6 +123,104 @@
         },
         {
           "name": "item_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "item_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "submitter_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "submitter_kind_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "submitter_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "submitter_id_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "consumer_sender",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "consumer_sender_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "payload_present",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "record_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "status_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "progress",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "submit_attempted",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "live",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "legacy_read_only",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -100,12 +229,32 @@
       ]
     },
     {
-      "name": "remove_retained_outbox",
-      "bind_slots": 1,
+      "name": "bind_outbox_submitter",
+      "bind_slots": 4,
       "columns": []
     },
     {
-      "name": "read_relay_existing_custody",
+      "name": "bind_inbox_submitter",
+      "bind_slots": 4,
+      "columns": []
+    },
+    {
+      "name": "mark_legacy_outbox",
+      "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "mark_legacy_inbox",
+      "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "compact_final_inbox",
+      "bind_slots": 2,
+      "columns": []
+    },
+    {
+      "name": "read_relay_submitter_backfill_rows",
       "bind_slots": 0,
       "columns": [
         {
@@ -124,6 +273,104 @@
         },
         {
           "name": "item_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "item_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "submitter_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "submitter_kind_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "submitter_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "submitter_id_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "consumer_sender",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "consumer_sender_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "payload_present",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "record_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "status_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "progress",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "submit_attempted",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "live",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "legacy_read_only",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,

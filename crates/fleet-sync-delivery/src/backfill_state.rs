@@ -1,4 +1,4 @@
-use crate::{DeliveryError, SyncTime, checked_queries as queries, custody_record::*};
+use crate::{DeliveryError, SyncTime, custody_record::*, delivery_storage_rows as queries};
 use durable_steps::storage::TransactionScope;
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,

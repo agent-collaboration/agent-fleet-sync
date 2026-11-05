@@ -10,16 +10,16 @@ mod custody_fixture;
 pub static DELIVERY_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 mod backfill_state;
-#[expect(
-    clippy::too_many_arguments,
-    reason = "generated SQL functions bind each checked parameter"
-)]
-mod checked_queries;
 mod custody_record;
 mod delivery_calls;
 mod delivery_contract;
 mod delivery_host_role;
 mod delivery_rollback;
+#[expect(
+    clippy::too_many_arguments,
+    reason = "generated SQL functions bind each checked parameter"
+)]
+mod delivery_storage_rows;
 mod inbox_cancellation;
 mod inbox_delivery;
 mod inbox_local;
@@ -98,6 +98,6 @@ pub use delivery_limits::{DeliveryConfigError, DeliveryLimits};
 pub use settlement_reserve::minimum_settlement_allowance;
 
 #[cfg(feature = "test-support")]
-mod checked_inspection_queries;
+mod delivery_snapshot_rows;
 #[cfg(feature = "test-support")]
 pub mod test_support;

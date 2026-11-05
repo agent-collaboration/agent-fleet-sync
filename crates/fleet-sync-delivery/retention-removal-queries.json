@@ -2,8 +2,8 @@
   "migrations": [
     "migrations"
   ],
-  "output": "src/checked_queries/retention.rs",
-  "metadata": "checked-retention-query-metadata.json",
+  "output": "src/delivery_storage_rows/retention_removal.rs",
+  "metadata": "retention-removal-query-metadata.json",
   "queries": [
     {
       "name": "read_existing_custody",

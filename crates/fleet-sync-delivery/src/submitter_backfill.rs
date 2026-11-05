@@ -1,6 +1,6 @@
 use crate::custody_record::sql_error;
 use crate::{
-    DeliveryError, DeliveryTypes, ItemId, Submitter, SyncTime, checked_queries as queries,
+    DeliveryError, DeliveryTypes, ItemId, Submitter, SyncTime, delivery_storage_rows as queries,
 };
 use durable_steps::storage::TransactionScope;
 use sqlx_core::{

@@ -2,8 +2,8 @@
   "migrations": [
     "migrations"
   ],
-  "output": "src/checked_queries/report.rs",
-  "metadata": "checked-report-query-metadata.json",
+  "output": "src/delivery_storage_rows/delivery_reports.rs",
+  "metadata": "delivery-reports-query-metadata.json",
   "queries": [
     {
       "name": "write_report",

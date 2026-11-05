@@ -1,6 +1,6 @@
 use crate::{
-    DeliveryError, Outbox, OutboxAdmission, PublicationRef, StatusStream,
-    checked_queries as queries, custody_record::*, outbox_record::*,
+    DeliveryError, Outbox, OutboxAdmission, PublicationRef, StatusStream, custody_record::*,
+    delivery_storage_rows as queries, outbox_record::*,
 };
 use durable_steps::{JournalScope, Task, storage::TransactionScope};
 use fleet_sync_protocol::*;

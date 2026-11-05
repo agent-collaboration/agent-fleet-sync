@@ -1,6 +1,6 @@
 use crate::{
     DeliveryAttempt, DeliveryConsumer, DeliveryError, InboxEffects, LocalCancelAdmission,
-    LocalItemAdmission, checked_queries as queries, custody_record::*, inbox_record::*,
+    LocalItemAdmission, custody_record::*, delivery_storage_rows as queries, inbox_record::*,
     inbox_storage::Inbox,
 };
 use durable_steps::storage::TransactionScope;
