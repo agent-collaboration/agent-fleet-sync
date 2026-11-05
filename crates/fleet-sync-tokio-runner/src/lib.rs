@@ -93,3 +93,5 @@ pub use object_runner::TokioRunner;
 pub use session_host::{SessionAdmission, SessionHandler, SessionHost, SessionHostError};
 #[cfg(test)]
 mod native_publish_tests;
+
+mod enrollment_retry;

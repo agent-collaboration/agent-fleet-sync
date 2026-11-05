@@ -45,6 +45,7 @@ pub struct RenewResult {
     deny_unknown_fields
 )]
 pub enum LeaseRefusal {
+    HolderNotEnrolled,
     StaleEpoch {
         current_epoch: Epoch,
         epoch_ended_at: ReplicationPosition,
@@ -251,3 +252,7 @@ pub enum LeaseAnswer {
     Renew(RenewAnswer),
     Claim(HolderChangeAnswer),
 }
+
+#[cfg(test)]
+#[path = "lease_enrollment_test.rs"]
+mod enrollment_tests;
