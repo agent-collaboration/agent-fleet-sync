@@ -224,23 +224,45 @@ where
             if reference.digest.as_str() != record.header.digest {
                 return Err(DeliveryError::DigestMismatch);
             }
-            let status = match answer {
+            let (status, cancel) = match answer {
                 PushResult::BindingUnavailable { reason } => {
                     return Err(DeliveryError::SenderBindingUnavailable {
                         row: crate::CustodyRow::Outbox(reference.item),
                         reason,
                     });
                 }
-                PushResult::Accepted { .. } => DeliveryStatus::AtRecipient,
-                PushResult::Replayed { status, .. } => {
+                PushResult::Accepted { .. } => (DeliveryStatus::AtRecipient, None),
+                PushResult::Replayed { status, cancel } => {
                     if status.rank() < DeliveryStatus::<D::Acceptance>::AtRecipient.rank() {
                         return Err(DeliveryError::InvalidBatch);
                     }
-                    status
+                    match (record.header.cancel_target, &status, cancel) {
+                        (None, _, None)
+                        | (Some(_), DeliveryStatus::AtRecipient, Some(CancelResult::Pending))
+                        | (
+                            Some(_),
+                            DeliveryStatus::Cancelled,
+                            Some(CancelResult::Prevented | CancelResult::TooLate { .. }),
+                        )
+                        | (
+                            Some(_),
+                            DeliveryStatus::Expired | DeliveryStatus::Refused { .. },
+                            None,
+                        ) => {}
+                        _ => return Err(DeliveryError::InvalidBatch),
+                    }
+                    if cancel.is_some() {
+                        self.validate_relay_cancel(&record.header, record.header.id)
+                            .await?;
+                    }
+                    (status, cancel)
                 }
-                PushResult::Conflict { existing } => DeliveryStatus::Refused {
-                    reason: DeliveryRefusal::ItemConflict { existing },
-                },
+                PushResult::Conflict { existing } => (
+                    DeliveryStatus::Refused {
+                        reason: DeliveryRefusal::ItemConflict { existing },
+                    },
+                    None,
+                ),
                 PushResult::Refused {
                     reason: DeliveryRefusal::MailboxFull,
                 } => {
@@ -248,18 +270,25 @@ where
                         reason: DeliveryRefusal::MailboxFull,
                     });
                 }
-                PushResult::Refused { reason } => DeliveryStatus::Refused { reason },
+                PushResult::Refused { reason } => (DeliveryStatus::Refused { reason }, None),
             };
             crate::delivery_sizes::check_status_bound::<D>(
                 &status,
                 record.header.acceptance_bound,
             )?;
-            let changed = record.header.status.may_advance_to(&status);
+            let status_changed = record.header.status.may_advance_to(&status);
+            let cancel_changed = validate_cancel_revision(&record.header, cancel)?;
+            let changed = status_changed || cancel_changed;
             if !changed && record.payload.is_none() && record.header.handed_off_at.is_some() {
                 return Ok(StatusPublicationResult::Applied);
             }
-            if changed {
+            if status_changed {
                 record.header.status = status;
+            }
+            if let Some(cancel) = cancel {
+                record.header.cancel = Some(cancel);
+            }
+            if changed {
                 record.header.version = next_version(record.header.version)?;
             }
             record.header.handed_off_at.get_or_insert(now);
@@ -364,10 +393,24 @@ where
                     }
                 }
             };
+            let cancel_changed = match validate_cancel_revision(&record.header, cancel) {
+                Ok(changed) => changed,
+                Err(DeliveryError::InvalidBatch) => {
+                    return Ok(ReportResult::Refused {
+                        reason: DeliveryRefusal::ProcessingFailed {
+                            kind: DeliveryFailureKind::ExecutionFailed,
+                        },
+                    });
+                }
+                Err(error) => return Err(error),
+            };
             record.header.last_report_seq = report.report_seq;
-            let changed = record.header.status.may_advance_to(&status);
-            if changed {
+            let status_changed = record.header.status.may_advance_to(&status);
+            let changed = status_changed || cancel_changed;
+            if status_changed {
                 record.header.status = status;
+            }
+            if changed {
                 record.header.version = next_version(record.header.version)?;
             }
             if let Some(cancel) = cancel {
@@ -436,5 +479,28 @@ where
             return Err(DeliveryError::InvalidBatch);
         }
         Ok(())
+    }
+}
+
+fn validate_cancel_revision<A>(
+    header: &OutboxHeader<A>,
+    next: Option<CancelResult>,
+) -> Result<bool, DeliveryError> {
+    let Some(next) = next else {
+        return Ok(false);
+    };
+    if header.cancel_target.is_none()
+        || header.status.is_terminal() && !matches!(header.status, DeliveryStatus::Cancelled)
+    {
+        return Err(DeliveryError::InvalidBatch);
+    }
+    // Status rank cannot express a Pending -> final cancel-result revision.
+    // Final results are immutable, including the TooLate observation point.
+    match header.cancel {
+        Some(current) if current == next => Ok(false),
+        Some(CancelResult::Pending) => Ok(true),
+        Some(CancelResult::Prevented | CancelResult::TooLate { .. }) | None => {
+            Err(DeliveryError::InvalidBatch)
+        }
     }
 }

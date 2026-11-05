@@ -11,6 +11,7 @@ mod push_expiry_recovery;
 mod push_recovery;
 mod pushed_inbox;
 mod record_retention;
+mod relay_cancel_replay;
 mod relay_outbox;
 mod relay_sender_authority;
 mod relayed_capacity;
