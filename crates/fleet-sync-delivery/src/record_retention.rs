@@ -1,5 +1,6 @@
 use crate::{
-    DeliveryError, ItemId, SyncTime, checked_queries as queries, custody_record::*, task_support::*,
+    DeliveryError, ItemId, SyncTime, custody_record::*, delivery_storage_rows as queries,
+    task_support::*,
 };
 use durable_steps::{
     Admitted, AtomicStore, DriveLease, JournalScope, OperationContext, OperationFailure, Task,

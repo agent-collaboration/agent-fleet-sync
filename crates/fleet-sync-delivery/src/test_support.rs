@@ -1,9 +1,10 @@
 //! Read-only committed-state observations for process verification, excluded from normal builds.
 use crate::status_row::PublicationRow;
-use crate::{DeliveryError, checked_inspection_queries as queries};
+use crate::{DeliveryError, delivery_snapshot_rows as queries};
 use crate::{
-    DeliveryTypes, checked_queries,
+    DeliveryTypes,
     custody_record::{encode, sql_error},
+    delivery_storage_rows,
 };
 use durable_steps::storage::TransactionScope;
 use serde::{Deserialize, Serialize};
@@ -68,19 +69,21 @@ where
         };
         observation.content = match observation.category.as_str() {
             "outbox" => {
-                let row = checked_queries::read_outbox_item(scope, observation.identity.clone())
-                    .await
-                    .map_err(sql_error)?
-                    .ok_or(DeliveryError::CustodyMissing)?;
+                let row =
+                    delivery_storage_rows::read_outbox_item(scope, observation.identity.clone())
+                        .await
+                        .map_err(sql_error)?
+                        .ok_or(DeliveryError::CustodyMissing)?;
                 Some(encode(
                     &crate::outbox_storage::decode_header::<S, D, B>(scope, binding, &row).await?,
                 )?)
             }
             "inbox" => {
-                let row = checked_queries::read_inbox_item(scope, observation.identity.clone())
-                    .await
-                    .map_err(sql_error)?
-                    .ok_or(DeliveryError::CustodyMissing)?;
+                let row =
+                    delivery_storage_rows::read_inbox_item(scope, observation.identity.clone())
+                        .await
+                        .map_err(sql_error)?
+                        .ok_or(DeliveryError::CustodyMissing)?;
                 Some(encode(
                     &crate::inbox_row::decode_header::<S, D, B>(scope, binding, &row).await?,
                 )?)
@@ -89,11 +92,14 @@ where
                 let sequence = observation.metadata.clone().ok_or(DeliveryError::Corrupt {
                     field: "inspection report sequence",
                 })?;
-                let row =
-                    checked_queries::read_report(scope, observation.identity.clone(), sequence)
-                        .await
-                        .map_err(sql_error)?
-                        .ok_or(DeliveryError::CustodyMissing)?;
+                let row = delivery_storage_rows::read_report(
+                    scope,
+                    observation.identity.clone(),
+                    sequence,
+                )
+                .await
+                .map_err(sql_error)?
+                .ok_or(DeliveryError::CustodyMissing)?;
                 Some(encode(&crate::report_row::decode_report::<D>(&row)?)?)
             }
             "publication" => {
@@ -110,11 +116,14 @@ where
                     )?;
                 let target = crate::status_stream::canonical_encode(&target)?;
                 observation.metadata = Some(target.clone());
-                let row =
-                    checked_queries::read_publication(scope, observation.identity.clone(), target)
-                        .await
-                        .map_err(sql_error)?
-                        .ok_or(DeliveryError::CustodyMissing)?;
+                let row = delivery_storage_rows::read_publication(
+                    scope,
+                    observation.identity.clone(),
+                    target,
+                )
+                .await
+                .map_err(sql_error)?
+                .ok_or(DeliveryError::CustodyMissing)?;
                 Some(encode(&row.publication::<D::Acceptance>()?)?)
             }
             "statusEvent" => {
@@ -122,7 +131,7 @@ where
                     observation.metadata.clone(),
                     "inspection event key",
                 )?;
-                let row = checked_queries::read_status_revision(
+                let row = delivery_storage_rows::read_status_revision(
                     scope,
                     observation.identity.clone(),
                     key.version.value().to_string(),

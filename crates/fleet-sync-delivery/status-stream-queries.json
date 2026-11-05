@@ -2,8 +2,8 @@
   "migrations": [
     "migrations"
   ],
-  "output": "src/checked_queries/status.rs",
-  "metadata": "checked-status-query-metadata.json",
+  "output": "src/delivery_storage_rows/status_stream.rs",
+  "metadata": "status-stream-query-metadata.json",
   "queries": [
     {
       "name": "read_status_state",

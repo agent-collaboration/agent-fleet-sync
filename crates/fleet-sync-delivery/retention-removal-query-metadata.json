@@ -1,7 +1,6 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-inspection-queries.json": "a27ec68fefa141234678decc315092bd8ff4425801f5b3662c1d9f45fb5cd498",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -65,46 +64,34 @@
     "migrations/0009_typed_report_records.sql": "c0e2513ebbaee9d5dddd9142dca9502993d64acaa9be10a37f0392b6d137b5fc",
     "migrations/0010_restore_status_owed_machine_index.sql": "0d5e0879dfcf320b8b0d37b16ff28e7974cf0d504f76aa93c7124b4d773173aa",
     "migrations/0011_delivery_backfill_markers.sql": "f1b81fb66ae8f5ef044238710f0dbda7dc44253019637a8587e71e82a2129f9a",
-    "sql/read_delivery_snapshot.sql": "474a5aa3bc11f75ace8c183f63a5e07a5e7db8b33833ff8cd13f58dc945af676",
-    "sql/read_relay_delivery_snapshot.sql": "2d389f2ee9b2902404a61e7bc0874c28932e5b0b709e81239725a205d857a208",
-    "src/checked_inspection_queries.rs": "b1511f204d6eaa24b714a19d89d59288af1d5c453d3862e341fefe82ef9bd678"
+    "retention-removal-queries.json": "f7c9c303cfb904adea907ce8ab4a2b1c8391c3f3e5e63031fc9c136e15eee92c",
+    "sql/read_existing_custody.sql": "d75270ea3b5b073d85af3c7297d5bf20425fe5401711b6d9c70d815de985931a",
+    "sql/read_relay_existing_custody.sql": "ad88d48b2e8f566dd5d301f430ccabcc26ef91e4f02ae623aaf37f82bf90e65a",
+    "sql/remove_retained_outbox.sql": "0696c7c176d75dcef275e525f15fc4e25740099fadc0799be481009a8c63df16",
+    "src/delivery_storage_rows/retention_removal.rs": "16f46dbbea96e2cba560fa91faad87964ed162223fc60171e23c26b6a380e0cc"
   },
-  "queries_digest": "3851d251525d297d04e0a7bb49cb4a3779f40a08109d2d139a07dd1f318bef20",
+  "queries_digest": "f33c3ed70edccdc97bda27389cda385ae3ccdf68dc0a48cb7133d90bf7d887c3",
   "queries": [
     {
-      "name": "read_delivery_snapshot",
+      "name": "read_existing_custody",
       "bind_slots": 0,
       "columns": [
         {
-          "name": "category",
+          "name": "source",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "cast"
         },
         {
-          "name": "identity",
+          "name": "row_key",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "cast"
         },
         {
-          "name": "metadata",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        },
-        {
-          "name": "content",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        },
-        {
-          "name": "payload_bytes",
+          "name": "item_id",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -113,39 +100,30 @@
       ]
     },
     {
-      "name": "read_relay_delivery_snapshot",
+      "name": "remove_retained_outbox",
+      "bind_slots": 1,
+      "columns": []
+    },
+    {
+      "name": "read_relay_existing_custody",
       "bind_slots": 0,
       "columns": [
         {
-          "name": "category",
+          "name": "source",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "cast"
         },
         {
-          "name": "identity",
+          "name": "row_key",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "cast"
         },
         {
-          "name": "metadata",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        },
-        {
-          "name": "content",
-          "sql_type": "TEXT",
-          "rust_type": "Option<String>",
-          "nullable": null,
-          "type_source": "cast"
-        },
-        {
-          "name": "payload_bytes",
+          "name": "item_id",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,

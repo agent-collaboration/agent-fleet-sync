@@ -1,5 +1,5 @@
 use crate::status_row::PublicationRow;
-use crate::{DeliveryError, checked_queries as queries, custody_record::*};
+use crate::{DeliveryError, custody_record::*, delivery_storage_rows as queries};
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::*;
 use serde::{Deserialize, Serialize};

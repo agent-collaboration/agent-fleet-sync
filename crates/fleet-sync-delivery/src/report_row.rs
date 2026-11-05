@@ -1,5 +1,5 @@
 use crate::{
-    DeliveryError, checked_queries::StoredReportRow, custody_record::*, stored_outcome::*,
+    DeliveryError, custody_record::*, delivery_storage_rows::StoredReportRow, stored_outcome::*,
 };
 use fleet_sync_protocol::*;
 

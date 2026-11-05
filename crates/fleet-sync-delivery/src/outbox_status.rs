@@ -1,5 +1,5 @@
 use crate::{
-    DeliveryError, checked_queries as queries, custody_record::*, outbox_rules::Outbox,
+    DeliveryError, custody_record::*, delivery_storage_rows as queries, outbox_rules::Outbox,
     status_stream::canonical_encode,
 };
 use durable_steps::storage::TransactionScope;

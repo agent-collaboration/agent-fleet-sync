@@ -2,8 +2,8 @@
   "migrations": [
     "migrations"
   ],
-  "output": "src/checked_queries/backfill.rs",
-  "metadata": "checked-backfill-query-metadata.json",
+  "output": "src/delivery_storage_rows/custody_backfill.rs",
+  "metadata": "custody-backfill-query-metadata.json",
   "queries": [
     {
       "name": "read_delivery_backfill",

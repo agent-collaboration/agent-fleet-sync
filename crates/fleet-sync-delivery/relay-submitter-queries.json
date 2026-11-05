@@ -1,7 +1,7 @@
 {
   "migrations": ["migrations"],
-  "output": "src/checked_queries/relay.rs",
-  "metadata": "checked-relay-query-metadata.json",
+  "output": "src/delivery_storage_rows/relay_submitter.rs",
+  "metadata": "relay-submitter-query-metadata.json",
   "queries": [{
     "name": "read_relay_submitter",
     "sql": "sql/read_relay_submitter.sql",

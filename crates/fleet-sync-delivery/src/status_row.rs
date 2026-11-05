@@ -1,7 +1,7 @@
 use crate::{
     DeliveryError,
-    checked_queries::*,
     custody_record::{integer, stored_row_id},
+    delivery_storage_rows::*,
     stored_outcome::*,
 };
 use fleet_sync_protocol::*;

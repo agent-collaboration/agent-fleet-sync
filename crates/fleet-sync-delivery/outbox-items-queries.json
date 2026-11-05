@@ -2,8 +2,8 @@
   "migrations": [
     "migrations"
   ],
-  "output": "src/checked_queries/outbox.rs",
-  "metadata": "checked-outbox-query-metadata.json",
+  "output": "src/delivery_storage_rows/outbox_items.rs",
+  "metadata": "outbox-items-query-metadata.json",
   "queries": [
     {
       "name": "read_outbox_item",

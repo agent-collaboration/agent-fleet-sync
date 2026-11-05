@@ -1,6 +1,7 @@
 use crate::{
-    DeliveryError, checked_queries as queries,
+    DeliveryError,
     custody_record::{item_key, sql_error},
+    delivery_storage_rows as queries,
     inbox_record::{InboxProgress, InboxRoute},
     inbox_storage::Inbox,
 };

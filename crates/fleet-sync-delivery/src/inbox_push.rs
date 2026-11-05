@@ -1,6 +1,6 @@
 use crate::{
     DeliveryAttempt, DeliveryConsumer, DeliveryError, Inbox, InboxEffects, ReportRef,
-    checked_queries as queries, custody_record::*, inbox_record::*,
+    custody_record::*, delivery_storage_rows as queries, inbox_record::*,
 };
 use durable_steps::{JournalScope, Task, storage::TransactionScope};
 use fleet_sync_protocol::*;
