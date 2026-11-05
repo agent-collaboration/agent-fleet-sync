@@ -76,7 +76,8 @@ pub async fn migrate_journal(connection: &mut TursoConnection) -> Result<(), Sto
     migrator
         .run_direct(None, connection, false)
         .await
-        .map_err(StoreError::backend)
+        .map_err(StoreError::backend)?;
+    crate::native_journal_metadata::migrate_receipt_metadata(connection).await
 }
 
 pub struct TursoScope<'t, H: Host> {
@@ -186,6 +187,7 @@ impl<H: Host> JournalQueries for TursoScope<'_, H> {
             .map_err(StoreError::backend)
     }
     async fn insert_operation(&mut self, row: StoredOperationRow) -> Result<(), StoreError> {
+        let now = self.host.now().unix_millis();
         sqlx_turso::query_file!(
             "queries/insert_operation.sql",
             row.operation_id,
@@ -201,7 +203,9 @@ impl<H: Host> JournalQueries for TursoScope<'_, H> {
             row.next_attempt_at,
             row.attempt,
             row.drive_token,
-            row.drive_until
+            row.drive_until,
+            now,
+            now
         )
         .execute(&mut *self.connection)
         .await
@@ -213,8 +217,10 @@ impl<H: Host> JournalQueries for TursoScope<'_, H> {
         row: StoredOperationRow,
         token: Option<String>,
     ) -> Result<bool, StoreError> {
+        let now = self.host.now().unix_millis();
         let result = sqlx_turso::query_file!(
             "queries/update_operation.sql",
+            now,
             row.state,
             row.result,
             row.failure,
@@ -254,8 +260,12 @@ impl<H: Host> JournalQueries for TursoScope<'_, H> {
             .map_err(StoreError::backend)
     }
     async fn upsert_step(&mut self, row: StoredStepRow) -> Result<(), StoreError> {
+        let now = self.host.now().unix_millis();
         sqlx_turso::query_file!(
             "queries/upsert_step.sql",
+            row.id,
+            now,
+            now,
             row.operation_id,
             row.position,
             row.step_name,

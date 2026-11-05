@@ -47,6 +47,7 @@ pub(super) async fn renew_at(
                         lease_duration: Duration::from_millis(duration),
                         renew_interval: Duration::from_millis(1),
                     },
+                    &crate::NoLeaseChangeHook,
                 )
                 .await
                 .map_err(storage)
@@ -123,16 +124,41 @@ pub(super) fn rollback_engine(
     host: Arc<TestHost>,
 ) -> TestResult<Engine<RollbackRegistryStore, TestHost>> {
     let mut engine = Engine::new(store, Arc::clone(&host));
-    engine.register(RegistrationTask::<RollbackRegistryStore, Turso>::new(
+    engine.register(RegistrationTask::<
+        RollbackRegistryStore,
+        Turso,
+        crate::NoLeaseChangeHook,
+    >::new(
         config()?,
+        host.clone(),
+        std::sync::Arc::new(crate::NoLeaseChangeHook),
     ))?;
-    engine.register(ImportTask::<RollbackRegistryStore, Turso>::new(config()?))?;
-    engine.register(RetirementTask::<RollbackRegistryStore, Turso>::new(
-        config()?
+    engine.register(ImportTask::<
+        RollbackRegistryStore,
+        Turso,
+        crate::NoLeaseChangeHook,
+    >::new(
+        config()?,
+        host.clone(),
+        std::sync::Arc::new(crate::NoLeaseChangeHook),
     ))?;
-    engine.register(HolderChangeTask::<RollbackRegistryStore, Turso>::new(
+    engine.register(RetirementTask::<
+        RollbackRegistryStore,
+        Turso,
+        crate::NoLeaseChangeHook,
+    >::new(
+        config()?,
+        host.clone(),
+        std::sync::Arc::new(crate::NoLeaseChangeHook),
+    ))?;
+    engine.register(HolderChangeTask::<
+        RollbackRegistryStore,
+        Turso,
+        crate::NoLeaseChangeHook,
+    >::new(
         config()?,
         host,
+        std::sync::Arc::new(crate::NoLeaseChangeHook),
     ))?;
     engine.register(SettleReservationTask::<RollbackRegistryStore>::new())?;
     Ok(engine)

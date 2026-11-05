@@ -9,10 +9,11 @@ use sqlx_core::{
     encode::Encode, types::Type,
 };
 
-impl<S, D> Inbox<'_, S, D>
+impl<S, D, B> Inbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
@@ -80,13 +81,30 @@ where
         let authority = original.delivery_header();
         let outcome = if cancel.header.valid_until.is_some_and(|until| now >= until) {
             ControlOutcome::Expired
+        } else if original.legacy_read_only {
+            ControlOutcome::Refused {
+                reason: DeliveryRefusal::ProcessingFailed {
+                    kind: DeliveryFailureKind::CustodyUnresolvable,
+                },
+            }
         } else if let Err(DeliveryError::Corrupt { .. }) = authority {
             ControlOutcome::Refused {
                 reason: DeliveryRefusal::ProcessingFailed {
                     kind: DeliveryFailureKind::CustodyCorrupt,
                 },
             }
-        } else if !consumer.may_cancel(&cancel.header.sender, &authority?) {
+        } else if !consumer.may_cancel(
+            cancel
+                .header
+                .sender
+                .as_ref()
+                .ok_or(DeliveryError::CorruptRow {
+                    table: "_fleet_sync_inbox_items",
+                    key: cancel.header.id.as_uuid().to_string(),
+                    field: "consumer_sender",
+                })?,
+            &authority?,
+        ) {
             ControlOutcome::Refused {
                 reason: DeliveryRefusal::CancelSenderMismatch,
             }
@@ -148,10 +166,16 @@ where
                     };
                     original.release_requested = false;
                     effects.reports.extend(
-                        self.record_header_outcome(&mut original, original_outcome, consumer, None)
-                            .await?,
+                        self.record_header_outcome(
+                            &mut original,
+                            original_outcome,
+                            consumer,
+                            None,
+                            now,
+                        )
+                        .await?,
                     );
-                    self.update_header(&original).await?;
+                    self.update_header(&original, now).await?;
                 }
                 RecipientOutcome::Prevented { cancel: cancel_id }
             }
@@ -171,10 +195,10 @@ where
         };
         cancel.header.progress = InboxProgress::Control { outcome };
         effects.reports.extend(
-            self.record_outcome(&mut cancel, report_outcome, consumer, None)
+            self.record_outcome(&mut cancel, report_outcome, consumer, None, now)
                 .await?,
         );
-        self.save(&cancel).await?;
+        self.save(&cancel, now).await?;
         Ok(effects)
     }
 }

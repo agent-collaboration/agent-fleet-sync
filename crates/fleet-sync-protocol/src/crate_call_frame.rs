@@ -23,6 +23,11 @@ pub enum ServerCall<D: DeliveryTypes = NoDelivery> {
         call: CallId,
         publication: StatusPublication<D::Acceptance>,
     },
+    Push {
+        call: CallId,
+        submitter: Submitter,
+        item: DeliveryEnvelope<D>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -33,10 +38,11 @@ pub enum ServerCall<D: DeliveryTypes = NoDelivery> {
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
-pub enum ServerCallAnswer {
+pub enum ServerCallAnswer<A = ()> {
     WithdrawRelease(WithdrawAnswer),
     Release(ReleaseAnswer),
     Published(StatusPublicationResult),
+    Pushed(PushResult<A>),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -61,6 +67,6 @@ pub enum ServerRequest<P: ConsumerProtocol = NoConsumer> {
     bound = ""
 )]
 pub enum ClientAnswer<P: ConsumerProtocol = NoConsumer> {
-    Crate(ServerCallAnswer),
+    Crate(ServerCallAnswer<<P::Delivery as DeliveryTypes>::Acceptance>),
     Consumer(P::ClientAnswer),
 }

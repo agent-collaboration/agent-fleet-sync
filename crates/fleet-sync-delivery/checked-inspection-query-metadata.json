@@ -1,16 +1,16 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-inspection-queries.json": "e027f8d1880560212cfd11dcd3cc341593717809c3e319aa1c831803376a72d9",
+    "checked-inspection-queries.json": "a27ec68fefa141234678decc315092bd8ff4425801f5b3662c1d9f45fb5cd498",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
     "generator:fleet-sync-query-gen/src/main.rs": "528bf0583d11bde8fc4b7c0d5a2ea21bde8380e452c0c123a22929dfa5635cfd",
-    "generator:fleet-sync-query-gen/src/native_generation.rs": "c50abad4f34d2e0f9fef19d5623c6ce1be2e4064ec17ef2f4fa73cdf83f5733f",
+    "generator:fleet-sync-query-gen/src/native_generation.rs": "621160213c6b6cd17f5ee448c240088269476aa2feea99ef4d75627b0412b2d5",
     "generator:fleet-sync-query-gen/src/query_render.rs": "2584f37650c8355b5537362ff5f66c8cf6a3955eb7a903faa5c5887ec26c880a",
     "generator:fleet-sync-query-gen/src/source_freshness.rs": "8fc73a2d5dcfb3d81f7a10b92507ff0ad2a969c0a5b48c9528b3b5016f58ddb3",
     "generator:fleet-sync-query-gen/src/source_inputs.rs": "8cabacd9d34273e5cf16201c1680b89d755c98b5060ea0004ee1e5dcea4ec622",
-    "generator:fleet-sync-query-gen/src/source_manifest.rs": "770e53cb230b27d44731507738e08f7217dba8fc230617d97bda765c78be8ad8",
+    "generator:fleet-sync-query-gen/src/source_manifest.rs": "311dfe2915aad7ddbf8d1c453f0ad4924603ace53e703b2369221dd46d82165a",
     "generator:sqlx-durable-object-core/Cargo.toml": "5af0f7433ff001c4f2347d0575306bb35da43f53b3b75ae4c0fb2c3a0b5e308f",
     "generator:sqlx-durable-object-core/src/arguments.rs": "d278847139d6d4824d9b59f4c50302b8aad641a549ddbfefa1eba55b499d876f",
     "generator:sqlx-durable-object-core/src/error.rs": "1c1484a9714c5bf4bca07d8faf45413841d86f0bcd1c65dda44bafc362ee8bac",
@@ -57,13 +57,63 @@
     "migrations/0001_delivery_custody.sql": "1c480b530973dadd80a9fb388bb2d55428470e7d57d24cdce8973be7e93ef8d2",
     "migrations/0002_mailbox_deadlines.sql": "7e60b848a3c73c0b05b139d1822225a631b1b79a0ea4d497646fdeb4f708d031",
     "migrations/0003_inbox_accounting.sql": "9ed7336cbc35834049b9c6b2f86e90a3b331f99b8e0791f86ce2cdfa7d7727f2",
-    "sql/read_delivery_snapshot.sql": "b748d67f29b876c66212da91a0b139344c5b7da03ec544ca74e9ecf869a84de1",
-    "src/checked_inspection_queries.rs": "234763ffc60fb2cf96f98724a04240ca677129331bb6bc4fceb06b50a2af478f"
+    "migrations/0004_typed_delivery_records.sql": "bbb16c5498b214cf0bafeaddc89da69a11c46c68c7e0d084b7432e9d222fb0d9",
+    "migrations/0005_scoped_status_streams.sql": "2aaa42a96197d5ccbaf5f97e6c38f59d2753aa9be1f3fa28614d865bbf3e7527",
+    "migrations/0006_relay_outbox.sql": "e8c83482fc2aed0d38728368d5ce83883aab87b9702749c87c15227ca749197b",
+    "migrations/0007_typed_status_records.sql": "b60e8f18a37c6d6fb0da37cd03331a4ed51dbb5be2654b4eb486cd1b9fe797cc",
+    "migrations/0008_custody_row_metadata.sql": "850c5dad0a0108ca199161aa688c431af8dd6164878088430a66218fafde0f82",
+    "migrations/0009_typed_report_records.sql": "c0e2513ebbaee9d5dddd9142dca9502993d64acaa9be10a37f0392b6d137b5fc",
+    "migrations/0010_restore_status_owed_machine_index.sql": "0d5e0879dfcf320b8b0d37b16ff28e7974cf0d504f76aa93c7124b4d773173aa",
+    "migrations/0011_delivery_backfill_markers.sql": "f1b81fb66ae8f5ef044238710f0dbda7dc44253019637a8587e71e82a2129f9a",
+    "sql/read_delivery_snapshot.sql": "474a5aa3bc11f75ace8c183f63a5e07a5e7db8b33833ff8cd13f58dc945af676",
+    "sql/read_relay_delivery_snapshot.sql": "2d389f2ee9b2902404a61e7bc0874c28932e5b0b709e81239725a205d857a208",
+    "src/checked_inspection_queries.rs": "b1511f204d6eaa24b714a19d89d59288af1d5c453d3862e341fefe82ef9bd678"
   },
-  "queries_digest": "c392e5d173c94753f3c98f280b86f48b862a06242132a71391a0f25f7e4a00be",
+  "queries_digest": "3851d251525d297d04e0a7bb49cb4a3779f40a08109d2d139a07dd1f318bef20",
   "queries": [
     {
       "name": "read_delivery_snapshot",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "category",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "identity",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "metadata",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "content",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "payload_bytes",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        }
+      ]
+    },
+    {
+      "name": "read_relay_delivery_snapshot",
       "bind_slots": 0,
       "columns": [
         {

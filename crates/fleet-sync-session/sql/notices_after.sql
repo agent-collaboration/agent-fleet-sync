@@ -1,2 +1,1 @@
-SELECT position, body FROM _fleet_sync_notices WHERE peer = ? AND session_id = ?
-ORDER BY length(position), position
+SELECT CAST(CASE WHEN typeof(id)='text' THEN id END AS TEXT) AS id,position,notice_kind,database_id,consumer_body FROM _fleet_sync_notices WHERE peer=?1 AND session_id=?2 ORDER BY length(position),position

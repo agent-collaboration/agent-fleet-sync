@@ -1,7 +1,10 @@
 # Build target and retained evidence
 
-Coordinate the exclusive build/observation slot with the Implementer. Never
-build alongside it. Set `VERIFICATION_WORKTREE_ROOT` to the canonical assigned
+Coordinate the exclusive build/observation slot when the target is shared with
+the Implementer; never build concurrently in that target. A declared L5 checkout
+with its own unused target needs only sequential package runs there. Other
+archive journeys keep their assigned exclusive slot.
+Set `VERIFICATION_WORKTREE_ROOT` to the canonical assigned
 worktree root before entering the pinned source archive, then select only the
 worktree's normal Cargo target:
 

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("{kind} must be a canonical UUIDv7 (correlation identities must be non-nil)")]
+#[error("{kind} must be a canonical UUIDv7")]
 pub struct IdentityError {
     kind: &'static str,
 }
@@ -66,9 +66,10 @@ uuid_id!(runtime_primitives::uuid_v7, runtime_primitives::canonical_uuid_v7;
     TransferId,
     SeedAttemptId,
     InstallId,
-    InstallAttemptId
+    InstallAttemptId,
+    ConnectionId,
+    FrameId
 );
-uuid_id!(|value: Uuid| !value.is_nil(), |_: &str| true; ConnectionId, FrameId);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -136,3 +137,7 @@ impl NoticePosition {
         self.0.checked_add(1).map(Self)
     }
 }
+
+#[cfg(test)]
+#[path = "replication_ids_test.rs"]
+mod tests;

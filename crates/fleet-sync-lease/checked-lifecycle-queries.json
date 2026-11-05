@@ -1,0 +1,73 @@
+{
+  "migrations": [
+    "migrations"
+  ],
+  "output": "src/checked_queries/lifecycle.rs",
+  "metadata": "checked-lifecycle-query-metadata.json",
+  "queries": [
+    {
+      "name": "read_lifecycle",
+      "sql": "sql/read_lifecycle.sql",
+      "row": "StoredLifecycleRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_lifecycle",
+      "sql": "sql/write_lifecycle.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "attempt",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "intent",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "outcome",
+          "kind": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "active_lifecycle",
+      "sql": "sql/active_lifecycle.sql",
+      "row": "StoredLifecycleRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    }
+  ]
+}

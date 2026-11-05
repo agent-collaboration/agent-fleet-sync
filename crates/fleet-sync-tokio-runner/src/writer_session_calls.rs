@@ -159,7 +159,7 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> WriterSessionCalls<S, P> {
             OperationAnswer::Replication(ReplicationAnswer::OutcomeUnknown { .. }) => {
                 Err(CallFailure::AnswerLost)
             }
-            OperationAnswer::Replication(answer) => Ok(answer),
+            OperationAnswer::Replication(answer) => crate::enrollment_retry::replication(answer),
             _ => Err(CallFailure::AnswerLost),
         }
     }
@@ -414,7 +414,9 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> CallRouter for WriterSessionCalls
                     .request(OperationRequest::Lease(LeaseRequest::Register(request)))
                     .await?
                 {
-                    OperationAnswer::Lease(LeaseAnswer::Register(answer)) => encode(answer),
+                    OperationAnswer::Lease(LeaseAnswer::Register(answer)) => {
+                        crate::enrollment_retry::registration(answer)
+                    }
                     _ => Err(CallFailure::AnswerLost),
                 }
             }
@@ -437,7 +439,7 @@ impl<S: ReplicatedSchema, P: ConsumerProtocol> CallRouter for WriterSessionCalls
                         if target.cause == fleet_sync_writer::RenewalCause::Periodic {
                             self.probe.periodic_renewed();
                         }
-                        encode(answer)
+                        crate::enrollment_retry::renewal(answer)
                     }
                     _ => Err(CallFailure::AnswerLost),
                 }

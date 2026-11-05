@@ -16,7 +16,8 @@ async fn local_cancel_before_original_is_charged_and_replay_works_at_capacity() 
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), cap);
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), cap, &FixtureBindings);
                 inbox
                     .enqueue_local_cancel(
                         local_cancel(2, 1, "sender"),
@@ -72,7 +73,8 @@ async fn later_local_original_does_not_double_charge_pending_cancel_bytes() {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), cap);
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), cap, &FixtureBindings);
                 inbox
                     .enqueue_local_cancel(
                         local_cancel(2, 1, "sender"),
@@ -115,7 +117,7 @@ async fn local_cancel_can_use_a_live_originals_reserved_capacity() {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), cap)
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), cap, &FixtureBindings)
                     .enqueue_local_cancel(
                         local_cancel(2, 1, "sender"),
                         &TestConsumer,
@@ -148,7 +150,7 @@ async fn compact_local_originals_cannot_spend_an_uncharged_reserve() {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .record_failure(
                         input,
                         DeliveryFailureKind::ExecutionFailed,
@@ -169,7 +171,7 @@ async fn compact_local_originals_cannot_spend_an_uncharged_reserve() {
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let answer = Inbox::<_, TestTypes>::new(scope, peer(2), cap)
+                let answer = Inbox::<_, TestTypes, _>::new(scope, peer(2), cap, &FixtureBindings)
                     .enqueue_local_cancel(
                         local_cancel(2, 1, "sender"),
                         &TestConsumer,
@@ -220,7 +222,7 @@ async fn local_cancel_rejects_wrong_recipient_and_fails_closed_on_corrupt_accoun
                 )
                 .unwrap();
                 assert!(matches!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .enqueue_local_cancel(wrong, &TestConsumer, SyncTime::from_unix_millis(0))
                         .await,
                     Err(DeliveryError::InvalidBatch)
@@ -252,7 +254,7 @@ async fn local_cancel_rejects_wrong_recipient_and_fails_closed_on_corrupt_accoun
             Box::pin(async move {
                 // An unrelated target forces the global accounting validation as well.
                 assert!(matches!(
-                    Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .enqueue_local_cancel(
                             local_cancel(2, 3, "sender"),
                             &TestConsumer,

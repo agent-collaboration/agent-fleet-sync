@@ -9,9 +9,14 @@ use sqlx_core::{
 
 #[derive(Debug)]
 pub(crate) struct StoredSessionRow {
+    pub id: Option<String>,
     pub peer: Option<String>,
     pub session_id: Option<String>,
-    pub record: Option<String>,
+    pub state_kind: Option<String>,
+    pub connection_id: Option<String>,
+    pub detached_since: Option<String>,
+    pub end_reason: Option<String>,
+    pub notice_head: Option<String>,
 }
 pub(crate) fn load_session<S>(
     scope: &mut S,
@@ -36,9 +41,14 @@ where
         row.as_ref()
             .map(|row| {
                 Ok(StoredSessionRow {
+                    id: row.try_get("id")?,
                     peer: row.try_get("peer")?,
                     session_id: row.try_get("session_id")?,
-                    record: row.try_get("record")?,
+                    state_kind: row.try_get("state_kind")?,
+                    connection_id: row.try_get("connection_id")?,
+                    detached_since: row.try_get("detached_since")?,
+                    end_reason: row.try_get("end_reason")?,
+                    notice_head: row.try_get("notice_head")?,
                 })
             })
             .transpose()
@@ -65,9 +75,14 @@ where
         rows.iter()
             .map(|row| {
                 Ok(StoredSessionRow {
+                    id: row.try_get("id")?,
                     peer: row.try_get("peer")?,
                     session_id: row.try_get("session_id")?,
-                    record: row.try_get("record")?,
+                    state_kind: row.try_get("state_kind")?,
+                    connection_id: row.try_get("connection_id")?,
+                    detached_since: row.try_get("detached_since")?,
+                    end_reason: row.try_get("end_reason")?,
+                    notice_head: row.try_get("notice_head")?,
                 })
             })
             .collect()
@@ -78,6 +93,8 @@ pub(crate) fn save_session<S>(
     peer: String,
     session_id: String,
     record: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -91,7 +108,9 @@ where
         )))
         .bind(peer)
         .bind(session_id)
-        .bind(record);
+        .bind(record)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -102,6 +121,8 @@ pub(crate) fn save_notice<S>(
     session_id: String,
     position: String,
     body: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -116,7 +137,9 @@ where
         .bind(peer)
         .bind(session_id)
         .bind(position)
-        .bind(body);
+        .bind(body)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -124,8 +147,11 @@ where
 
 #[derive(Debug)]
 pub(crate) struct StoredNoticeRow {
+    pub id: Option<String>,
     pub position: Option<String>,
-    pub body: Option<String>,
+    pub notice_kind: Option<String>,
+    pub database_id: Option<String>,
+    pub consumer_body: Option<String>,
 }
 pub(crate) fn notices_after<S>(
     scope: &mut S,
@@ -150,8 +176,11 @@ where
         rows.iter()
             .map(|row| {
                 Ok(StoredNoticeRow {
+                    id: row.try_get("id")?,
                     position: row.try_get("position")?,
-                    body: row.try_get("body")?,
+                    notice_kind: row.try_get("notice_kind")?,
+                    database_id: row.try_get("database_id")?,
+                    consumer_body: row.try_get("consumer_body")?,
                 })
             })
             .collect()
@@ -193,6 +222,8 @@ pub(crate) fn write_attach_sequence<S>(
     scope: &mut S,
     peer: String,
     sequence: String,
+    created_at: String,
+    updated_at: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
@@ -205,7 +236,9 @@ where
             "/sql/write_attach_sequence.sql"
         )))
         .bind(peer)
-        .bind(sequence);
+        .bind(sequence)
+        .bind(created_at)
+        .bind(updated_at);
         statement.execute(scope.executor()).await?;
         Ok(())
     }

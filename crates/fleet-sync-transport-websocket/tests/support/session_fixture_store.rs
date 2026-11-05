@@ -17,9 +17,19 @@ pub async fn open_and_migrate(path: &Path) -> TestResult<TursoConnection> {
         .connect()
         .await?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+    {
+        let mut scope = FixtureScope {
+            transaction: &mut transaction,
+            state: FixtureState::default(),
+            registrations: BTreeMap::new(),
+            publications: Vec::new(),
+            effects: Vec::new(),
+        };
+        fleet_sync_session::validate_legacy_rows(&mut scope).await?;
+    }
     let migrations = FIXTURE_MIGRATOR
         .iter()
-        .chain(SESSION_MIGRATOR.iter())
+        .chain(SESSION_MIGRATOR.sql_migrations())
         .cloned()
         .collect();
     sqlx::migrate::Migrator::with_migrations(migrations)
@@ -106,14 +116,33 @@ impl SessionScope for FixtureScope<'_> {
 }
 
 pub async fn read_sessions(connection: &mut TursoConnection) -> TestResult<Vec<SessionRecord>> {
-    let rows = sqlx_turso::query_as!(
-        FixtureRow,
-        r#"SELECT record AS "record!: String" FROM _fleet_sync_sessions ORDER BY peer, session_id"#
-    )
-    .fetch_all(connection)
-    .await?;
+    use sqlx::Row;
+    let rows=sqlx::query::<Turso>("SELECT peer,session_id,state_kind,connection_id,detached_since,end_reason,notice_head FROM _fleet_sync_sessions ORDER BY peer,session_id").fetch_all(connection).await?;
     rows.into_iter()
-        .map(|row| serde_json::from_str(&row.record).map_err(Into::into))
+        .map(|row| {
+            let state = match row.try_get::<String, _>("state_kind")?.as_str() {
+                "active" => SessionState::Active {
+                    connection: ConnectionId::try_from(row.try_get::<String, _>("connection_id")?)?,
+                },
+                "detached" => SessionState::Detached {
+                    since: SyncTime::from_unix_millis(row.try_get::<i64, _>("detached_since")?),
+                },
+                "ended" => SessionState::Ended {
+                    reason: match row.try_get::<String, _>("end_reason")?.as_str() {
+                        "newSession" => EndReason::NewSession,
+                        "peerRevoked" => EndReason::PeerRevoked,
+                        _ => return Err("unknown fixture session end reason".into()),
+                    },
+                },
+                _ => return Err("unknown fixture session state".into()),
+            };
+            Ok(SessionRecord {
+                peer: PeerId::try_from(row.try_get::<String, _>("peer")?)?,
+                session_id: SessionId::try_from(row.try_get::<String, _>("session_id")?)?,
+                state,
+                notice_head: NoticePosition::new(row.try_get::<String, _>("notice_head")?.parse()?),
+            })
+        })
         .collect()
 }
 

@@ -1,1 +1,13 @@
-SELECT item_id,target,typeof(version) AS version_class,CAST(version AS TEXT) AS version,record FROM _fleet_sync_status_owed ORDER BY item_id,target;
+SELECT CAST(CASE WHEN typeof(id)='text' THEN id END AS TEXT) AS id,submitter_kind,submitter_id,
+       item_id,
+       typeof(version) AS version_class,CAST(version AS TEXT) AS version,
+       status_kind,
+       status_acceptance,
+       refusal_kind,
+       refusal_code,
+       refusal_failure,
+       refusal_size_field,
+       refusal_digest,
+       refusal_item_id,
+       cancel_outcome,
+       cancel_too_late_at,target_kind,status_route FROM _fleet_sync_status_owed ORDER BY item_id,target_kind,submitter_kind,submitter_id;

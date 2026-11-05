@@ -1,7 +1,16 @@
 #![allow(clippy::unwrap_used, dead_code)]
+pub mod backfill_checkpoint_scope;
+pub mod existing_removals;
 pub mod interleaving;
+pub mod legacy_submitters;
 pub mod network;
 pub mod publication_network;
+pub mod push_checkpoint;
+pub mod push_expiry;
+pub mod sender_binding;
+pub use sender_binding::FixtureBindings;
+
+pub mod startup_checkpoint_scope;
 use durable_steps::{
     AtomicStore, CallFailure, CallId, CallTarget, Host, NotSentReason, SyncTime,
     turso_store::TursoStore,
@@ -15,6 +24,33 @@ use std::sync::{
 };
 
 pub type TestStore = TursoStore<TestHost>;
+pub type RecordRemoval = RemoveDeliveryRecord<TestStore, sqlx_turso::Turso>;
+pub type FixturePublication<D> = PublishStatus<TestStore, sqlx_turso::Turso, D>;
+pub type FixturePush<D> =
+    PushItem<TestStore, sqlx_turso::Turso, D, FixturePublication<D>, FixtureBindings>;
+pub async fn accept_fixture_push<C>(
+    scope: &mut durable_steps::turso_store::TursoScope<'_, TestHost>,
+    configured: DeliveryLimits,
+    envelope: DeliveryEnvelope<TestTypes>,
+    consumer: &C,
+    now: SyncTime,
+) -> Result<PushResult<Acceptance>, DeliveryError>
+where
+    C: Send + Sync + 'static,
+    for<'transaction> C: DeliveryConsumer<
+            durable_steps::turso_store::TursoScope<'transaction, TestHost>,
+            Protocol = TestProtocol,
+        >,
+{
+    Inbox::<_, TestTypes, _>::new(scope, peer(2), configured, &FixtureBindings)
+        .accept_push::<
+            DeliverLocally<TestStore, sqlx_turso::Turso, TestTypes, C, FixtureBindings>,
+            network::ReportTask,
+            RecordRemoval,
+            _,
+        >(Submitter::Machine(peer(1)), envelope, peer(3), consumer, now)
+        .await
+}
 pub struct TestTypes;
 pub struct TestProtocol;
 impl ConsumerProtocol for TestProtocol {
@@ -61,6 +97,7 @@ impl DeliveryTypes for TestTypes {
     const MAX_STATUS_ROUTE_BYTES: u32 = 64;
     type Body = String;
     type Sender = String;
+
     type Address = String;
     type Acceptance = Acceptance;
     type LocalObservation = ();
@@ -121,14 +158,17 @@ pub struct Fixture {
     pub host: Arc<TestHost>,
     pub directory: tempfile::TempDir,
 }
+pub fn host_at(now: SyncTime) -> Arc<TestHost> {
+    Arc::new(TestHost {
+        clock: AtomicU64::new(u64::try_from(now.unix_millis()).unwrap()),
+        identities: AtomicU64::new(0),
+        routes: std::sync::OnceLock::new(),
+    })
+}
 impl Fixture {
     pub async fn new() -> Self {
         let directory = tempfile::tempdir().unwrap();
-        let host = Arc::new(TestHost {
-            clock: AtomicU64::new(0),
-            identities: AtomicU64::new(0),
-            routes: std::sync::OnceLock::new(),
-        });
+        let host = host_at(SyncTime::from_unix_millis(0));
         let store = Arc::new(
             TursoStore::open_and_migrate(directory.path().join("delivery.db"), host.clone())
                 .await
@@ -163,22 +203,14 @@ pub fn limits() -> DeliveryLimits {
         100_000,
         20,
         100_000,
-        20,
-        100_000,
         minimum_settlement_allowance::<TestTypes>().unwrap(),
     )
     .unwrap()
 }
-pub fn configured_limits(
-    mailbox_bytes: u64,
-    mailbox_items: u64,
-    inbox_bytes: u64,
-) -> DeliveryLimits {
+pub fn configured_limits(outbox_bytes: u64, outbox_items: u64, inbox_bytes: u64) -> DeliveryLimits {
     DeliveryLimits::new::<TestTypes>(
-        mailbox_bytes,
-        mailbox_items,
-        100_000,
-        20,
+        outbox_bytes,
+        outbox_items,
         inbox_bytes,
         minimum_settlement_allowance::<TestTypes>().unwrap(),
     )
@@ -253,4 +285,14 @@ pub fn require_local_attempt(
             "fixture unexpectedly settled local custody",
         )),
     }
+}
+
+pub mod retention;
+
+pub fn owned_sender(owner: Submitter, address: &str) -> String {
+    let kind = match owner {
+        Submitter::Machine(_) => "m",
+        Submitter::Project(_) => "p",
+    };
+    format!("{kind}:{}|{address}", owner.as_uuid())
 }

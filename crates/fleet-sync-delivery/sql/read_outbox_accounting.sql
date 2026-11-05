@@ -4,8 +4,8 @@ SELECT
         typeof(live) = 'integer' AND live IN (0, 1) AND
         typeof(capacity_slot) = 'integer' AND capacity_slot IN (0, 1) AND
         typeof(payload_bytes) = 'integer' AND payload_bytes >= 0 AND
-        typeof(settlement_bytes) = 'integer' AND settlement_bytes >= 0
+        typeof(settlement_charge_bytes) = 'integer' AND settlement_charge_bytes >= 0
         THEN 0 ELSE 1 END), 0) = 0
-    THEN CAST(COALESCE(SUM(CASE WHEN live = 1 THEN payload_bytes + settlement_bytes ELSE 0 END), 0) AS TEXT)
+    THEN CAST(COALESCE(SUM(CASE WHEN live = 1 THEN payload_bytes + settlement_charge_bytes ELSE 0 END), 0) AS TEXT)
     ELSE NULL END AS TEXT) AS bytes
 FROM _fleet_sync_outbox_items;

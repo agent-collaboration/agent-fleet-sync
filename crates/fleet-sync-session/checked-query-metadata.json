@@ -1,16 +1,16 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-queries.json": "66120d18903a03f3c46a29bd6d2df53024f690371ea0e0d58a60e5fab59dd3ac",
+    "checked-queries.json": "520d86e9f7891cd504d7e06dfe87033a7d386ad042fc790fb5ca13afdf8cacde",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
     "generator:fleet-sync-query-gen/src/main.rs": "528bf0583d11bde8fc4b7c0d5a2ea21bde8380e452c0c123a22929dfa5635cfd",
-    "generator:fleet-sync-query-gen/src/native_generation.rs": "c50abad4f34d2e0f9fef19d5623c6ce1be2e4064ec17ef2f4fa73cdf83f5733f",
+    "generator:fleet-sync-query-gen/src/native_generation.rs": "621160213c6b6cd17f5ee448c240088269476aa2feea99ef4d75627b0412b2d5",
     "generator:fleet-sync-query-gen/src/query_render.rs": "2584f37650c8355b5537362ff5f66c8cf6a3955eb7a903faa5c5887ec26c880a",
     "generator:fleet-sync-query-gen/src/source_freshness.rs": "8fc73a2d5dcfb3d81f7a10b92507ff0ad2a969c0a5b48c9528b3b5016f58ddb3",
     "generator:fleet-sync-query-gen/src/source_inputs.rs": "8cabacd9d34273e5cf16201c1680b89d755c98b5060ea0004ee1e5dcea4ec622",
-    "generator:fleet-sync-query-gen/src/source_manifest.rs": "770e53cb230b27d44731507738e08f7217dba8fc230617d97bda765c78be8ad8",
+    "generator:fleet-sync-query-gen/src/source_manifest.rs": "311dfe2915aad7ddbf8d1c453f0ad4924603ace53e703b2369221dd46d82165a",
     "generator:sqlx-durable-object-core/Cargo.toml": "5af0f7433ff001c4f2347d0575306bb35da43f53b3b75ae4c0fb2c3a0b5e308f",
     "generator:sqlx-durable-object-core/src/arguments.rs": "d278847139d6d4824d9b59f4c50302b8aad641a549ddbfefa1eba55b499d876f",
     "generator:sqlx-durable-object-core/src/error.rs": "1c1484a9714c5bf4bca07d8faf45413841d86f0bcd1c65dda44bafc362ee8bac",
@@ -56,21 +56,29 @@
     "generator:workspace/rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "migrations/202610160001_sessions.sql": "38e23c99919f90090a58c4bb014e6b61a18e258de229f1811170417939434098",
     "migrations/202610180001_attach_sequence.sql": "d148ad2bf049f8967fc64bb0857dec33d3e17fdc3846c0a983ace549b8902793",
-    "sql/load_session.sql": "3976945246644abe63295b1afc2d4df9f1d00c6e9a16ced9234c01beebffb127",
-    "sql/notices_after.sql": "2c87f19171767130f09f90cefa18f8506a29ea3f8770442dca691bac8b704b32",
+    "migrations/202611030001_typed_session_records.sql": "ab340e01327e8095ada9841de16c9c5f9a530ab1c0e512fe4c033676aa155779",
+    "sql/load_session.sql": "e14cb8c52ca0bbe7d98c9c4ac67867be44594ee637ea10ad0f4df0c53452556c",
+    "sql/notices_after.sql": "d3620a5bc03402509a6419409bc1e8e203bee3affd7d93fd9e7bbcfc3ad42740",
     "sql/read_attach_sequence.sql": "8361a634d4bb9b5ff7d1925f2d9808e864f2292e4c66ab45eadc6ca2cd630020",
-    "sql/save_notice.sql": "c260896db1543927f71d0f9fe662a40acaf06a1b3e9e550f587a246294edd9e0",
-    "sql/save_session.sql": "193290a1ea39afc86c8e66035efe513567977a5939eb86dc1ef26b7cbecdfdac",
-    "sql/sessions_for_peer.sql": "9118d5207d643f8ed3fcc717f476daba7e9084833791d80f190506b4aaf5443d",
-    "sql/write_attach_sequence.sql": "b49c137758976ee97ef3380607e5149ca9ca15a2df694c1ce7c75dceb1fb8bfe",
-    "src/checked_session_queries.rs": "e3d10874216b6845bb3ea4fa95978a2945c197017516c4c1ce653b84acf0c04c"
+    "sql/save_notice.sql": "d9b4b73bf8778da19c75a12a5adcc0493f51746ca03dd4c00cdc845df297a182",
+    "sql/save_session.sql": "dc8bae5a1bde33263fdc02540bafad35bc23651f9ef11e15590f84ca8723d685",
+    "sql/sessions_for_peer.sql": "608b3101ff1cd4d68bd8cd005ae9bbc4d93f2f946eaf0567cd74111fd3b3ab4d",
+    "sql/write_attach_sequence.sql": "1866441d535780d36df24372705c43f78c3c025707bbe7b96f724af563b899e3",
+    "src/checked_session_queries.rs": "e15e59cdf0c59bae02543c9e2a0e25fe97c868215942f7beb78670831ca04893"
   },
-  "queries_digest": "1a0a2b9f8a9536a0632d2a033c43402e469368b71fdc587c2e00c97a82343b1b",
+  "queries_digest": "0798b65d203b9fafe014b6e21333f3b6145970e9f2b24daae5a93e7dc99e603b",
   "queries": [
     {
       "name": "load_session",
       "bind_slots": 2,
       "columns": [
+        {
+          "name": "id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
         {
           "name": "peer",
           "sql_type": "TEXT",
@@ -86,7 +94,35 @@
           "type_source": "driver"
         },
         {
-          "name": "record",
+          "name": "state_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "connection_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "detached_since",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "end_reason",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "notice_head",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -99,6 +135,13 @@
       "bind_slots": 1,
       "columns": [
         {
+          "name": "id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
           "name": "peer",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
@@ -113,7 +156,35 @@
           "type_source": "driver"
         },
         {
-          "name": "record",
+          "name": "state_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "connection_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "detached_since",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "end_reason",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "notice_head",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -123,18 +194,25 @@
     },
     {
       "name": "save_session",
-      "bind_slots": 3,
+      "bind_slots": 5,
       "columns": []
     },
     {
       "name": "save_notice",
-      "bind_slots": 4,
+      "bind_slots": 6,
       "columns": []
     },
     {
       "name": "notices_after",
       "bind_slots": 2,
       "columns": [
+        {
+          "name": "id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
         {
           "name": "position",
           "sql_type": "TEXT",
@@ -143,7 +221,21 @@
           "type_source": "driver"
         },
         {
-          "name": "body",
+          "name": "notice_kind",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "database_id",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "consumer_body",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -166,7 +258,7 @@
     },
     {
       "name": "write_attach_sequence",
-      "bind_slots": 2,
+      "bind_slots": 4,
       "columns": []
     }
   ]

@@ -17,7 +17,6 @@ struct SessionLink {
 struct PendingRequest {
     frame: FrameId,
     hop: &'static str,
-    call: CallId,
     item: Option<ItemId>,
     answer: Reply,
 }
@@ -85,14 +84,11 @@ impl PeerLink {
 fn hop(request: &DeliveryRequest<SampleDelivery>) -> &'static str {
     match request {
         DeliveryRequest::Submit { .. } => "submit",
-        DeliveryRequest::Fetch { .. } => "fetch",
-        DeliveryRequest::Received { .. } => "received",
         DeliveryRequest::Report { .. } => "report",
         DeliveryRequest::Settle { .. } => "settle",
         DeliveryRequest::StatusFetch { .. } => "statusFetch",
         DeliveryRequest::StatusAck { .. } => "statusAck",
         DeliveryRequest::Query { .. } => "query",
-        DeliveryRequest::Retire { .. } => "retire",
     }
 }
 async fn connect(port: u16, owner: PeerId) -> TestResult<(WebSocketConnection, SessionId)> {
@@ -157,16 +153,10 @@ impl LinkActor {
                         if let Some(active)=socket.as_mut().filter(|link| matches!(&link.attachment,Attachment::Attached)) {
                             let frame=FrameId::new(durable_steps::Uuid::now_v7())?;
                             let kind=hop(&request);
-                            let call=match &request {
-                                DeliveryRequest::Submit {call,..}|DeliveryRequest::Fetch {call,..}|
-                                DeliveryRequest::Received {call,..}|DeliveryRequest::Report {call,..}|
-                                DeliveryRequest::Settle {call,..}|DeliveryRequest::StatusFetch {call,..}|DeliveryRequest::StatusAck {call,..}|
-                                DeliveryRequest::Query {call,..}|DeliveryRequest::Retire {call,..}=>call.clone(),
-                            };
                             let item=match &request {DeliveryRequest::Submit {item,..}=>Some(item.id()),DeliveryRequest::Report {report,..}=>Some(report.item),_=>None};
                             let bytes=serde_json::to_vec(&ClientFrame::<SampleProtocol>::Request {frame,body:OperationRequest::Delivery(request)})?;
                             match active.socket.send(bytes.into()).await {
-                                Ok(())=>pending.push(PendingRequest {frame,hop:kind,call,item,answer}),
+                                Ok(())=>pending.push(PendingRequest {frame,hop:kind,item,answer}),
                                 Err(_)=>{let _=answer.send(Err(CallFailure::AnswerLost));close(&mut socket,&mut pending).await;}
                             }
                         }else{let _=answer.send(Err(unreachable()));}
@@ -184,22 +174,36 @@ impl LinkActor {
                         },
                         ServerFrame::Answer {frame,body:OperationAnswer::Delivery(body)}=>{
                             if let Some(index)=pending.iter().position(|pending|pending.frame==frame) {
-                                let PendingRequest {hop:kind,call,item,answer,..}=pending.remove(index);
-                                if matches!(&body, DeliveryAnswer::MailboxUnavailable {..}) {
-                                    state.unavailable.lock().await.push((kind.into(),call));
-                                    state.changed.notify_waiters();
-                                }
+                                let PendingRequest {hop:kind,item,answer,..}=pending.remove(index);
                                 if state.gate.after_item(kind,item).await {
                                     let _=answer.send(Err(CallFailure::AnswerLost));
                                     close(&mut socket,&mut pending).await;
                                 }else{let _=answer.send(Ok(body));}
                             }
                         }
+                        ServerFrame::Request {frame,body:ServerRequest::Crate(ServerCall::Push {submitter,item,..})}=>{
+                            let identity=item.id();
+                            let config=state.remote_config()?;
+                            let now=state.object.host().now();
+                            let consumer=consumer::NodeConsumer(Arc::downgrade(&state));
+                            let answer=state.object.rule_transaction::<_,DeliveryError,_>(move |scope|Box::pin(async move {
+                                Inbox::<_,SampleDelivery,_>::new(scope,config.local.owner,config.local.limits,&SampleSenderBinding)
+                                    .accept_push::<DeliverTask,ReportTask,RecordRemoval,_>(submitter,item,config.relay,&consumer,now).await
+                            })).await?;
+                            state.changed.notify_waiters();
+                            if state.gate.after_item("push",Some(identity)).await {close(&mut socket,&mut pending).await;continue;}
+                            state.kick().await?;
+                            if let Some(active)=socket.as_mut() {
+                                let bytes=serde_json::to_vec(&ClientFrame::<SampleProtocol>::Answer {frame,body:ClientAnswer::Crate(ServerCallAnswer::Pushed(answer))})?;
+                                if active.socket.send(bytes.into()).await.is_err() {close(&mut socket,&mut pending).await;}
+                            }
+                        }
                         ServerFrame::Request {frame,body:ServerRequest::Crate(ServerCall::PublishStatus {publication,..})}=>{
                             if state.status_paused.load(std::sync::atomic::Ordering::SeqCst) {continue;}
                             let limits=delivery_limits()?;
+                            let now=state.object.host().now();
                             let result=state.object.rule_transaction::<_,DeliveryError,_>(move|scope|Box::pin(async move {
-                                Outbox::<_,SampleDelivery>::new(scope,limits).publish_status(publication).await
+                                Outbox::<_,SampleDelivery, _>::new(scope,limits, &SampleSenderBinding).publish_status(publication,now).await
                             })).await;
                             let answer=match result {
                                 Ok(())=>StatusPublicationResult::Applied,

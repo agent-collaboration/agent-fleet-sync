@@ -59,7 +59,7 @@ async fn registry_snapshot(root: &Path) -> TestResult<(String, String, String)> 
     let mut values = Vec::new();
     for sql in [
         "SELECT epoch AS value FROM _fleet_sync_epoch_floor",
-        "SELECT intent AS value FROM _fleet_sync_transfers",
+        "SELECT new_epoch AS value FROM _fleet_sync_transfers",
         "SELECT kind AS value FROM _fleet_sync_steps WHERE intent LIKE '%fleet-sync.copy-status%'",
     ] {
         values.push(

@@ -16,6 +16,7 @@ pub async fn publish_notice_to_peer<S, P: ConsumerProtocol>(
     scope: &mut S,
     peer: &PeerId,
     body: Notice<P>,
+    now: SyncTime,
 ) -> Result<Vec<SessionEffect<P>>, SessionError>
 where
     S: SessionScope,
@@ -37,7 +38,7 @@ where
     let mut effects = Vec::new();
     for record in sessions {
         let body = serde_json::from_slice::<Notice<P>>(&encoded).map_err(store_error)?;
-        effects.extend(publish_notice::<S, P>(scope, &record.key(), body).await?);
+        effects.extend(publish_notice::<S, P>(scope, &record.key(), body, now).await?);
     }
     Ok(effects)
 }
@@ -47,6 +48,7 @@ pub async fn publish_notice<S, P: ConsumerProtocol>(
     scope: &mut S,
     key: &SessionKey,
     body: Notice<P>,
+    now: SyncTime,
 ) -> Result<Vec<SessionEffect<P>>, SessionError>
 where
     S: SessionScope,
@@ -66,9 +68,9 @@ where
         .next()
         .ok_or(SessionError::NoticePositionExhausted)?;
     let notice = StoredNotice { position, body };
-    save_notice(scope, key, &notice).await?;
+    save_notice(scope, key, &notice, now).await?;
     record.notice_head = position;
-    save_session(scope, &record).await?;
+    save_session(scope, &record, now).await?;
     Ok(match record.state {
         SessionState::Active { connection } if matches!(scope.registration(&connection), Some(ConnectionRegistration::Attached { session_id, .. }) if session_id == key.session_id) =>
         {

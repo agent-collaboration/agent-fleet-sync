@@ -4,6 +4,7 @@ use durable_steps::{
     storage::TransactionScope,
 };
 use fleet_sync_protocol::{Registration, RegistrationAnswer};
+use runtime_primitives::Clock;
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
@@ -11,21 +12,30 @@ use sqlx_core::{
 use std::marker::PhantomData;
 
 /// Register this task on the registry engine and admit it with lifecycle_request_key.
-pub struct RegistrationTask<S, D> {
+pub struct RegistrationTask<S, D, H> {
     config: RegistryConfig,
+    clock: std::sync::Arc<dyn Clock>,
+    hook: std::sync::Arc<H>,
     store: PhantomData<fn() -> (S, D)>,
 }
-impl<S, D> RegistrationTask<S, D> {
-    pub const fn new(config: RegistryConfig) -> Self {
+impl<S, D, H> RegistrationTask<S, D, H> {
+    pub const fn new(
+        config: RegistryConfig,
+        clock: std::sync::Arc<dyn Clock>,
+        hook: std::sync::Arc<H>,
+    ) -> Self {
         Self {
             config,
+            clock,
+            hook,
             store: PhantomData,
         }
     }
 }
-impl<S, D> Task for RegistrationTask<S, D>
+impl<S, D, H> Task for RegistrationTask<S, D, H>
 where
     S: AtomicStore,
+    for<'t> H: crate::LeaseChangeHook<S::Scope<'t>>,
     D: Database,
     for<'t> S::Scope<'t>: TransactionScope<Database = D>,
     D::Arguments: IntoArguments<D>,
@@ -43,9 +53,14 @@ where
         ctx: &mut C,
         request: &Registration,
     ) -> Result<RegistrationAnswer, OperationFailure> {
-        register::<C, D>(ctx, request, &self.config)
-            .await
-            .map_err(Into::into)
+        register::<C, D, H>(
+            ctx,
+            request,
+            &self.config,
+            std::sync::Arc::clone(&self.hook),
+        )
+        .await
+        .map_err(Into::into)
     }
     fn on_failed<'s, 't>(
         &'s self,
@@ -53,6 +68,6 @@ where
         key: &'s RequestKey,
         failure: &'s OperationFailure,
     ) -> BoxFuture<'s, Result<(), StoreError>> {
-        Box::pin(fail_lifecycle(scope, key, failure))
+        Box::pin(fail_lifecycle(scope, key, failure, self.clock.now()))
     }
 }

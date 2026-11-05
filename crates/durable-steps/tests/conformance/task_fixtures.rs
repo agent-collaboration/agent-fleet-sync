@@ -103,6 +103,7 @@ where
     fn before_resume<'s, 't>(
         &'s self,
         _scope: &'s mut S::Scope<'t>,
+        _operation: &'s durable_steps::OperationId,
         _request: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<()>, StoreError>> {
         self.resume_invocations.fetch_add(1, Ordering::SeqCst);

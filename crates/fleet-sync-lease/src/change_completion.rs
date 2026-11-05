@@ -65,7 +65,10 @@ where
                         record
                             .enter(crate::HolderChangePhase::Ended, now)
                             .map_err(step_error)?;
-                        storage.save_transfer(&record).await.map_err(step_error)?;
+                        storage
+                            .save_transfer(&record, now)
+                            .await
+                            .map_err(step_error)?;
                     }
                     return Ok(Some(answer));
                 }
@@ -73,7 +76,10 @@ where
                     && let Some(phase) = phase
                 {
                     record.enter(phase, now).map_err(step_error)?;
-                    storage.save_transfer(&record).await.map_err(step_error)?;
+                    storage
+                        .save_transfer(&record, now)
+                        .await
+                        .map_err(step_error)?;
                 }
                 Ok(record.outcome)
             })
@@ -137,7 +143,10 @@ where
                 record
                     .enter(crate::HolderChangePhase::Ended, now)
                     .map_err(step_error)?;
-                storage.save_transfer(&record).await.map_err(step_error)?;
+                storage
+                    .save_transfer(&record, now)
+                    .await
+                    .map_err(step_error)?;
                 Ok(answer)
             })
         })
@@ -145,15 +154,17 @@ where
 }
 
 /// Grant and its immutable transfer outcome share one transaction with both history entries.
-pub(crate) async fn grant<C, D>(
+pub(crate) async fn grant<C, D, H>(
     ctx: &mut C,
     request: &HolderChangeRequest,
     fenced: FenceResult,
     expect: FenceExpectation,
     config: &RegistryConfig,
+    hook: std::sync::Arc<H>,
 ) -> Result<HolderChangeAnswer, LeaseError>
 where
     C: OperationContext,
+    for<'t> H: crate::LeaseChangeHook<<C::Store as AtomicStore>::Scope<'t>>,
     D: Database,
     for<'t> <C::Store as AtomicStore>::Scope<'t>: TransactionScope<Database = D>,
     D::Arguments: IntoArguments<D>,
@@ -177,8 +188,11 @@ where
                 {
                     return Ok(answer);
                 }
-                let mut storage = RegistryStorage(scope);
                 let database = database(&request);
+                let before = crate::registry_snapshot(scope, database)
+                    .await
+                    .map_err(step_error)?;
+                let mut storage = RegistryStorage(scope);
                 let mut transfer = storage
                     .transfer(attempt(&request))
                     .await
@@ -283,7 +297,10 @@ where
                                 })
                             })?;
                         history.ended_at = Some(start);
-                        storage.save_history(&history).await.map_err(step_error)?;
+                        storage
+                            .save_history(&history, now)
+                            .await
+                            .map_err(step_error)?;
                     }
                     let lease = RegistryLease {
                         database,
@@ -292,15 +309,18 @@ where
                         last_renewed_at: now,
                         expires_at: now.after(duration),
                     };
-                    storage.save_lease(&lease).await.map_err(step_error)?;
+                    storage.save_lease(&lease, now).await.map_err(step_error)?;
                     storage
-                        .save_history(&EpochHistory {
-                            database,
-                            epoch: reserved,
-                            holder: lease.holder,
-                            granted_at: now,
-                            ended_at: None,
-                        })
+                        .save_history(
+                            &EpochHistory {
+                                database,
+                                epoch: reserved,
+                                holder: lease.holder,
+                                granted_at: now,
+                                ended_at: None,
+                            },
+                            now,
+                        )
                         .await
                         .map_err(step_error)?;
                     if let DatabaseLifecycle::Unheld { import_digest } = &record.lifecycle {
@@ -311,7 +331,10 @@ where
                             }),
                         };
                     }
-                    storage.save_database(&record).await.map_err(step_error)?;
+                    storage
+                        .save_database(&record, now)
+                        .await
+                        .map_err(step_error)?;
                     HolderChangeAnswer::Granted {
                         epoch: reserved,
                         expires_at: lease.expires_at,
@@ -322,7 +345,18 @@ where
                 transfer
                     .enter(crate::HolderChangePhase::Ended, now)
                     .map_err(step_error)?;
-                storage.save_transfer(&transfer).await.map_err(step_error)?;
+                storage
+                    .save_transfer(&transfer, now)
+                    .await
+                    .map_err(step_error)?;
+                crate::lease_change_hook::project_lease_change(
+                    storage.0,
+                    database,
+                    before,
+                    hook.as_ref(),
+                )
+                .await
+                .map_err(step_error)?;
                 Ok(answer)
             })
         })

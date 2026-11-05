@@ -10,31 +10,51 @@ use sqlx_core::{
     encode::Encode, types::Type,
 };
 
-impl<S, D> Inbox<'_, S, D>
+impl<S, D, B> Inbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
+    pub async fn enqueue_local_cancel_and_admit<TRetention, C>(
+        &mut self,
+        cancel: DeliveryCancel<D>,
+        consumer: &C,
+        now: SyncTime,
+    ) -> Result<LocalCancelAdmission, DeliveryError>
+    where
+        S: durable_steps::JournalScope + durable_steps::storage::JournalStorage,
+        TRetention: durable_steps::Task<Input = ItemId>,
+        C: DeliveryConsumer<S>,
+        C::Protocol: ConsumerProtocol<Delivery = D>,
+    {
+        let admission = self.enqueue_local_cancel(cancel, consumer, now).await?;
+        crate::admit_record_removal::<_, TRetention>(self.scope, admission.reference.item).await?;
+        Ok(admission)
+    }
     /// Admit an original only after resolving any pending Local control.
-    /// Relayed controls keep their existing receive and completion paths.
+    /// Relayed controls keep their existing Push and completion paths.
     /// An Attempt payload has already been admitted as T before this returns.
-    pub async fn enqueue_local_and_admit<T, C>(
+    pub async fn enqueue_local_and_admit<T, TRetention, C>(
         &mut self,
         item: DeliveryItem<D>,
         consumer: &C,
         now: SyncTime,
     ) -> Result<LocalItemAdmission, DeliveryError>
     where
-        S: durable_steps::JournalScope,
+        S: durable_steps::JournalScope + durable_steps::storage::JournalStorage,
         T: durable_steps::Task<Input = DeliveryAttempt>,
+        TRetention: durable_steps::Task<Input = ItemId>,
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        let identity = item.id();
         let admission = self.enqueue_local(item, consumer, now).await?;
+        crate::admit_record_removal::<_, TRetention>(self.scope, identity).await?;
         let LocalItemAdmission::Attempt(input) = admission else {
             return Ok(admission);
         };
@@ -59,6 +79,11 @@ where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        if crate::item_is_too_old(item.id(), now) {
+            return Err(DeliveryError::Refused {
+                reason: DeliveryRefusal::TooOld,
+            });
+        }
         self.limits.validate::<D>()?;
         crate::delivery_sizes::check_item(&item)?;
         if item.recipient().peer != self.owner {
@@ -77,6 +102,13 @@ where
             }
             return Ok(LocalItemAdmission::Replayed);
         }
+        let verified = crate::sender_binding::verify_sender::<S, D, B>(
+            self.scope,
+            self.binding,
+            item.sender(),
+            crate::CustodyRow::Inbox(item.id()),
+        )
+        .await?;
         let input = DeliveryAttempt {
             item: item.id(),
             attempt: 0,
@@ -104,12 +136,14 @@ where
         }
         let record = InboxRecord::new(
             DeliveryEnvelope::Item(item),
+            verified,
             InboxRoute::Local,
             InboxProgress::Pending {
                 attempt: 0,
                 not_before: now,
             },
             settlement,
+            now,
         )?;
         let accounting = queries::read_inbox_accounting(self.scope)
             .await
@@ -139,7 +173,7 @@ where
                 reason: DeliveryRefusal::MailboxFull,
             });
         }
-        self.save(&record).await?;
+        self.save(&record, now).await?;
         // Local admission returns an attempt, while relay intake owns its reports.
         // A pending local control is resolved before an attempt can be offered for delivery.
         if self
@@ -178,7 +212,19 @@ where
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
         self.limits.validate::<D>()?;
+        if crate::item_is_too_old(cancel.id(), now) {
+            return Err(DeliveryError::Refused {
+                reason: DeliveryRefusal::TooOld,
+            });
+        }
         let envelope = DeliveryEnvelope::Cancel(cancel);
+        let verified = crate::sender_binding::verify_sender::<S, D, B>(
+            self.scope,
+            self.binding,
+            envelope.sender(),
+            crate::CustodyRow::Inbox(envelope.id()),
+        )
+        .await?;
         crate::delivery_sizes::check_envelope(&envelope)?;
         if envelope.recipient().peer != self.owner {
             return Err(DeliveryError::InvalidBatch);
@@ -229,7 +275,7 @@ where
             }
             // Compact local originals have no live charge, even when their header
             // retains the old settlement allowance. Only a live reserve can pay.
-            if original.header.compact_local() {
+            if original.header.compacts_payload() {
                 0
             } else {
                 let charge = u32::try_from(size).map_err(|_| DeliveryError::Corrupt {
@@ -265,7 +311,7 @@ where
             });
         }
         if let Some(original) = original {
-            self.save(&original).await?;
+            self.save(&original, now).await?;
         }
         let reference = DeliveryItemRef {
             item: envelope.id(),
@@ -273,16 +319,24 @@ where
         };
         let record = InboxRecord::new(
             envelope,
+            verified,
             InboxRoute::Local,
             InboxProgress::Control {
                 outcome: ControlOutcome::Pending,
             },
             0,
+            now,
         )?;
-        self.save(&record).await?;
-        queries::write_inbox_cancel_link(self.scope, item_key(target), item_key(reference.item))
-            .await
-            .map_err(sql_error)?;
+        self.save(&record, now).await?;
+        queries::write_inbox_cancel_link(
+            self.scope,
+            item_key(target),
+            item_key(reference.item),
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
+        )
+        .await
+        .map_err(sql_error)?;
         let effects = self
             .apply_pending_cancel(target, consumer, now, false)
             .await?;

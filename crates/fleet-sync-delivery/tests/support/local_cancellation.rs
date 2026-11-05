@@ -41,7 +41,7 @@ pub async fn enqueue_original(
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits)
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits, &FixtureBindings)
                     .enqueue_local(local_item(id), &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
                     .map_err(storage_error)
@@ -55,7 +55,7 @@ pub async fn enqueue_cancel(fixture: &Fixture, id: u64, target: u64) -> LocalCan
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .enqueue_local_cancel(
                         local_cancel(id, target, "sender"),
                         &TestConsumer,
@@ -73,7 +73,7 @@ pub async fn outcome(fixture: &Fixture, id: u64) -> Option<RecipientOutcome<Acce
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
+                Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                     .local_outcome(item_id(id))
                     .await
                     .map_err(storage_error)
@@ -92,10 +92,10 @@ pub struct LocalSnapshot {
 }
 pub async fn snapshot(fixture: &Fixture) -> LocalSnapshot {
     fixture.store.transaction(|scope| Box::pin(async move {
-        let custody=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT record,payload FROM _fleet_sync_inbox_items ORDER BY item_id").fetch_all(scope.executor()).await?.into_iter().map(|row| Ok((row.try_get("record")?,row.try_get("payload")?))).collect::<Result<Vec<_>,sqlx_core::Error>>()?;
+        let custody=sqlx_core::query::query::<sqlx_turso::Turso>(include_str!("sql/read_inbox_headers.sql")).fetch_all(scope.executor()).await?.into_iter().map(|row| Ok((row.try_get("record")?,row.try_get("payload")?))).collect::<Result<Vec<_>,sqlx_core::Error>>()?;
         let links=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT target,cancel_item FROM _fleet_sync_inbox_cancel_links ORDER BY target").fetch_all(scope.executor()).await?.into_iter().map(|row| Ok((row.try_get("target")?,row.try_get("cancel_item")?))).collect::<Result<Vec<_>,sqlx_core::Error>>()?;
         let state=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT record FROM _fleet_sync_inbox_state").fetch_all(scope.executor()).await?.into_iter().map(|row| row.try_get("record")).collect::<Result<Vec<_>,_>>()?;
-        let reports=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT record FROM _fleet_sync_reports ORDER BY item_id").fetch_all(scope.executor()).await?.into_iter().map(|row| row.try_get("record")).collect::<Result<Vec<_>,_>>()?;
+        let reports=sqlx_core::query::query::<sqlx_turso::Turso>(include_str!("sql/read_report_headers.sql")).fetch_all(scope.executor()).await?.into_iter().map(|row| row.try_get("record")).collect::<Result<Vec<_>,_>>()?;
         let row=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT COALESCE(SUM(CASE WHEN live=1 THEN payload_bytes+settlement_bytes ELSE 0 END),0) AS bytes FROM _fleet_sync_inbox_items").fetch_one(scope.executor()).await?;
         Ok(LocalSnapshot { custody, links, state, reports, live_bytes: row.try_get("bytes")? })
     })).await.unwrap()

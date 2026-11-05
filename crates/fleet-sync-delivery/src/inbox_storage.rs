@@ -10,15 +10,21 @@ use sqlx_core::{
 };
 use std::marker::PhantomData;
 
-pub struct Inbox<'s, S, D> {
+#[cfg(test)]
+#[path = "inbox_storage_test.rs"]
+mod tests;
+
+pub struct Inbox<'s, S, D, B> {
+    pub(crate) binding: &'s B,
     pub(crate) scope: &'s mut S,
     pub(crate) owner: PeerId,
     pub(crate) limits: DeliveryLimits,
     payload: PhantomData<fn() -> D>,
 }
-impl<'s, S, D> Inbox<'s, S, D> {
-    pub fn new(scope: &'s mut S, owner: PeerId, limits: DeliveryLimits) -> Self {
+impl<'s, S, D, B> Inbox<'s, S, D, B> {
+    pub fn new(scope: &'s mut S, owner: PeerId, limits: DeliveryLimits, binding: &'s B) -> Self {
         Self {
+            binding,
             scope,
             owner,
             limits,
@@ -26,10 +32,11 @@ impl<'s, S, D> Inbox<'s, S, D> {
         }
     }
 }
-impl<S, D> Inbox<'_, S, D>
+impl<S, D, B> Inbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
@@ -39,18 +46,22 @@ where
         &mut self,
         item: ItemId,
     ) -> Result<Option<InboxRecord<D>>, DeliveryError> {
-        queries::read_inbox_item(self.scope, item_key(item))
+        let row = queries::read_inbox_item(self.scope, item_key(item))
             .await
-            .map_err(sql_error)?
-            .map(|row| self.decode_item(row, Some(item)))
-            .transpose()
+            .map_err(sql_error)?;
+        match row {
+            Some(row) => self.decode_item(row, Some(item)).await.map(Some),
+            None => Ok(None),
+        }
     }
-    pub(crate) fn decode_item(
-        &self,
+
+    pub(crate) async fn decode_item(
+        &mut self,
         row: queries::StoredInboxRow,
         expected: Option<ItemId>,
     ) -> Result<InboxRecord<D>, DeliveryError> {
-        let header: InboxHeader<D> = decode(row.record, "inbox header")?;
+        let header: InboxHeader<D> =
+            crate::inbox_row::decode_header::<S, D, B>(self.scope, self.binding, &row).await?;
         let payload = row
             .payload
             .map(|raw| decode(Some(raw), "inbox custody payload"))
@@ -62,16 +73,20 @@ where
                 field: "stored inbox envelope bounds",
             })?;
         }
-        let bytes = integer(row.payload_bytes, row.payload_class, "inbox payload bytes")?;
+        let bytes = integer(
+            row.payload_bytes,
+            row.payload_bytes_class,
+            "inbox payload bytes",
+        )?;
         let live = integer(row.live, row.live_class, "inbox live flag")?;
         let settlement = integer(
-            row.settlement_bytes,
-            row.settlement_class,
+            row.settlement_charge_bytes,
+            row.settlement_charge_bytes_class,
             "inbox settlement bytes",
         )?;
         if expected.is_some_and(|item| item != record.header.id)
             || row.item_id.as_deref() != Some(item_key(record.header.id).as_str())
-            || live != u64::from(!record.header.compact_local())
+            || live != u64::from(!record.header.compacts_payload())
             || bytes
                 != u64::try_from(
                     record
@@ -83,7 +98,7 @@ where
                 )
                 .map_err(|_| DeliveryError::SequenceExhausted)?
             || settlement
-                != if record.header.compact_local() {
+                != if record.header.compacts_payload() {
                     0
                 } else {
                     u64::from(record.header.settlement_bytes)
@@ -95,11 +110,16 @@ where
         }
         Ok(record)
     }
-    pub(crate) async fn save(&mut self, record: &InboxRecord<D>) -> Result<(), DeliveryError> {
+    pub(crate) async fn save(
+        &mut self,
+        record: &InboxRecord<D>,
+        now: SyncTime,
+    ) -> Result<(), DeliveryError> {
         record.validate(self.owner)?;
         self.save_header(
             &record.header,
             record.payload.as_ref().map(encode).transpose()?,
+            now,
         )
         .await
     }
@@ -113,7 +133,8 @@ where
         else {
             return Ok(None);
         };
-        let header: InboxHeader<D> = decode(row.record, "inbox header")?;
+        let header: InboxHeader<D> =
+            crate::inbox_row::decode_header::<S, D, B>(self.scope, self.binding, &row).await?;
         crate::delivery_sizes::stored_acceptance_bound::<D>(header.acceptance_bound)?;
         if let InboxProgress::Final { outcome, .. } = &header.progress {
             crate::delivery_sizes::check_outcome_bound::<D>(outcome, header.acceptance_bound)
@@ -132,10 +153,35 @@ where
         &mut self,
         header: &InboxHeader<D>,
         payload: Option<String>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         header.validate(self.owner)?;
+        if header.legacy_read_only {
+            return Err(DeliveryError::Refused {
+                reason: DeliveryRefusal::NotSubmitter,
+            });
+        }
+        let source = header.sender.as_ref().ok_or(DeliveryError::CorruptRow {
+            table: "_fleet_sync_inbox_items",
+            key: item_key(header.id),
+            field: "consumer_sender",
+        })?;
+        let verified = crate::sender_binding::verify_sender::<S, D, B>(
+            self.scope,
+            self.binding,
+            source,
+            crate::CustodyRow::Inbox(header.id),
+        )
+        .await?;
+        if Some(verified.owner()) != header.submitter {
+            return Err(DeliveryError::CorruptRow {
+                table: "_fleet_sync_inbox_items",
+                key: item_key(header.id),
+                field: "submitter",
+            });
+        }
         // Only the recipient retains the full cancellation header; relay/outbox compacts keep identity/digest/status.
-        let compact = header.compact_local();
+        let compact = header.compacts_payload();
         let payload = if compact { None } else { payload };
         queries::write_inbox_item(
             self.scope,
@@ -145,6 +191,9 @@ where
             if compact { 0 } else { header.settlement_bytes }.to_string(),
             encode(header)?,
             payload,
+            header.created_at.unix_millis().to_string(),
+            now.unix_millis().to_string(),
+            header.sender.as_ref().map(encode).transpose()?,
         )
         .await
         .map_err(sql_error)
@@ -152,29 +201,13 @@ where
     pub(crate) async fn update_header(
         &mut self,
         header: &InboxHeader<D>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let row = queries::read_inbox_item(self.scope, item_key(header.id))
             .await
             .map_err(sql_error)?
             .ok_or(DeliveryError::CustodyMissing)?;
-        self.save_header(header, row.payload).await
-    }
-    pub(crate) async fn state(&mut self) -> Result<InboxState, DeliveryError> {
-        let state: InboxState = match queries::read_inbox_state(self.scope)
-            .await
-            .map_err(sql_error)?
-        {
-            Some(row) => decode(row.record, "inbox state")?,
-            None => InboxState::new(self.owner),
-        };
-        state.validate(self.owner)?;
-        Ok(state)
-    }
-    pub(crate) async fn save_state(&mut self, state: &InboxState) -> Result<(), DeliveryError> {
-        state.validate(self.owner)?;
-        queries::write_inbox_state(self.scope, encode(state)?)
-            .await
-            .map_err(sql_error)
+        self.save_header(header, row.payload, now).await
     }
     pub async fn resolve_delivery(
         &mut self,
@@ -237,7 +270,7 @@ where
         .ok_or(DeliveryError::Corrupt {
             field: "report custody row missing",
         })?;
-        let report: RecipientReport<D> = decode(row.record, "recipient report")?;
+        let report: RecipientReport<D> = crate::report_row::decode_report(&row)?;
         crate::delivery_sizes::check_outcome::<D>(&report.outcome).map_err(|_| {
             DeliveryError::Corrupt {
                 field: "stored report bounds",
@@ -265,12 +298,13 @@ where
         outcome: RecipientOutcome<D::Acceptance>,
         consumer: &C,
         observation: Option<&D::LocalObservation>,
+        now: SyncTime,
     ) -> Result<Option<ReportRef>, DeliveryError>
     where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
-        self.record_header_outcome(&mut record.header, outcome, consumer, observation)
+        self.record_header_outcome(&mut record.header, outcome, consumer, observation, now)
             .await
     }
     pub(crate) async fn record_header_outcome<C>(
@@ -279,6 +313,7 @@ where
         outcome: RecipientOutcome<D::Acceptance>,
         consumer: &C,
         observation: Option<&D::LocalObservation>,
+        now: SyncTime,
     ) -> Result<Option<ReportRef>, DeliveryError>
     where
         C: DeliveryConsumer<S>,
@@ -311,6 +346,8 @@ where
             item_key(report.item),
             report.report_seq.value().to_string(),
             encode(&report)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await
         .map_err(sql_error)?;

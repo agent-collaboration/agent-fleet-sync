@@ -84,8 +84,13 @@ pub async fn run_server_with_policy(
     let receiver = ReceiverId::new(durable_steps::Uuid::from_u128(
         (receiver) | 0x019eef00000070008000000000000000,
     ))?;
+    let clock = Arc::new(crate::service_clock::FixtureClock::from_environment()?);
     let options = ServiceOptions {
-        delivery: Some(crate::delivery_limits()?),
+        clock: clock.clone(),
+        delivery: Some(fleet_sync_service::RelayDeliveryConfig {
+            relay: crate::delivery_node::peer(3)?,
+            limits: crate::delivery_limits()?,
+        }),
         directory: directory.join("service"),
         receiver,
         registry: RegistryConfig {
@@ -102,20 +107,7 @@ pub async fn run_server_with_policy(
     };
     let authenticator = Arc::new(FixtureAuthenticator::default());
     #[cfg(feature = "test-support")]
-    let delivery_locks = {
-        let mut locks = std::collections::BTreeMap::new();
-        match std::env::var("FLEET_SYNC_TEST_LOCK_MAILBOX_INIT") {
-            Ok(identity) => {
-                let mailbox = fleet_sync_protocol::PeerId::new(identity.parse()?)?;
-                let db = crate::delivery_faults::lock_mailbox(&directory.join("service"), mailbox)
-                    .await?;
-                locks.insert(mailbox, db);
-            }
-            Err(std::env::VarError::NotPresent) => {}
-            Err(error) => return Err(error.into()),
-        }
-        locks
-    };
+    let delivery_lock = None;
     let service = FleetService::<SampleProtocol, _, _>::open(
         options,
         consumer.clone(),
@@ -126,10 +118,11 @@ pub async fn run_server_with_policy(
     let (source_events, mut source_incoming) =
         mpsc::channel::<fleet_sync_service::AttachedSource<SampleProtocol>>(8);
     let control = Arc::new(ControlState {
+        clock,
         #[cfg(feature = "test-support")]
         delivery_directory: directory.join("service"),
         #[cfg(feature = "test-support")]
-        delivery_locks: tokio::sync::Mutex::new(delivery_locks),
+        delivery_lock: tokio::sync::Mutex::new(delivery_lock),
         #[cfg(feature = "test-support")]
         events,
         consumer,

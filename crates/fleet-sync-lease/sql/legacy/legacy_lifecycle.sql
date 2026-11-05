@@ -1,0 +1,1 @@
+SELECT CAST(rowid AS TEXT) AS legacy_rowid,CAST(CASE WHEN typeof(attempt)='text' THEN attempt END AS TEXT) AS attempt,CAST(CASE WHEN typeof(database)='text' THEN database END AS TEXT) AS database,CAST(CASE WHEN typeof(intent)='text' THEN intent END AS TEXT) AS intent,CAST(CASE WHEN typeof(outcome)='text' THEN outcome END AS TEXT) AS outcome FROM _fleet_sync_lifecycle_attempts

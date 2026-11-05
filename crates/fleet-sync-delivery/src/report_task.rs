@@ -8,26 +8,36 @@ use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
 };
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
-pub struct ReportOutcome<S, Db, D> {
+pub struct ReportOutcome<S, Db, D, B> {
+    binding: Arc<B>,
     config: DeliveryTaskConfig,
+    clock: Arc<dyn runtime_primitives::Clock>,
     store: TaskTypes<S, Db, D>,
 }
 pub(crate) const REPORT_OUTCOME_KIND: &str = "fleet-sync.delivery.report-outcome";
-impl<S, Db, D> ReportOutcome<S, Db, D> {
-    pub const fn new(config: DeliveryTaskConfig) -> Self {
+impl<S, Db, D, B> ReportOutcome<S, Db, D, B> {
+    pub fn new(
+        config: DeliveryTaskConfig,
+        clock: Arc<dyn runtime_primitives::Clock>,
+        binding: Arc<B>,
+    ) -> Self {
         Self {
+            binding,
             config,
+            clock,
             store: PhantomData,
         }
     }
 }
-impl<S, Db, D> Task for ReportOutcome<S, Db, D>
+impl<S, Db, D, B> Task for ReportOutcome<S, Db, D, B>
 where
     S: AtomicStore,
     Db: Database,
     D: DeliveryTypes,
+    B: Send + Sync + 'static,
+    for<'t> B: SenderBinding<S::Scope<'t>, D>,
     for<'t> S::Scope<'t>: TransactionScope<Database = Db>,
     Db::Arguments: IntoArguments<Db>,
     for<'v> String: Type<Db> + Encode<'v, Db>,
@@ -47,16 +57,23 @@ where
     ) -> Result<(), OperationFailure> {
         let input = *input;
         let config = self.config;
-        let report = ctx
-            .local(step("read_report")?, move |scope| {
+        let report = {
+            let binding = Arc::clone(&self.binding);
+            ctx.local(step("read_report")?, move |scope| {
                 Box::pin(async move {
-                    Inbox::<_, D>::new(scope, config.local.owner, config.local.limits)
-                        .resolve_report(input)
-                        .await
-                        .map_err(step_error)
+                    Inbox::<_, D, B>::new(
+                        scope,
+                        config.local.owner,
+                        config.local.limits,
+                        binding.as_ref(),
+                    )
+                    .resolve_report(input)
+                    .await
+                    .map_err(step_error)
                 })
             })
-            .await?;
+        }
+        .await?;
         let answer = ctx
             .call(
                 step("report")?,
@@ -65,9 +82,8 @@ where
             )
             .await?;
         match answer {
-            ReportResult::Applied {
-                item, acknowledged, ..
-            } if item == input.item && acknowledged >= input.report_seq => {}
+            ReportResult::Ack { report_seq } | ReportResult::Replayed { report_seq }
+                if report_seq >= input.report_seq => {}
             ReportResult::Refused { reason } => {
                 return Err(step_error(DeliveryError::Refused { reason }).into());
             }
@@ -77,30 +93,47 @@ where
                 });
             }
         }
-        ctx.local(step("retire_report")?, move |scope| {
-            Box::pin(async move {
-                Inbox::<_, D>::new(scope, config.local.owner, config.local.limits)
+        {
+            let binding = Arc::clone(&self.binding);
+            ctx.local(step("retire_report")?, move |scope| {
+                Box::pin(async move {
+                    Inbox::<_, D, B>::new(
+                        scope,
+                        config.local.owner,
+                        config.local.limits,
+                        binding.as_ref(),
+                    )
                     .retire_report(input)
                     .await
                     .map_err(step_error)
+                })
             })
-        })
+        }
         .await?;
         Ok(())
     }
     fn before_resume<'s, 't>(
         &'s self,
         scope: &'s mut S::Scope<'t>,
+        _operation: &'s durable_steps::OperationId,
         key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<()>, StoreError>> {
         Box::pin(async move {
             let (item, report_seq): (ItemId, ReportSeq) =
                 serde_json::from_str(key.as_str()).map_err(StoreError::backend)?;
+            if self.clock.now() >= crate::removal_deadline(item) {
+                return Ok(Resume::Finish(()));
+            }
             let reference = ReportRef { item, report_seq };
-            if Inbox::<_, D>::new(scope, self.config.local.owner, self.config.local.limits)
-                .report_superseded(reference)
-                .await
-                .map_err(store_error)?
+            if Inbox::<_, D, B>::new(
+                scope,
+                self.config.local.owner,
+                self.config.local.limits,
+                self.binding.as_ref(),
+            )
+            .report_superseded(reference)
+            .await
+            .map_err(store_error)?
             {
                 Ok(Resume::Finish(()))
             } else {

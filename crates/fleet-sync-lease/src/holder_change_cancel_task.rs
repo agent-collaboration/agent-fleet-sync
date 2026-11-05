@@ -131,7 +131,10 @@ where
                     record
                         .enter(HolderChangePhase::Ended, now)
                         .map_err(step_error)?;
-                    storage.save_transfer(&record).await.map_err(step_error)?;
+                    storage
+                        .save_transfer(&record, now)
+                        .await
+                        .map_err(step_error)?;
                     Ok(answer)
                 })
             })
@@ -140,6 +143,7 @@ where
     fn before_resume<'s, 't>(
         &'s self,
         scope: &'s mut S::Scope<'t>,
+        _operation: &'s durable_steps::OperationId,
         key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<Self::Output>, StoreError>> {
         Box::pin(async move {
@@ -191,7 +195,7 @@ where
                 });
                 if let Some(failure) = &record.cleanup_failed {
                     RegistryStorage(scope)
-                        .save_cleanup_failure(id, failure)
+                        .save_cleanup_failure(id, failure, now)
                         .await
                         .map_err(storage_error)?;
                 }

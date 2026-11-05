@@ -157,8 +157,9 @@ impl<
         attempt: TransferId,
     ) -> Result<Option<SchemaSupport>, ServiceError> {
         self.state.registry.rule_transaction(move |scope| Box::pin(async move {
-            let row = query::<Turso>("SELECT target_schema FROM _fleet_sync_transfer_admissions WHERE attempt=?1").bind(attempt.to_string()).fetch_one(scope.executor()).await.map_err(StoreError::backend)?;
-            serde_json::from_str(&row.try_get::<String, _>("target_schema").map_err(StoreError::backend)?).map_err(StoreError::backend)
+            let row = query::<Turso>("SELECT target_schema_max_version FROM _fleet_sync_transfer_admissions WHERE attempt=?1").bind(attempt.to_string()).fetch_one(scope.executor()).await.map_err(StoreError::backend)?;
+            row.try_get::<Option<String>, _>("target_schema_max_version").map_err(StoreError::backend)?
+                .map(|value| value.parse::<u64>().map(|max_version|SchemaSupport {max_version}).map_err(StoreError::backend)).transpose()
         })).await.map_err(Into::into)
     }
 }

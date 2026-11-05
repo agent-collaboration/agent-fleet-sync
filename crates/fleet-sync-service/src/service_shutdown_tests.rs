@@ -27,6 +27,15 @@ impl ConsumerHandler<NoConsumer> for UnusedConsumer {
         panic!("shutdown must not route a consumer request")
     }
 }
+impl fleet_sync_delivery::SenderBinding<ServiceScope<'_>, NoDelivery> for UnusedConsumer {
+    async fn resolve_submitter<'a>(
+        &'a self,
+        _: &'a mut ServiceScope<'_>,
+        sender: &'a Submitter,
+    ) -> Result<Submitter, fleet_sync_delivery::SenderBindingFailure> {
+        Ok(*sender)
+    }
+}
 impl ServiceConsumer<NoConsumer> for UnusedConsumer {
     type HookItem = ();
 }
@@ -108,6 +117,7 @@ async fn shutdown_refuses_buffered_calls_before_joining_their_dispatcher() -> Te
     });
     let service = FleetService::<NoConsumer, _, _>::open(
         ServiceOptions {
+            clock: std::sync::Arc::new(runtime_primitives::SystemClock),
             directory: directory.path().to_owned(),
             delivery: None,
             receiver,

@@ -1,0 +1,12 @@
+{
+  "migrations": ["migrations"],
+  "output": "src/checked_queries/relay.rs",
+  "metadata": "checked-relay-query-metadata.json",
+  "queries": [{
+    "name": "read_relay_submitter",
+    "sql": "sql/read_relay_submitter.sql",
+    "result": "optional",
+    "row": "StoredRelaySubmitterRow",
+    "parameters": [{"name": "item_id", "kind": "text", "nullable": false}]
+  }]
+}

@@ -20,7 +20,7 @@ pub enum AfterAnswer {
     },
 }
 pub struct InterleavedDeliver<C = TestConsumer> {
-    inner: DeliverLocally<TestStore, sqlx_turso::Turso, TestTypes, C>,
+    inner: DeliverLocally<TestStore, sqlx_turso::Turso, TestTypes, C, FixtureBindings>,
     store: Arc<TestStore>,
     action: AfterAnswer,
     performed: Arc<AtomicBool>,
@@ -38,7 +38,12 @@ impl<C> InterleavedDeliver<C> {
         consumer: Arc<C>,
     ) -> Self {
         Self {
-            inner: DeliverLocally::new(config().local, consumer, host),
+            inner: DeliverLocally::new(
+                config().local,
+                consumer,
+                host,
+                std::sync::Arc::new(FixtureBindings),
+            ),
             store,
             action,
             performed: Arc::new(AtomicBool::new(false)),
@@ -72,12 +77,20 @@ where
         };
         self.inner.run(&mut intercepted, input).await
     }
-    fn before_resume<'s, 't>(
+    fn retry_not_later_than<'s, 't>(
         &'s self,
         scope: &'s mut <TestStore as AtomicStore>::Scope<'t>,
         key: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Option<durable_steps::SyncTime>, StoreError>> {
+        self.inner.retry_not_later_than(scope, key)
+    }
+    fn before_resume<'s, 't>(
+        &'s self,
+        scope: &'s mut <TestStore as AtomicStore>::Scope<'t>,
+        operation: &'s durable_steps::OperationId,
+        key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<()>, StoreError>> {
-        self.inner.before_resume(scope, key)
+        self.inner.before_resume(scope, operation, key)
     }
     fn on_failed<'s, 't>(
         &'s self,
@@ -114,13 +127,18 @@ impl<O: OperationContext<Store = TestStore>> InterceptContext<'_, O> {
                     self.store
                         .transaction(|scope| {
                             Box::pin(async move {
-                                Inbox::<_, TestTypes>::new(scope, peer(2), limits())
-                                    .release_held::<DeliverTask>(
-                                        item_id(1),
-                                        SyncTime::from_unix_millis(0),
-                                    )
-                                    .await
-                                    .map_err(storage_error)?;
+                                Inbox::<_, TestTypes, _>::new(
+                                    scope,
+                                    peer(2),
+                                    limits(),
+                                    &FixtureBindings,
+                                )
+                                .release_held::<DeliverTask>(
+                                    item_id(1),
+                                    SyncTime::from_unix_millis(0),
+                                )
+                                .await
+                                .map_err(storage_error)?;
                                 Ok(())
                             })
                         })
@@ -131,30 +149,36 @@ impl<O: OperationContext<Store = TestStore>> InterceptContext<'_, O> {
                 self.store
                     .transaction(|scope| {
                         Box::pin(async move {
-                            let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
-                            let cycle = inbox
-                                .begin_receive(DeliveryStream::Controls)
-                                .await
-                                .map_err(storage_error)?
-                                .unwrap();
-                            let effects = inbox
-                                .store_batch(
-                                    cycle,
-                                    FetchResult {
-                                        stream: DeliveryStream::Controls,
-                                        entries: vec![FetchEntry::Item {
-                                            seq: DeliverySeq::new(1),
-                                            item: cancel(2, 1),
-                                        }],
-                                        through: DeliverySeq::new(1),
-                                    },
-                                    &TestConsumer,
-                                    SyncTime::from_unix_millis(0),
-                                )
-                                .await
-                                .map_err(storage_error)?;
-                            assert!(effects.attempts.is_empty());
-                            assert!(effects.reports.is_empty());
+                            let answer = accept_fixture_push(
+                                scope,
+                                limits(),
+                                cancel(2, 1),
+                                &TestConsumer,
+                                SyncTime::from_unix_millis(0),
+                            )
+                            .await
+                            .map_err(storage_error)?;
+                            assert!(matches!(answer, PushResult::Accepted { .. }));
+                            let mut inbox = Inbox::<_, TestTypes, _>::new(
+                                scope,
+                                peer(2),
+                                limits(),
+                                &FixtureBindings,
+                            );
+                            assert!(
+                                inbox
+                                    .pending_report(item_id(1))
+                                    .await
+                                    .map_err(storage_error)?
+                                    .is_none()
+                            );
+                            assert!(
+                                inbox
+                                    .pending_report(item_id(2))
+                                    .await
+                                    .map_err(storage_error)?
+                                    .is_none()
+                            );
                             Ok(())
                         })
                     })

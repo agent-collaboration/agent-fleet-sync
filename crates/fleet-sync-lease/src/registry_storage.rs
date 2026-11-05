@@ -31,9 +31,8 @@ fn conflict(field: &str) -> LeaseError {
 pub(crate) fn decode_history(
     database: DatabaseId,
     epoch: Epoch,
-    record: Option<String>,
+    record: EpochHistory,
 ) -> Result<EpochHistory, LeaseError> {
-    let record: EpochHistory = decode(record, "epoch history")?;
     if record.database != database
         || record.epoch != epoch
         || record.ended_at.is_some_and(|end| end.epoch > epoch)
@@ -67,7 +66,7 @@ where
     pub(crate) async fn database_records(&mut self) -> Result<Vec<DatabaseRecord>, LeaseError> {
         let mut databases = Vec::new();
         for row in checked_queries::read_databases(self.0).await? {
-            let record: DatabaseRecord = decode(row.record, "database record")?;
+            let record: DatabaseRecord = row.database_record()?;
             if row.database.as_deref() != Some(record.database.as_uuid().to_string().as_str()) {
                 return Err(LeaseError::Corrupt {
                     field: "database record".into(),
@@ -88,7 +87,7 @@ where
         else {
             return Ok(None);
         };
-        let record: DatabaseRecord = decode(row.record, "database record")?;
+        let record: DatabaseRecord = row.database_record()?;
         if record.database != database {
             return Err(LeaseError::Corrupt {
                 field: "database record".into(),
@@ -99,6 +98,7 @@ where
     pub(crate) async fn save_database(
         &mut self,
         record: &DatabaseRecord,
+        now: SyncTime,
     ) -> Result<(), LeaseError> {
         if let Some(existing) = self.database(record.database).await?
             && matches!(existing.lifecycle, DatabaseLifecycle::Retired { .. })
@@ -110,6 +110,8 @@ where
             self.0,
             record.database.as_uuid().to_string(),
             encode(record)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -122,7 +124,7 @@ where
         else {
             return Ok(None);
         };
-        let record: RegistryLease = decode(row.record, "lease")?;
+        let record: RegistryLease = row.lease_record()?;
         if record.database != database || record.expires_at < record.last_renewed_at {
             return Err(LeaseError::Corrupt {
                 field: "lease".into(),
@@ -130,7 +132,11 @@ where
         }
         Ok(Some(record))
     }
-    pub(crate) async fn save_lease(&mut self, record: &RegistryLease) -> Result<(), LeaseError> {
+    pub(crate) async fn save_lease(
+        &mut self,
+        record: &RegistryLease,
+        now: SyncTime,
+    ) -> Result<(), LeaseError> {
         if let Some(previous) = self.lease(record.database).await?
             && (previous.epoch > record.epoch
                 || (previous.epoch == record.epoch && previous.holder != record.holder))
@@ -143,6 +149,8 @@ where
             self.0,
             record.database.as_uuid().to_string(),
             encode(record)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -160,6 +168,7 @@ where
         &mut self,
         database: DatabaseId,
         epoch: Epoch,
+        now: SyncTime,
     ) -> Result<(), LeaseError> {
         if self
             .floor(database)
@@ -174,6 +183,8 @@ where
             self.0,
             database.as_uuid().to_string(),
             epoch.value().to_string(),
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -192,9 +203,13 @@ where
         else {
             return Ok(None);
         };
-        decode_history(database, epoch, row.record).map(Some)
+        decode_history(database, epoch, row.history_record()?).map(Some)
     }
-    pub(crate) async fn save_history(&mut self, record: &EpochHistory) -> Result<(), LeaseError> {
+    pub(crate) async fn save_history(
+        &mut self,
+        record: &EpochHistory,
+        now: SyncTime,
+    ) -> Result<(), LeaseError> {
         if let Some(existing) = self.history(record.database, record.epoch).await?
             && (existing.holder != record.holder
                 || existing.granted_at != record.granted_at
@@ -211,6 +226,8 @@ where
             record.database.as_uuid().to_string(),
             record.epoch.value().to_string(),
             encode(record)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -229,7 +246,7 @@ where
         else {
             return Ok(None);
         };
-        let record: RenewalAttempt = decode(row.record, "renewal attempt")?;
+        let record: RenewalAttempt = row.renewal_record()?;
         if record.request.database != database || record.request.attempt != attempt {
             return Err(LeaseError::Corrupt {
                 field: "renewal attempt".into(),
@@ -237,7 +254,11 @@ where
         }
         Ok(Some(record))
     }
-    pub(crate) async fn save_renewal(&mut self, record: &RenewalAttempt) -> Result<(), LeaseError> {
+    pub(crate) async fn save_renewal(
+        &mut self,
+        record: &RenewalAttempt,
+        now: SyncTime,
+    ) -> Result<(), LeaseError> {
         if let Some(existing) = self
             .renewal(record.request.database, record.request.attempt)
             .await?
@@ -250,6 +271,8 @@ where
             record.request.database.as_uuid().to_string(),
             record.request.attempt.as_uuid().to_string(),
             encode(record)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -263,19 +286,13 @@ where
         else {
             return Ok(None);
         };
-        let intent: LifecycleIntent = decode(row.intent, "lifecycle intent")?;
-        if intent.attempt() != attempt {
+        let record = row.lifecycle_record()?;
+        if record.intent.attempt() != attempt {
             return Err(LeaseError::Corrupt {
                 field: "lifecycle attempt".into(),
             });
         }
-        Ok(Some(LifecycleAttempt {
-            intent,
-            outcome: row
-                .outcome
-                .map(|value| decode(Some(value), "lifecycle outcome"))
-                .transpose()?,
-        }))
+        Ok(Some(record))
     }
     pub(crate) async fn active_lifecycle(
         &mut self,
@@ -286,20 +303,18 @@ where
         else {
             return Ok(None);
         };
-        let intent: LifecycleIntent = decode(row.intent, "active lifecycle intent")?;
-        if intent.database() != database || row.outcome.is_some() {
+        let record = row.lifecycle_record()?;
+        if record.intent.database() != database || record.outcome.is_some() {
             return Err(LeaseError::Corrupt {
                 field: "active lifecycle attempt".into(),
             });
         }
-        Ok(Some(LifecycleAttempt {
-            intent,
-            outcome: None,
-        }))
+        Ok(Some(record))
     }
     pub(crate) async fn save_lifecycle(
         &mut self,
         record: &LifecycleAttempt,
+        now: SyncTime,
     ) -> Result<(), LeaseError> {
         if let Some(existing) = self.lifecycle(record.intent.attempt()).await?
             && (existing.intent != record.intent
@@ -313,6 +328,8 @@ where
             record.intent.database().as_uuid().to_string(),
             encode(&record.intent)?,
             record.outcome.as_ref().map(encode).transpose()?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
@@ -323,10 +340,14 @@ where
     ) -> Result<Option<PreviewRecord>, LeaseError> {
         checked_queries::read_preview(self.0, token.as_str().to_owned())
             .await?
-            .map(|row| decode(row.record, "takeover preview"))
+            .map(|row| row.preview_record())
             .transpose()
     }
-    pub(crate) async fn save_preview(&mut self, record: &PreviewRecord) -> Result<(), LeaseError> {
+    pub(crate) async fn save_preview(
+        &mut self,
+        record: &PreviewRecord,
+        now: SyncTime,
+    ) -> Result<(), LeaseError> {
         if let Some(existing) = self.preview(&record.preview.token).await? {
             return if existing == *record {
                 Ok(())
@@ -339,8 +360,22 @@ where
             record.preview.token.as_str().to_owned(),
             record.database.as_uuid().to_string(),
             encode(record)?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await?;
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "registry_storage_test.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "registry_storage_migration_test.rs"]
+mod migration_tests;
+
+#[cfg(test)]
+#[path = "registry_surrogate_test.rs"]
+mod surrogate_tests;

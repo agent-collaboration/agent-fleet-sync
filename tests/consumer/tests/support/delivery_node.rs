@@ -88,8 +88,13 @@ impl DeliveryNode {
     }
 }
 pub fn item_id(number: u64) -> TestResult<ItemId> {
+    // Real-process fixtures use SystemClock: give each test's stable numeric
+    // identities a real UUIDv7 creation time instead of a historical timestamp.
+    static PREFIX: std::sync::OnceLock<u128> = std::sync::OnceLock::new();
+    let prefix = PREFIX
+        .get_or_init(|| durable_steps::Uuid::now_v7().as_u128() & !0x3fff_ffff_ffff_ffff_u128);
     Ok(ItemId::new(durable_steps::Uuid::from_u128(
-        0x01900000000070008000000000000000 + u128::from(number),
+        *prefix | u128::from(number),
     ))?)
 }
 pub async fn enqueue(

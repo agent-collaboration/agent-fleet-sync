@@ -13,13 +13,15 @@ use sqlx_core::{
 };
 
 /// Reserve a unique epoch, complete the external fence, then grant under a fresh local check.
-pub async fn holder_change<C, D>(
+pub async fn holder_change<C, D, H>(
     ctx: &mut C,
     request: &HolderChangeRequest,
     config: &RegistryConfig,
+    hook: std::sync::Arc<H>,
 ) -> Result<HolderChangeAnswer, LeaseError>
 where
     C: OperationContext,
+    for<'t> H: crate::LeaseChangeHook<<C::Store as AtomicStore>::Scope<'t>>,
     D: Database,
     for<'t> <C::Store as AtomicStore>::Scope<'t>: TransactionScope<Database = D>,
     D::Arguments: IntoArguments<D>,
@@ -348,7 +350,7 @@ where
     let answer = if let Some(reason) = refusal {
         change_completion::refuse::<C, D>(ctx, request, "fence_refused", reason).await?
     } else {
-        change_completion::grant::<C, D>(ctx, request, fenced, expect, config).await?
+        change_completion::grant::<C, D, H>(ctx, request, fenced, expect, config, hook).await?
     };
     settle_claim::<C, D>(ctx, request, answer).await
 }

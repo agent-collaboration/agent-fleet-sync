@@ -22,21 +22,6 @@ pub enum DeliveryRequest<D: DeliveryTypes = NoDelivery> {
         call: CallId,
         item: DeliveryEnvelope<D>,
     },
-    Fetch {
-        call: CallId,
-        stream: DeliveryStream,
-        after: DeliverySeq,
-        max_items: u32,
-        max_bytes: u64,
-        /// Total receiving room, including per-item settlement reserves.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        inbox_room_bytes: Option<u64>,
-    },
-    Received {
-        call: CallId,
-        stream: DeliveryStream,
-        through: DeliverySeq,
-    },
     Report {
         call: CallId,
         report: RecipientReport<D>,
@@ -58,26 +43,20 @@ pub enum DeliveryRequest<D: DeliveryTypes = NoDelivery> {
     Settle {
         call: CallId,
         mailbox: PeerId,
+        /// Independent owner claim; the host authorizes it before settlement.
+        submitter: Submitter,
         item: ItemId,
         digest: ItemDigest,
-    },
-    Retire {
-        call: CallId,
-        mailbox: PeerId,
-        items: Vec<ItemId>,
     },
 }
 impl<D: DeliveryTypes> DeliveryRequest<D> {
     pub fn call(&self) -> &CallId {
         match self {
             Self::Submit { call, .. }
-            | Self::Fetch { call, .. }
-            | Self::Received { call, .. }
             | Self::Report { call, .. }
             | Self::StatusFetch { call, .. }
             | Self::StatusAck { call, .. }
             | Self::Query { call, .. }
-            | Self::Retire { call, .. }
             | Self::Settle { call, .. } => call,
         }
     }
@@ -94,17 +73,14 @@ impl<D: DeliveryTypes> DeliveryRequest<D> {
 pub enum DeliveryAnswer<D: DeliveryTypes = NoDelivery> {
     /// The owner is unavailable without deciding any item's outcome.
     /// Durable dispatchers retry the same call rather than saving an item refusal.
-    MailboxUnavailable {
+    DeliveryUnavailable {
         reason: DeliveryRefusal,
     },
     Submit(SubmitResult<D::Acceptance>),
-    Fetch(FetchResult<D>),
-    Received(ReceivedResult),
-    Report(ReportResult<D::Acceptance>),
+    Report(ReportResult),
     StatusFetch(StatusFetchResult<D::Acceptance>),
     StatusAck(StatusAckResult),
     Query(QueryResult<D::Acceptance>),
-    Retire(RetireResult),
     Settle(SettleResult<D::Acceptance>),
 }
 
@@ -117,9 +93,11 @@ pub enum DeliveryAnswer<D: DeliveryTypes = NoDelivery> {
     deny_unknown_fields
 )]
 pub enum SubmitResult<A> {
+    BindingUnavailable {
+        reason: SenderBindingFailure,
+    },
     /// The relay's canonical snapshot at first admission, including an already expired item.
     Accepted {
-        seq: DeliverySeq,
         status: DeliveryStatus<A>,
         version: StatusVersion,
         cancel: Option<CancelResult>,
@@ -142,46 +120,6 @@ pub enum SubmitResult<A> {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase",
-    deny_unknown_fields,
-    bound = ""
-)]
-pub enum FetchEntry<D: DeliveryTypes> {
-    Item {
-        seq: DeliverySeq,
-        item: DeliveryEnvelope<D>,
-    },
-    Retired {
-        seq: DeliverySeq,
-        items: Vec<ItemId>,
-    },
-}
-impl<D: DeliveryTypes> FetchEntry<D> {
-    pub const fn sequence(&self) -> DeliverySeq {
-        match self {
-            Self::Item { seq, .. } | Self::Retired { seq, .. } => *seq,
-        }
-    }
-}
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
-pub struct FetchResult<D: DeliveryTypes> {
-    pub stream: DeliveryStream,
-    pub entries: Vec<FetchEntry<D>>,
-    pub through: DeliverySeq,
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ReceivedResult {
-    pub stream: DeliveryStream,
-    pub released_through: DeliverySeq,
-}
-
-#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
 pub struct RecipientReport<D: DeliveryTypes> {
     pub item: ItemId,
@@ -191,16 +129,10 @@ pub struct RecipientReport<D: DeliveryTypes> {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[serde(tag = "kind", content = "value", rename_all_fields = "camelCase")]
-pub enum ReportResult<A> {
-    Applied {
-        item: ItemId,
-        acknowledged: ReportSeq,
-        status: DeliveryStatus<A>,
-        version: StatusVersion,
-    },
-    Refused {
-        reason: DeliveryRefusal,
-    },
+pub enum ReportResult {
+    Ack { report_seq: ReportSeq },
+    Replayed { report_seq: ReportSeq },
+    Refused { reason: DeliveryRefusal },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -275,14 +207,6 @@ pub struct QueryResult<A> {
     pub statuses: Vec<ItemStatus<A>>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct RetireResult {
-    pub retired: Vec<ItemId>,
-    pub unknown: Vec<ItemId>,
-    pub not_current_target: Vec<ItemId>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
     content = "value",
@@ -316,3 +240,11 @@ pub enum StatusPublicationResult {
     Applied,
     Refused { reason: DeliveryRefusal },
 }
+
+#[cfg(test)]
+#[path = "delivery_settle_test.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "delivery_cutover_test.rs"]
+mod cutover_tests;

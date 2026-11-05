@@ -4,27 +4,37 @@ use durable_steps::{
     storage::TransactionScope,
 };
 use fleet_sync_protocol::{Retirement, RetirementAnswer};
+use runtime_primitives::Clock;
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
     encode::Encode, types::Type,
 };
 use std::marker::PhantomData;
 
-pub struct RetirementTask<S, D> {
+pub struct RetirementTask<S, D, H> {
     config: RegistryConfig,
+    clock: std::sync::Arc<dyn Clock>,
+    hook: std::sync::Arc<H>,
     store: PhantomData<fn() -> (S, D)>,
 }
-impl<S, D> RetirementTask<S, D> {
-    pub const fn new(config: RegistryConfig) -> Self {
+impl<S, D, H> RetirementTask<S, D, H> {
+    pub const fn new(
+        config: RegistryConfig,
+        clock: std::sync::Arc<dyn Clock>,
+        hook: std::sync::Arc<H>,
+    ) -> Self {
         Self {
             config,
+            clock,
+            hook,
             store: PhantomData,
         }
     }
 }
-impl<S, D> Task for RetirementTask<S, D>
+impl<S, D, H> Task for RetirementTask<S, D, H>
 where
     S: AtomicStore,
+    for<'t> H: crate::LeaseChangeHook<S::Scope<'t>>,
     D: Database,
     for<'t> S::Scope<'t>: TransactionScope<Database = D>,
     D::Arguments: IntoArguments<D>,
@@ -42,9 +52,14 @@ where
         ctx: &mut C,
         request: &Retirement,
     ) -> Result<RetirementAnswer, OperationFailure> {
-        retire::<C, D>(ctx, request, &self.config)
-            .await
-            .map_err(Into::into)
+        retire::<C, D, H>(
+            ctx,
+            request,
+            &self.config,
+            std::sync::Arc::clone(&self.hook),
+        )
+        .await
+        .map_err(Into::into)
     }
     fn on_failed<'s, 't>(
         &'s self,
@@ -52,6 +67,6 @@ where
         key: &'s RequestKey,
         failure: &'s OperationFailure,
     ) -> BoxFuture<'s, Result<(), StoreError>> {
-        Box::pin(fail_lifecycle(scope, key, failure))
+        Box::pin(fail_lifecycle(scope, key, failure, self.clock.now()))
     }
 }

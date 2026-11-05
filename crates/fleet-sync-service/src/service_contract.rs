@@ -6,13 +6,33 @@ use serde::{Serialize, de::DeserializeOwned};
 use std::{future::Future, path::PathBuf, time::Duration};
 
 #[derive(Clone, Debug)]
+pub struct RelayDeliveryConfig {
+    pub relay: PeerId,
+    pub limits: fleet_sync_delivery::DeliveryLimits,
+}
+
+#[derive(Clone)]
 pub struct ServiceOptions {
+    pub clock: std::sync::Arc<dyn runtime_primitives::Clock>,
     pub directory: PathBuf,
-    pub delivery: Option<fleet_sync_delivery::DeliveryLimits>,
+    pub delivery: Option<RelayDeliveryConfig>,
     pub receiver: ReceiverId,
     pub registry: RegistryConfig,
     pub call_timeout: Duration,
     pub socket_timeout: Duration,
+}
+impl std::fmt::Debug for ServiceOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServiceOptions")
+            .field("clock", &"dyn Clock")
+            .field("directory", &self.directory)
+            .field("delivery", &self.delivery)
+            .field("receiver", &self.receiver)
+            .field("registry", &self.registry)
+            .field("call_timeout", &self.call_timeout)
+            .field("socket_timeout", &self.socket_timeout)
+            .finish()
+    }
 }
 pub trait ConsumerHandler<P: ConsumerProtocol>: Send + Sync + 'static {
     fn request(
@@ -25,7 +45,10 @@ pub trait ConsumerHandler<P: ConsumerProtocol>: Send + Sync + 'static {
 /// scope. Consumer code stays outside every shared rules crate.
 pub trait ServiceConsumer<P: ConsumerProtocol>:
     ConsumerHandler<P>
-    + LifecycleGate
+    + for<'transaction> fleet_sync_delivery::SenderBinding<
+        crate::ServiceScope<'transaction>,
+        P::Delivery,
+    > + LifecycleGate
     + HolderChangeGate
     + FollowUpHandler<Item = <Self as ServiceConsumer<P>>::HookItem>
     + for<'transaction> ReceiverRules<

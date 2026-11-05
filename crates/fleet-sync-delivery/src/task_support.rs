@@ -15,6 +15,9 @@ pub fn delivery_request_key(value: &impl Serialize) -> Result<RequestKey, Delive
 }
 pub(crate) fn step_error(error: DeliveryError) -> StepError {
     match error {
+        DeliveryError::SenderBindingUnavailable { .. } => StepError::Retry {
+            after: std::time::Duration::ZERO,
+        },
         DeliveryError::Storage(message) => StepError::Storage(StoreError::Backend { message }),
         error => StepError::Failed(OperationFailure::Refused {
             code: error.failure_code().as_str().to_owned(),
@@ -24,6 +27,9 @@ pub(crate) fn step_error(error: DeliveryError) -> StepError {
 }
 pub(crate) fn store_error(error: DeliveryError) -> StoreError {
     match error {
+        DeliveryError::SenderBindingUnavailable { row, reason } => StoreError::Backend {
+            message: format!("{} at {row:?}", reason.code()),
+        },
         DeliveryError::Storage(message) => StoreError::Backend { message },
         error => StoreError::Corrupt {
             field: "delivery operation".into(),

@@ -8,6 +8,15 @@ pub(crate) struct OutboxHeader<A> {
     pub id: ItemId,
     pub digest: String,
     pub relay: PeerId,
+    pub submitter: Option<crate::Submitter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consumer_sender: Option<String>,
+    pub created_at: SyncTime,
+    pub admitted_at: Option<SyncTime>,
+    pub handed_off_at: Option<SyncTime>,
+    pub last_report_seq: ReportSeq,
+    /// Opaque consumer route; its schema belongs to DeliveryTypes::StatusRoute.
+    pub status_route: Option<String>,
 
     pub recipient: PeerId,
     pub valid_until: Option<SyncTime>,
@@ -23,6 +32,11 @@ pub(crate) struct OutboxHeader<A> {
 }
 impl<A> OutboxHeader<A> {
     pub fn validate(&self) -> Result<(), DeliveryError> {
+        if self.created_at != crate::custody_record::created_at(self.id) {
+            return Err(DeliveryError::Corrupt {
+                field: "outbox creation time",
+            });
+        }
         let processing_failed = matches!(
             self.status,
             DeliveryStatus::Refused {
@@ -61,6 +75,13 @@ pub(crate) enum OutboxHeaderState<A> {
         item: ItemId,
         kind: DeliveryFailureKind,
     },
+    Legacy {
+        item: ItemId,
+        digest: Option<ItemDigest>,
+        status: DeliveryStatus<A>,
+        version: StatusVersion,
+        cancel: Option<CancelResult>,
+    },
 }
 
 pub(crate) struct OutboxRecord<D: DeliveryTypes> {
@@ -70,11 +91,27 @@ pub(crate) struct OutboxRecord<D: DeliveryTypes> {
 impl<D: DeliveryTypes> OutboxRecord<D> {
     pub fn validate(&self) -> Result<(), DeliveryError> {
         self.header.validate()?;
+        let corrupt = |field| DeliveryError::CorruptRow {
+            table: "_fleet_sync_outbox_items",
+            key: self.header.id.as_uuid().to_string(),
+            field,
+        };
+        let source: Option<D::Sender> = self
+            .header
+            .consumer_sender
+            .as_deref()
+            .map(|raw| serde_json::from_str(raw).map_err(|_| corrupt("consumer_sender")))
+            .transpose()?;
+        if source.is_none() || self.header.submitter.is_none() {
+            return Err(corrupt("submitter"));
+        }
         if let Some(payload) = &self.payload
             && (payload.id() != self.header.id
                 || payload.digest().as_str() != self.header.digest
                 || payload.recipient().peer != self.header.recipient
                 || payload.valid_until() != self.header.valid_until
+                || crate::status_stream::canonical_encode(&source)?
+                    != crate::status_stream::canonical_encode(&Some(payload.sender()))?
                 || self.header.cancel_target
                     != match payload {
                         DeliveryEnvelope::Item(_) => None,
@@ -102,6 +139,13 @@ pub struct ResolvedSubmit<D: DeliveryTypes> {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
+pub struct ResolvedPush<D: DeliveryTypes> {
+    pub submitter: Submitter,
+    pub item: DeliveryEnvelope<D>,
+}
+
+#[derive(Serialize, Deserialize)]
 #[serde(
     tag = "kind",
     content = "value",
@@ -110,6 +154,9 @@ pub struct ResolvedSubmit<D: DeliveryTypes> {
     deny_unknown_fields
 )]
 pub enum OutboxAdmission<A> {
+    BindingUnavailable {
+        reason: SenderBindingFailure,
+    },
     Queued {
         reference: DeliveryItemRef,
     },
@@ -160,6 +207,13 @@ pub struct SubmitInput {
     pub relay: PeerId,
     pub mailbox: PeerId,
 }
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PushInput {
+    pub reference: DeliveryItemRef,
+    pub recipient: PeerId,
+}
 impl SubmitInput {
     pub fn reference(&self) -> DeliveryItemRef {
         DeliveryItemRef {
@@ -172,6 +226,8 @@ impl SubmitInput {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct RecoveredOutbox<A> {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub submitter: Option<crate::Submitter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acceptance_bound: Option<u32>,
     pub item: ItemId,

@@ -10,24 +10,27 @@ use sqlx_core::{
 };
 use std::marker::PhantomData;
 
-pub struct Outbox<'s, S, D> {
+pub struct Outbox<'s, S, D, B> {
+    pub(crate) binding: &'s B,
     pub(crate) scope: &'s mut S,
     pub(crate) limits: DeliveryLimits,
     payload: PhantomData<fn() -> D>,
 }
-impl<'s, S, D> Outbox<'s, S, D> {
-    pub fn new(scope: &'s mut S, limits: DeliveryLimits) -> Self {
+impl<'s, S, D, B> Outbox<'s, S, D, B> {
+    pub fn new(scope: &'s mut S, limits: DeliveryLimits, binding: &'s B) -> Self {
         Self {
+            binding,
             scope,
             limits,
             payload: PhantomData,
         }
     }
 }
-impl<S, D> Outbox<'_, S, D>
+impl<S, D, B> Outbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
@@ -93,8 +96,13 @@ where
         }
     }
 
-    pub async fn mark_submit_attempted(&mut self, item: ItemId) -> Result<(), DeliveryError> {
+    pub async fn mark_submit_attempted(
+        &mut self,
+        item: ItemId,
+        now: SyncTime,
+    ) -> Result<(), DeliveryError> {
         let mut header = match self.header_state(item).await {
+            Ok(Some(OutboxHeaderState::Legacy { .. })) => return Ok(()),
             Ok(Some(OutboxHeaderState::Item(header))) => header,
             Ok(_) | Err(DeliveryError::Corrupt { .. }) => return Ok(()),
             Err(error) => return Err(error),
@@ -106,14 +114,18 @@ where
             };
         }
         header.submit_attempted = true;
-        self.update_header(&header).await
+        self.update_header(&header, now).await
     }
 
     pub async fn mark_submitted(
         &mut self,
         input: &SubmitInput,
         answer: SubmitResult<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
+        if now >= crate::removal_deadline(input.item) {
+            return Ok(());
+        }
         let item = input.item;
         let mut header = match self.header_state(item).await {
             Ok(Some(OutboxHeaderState::Item(header)))
@@ -124,14 +136,24 @@ where
                 header
             }
             Ok(_) | Err(DeliveryError::Corrupt { .. }) => {
-                return self.recover_answer(input, answer).await;
+                return self.recover_answer(input, answer, now).await;
             }
             Err(error) => return Err(error),
         };
         if header.status.is_terminal() {
             return Ok(());
         }
+        let handed_off = matches!(
+            &answer,
+            SubmitResult::Accepted { .. } | SubmitResult::Replayed { .. }
+        );
         match answer {
+            SubmitResult::BindingUnavailable { reason } => {
+                return Err(DeliveryError::SenderBindingUnavailable {
+                    row: crate::CustodyRow::Outbox(input.item),
+                    reason,
+                });
+            }
             SubmitResult::Accepted {
                 status,
                 version,
@@ -158,7 +180,10 @@ where
             SubmitResult::Refused { reason } => header.status = DeliveryStatus::Refused { reason },
         }
         header.submit_attempted = true;
-        self.save_header(&header, None).await
+        if handed_off {
+            header.handed_off_at = Some(now);
+        }
+        self.save_header(&header, None, now).await
     }
 
     pub async fn status(
@@ -179,6 +204,16 @@ where
                 version: record.version,
                 cancel: record.cancel,
             },
+            Some(OutboxHeaderState::Legacy {
+                status,
+                version,
+                cancel,
+                ..
+            }) => OutboxStatusState::Known {
+                status,
+                version,
+                cancel,
+            },
             Some(OutboxHeaderState::Unresolvable { kind, .. }) => OutboxStatusState::Known {
                 status: DeliveryStatus::Refused {
                     reason: DeliveryRefusal::ProcessingFailed { kind },
@@ -195,14 +230,19 @@ where
         &mut self,
         item: ItemId,
         kind: DeliveryFailureKind,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
+        if now >= crate::removal_deadline(item) {
+            return Ok(());
+        }
         match self.recovery_header(item).await {
+            Ok(Some(OutboxHeaderState::Legacy { .. })) => {}
             Ok(Some(OutboxHeaderState::Item(mut header))) => {
                 if !header.status.is_terminal() {
                     header.status = DeliveryStatus::Refused {
                         reason: DeliveryRefusal::ProcessingFailed { kind },
                     };
-                    self.save_header(&header, None).await?;
+                    self.save_header(&header, None, now).await?;
                 }
             }
             Ok(Some(OutboxHeaderState::Recovered(mut record))) => {
@@ -210,7 +250,7 @@ where
                     record.status = DeliveryStatus::Refused {
                         reason: DeliveryRefusal::ProcessingFailed { kind },
                     };
-                    self.save_recovered(&record).await?;
+                    self.save_recovered(&record, now).await?;
                 }
             }
             Ok(Some(OutboxHeaderState::Unresolvable { .. })) => {}
@@ -225,6 +265,8 @@ where
                     encode(&failed)?,
                     None,
                     "0".into(),
+                    created_at(item).unix_millis().to_string(),
+                    now.unix_millis().to_string(),
                 )
                 .await
                 .map_err(sql_error)?;
@@ -238,12 +280,17 @@ where
         &mut self,
         input: &SubmitInput,
         kind: DeliveryFailureKind,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
+        if now >= crate::removal_deadline(input.item) {
+            return Ok(());
+        }
         self.recover_answer(
             input,
             SubmitResult::Refused {
                 reason: DeliveryRefusal::ProcessingFailed { kind },
             },
+            now,
         )
         .await
     }
@@ -251,8 +298,15 @@ where
         &mut self,
         input: &SubmitInput,
         answer: SubmitResult<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let (status, version, cancel) = match answer {
+            SubmitResult::BindingUnavailable { reason } => {
+                return Err(DeliveryError::SenderBindingUnavailable {
+                    row: crate::CustodyRow::Outbox(input.item),
+                    reason,
+                });
+            }
             SubmitResult::Accepted {
                 status,
                 version,
@@ -288,19 +342,24 @@ where
             Err(error) => return Err(error),
         };
         crate::delivery_sizes::check_status_bound::<D>(&status, acceptance_bound)?;
-        self.save_recovered(&RecoveredOutbox {
-            acceptance_bound,
-            item: input.item,
-            digest: input.digest.clone(),
-            status,
-            version,
-            cancel,
-        })
+        self.save_recovered(
+            &RecoveredOutbox {
+                submitter: None,
+                acceptance_bound,
+                item: input.item,
+                digest: input.digest.clone(),
+                status,
+                version,
+                cancel,
+            },
+            now,
+        )
         .await
     }
     pub(crate) async fn save_recovered(
         &mut self,
         record: &RecoveredOutbox<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let state = OutboxHeaderState::<D::Acceptance>::Recovered(copy_wire(record)?);
         queries::write_outbox_item(
@@ -312,6 +371,8 @@ where
             encode(&state)?,
             None,
             "0".into(),
+            created_at(record.item).unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await
         .map_err(sql_error)
@@ -326,13 +387,22 @@ where
         else {
             return Ok(None);
         };
-        let state = self.decode_header(row.record, item)?;
+        let state =
+            crate::outbox_storage::decode_header::<S, D, B>(self.scope, self.binding, &row).await?;
         let live = integer(row.live, row.live_class, "outbox live flag")?;
-        let slot = integer(row.capacity_slot, row.slot_class, "outbox capacity slot")?;
-        let bytes = integer(row.payload_bytes, row.payload_class, "outbox payload bytes")?;
+        let slot = integer(
+            row.capacity_slot,
+            row.capacity_slot_class,
+            "outbox capacity slot",
+        )?;
+        let bytes = integer(
+            row.payload_bytes,
+            row.payload_bytes_class,
+            "outbox payload bytes",
+        )?;
         let settlement = integer(
-            row.settlement_bytes,
-            row.settlement_class,
+            row.settlement_charge_bytes,
+            row.settlement_charge_bytes_class,
             "outbox settlement bytes",
         )?;
         let valid = match &state {
@@ -374,6 +444,9 @@ where
             OutboxHeaderState::Unresolvable { .. } => {
                 live == 0 && slot == 0 && bytes == 0 && settlement == 0 && row.payload.is_none()
             }
+            OutboxHeaderState::Legacy { .. } => {
+                live <= 1 && slot <= 1 && bytes == 0 && row.payload.is_none()
+            }
         };
         if !valid || row.item_id.as_deref() != Some(item_key(item).as_str()) {
             return Err(DeliveryError::Corrupt {
@@ -392,25 +465,9 @@ where
         else {
             return Ok(None);
         };
-        self.decode_header(row.record, item).map(Some)
-    }
-    fn decode_header(
-        &self,
-        raw: Option<String>,
-        item: ItemId,
-    ) -> Result<OutboxHeaderState<D::Acceptance>, DeliveryError> {
-        let state: OutboxHeaderState<D::Acceptance> = decode(raw, "outbox header")?;
-        let id = match &state {
-            OutboxHeaderState::Item(header) => header.id,
-            OutboxHeaderState::Recovered(record) => record.item,
-            OutboxHeaderState::Unresolvable { item, .. } => *item,
-        };
-        if id != item {
-            return Err(DeliveryError::Corrupt {
-                field: "outbox header identity",
-            });
-        }
-        Ok(state)
+        crate::outbox_storage::decode_header::<S, D, B>(self.scope, self.binding, &row)
+            .await
+            .map(Some)
     }
     pub(crate) async fn load(
         &mut self,
@@ -422,10 +479,16 @@ where
         else {
             return Ok(None);
         };
-        let state = self.decode_header(row.record, item)?;
+        let state =
+            crate::outbox_storage::decode_header::<S, D, B>(self.scope, self.binding, &row).await?;
         let header = match state {
             OutboxHeaderState::Item(header) => header,
             OutboxHeaderState::Recovered(_) => return Err(DeliveryError::CustodyMissing),
+            OutboxHeaderState::Legacy { .. } => {
+                return Err(DeliveryError::Refused {
+                    reason: DeliveryRefusal::NotSubmitter,
+                });
+            }
             OutboxHeaderState::Unresolvable { kind, .. } => {
                 return Err(DeliveryError::ProcessingFailed { kind });
             }
@@ -449,12 +512,20 @@ where
                 field: "stored outbox envelope bounds",
             })?;
         }
-        let bytes = integer(row.payload_bytes, row.payload_class, "outbox payload bytes")?;
+        let bytes = integer(
+            row.payload_bytes,
+            row.payload_bytes_class,
+            "outbox payload bytes",
+        )?;
         let live = integer(row.live, row.live_class, "outbox live flag")?;
-        let slot = integer(row.capacity_slot, row.slot_class, "outbox capacity slot")?;
+        let slot = integer(
+            row.capacity_slot,
+            row.capacity_slot_class,
+            "outbox capacity slot",
+        )?;
         let settlement = integer(
-            row.settlement_bytes,
-            row.settlement_class,
+            row.settlement_charge_bytes,
+            row.settlement_charge_bytes_class,
             "outbox settlement bytes",
         )?;
         if row.item_id.as_deref() != Some(item_key(item).as_str())
@@ -474,30 +545,49 @@ where
         }
         Ok(Some(record))
     }
-    pub(crate) async fn save(&mut self, record: &OutboxRecord<D>) -> Result<(), DeliveryError> {
+    pub(crate) async fn save(
+        &mut self,
+        record: &OutboxRecord<D>,
+        now: SyncTime,
+    ) -> Result<(), DeliveryError> {
         record.validate()?;
         self.save_header(
             &record.header,
             record.payload.as_ref().map(encode).transpose()?,
+            now,
         )
         .await
     }
     pub(crate) async fn update_header(
         &mut self,
         header: &OutboxHeader<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let row = queries::read_outbox_item(self.scope, item_key(header.id))
             .await
             .map_err(sql_error)?
             .ok_or(DeliveryError::CustodyMissing)?;
-        self.save_header(header, row.payload).await
+        self.save_header(header, row.payload, now).await
     }
     pub(crate) async fn save_header(
         &mut self,
         header: &OutboxHeader<D::Acceptance>,
         payload: Option<String>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         header.validate()?;
+        crate::submitter::checked_sender::<S, D, B>(
+            self.scope,
+            self.binding,
+            header
+                .submitter
+                .map(|owner| crate::submitter::kind(owner).to_owned()),
+            header.submitter.map(crate::submitter::id),
+            header.consumer_sender.as_deref(),
+            crate::submitter::SourceRetention::Item,
+            crate::CustodyRow::Outbox(header.id),
+        )
+        .await?;
         let state = OutboxHeaderState::<D::Acceptance>::Item(copy_wire(header)?);
         queries::write_outbox_item(
             self.scope,
@@ -513,6 +603,8 @@ where
             encode(&state)?,
             payload,
             u8::from(header.capacity_slot).to_string(),
+            header.created_at.unix_millis().to_string(),
+            now.unix_millis().to_string(),
         )
         .await
         .map_err(sql_error)

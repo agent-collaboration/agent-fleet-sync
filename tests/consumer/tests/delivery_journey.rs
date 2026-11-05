@@ -36,11 +36,6 @@ async fn a_first_submit_that_is_already_expired_converges_to_the_canonical_recei
         .await?;
     let expired = sender.wait(item, CustodySide::Outbox, "expired").await?;
     assert_eq!(expired["outbox"]["state"]["value"]["version"], 1);
-    recipient
-        .command(NodeCommand::Receive {
-            stream: DeliveryStream::Items,
-        })
-        .await?;
     let untouched = recipient.command(NodeCommand::Inspect { item }).await?;
     assert!(untouched["inbox"].is_null());
     assert_eq!(effect_count(&untouched, item), 0);
@@ -98,7 +93,6 @@ async fn queued_offline_in_order(order: [u64; 2]) -> TestResult {
     }
     // Disconnect origin while outcomes advance; reconnect uses the explicit StatusFetch gap path.
     sender.command(NodeCommand::Disconnect).await?;
-    recipient.connect(&relay).await?;
     // Target the gate explicitly: independent offline submissions may be
     // admitted in either relay order. A generic report gate could pause the
     // other item while this driver waits for the targeted item's local effect.
@@ -109,11 +103,7 @@ async fn queued_offline_in_order(order: [u64; 2]) -> TestResult {
             mode: FaultMode::Pause,
         })
         .await?;
-    recipient
-        .command(NodeCommand::Receive {
-            stream: DeliveryStream::Items,
-        })
-        .await?;
+    recipient.connect(&relay).await?;
     recipient.command(NodeCommand::WaitBarrier).await?;
     recipient.command(NodeCommand::Resume).await?;
     for item in [first, second] {
@@ -193,28 +183,8 @@ async fn queued_offline_in_order(order: [u64; 2]) -> TestResult {
     );
     for item in [first, second] {
         sender.wait(item, CustodySide::Outbox, "delivered").await?;
-        recipient
-            .command(NodeCommand::Receive {
-                stream: DeliveryStream::Items,
-            })
-            .await?;
         let replay = recipient.command(NodeCommand::Inspect { item }).await?;
         assert_eq!(effect_count(&replay, item), 1);
-    }
-    sender
-        .command(NodeCommand::Retire {
-            mailbox: peer(4)?,
-            items: vec![first, second],
-        })
-        .await?;
-    recipient
-        .command(NodeCommand::Receive {
-            stream: DeliveryStream::Controls,
-        })
-        .await?;
-    for item in [first, second] {
-        let retired = recipient.wait(item, CustodySide::Inbox, "absent").await?;
-        assert_eq!(effect_count(&retired, item), 1);
     }
     recipient.stop().await?;
     sender.stop().await?;
@@ -224,16 +194,9 @@ async fn queued_offline_in_order(order: [u64; 2]) -> TestResult {
 
 #[tokio::test]
 async fn a_lost_answer_at_every_hop_preserves_one_effect_and_monotone_status() -> TestResult {
-    for (index, hop) in [
-        "submit",
-        "fetch",
-        "received",
-        "local",
-        "report",
-        "publication",
-    ]
-    .into_iter()
-    .enumerate()
+    for (index, hop) in ["submit", "push", "local", "report", "publication"]
+        .into_iter()
+        .enumerate()
     {
         let directory = tempfile::tempdir()?;
         let mut relay = ServiceProcess::start(&directory.path().join("relay")).await?;
@@ -250,12 +213,6 @@ async fn a_lost_answer_at_every_hop_preserves_one_effect_and_monotone_status() -
                 })
                 .await?;
         }
-        let item = enqueue(&mut sender, 200 + index as u64, peer(4)?).await?;
-        if sender_fault {
-            sender.command(NodeCommand::WaitBarrier).await?;
-            sender.connect(&relay).await?;
-        }
-        sender.wait(item, CustodySide::Outbox, "sent").await?;
         if !sender_fault {
             recipient
                 .command(NodeCommand::Arm {
@@ -264,11 +221,12 @@ async fn a_lost_answer_at_every_hop_preserves_one_effect_and_monotone_status() -
                 })
                 .await?;
         }
-        recipient
-            .command(NodeCommand::Receive {
-                stream: DeliveryStream::Items,
-            })
-            .await?;
+        let item = enqueue(&mut sender, 200 + index as u64, peer(4)?).await?;
+        if sender_fault {
+            sender.command(NodeCommand::WaitBarrier).await?;
+            sender.connect(&relay).await?;
+        }
+
         if !sender_fault {
             recipient.command(NodeCommand::WaitBarrier).await?;
             recipient.connect(&relay).await?;
@@ -281,11 +239,6 @@ async fn a_lost_answer_at_every_hop_preserves_one_effect_and_monotone_status() -
         let snapshot = recipient.wait(item, CustodySide::Inbox, expected).await?;
         assert_eq!(effect_count(&snapshot, item), 1, "hop {hop}");
         sender.wait(item, CustodySide::Outbox, expected).await?;
-        recipient
-            .command(NodeCommand::Receive {
-                stream: DeliveryStream::Items,
-            })
-            .await?;
         let repeated = recipient.command(NodeCommand::Inspect { item }).await?;
         assert_eq!(effect_count(&repeated, item), 1, "hop {hop} repeated");
         eprintln!(
@@ -301,141 +254,151 @@ async fn a_lost_answer_at_every_hop_preserves_one_effect_and_monotone_status() -
 #[tokio::test]
 async fn killing_a_process_at_every_committed_hop_recovers_without_duplicate_effects() -> TestResult
 {
-    for (index, hop) in [
-        "submit",
-        "fetch",
-        "received",
-        "local",
-        "report",
-        "publication",
-    ]
-    .into_iter()
-    .enumerate()
+    for (index, hop) in ["submit", "push", "local", "report", "publication"]
+        .into_iter()
+        .enumerate()
     {
-        eprintln!("OBS kill {hop}: beginning case");
-        let directory = tempfile::tempdir()?;
-        let sender_path = directory.path().join("sender");
-        let recipient_path = directory.path().join("recipient");
-        let mut relay = ServiceProcess::start(&directory.path().join("relay"))
+        kill_at_committed_hop(hop, index as u64).await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn killing_after_committed_report_recovers_without_duplicate_effects() -> TestResult {
+    kill_at_committed_hop("report", 4).await
+}
+
+async fn kill_at_committed_hop(hop: &str, index: u64) -> TestResult {
+    eprintln!("OBS kill {hop}: beginning case");
+    let directory = tempfile::tempdir()?;
+    let sender_path = directory.path().join("sender");
+    let recipient_path = directory.path().join("recipient");
+    let mut relay = ServiceProcess::start(&directory.path().join("relay"))
+        .await
+        .map_err(|error| format!("kill {hop} relay initialization: {error}"))?;
+    let mut control = relay.connect("control", "Bearer consumer-control").await?;
+    let mut sender = DeliveryNode::start(&sender_path, 2)
+        .await
+        .map_err(|error| format!("kill {hop} sender initialization: {error}"))?;
+    let mut recipient = DeliveryNode::start(&recipient_path, 4)
+        .await
+        .map_err(|error| format!("kill {hop} recipient initialization: {error}"))?;
+    sender.connect(&relay).await?;
+    recipient.connect(&relay).await?;
+    let sender_fault = matches!(hop, "submit" | "publication");
+    if sender_fault {
+        sender
+            .command(NodeCommand::Arm {
+                hop: hop.into(),
+                mode: FaultMode::Pause,
+            })
+            .await?;
+    }
+    if !sender_fault {
+        recipient
+            .command(NodeCommand::Arm {
+                hop: hop.into(),
+                mode: FaultMode::Pause,
+            })
+            .await?;
+    }
+    let item = enqueue(&mut sender, 300 + index, peer(4)?).await?;
+    if sender_fault {
+        sender.command(NodeCommand::WaitBarrier).await?;
+        inspect_live_hop(&mut control, &mut sender, &mut recipient, item, hop)
             .await
-            .map_err(|error| format!("kill {hop} relay initialization: {error}"))?;
-        let mut control = relay.connect("control", "Bearer consumer-control").await?;
-        let mut sender = DeliveryNode::start(&sender_path, 2)
+            .map_err(|error| format!("kill {hop} live snapshot: {error}"))?;
+        sender.kill().await?;
+        inspect_killed_hop(&sender_path, hop).await?;
+        sender = DeliveryNode::start(&sender_path, 2)
             .await
             .map_err(|error| format!("kill {hop} sender initialization: {error}"))?;
-        let mut recipient = DeliveryNode::start(&recipient_path, 4)
+        sender.connect(&relay).await?;
+    }
+
+    if !sender_fault {
+        recipient.command(NodeCommand::WaitBarrier).await?;
+
+        inspect_live_hop(&mut control, &mut sender, &mut recipient, item, hop)
+            .await
+            .map_err(|error| format!("kill {hop} live snapshot: {error}"))?;
+        recipient.kill().await?;
+        inspect_killed_hop(&recipient_path, hop).await?;
+        recipient = DeliveryNode::start(&recipient_path, 4)
             .await
             .map_err(|error| format!("kill {hop} recipient initialization: {error}"))?;
-        sender.connect(&relay).await?;
         recipient.connect(&relay).await?;
-        let sender_fault = matches!(hop, "submit" | "publication");
-        if sender_fault {
-            sender
-                .command(NodeCommand::Arm {
-                    hop: hop.into(),
-                    mode: FaultMode::Pause,
-                })
-                .await?;
+    }
+    let expected = if hop == "local" {
+        "uncertain"
+    } else {
+        "delivered"
+    };
+    let snapshot = match recipient.wait(item, CustodySide::Inbox, expected).await {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            eprintln!(
+                "OBS kill {hop} recovery failed; actual recipient={}",
+                recipient.command(NodeCommand::Inspect { item }).await?
+            );
+            eprintln!(
+                "OBS kill {hop} actual recipient custody={}",
+                recipient.command(NodeCommand::Snapshot).await?
+            );
+            return Err(error);
         }
-        let item = enqueue(&mut sender, 300 + index as u64, peer(4)?).await?;
-        if sender_fault {
-            sender.command(NodeCommand::WaitBarrier).await?;
-            inspect_live_hop(&mut control, &mut sender, &mut recipient, item, hop)
-                .await
-                .map_err(|error| format!("kill {hop} live snapshot: {error}"))?;
-            sender.kill().await?;
-            inspect_killed_hop(&sender_path, hop).await?;
-            sender = DeliveryNode::start(&sender_path, 2)
-                .await
-                .map_err(|error| format!("kill {hop} sender initialization: {error}"))?;
-            sender.connect(&relay).await?;
-        }
-        sender.wait(item, CustodySide::Outbox, "sent").await?;
-        if !sender_fault {
-            recipient
-                .command(NodeCommand::Arm {
-                    hop: hop.into(),
-                    mode: FaultMode::Pause,
-                })
-                .await?;
-        }
-        recipient
-            .command(NodeCommand::Receive {
-                stream: DeliveryStream::Items,
-            })
-            .await?;
-        if !sender_fault {
-            recipient.command(NodeCommand::WaitBarrier).await?;
-            if hop == "received" {
-                // Received is a different operation from local delivery. With
-                // concurrent drives its held acknowledgment does not order the
-                // local checkpoint. This success-recovery case selects a saved
-                // Delivered outcome; the unanswered local-call overlap has its
-                // own Uncertain/one-effect crash case.
-                let committed = recipient
-                    .wait(item, CustodySide::Inbox, "delivered")
-                    .await?;
-                assert_eq!(effect_count(&committed, item), 1);
-            }
-            inspect_live_hop(&mut control, &mut sender, &mut recipient, item, hop)
-                .await
-                .map_err(|error| format!("kill {hop} live snapshot: {error}"))?;
-            recipient.kill().await?;
-            inspect_killed_hop(&recipient_path, hop).await?;
-            recipient = DeliveryNode::start(&recipient_path, 4)
-                .await
-                .map_err(|error| format!("kill {hop} recipient initialization: {error}"))?;
-            recipient.connect(&relay).await?;
-        }
-        let expected = if hop == "local" {
-            "uncertain"
-        } else {
-            "delivered"
-        };
-        let snapshot = match recipient.wait(item, CustodySide::Inbox, expected).await {
-            Ok(snapshot) => snapshot,
-            Err(error) => {
-                eprintln!(
-                    "OBS kill {hop} recovery failed; actual recipient={}",
-                    recipient.command(NodeCommand::Inspect { item }).await?
-                );
-                eprintln!(
-                    "OBS kill {hop} actual recipient custody={}",
-                    recipient.command(NodeCommand::Snapshot).await?
-                );
-                return Err(error);
-            }
-        };
-        assert_eq!(effect_count(&snapshot, item), 1, "kill {hop}");
-        sender.wait(item, CustodySide::Outbox, expected).await?;
-        recipient
-            .command(NodeCommand::Receive {
-                stream: DeliveryStream::Items,
-            })
-            .await?;
-        assert_eq!(
-            effect_count(
-                &recipient.command(NodeCommand::Inspect { item }).await?,
-                item
-            ),
-            1
+    };
+    assert_eq!(effect_count(&snapshot, item), 1, "kill {hop}");
+    if let Err(error) = sender.wait(item, CustodySide::Outbox, expected).await {
+        eprintln!(
+            "OBS kill {hop} retained failed fixture at {}",
+            directory.keep().display()
         );
         eprintln!(
-            "OBS kill {hop}: recovered from real drive lease, both custodians {expected}, one external effect"
+            "OBS kill {hop} failed sender={}",
+            sender.command(NodeCommand::Inspect { item }).await?
         );
-        eprintln!("OBS kill {hop}: stopping recipient");
-        recipient
-            .stop()
-            .await
-            .map_err(|error| format!("kill {hop} recipient shutdown: {error}"))?;
-        eprintln!("OBS kill {hop}: stopping sender");
-        sender
-            .stop()
-            .await
-            .map_err(|error| format!("kill {hop} sender shutdown: {error}"))?;
-        eprintln!("OBS kill {hop}: stopping relay");
-        relay.kill().await?;
+        eprintln!(
+            "OBS kill {hop} failed sender custody={}",
+            sender.command(NodeCommand::Snapshot).await?
+        );
+        eprintln!(
+            "OBS kill {hop} failed recipient custody={}",
+            recipient.command(NodeCommand::Snapshot).await?
+        );
+        let observed = control_request(
+            &mut control,
+            fleet_sync_test_consumer::ControlRequest::DeliverySnapshot,
+        )
+        .await?;
+        eprintln!(
+            "OBS kill {hop} failed relay snapshot={}",
+            serde_json::to_string(&observed)?
+        );
+        return Err(error);
     }
+    assert_eq!(
+        effect_count(
+            &recipient.command(NodeCommand::Inspect { item }).await?,
+            item
+        ),
+        1
+    );
+    eprintln!(
+        "OBS kill {hop}: recovered from real drive lease, both custodians {expected}, one external effect"
+    );
+    eprintln!("OBS kill {hop}: stopping recipient");
+    recipient
+        .stop()
+        .await
+        .map_err(|error| format!("kill {hop} recipient shutdown: {error}"))?;
+    eprintln!("OBS kill {hop}: stopping sender");
+    sender
+        .stop()
+        .await
+        .map_err(|error| format!("kill {hop} sender shutdown: {error}"))?;
+    eprintln!("OBS kill {hop}: stopping relay");
+    relay.kill().await?;
     Ok(())
 }
 
@@ -449,8 +412,7 @@ async fn oversized_receipt_is_bounded_at_durable_checkpoint_across_process_resta
     let mut recipient = DeliveryNode::start(&recipient_path, 4).await?;
     sender.connect(&relay).await?;
     recipient.connect(&relay).await?;
-    let item = enqueue(&mut sender, 401, peer(4)?).await?;
-    sender.wait(item, CustodySide::Outbox, "sent").await?;
+
     recipient
         .command(NodeCommand::SetOversizedAcceptance { enabled: true })
         .await?;
@@ -460,11 +422,7 @@ async fn oversized_receipt_is_bounded_at_durable_checkpoint_across_process_resta
             mode: FaultMode::Pause,
         })
         .await?;
-    recipient
-        .command(NodeCommand::Receive {
-            stream: DeliveryStream::Items,
-        })
-        .await?;
+    let item = enqueue(&mut sender, 401, peer(4)?).await?;
     recipient.command(NodeCommand::WaitBarrier).await?;
     recipient.kill().await?;
     let mut connection = sqlx_turso::TursoConnectOptions::new()
@@ -493,11 +451,6 @@ async fn oversized_receipt_is_bounded_at_durable_checkpoint_across_process_resta
         .await?;
     assert_eq!(effect_count(&snapshot, item), 1);
     sender.wait(item, CustodySide::Outbox, "uncertain").await?;
-    recipient
-        .command(NodeCommand::Receive {
-            stream: DeliveryStream::Items,
-        })
-        .await?;
     assert_eq!(
         effect_count(
             &recipient.command(NodeCommand::Inspect { item }).await?,
@@ -523,14 +476,8 @@ async fn inspect_live_hop(
     hop: &str,
 ) -> TestResult {
     use fleet_sync_test_consumer::{ControlAnswer, ControlRequest};
-    let ControlAnswer::DeliverySnapshot(relay) = control_request(
-        control,
-        ControlRequest::DeliverySnapshot {
-            mailbox: peer(4)?,
-            origin: peer(2)?,
-        },
-    )
-    .await?
+    let ControlAnswer::DeliverySnapshot(relay) =
+        control_request(control, ControlRequest::DeliverySnapshot).await?
     else {
         return Err("missing delivery inspection".into());
     };
@@ -538,36 +485,52 @@ async fn inspect_live_hop(
     let recipient_item = recipient.command(NodeCommand::Inspect { item }).await?;
     eprintln!("OBS live {hop} item before kill={recipient_item}");
     let recipient = recipient.command(NodeCommand::Snapshot).await?;
-    let mailbox = relay
-        .mailbox
+    let relay_item = relay
+        .relay
         .iter()
-        .find(|row| row.category == "mailbox" && row.identity == item.as_uuid().to_string())
-        .ok_or("missing committed mailbox custody")?;
-    let bytes = mailbox
+        .find(|row| row.category == "outbox" && row.identity == item.as_uuid().to_string())
+        .ok_or("missing committed relay custody")?;
+    let bytes = relay_item
         .payload_bytes
         .as_deref()
-        .ok_or("missing mailbox bytes")?
+        .ok_or("missing relay bytes")?
         .parse::<u64>()?;
-    if matches!(hop, "received" | "local" | "report") {
-        assert_eq!(bytes, 0, "mailbox still holds received body at {hop}");
-    } else {
-        assert!(bytes > 0, "mailbox lost offline-recipient body at {hop}");
+    if hop == "push" {
+        assert!(bytes > 0, "relay must retain custody until the Push answer");
     }
-    if matches!(hop, "received" | "local" | "report") {
-        assert!(
-            recipient
-                .as_array()
-                .is_some_and(|rows| rows.iter().any(|row| row["category"] == "inbox"
-                    && row["payload_bytes"]
-                        .as_str()
-                        .is_some_and(|bytes| bytes.parse::<u64>().is_ok_and(|bytes| bytes > 0))))
-        );
+    if hop == "report" {
+        assert_eq!(bytes, 0, "Report proves recipient custody");
+    }
+    if matches!(hop, "push" | "local" | "report") {
+        let row = recipient
+            .as_array()
+            .and_then(|rows| {
+                rows.iter().find(|row| {
+                    row["category"] == "inbox" && row["identity"] == item.as_uuid().to_string()
+                })
+            })
+            .ok_or("missing committed recipient custody")?;
+        let bytes = row["payload_bytes"]
+            .as_str()
+            .ok_or("missing inbox bytes")?
+            .parse::<u64>()?;
+        let header: serde_json::Value =
+            serde_json::from_str(row["content"].as_str().ok_or("missing inbox header")?)?;
+        if header["progress"]["kind"] == "final" {
+            assert_eq!(bytes, 0, "final originals must compact their bodies");
+            assert!(matches!(
+                header["progress"]["value"]["outcome"]["kind"].as_str(),
+                Some("delivered" | "uncertain" | "expired" | "prevented" | "dropped" | "refused")
+            ));
+        } else {
+            assert!(bytes > 0, "live recipient custody lost its body at {hop}");
+        }
     }
     eprintln!(
-        "OBS live {hop} committed owner snapshots: mailboxBodyBytes={bytes}, senderRows={}, recipientRows={}, originRows={}",
+        "OBS live {hop} committed owner snapshots: relayBodyBytes={bytes}, senderRows={}, recipientRows={}, relayRows={}",
         sender.as_array().map_or(0, Vec::len),
         recipient.as_array().map_or(0, Vec::len),
-        relay.origin.len()
+        relay.relay.len()
     );
     Ok(())
 }
@@ -581,7 +544,7 @@ async fn inspect_killed_hop(directory: &std::path::Path, hop: &str) -> TestResul
             .create_if_missing(false)
             .connect()
             .await?;
-        let rows=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT 'mailbox' AS hop,COUNT(*) AS items,COALESCE(SUM(payload_bytes),0) AS bytes FROM _fleet_sync_mail_items UNION ALL SELECT 'outbox',COUNT(*),COALESCE(SUM(payload_bytes),0) FROM _fleet_sync_outbox_items UNION ALL SELECT 'inbox',COUNT(*),COALESCE(SUM(payload_bytes),0) FROM _fleet_sync_inbox_items").fetch_all(&mut connection).await?;
+        let rows=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT 'outbox' AS hop,COUNT(*) AS items,COALESCE(SUM(payload_bytes),0) AS bytes FROM _fleet_sync_outbox_items UNION ALL SELECT 'inbox',COUNT(*),COALESCE(SUM(payload_bytes),0) FROM _fleet_sync_inbox_items").fetch_all(&mut connection).await?;
         for row in rows {
             eprintln!(
                 "OBS kill barrier {hop}: {} items={} bodyBytes={}",

@@ -35,6 +35,7 @@ impl DeliveryTypes for MapDelivery {
     const MAX_STATUS_ROUTE_BYTES: u32 = 4;
     type Body = ConsumerMap;
     type Sender = ();
+
     type Address = ();
     type Acceptance = ();
     type LocalObservation = ();
@@ -63,7 +64,9 @@ fn consumer_map_field_order_does_not_change_item_identity() {
 fn decoding_rejects_changed_content_with_the_original_valid_digest() {
     let item = DeliveryItem::<NoDelivery>::new(
         ItemId::new("01900000-0000-7000-8000-000000000001".parse().unwrap()).unwrap(),
-        (),
+        Submitter::Machine(
+            PeerId::new("019eef00-0000-7000-8000-000000000001".parse().unwrap()).unwrap(),
+        ),
         Recipient {
             peer: PeerId::new("019eef00-0000-7000-8000-000000000002".parse().unwrap()).unwrap(),
             address: (),

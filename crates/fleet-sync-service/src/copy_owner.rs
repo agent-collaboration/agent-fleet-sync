@@ -6,7 +6,7 @@ use fleet_sync_protocol::{ConsumerProtocol, CopyStatusAnswer, CopyUnavailableRea
 use fleet_sync_receiver::{ApplyFollowUp, RECEIVER_MIGRATOR, initialize_hook};
 use fleet_sync_session::PeerAuthenticator;
 use fleet_sync_tokio_runner::{ObjectKey, ObjectOptions};
-use runtime_primitives::SystemClock;
+
 use sqlx_core::migrate::Migrator;
 use std::sync::Arc;
 use tokio::sync::{Mutex, watch};
@@ -50,7 +50,10 @@ impl<
                     database.as_uuid()
                 ))
                 .map_err(ServiceError::rule)?;
-                let host = Arc::new(ServiceHost::new(self.calls.clone(), SystemClock));
+                let host = Arc::new(ServiceHost::new(
+                    self.calls.clone(),
+                    crate::ServiceClock(self.options.clock.clone()),
+                ));
                 let object = self
                     .objects
                     .object(

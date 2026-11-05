@@ -16,23 +16,26 @@ use sqlx_core::{
 };
 use std::{marker::PhantomData, sync::Arc};
 
-pub struct HolderChangeTask<S, D> {
+pub struct HolderChangeTask<S, D, H> {
     config: RegistryConfig,
+    hook: std::sync::Arc<H>,
     clock: Arc<dyn Clock>,
     store: PhantomData<fn() -> (S, D)>,
 }
-impl<S, D> HolderChangeTask<S, D> {
-    pub const fn new(config: RegistryConfig, clock: Arc<dyn Clock>) -> Self {
+impl<S, D, H> HolderChangeTask<S, D, H> {
+    pub const fn new(config: RegistryConfig, clock: Arc<dyn Clock>, hook: Arc<H>) -> Self {
         Self {
             config,
+            hook,
             clock,
             store: PhantomData,
         }
     }
 }
-impl<S, D> Task for HolderChangeTask<S, D>
+impl<S, D, H> Task for HolderChangeTask<S, D, H>
 where
     S: AtomicStore,
+    for<'t> H: crate::LeaseChangeHook<S::Scope<'t>>,
     D: Database,
     for<'t> S::Scope<'t>: TransactionScope<Database = D>,
     D::Arguments: IntoArguments<D>,
@@ -50,13 +53,19 @@ where
         ctx: &mut C,
         request: &HolderChangeRequest,
     ) -> Result<HolderChangeAnswer, OperationFailure> {
-        holder_change::<C, D>(ctx, request, &self.config)
-            .await
-            .map_err(Into::into)
+        holder_change::<C, D, H>(
+            ctx,
+            request,
+            &self.config,
+            std::sync::Arc::clone(&self.hook),
+        )
+        .await
+        .map_err(Into::into)
     }
     fn before_resume<'s, 't>(
         &'s self,
         scope: &'s mut S::Scope<'t>,
+        _operation: &'s durable_steps::OperationId,
         key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<Self::Output>, StoreError>> {
         Box::pin(async move {
@@ -148,12 +157,12 @@ where
                     .enter(crate::HolderChangePhase::Ended, now)
                     .map_err(storage_error)?;
                 RegistryStorage(scope)
-                    .save_transfer(&record)
+                    .save_transfer(&record, now)
                     .await
                     .map_err(storage_error)?;
             }
             if matches!(record.intent.request, HolderChangeRequest::Claim { .. }) {
-                crate::transfer_cancellation::admit_settlement::<S, D>(scope, id, settlement)
+                crate::transfer_cancellation::admit_settlement::<S, D>(scope, id, settlement, now)
                     .await
                     .map_err(storage_error)?;
             }

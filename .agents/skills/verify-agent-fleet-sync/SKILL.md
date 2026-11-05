@@ -1,6 +1,6 @@
 ---
 name: verify-agent-fleet-sync
-description: "Use when verifying agent-fleet-sync stored identity integrity, native holder refusals, target schema support, malformed session frames, replication copy containment, guarded read transactions, transaction scope views, typed upgrade refusals, checked-query freshness, or public engine migrators and their migration corpora after protocol, delivery, registry, session, receiver, sender, writer, store, transport, or query-generator changes. Not for product implementation or delivery acceptance."
+description: "Use when verifying agent-fleet-sync delivery host roles and relay retirement, Local-to-Push reports, typed cancel-report refusals, stored identity integrity, native holder refusals, target schema support, malformed session frames, replication copy containment, guarded read transactions, transaction scope views, typed upgrade refusals, checked-query freshness, or public engine migrators and their migration corpora after protocol, delivery, registry, session, receiver, sender, writer, store, transport, or query-generator changes. Not for product implementation or delivery acceptance."
 ---
 
 # Verify Agent Fleet Sync
@@ -16,20 +16,27 @@ Transaction scope views use their real Turso, TokioObject and Durable Object
 owners on the caller's declared targets.
 Public engine migrators use their exported corpora and real Turso storage rules
 in the host-owned transaction; their service callers remain a separate check.
+Delivery lifecycle journeys use real Turso custody and durable engines, with
+explicit Machine/Relay roles and reopen readbacks.
 
-1. Establish the declared source revision, configuration and client. Work from
-   the pinned source archive's root and coordinate an exclusive build window.
+1. Establish the declared source revision, configuration and client. Delivery
+   lifecycle journeys use the declared checkout directly; other journeys use
+   their pinned source archive. Coordinate builds that share a target.
    Use [the build setup](references/build-and-evidence.md): the assigned worktree's
    normal target only, with native binaries under `target/debug`. Never make
-   per-run or scratch target copies. Builds remain ordered by the exclusive slot.
+   per-run or scratch target copies. Run packages sequentially in that target.
    Source pinning and recorded binary hashes establish each run's provenance;
    a fresh target directory is not an independence requirement. The launcher
    builds the existing `tests/consumer` executable and the native journey driver
    using the repository's pinned Rust toolchain and Cargo configuration. It runs
    `df -h .` before each build and retains the output.
    For focused API, transport or generator proof, use the reference's selection
-   on the archived target. Do not build an unrelated session journey.
+   on its declared target. Do not build an unrelated session journey.
 2. Select the teaching for every surface in the requested observation:
+   - IF delivery host roles, relay table retirement, Local-to-Push promotion or
+     typed cancel-report refusal is in scope, load
+     `references/delivery-lifecycle.md` and return the selected journeys,
+     source target, exact report/refusal outcomes and remaining proof gaps.
    - IF frame decoding, envelope handling or malformed-body socket recovery is
      in scope, load `references/frame-shapes.md` and return the adopted outcome,
      selected socket cases, unavailable controls and target.
@@ -62,6 +69,9 @@ in the host-owned transaction; their service callers remain a separate check.
 
 | Journey | Command | When to run |
 |---|---|---|
+| relay retirement and lifecycle by role | `bash scripts/verification/delivery-lifecycle.sh` | Host roles, relay bootstrap, backfill, inspection or record removal changes. |
+| Local then Push promotion | Same script; see `references/delivery-lifecycle.md`. | Promotion, report debt, projection rollback or replay changes. |
+| typed cancel-report refusal | Same script; see `references/delivery-lifecycle.md`. | Report validation, terminal refusal or host error translation changes. |
 | stored cancel identities (focused receive) | See the real inbox tests in the reference. | Stored cancellation identity decoding changes (SO51). |
 | holder-refusals | `bash scripts/verification/holder-refusals.sh` | Holder refusal payloads or recorded outcome replay change (SO52). |
 | target-capability | `bash scripts/verification/target-capability.sh` | Schema declarations, attach ordering or holder admission change (SO53). |

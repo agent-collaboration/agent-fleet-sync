@@ -9,10 +9,11 @@ use sqlx_core::{
     encode::Encode, types::Type,
 };
 
-impl<S, D> Outbox<'_, S, D>
+impl<S, D, B> Outbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
@@ -21,7 +22,11 @@ where
     pub async fn publish_status(
         &mut self,
         publication: StatusPublication<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
+        if now >= crate::removal_deadline(publication.item) {
+            return Ok(());
+        }
         crate::delivery_sizes::check_status::<D>(&publication.status)?;
         if publication.version.value() == 0 || publication.status.rank() == 0 {
             return Err(DeliveryError::InvalidBatch);
@@ -41,7 +46,7 @@ where
                 record.status = publication.status;
                 record.version = publication.version;
                 record.cancel = publication.cancel;
-                return self.save_recovered(&record).await;
+                return self.save_recovered(&record, now).await;
             }
             _ => return Ok(()),
         };
@@ -64,16 +69,20 @@ where
         header.version = publication.version;
         header.cancel = publication.cancel;
         header.submit_attempted = true;
+        header.handed_off_at.get_or_insert(now);
         // A canonical relay status proves the relay's custody. The body stays
         // only in that custody and the receiving hop, never in sender history.
-        self.save_header(&header, None).await
+        self.save_header(&header, None, now).await
     }
     pub async fn status_cursor(&mut self) -> Result<StatusCursor, DeliveryError> {
         match queries::read_outbox_status(self.scope)
             .await
             .map_err(sql_error)?
         {
-            Some(row) => decode(row.record, "outbox status cursor"),
+            Some(row) => {
+                stored_row_id(&row.id, "_fleet_sync_outbox_status", "singleton 1".into())?;
+                integer(row.cursor, row.cursor_class, "outbox status cursor").map(StatusCursor::new)
+            }
             None => Ok(StatusCursor::new(0)),
         }
     }
@@ -81,6 +90,7 @@ where
         &mut self,
         after: StatusCursor,
         batch: StatusFetchResult<D::Acceptance>,
+        now: SyncTime,
     ) -> Result<(), DeliveryError> {
         let current = self.status_cursor().await?;
         if after > current || batch.through < after {
@@ -98,17 +108,25 @@ where
             return Err(DeliveryError::InvalidBatch);
         }
         for event in batch.events {
-            self.publish_status(StatusPublication {
-                item: event.item,
-                status: event.status,
-                version: event.version,
-                cancel: event.cancel,
-            })
+            self.publish_status(
+                StatusPublication {
+                    item: event.item,
+                    status: event.status,
+                    version: event.version,
+                    cancel: event.cancel,
+                },
+                now,
+            )
             .await?;
         }
-        queries::write_outbox_status(self.scope, encode(&current.max(batch.through))?)
-            .await
-            .map_err(sql_error)
+        queries::write_outbox_status(
+            self.scope,
+            encode(&current.max(batch.through))?,
+            now.unix_millis().to_string(),
+            now.unix_millis().to_string(),
+        )
+        .await
+        .map_err(sql_error)
     }
 }
 

@@ -315,10 +315,8 @@ pub(super) async fn open_store(
         store
             .transaction(|scope| {
                 Box::pin(async move {
-                    let mut migrator = sqlx_core::migrate::Migrator::with_migrations(
-                        LEASE_MIGRATOR.iter().cloned().collect::<Vec<_>>(),
-                    );
-                    migrator.dangerous_set_table_name("_fleet_sync_registry_migrations");
+                    let migrator =
+                        LEASE_MIGRATOR.with_history_table("_fleet_sync_registry_migrations");
                     migrator
                         .run_direct(None, scope.executor(), false)
                         .await
@@ -339,9 +337,13 @@ pub(super) async fn open_store(
             store
                 .transaction(move |scope| {
                     Box::pin(async move {
-                        report_schema_support(scope, &report)
-                            .await
-                            .map_err(storage)?;
+                        report_schema_support(
+                            scope,
+                            &report,
+                            fleet_sync_protocol::SyncTime::from_unix_millis(1000),
+                        )
+                        .await
+                        .map_err(storage)?;
                         Ok(())
                     })
                 })
@@ -352,14 +354,35 @@ pub(super) async fn open_store(
 }
 pub(super) fn engine(store: Arc<TestStore>, host: Arc<TestHost>) -> TestResult<TestEngine> {
     let mut engine = TestEngine::new(store, Arc::clone(&host));
-    engine.register(RegistrationTask::<TestStore, Turso>::new(config()?))?;
-    engine.register(ImportTask::<TestStore, Turso>::new(config()?))?;
-    engine.register(RetirementTask::<TestStore, Turso>::new(config()?))?;
+    engine.register(
+        RegistrationTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
+            config()?,
+            host.clone(),
+            std::sync::Arc::new(crate::NoLeaseChangeHook),
+        ),
+    )?;
+    engine.register(
+        ImportTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
+            config()?,
+            host.clone(),
+            std::sync::Arc::new(crate::NoLeaseChangeHook),
+        ),
+    )?;
+    engine.register(
+        RetirementTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
+            config()?,
+            host.clone(),
+            std::sync::Arc::new(crate::NoLeaseChangeHook),
+        ),
+    )?;
     engine.register(PreviewTakeoverTask::<TestStore, Turso>::new(config()?))?;
-    engine.register(HolderChangeTask::<TestStore, Turso>::new(
-        config()?,
-        host.clone(),
-    ))?;
+    engine.register(
+        HolderChangeTask::<TestStore, Turso, crate::NoLeaseChangeHook>::new(
+            config()?,
+            host.clone(),
+            std::sync::Arc::new(crate::NoLeaseChangeHook),
+        ),
+    )?;
     engine.register(HolderChangeCancelTask::<TestStore, Turso>::new(
         config()?,
         host,
@@ -418,15 +441,26 @@ impl<T: Task, const VERSION: u32> Task for VersionedTask<T, VERSION> {
     ) -> durable_steps::BoxFuture<'s, Result<(), durable_steps::StoreError>> {
         self.0.on_failed(scope, key, failure)
     }
-    fn before_resume<'s, 't>(
+    fn retry_not_later_than<'s, 't>(
         &'s self,
         scope: &'s mut <Self::Store as AtomicStore>::Scope<'t>,
         key: &'s RequestKey,
     ) -> durable_steps::BoxFuture<
         's,
+        Result<Option<durable_steps::SyncTime>, durable_steps::StoreError>,
+    > {
+        self.0.retry_not_later_than(scope, key)
+    }
+    fn before_resume<'s, 't>(
+        &'s self,
+        scope: &'s mut <Self::Store as AtomicStore>::Scope<'t>,
+        operation: &'s durable_steps::OperationId,
+        key: &'s RequestKey,
+    ) -> durable_steps::BoxFuture<
+        's,
         Result<durable_steps::Resume<Self::Output>, durable_steps::StoreError>,
     > {
-        self.0.before_resume(scope, key)
+        self.0.before_resume(scope, operation, key)
     }
 }
 

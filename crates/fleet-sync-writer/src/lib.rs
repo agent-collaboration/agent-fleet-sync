@@ -156,4 +156,5 @@ mod writer_pending_release_tests;
 #[cfg(test)]
 mod writer_release_tests;
 #[cfg(test)]
+#[path = "writer_snapshot_test.rs"]
 mod writer_snapshot_tests;

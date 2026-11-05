@@ -1,24 +1,17 @@
-use crate::{
-    ServiceConsumer, ServiceError, ServiceObject, delivery_owner::DeliveryObject,
-    service_state::ServiceState,
-};
+use crate::{ServiceConsumer, ServiceError, delivery_relay::*, service_state::ServiceState};
+use durable_steps::AtomicStore;
 use fleet_sync_delivery::{
-    DeliveryError, Mailbox, MailboxFailureDisposition, MailboxOperation, PublishStatus,
-    StatusStream, admit_publications, classify_delivery_store_error, delivery_rollback,
-    mailbox_failure_disposition,
+    DeliveryTransactionFailure, Outbox, StatusStream, classify_delivery_store_error,
+    delivery_rollback,
 };
 use fleet_sync_protocol::*;
 use fleet_sync_session::PeerAuthenticator;
 use runtime_primitives::{Clock, WakeScheduler};
-use sqlx_turso::Turso;
 
 impl<
     P: ConsumerProtocol,
     C: ServiceConsumer<P>,
-    A: PeerAuthenticator<
-            Material = String,
-            Route = <P::Delivery as fleet_sync_protocol::DeliveryTypes>::StatusRoute,
-        >,
+    A: PeerAuthenticator<Material = String, Route = <P::Delivery as DeliveryTypes>::StatusRoute>,
 > ServiceState<P, C, A>
 {
     pub(crate) async fn delivery_request(
@@ -27,164 +20,125 @@ impl<
         route: <P::Delivery as DeliveryTypes>::StatusRoute,
         request: DeliveryRequest<P::Delivery>,
     ) -> Result<DeliveryAnswer<P::Delivery>, ServiceError> {
-        let limits = self.delivery_limits()?;
-        if let DeliveryRequest::StatusFetch { after, limit, .. } = request {
-            let owner = self.delivery_owner(DeliveryObject::Status(peer)).await?;
-            return owner
-                .object
-                .rule_transaction(move |scope| {
-                    Box::pin(async move {
-                        StatusStream::<_, P::Delivery>::new(scope, peer, route)
-                            .fetch(peer, after, limit)
-                            .await
-                    })
-                })
-                .await
-                .map(DeliveryAnswer::StatusFetch)
-                .map_err(ServiceError::rule);
-        }
-        if let DeliveryRequest::StatusAck { through, .. } = request {
-            let owner = self.delivery_owner(DeliveryObject::Status(peer)).await?;
-            return owner
-                .object
-                .rule_transaction(move |scope| {
-                    Box::pin(async move {
-                        StatusStream::<_, P::Delivery>::new(scope, peer, route)
-                            .acknowledge(through)
-                            .await
-                    })
-                })
-                .await
-                .map(DeliveryAnswer::StatusAck)
-                .map_err(ServiceError::rule);
-        }
-        let mailbox = match &request {
-            DeliveryRequest::Submit { item, .. } => item.recipient().peer,
-            DeliveryRequest::Query { mailbox, .. }
-            | DeliveryRequest::Retire { mailbox, .. }
-            | DeliveryRequest::Settle { mailbox, .. } => *mailbox,
-            _ => peer,
-        };
-        let owner = self
-            .delivery_owner(DeliveryObject::Mailbox(mailbox))
-            .await?;
-        let now = owner.object.host().now();
-        let operation = match &request {
-            DeliveryRequest::Submit { .. } => MailboxOperation::Submit,
-            DeliveryRequest::Fetch { .. } => MailboxOperation::Fetch,
-            DeliveryRequest::Received { .. } => MailboxOperation::Received,
-            DeliveryRequest::Report { .. } => MailboxOperation::Report,
-            DeliveryRequest::Query { .. } => MailboxOperation::Query,
-            DeliveryRequest::Retire { .. } => MailboxOperation::Retire,
-            DeliveryRequest::Settle { .. } => MailboxOperation::Settle,
-            DeliveryRequest::StatusFetch { .. } | DeliveryRequest::StatusAck { .. } => {
-                return Err(ServiceError::rule(DeliveryError::InvalidBatch));
-            }
-        };
-        #[cfg(feature = "test-support")]
-        let retirement = matches!(&request, DeliveryRequest::Retire { .. });
-        if let Some(kind) = *owner.health.borrow() {
-            return Ok(DeliveryAnswer::MailboxUnavailable {
-                reason: DeliveryRefusal::ProcessingFailed { kind },
+        let config = self
+            .options
+            .delivery
+            .as_ref()
+            .ok_or_else(|| ServiceError::rule("delivery is not installed"))?;
+        if let DeliveryRequest::Settle { submitter, .. } = &request
+            && *submitter != Submitter::Machine(peer)
+        {
+            return Ok(DeliveryAnswer::DeliveryUnavailable {
+                reason: DeliveryRefusal::NotSubmitter,
             });
         }
-        owner.ensure_schema().await.map_err(|error| {
-            tracing::warn!(?mailbox, phase="migration", %error, "delivery mailbox operation retry");
-            ServiceError::from(error)
-        })?;
-        let result = owner
-            .object
-            .rule_transaction(move |scope| {
+        let submitting = matches!(request, DeliveryRequest::Submit { .. });
+        let reporting = matches!(request, DeliveryRequest::Report { .. });
+        let stream_request = matches!(
+            request,
+            DeliveryRequest::StatusFetch { .. } | DeliveryRequest::StatusAck { .. }
+        );
+        let now = self.registry.host().now();
+        let limits = config.limits;
+        let relay = config.relay;
+        let binding = self.consumer.clone();
+        let result = self
+            .registry
+            .transaction(move |scope| {
                 Box::pin(async move {
-                    async {
-                        let mut mailbox = Mailbox::<_, P::Delivery>::new(scope, mailbox, limits);
-                        let answer = match request {
-                            DeliveryRequest::Submit { item, .. } => DeliveryAnswer::Submit(
-                                mailbox.submit(peer, item, now, route, None).await?,
-                            ),
-                            DeliveryRequest::Fetch {
-                                stream,
-                                after,
-                                max_items,
-                                max_bytes,
-                                inbox_room_bytes,
-                                ..
-                            } => DeliveryAnswer::Fetch(
-                                mailbox
-                                    .fetch_with_budget(
-                                        peer,
-                                        fleet_sync_delivery::FetchInput {
-                                            stream,
-                                            after,
-                                            max_items,
-                                            max_bytes,
-                                            inbox_room_bytes,
-                                        },
-                                        now,
+                    let answer = async {
+                        let owner = Submitter::Machine(peer);
+                        match request {
+                            DeliveryRequest::Submit { item, .. } => Ok(DeliveryAnswer::Submit(
+                                Outbox::<_, P::Delivery, _>::new(scope, limits, binding.as_ref())
+                                    .submit_relay::<RelayPush<P::Delivery, C>, RelayRemoval>(
+                                        owner, item, relay, route, now,
                                     )
                                     .await?,
-                            ),
-                            DeliveryRequest::Received {
-                                stream, through, ..
-                            } => DeliveryAnswer::Received(
-                                mailbox.received(peer, stream, through, now).await?,
-                            ),
-                            DeliveryRequest::Report { report, .. } => {
-                                DeliveryAnswer::Report(mailbox.report(peer, report).await?)
-                            }
+                            )),
+                            DeliveryRequest::Report { report, .. } => Ok(DeliveryAnswer::Report(
+                                Outbox::<_, P::Delivery, _>::new(scope, limits, binding.as_ref())
+                                    .recipient_report::<RelayPublication<P::Delivery>>(
+                                        peer, report, now,
+                                    )
+                                    .await?,
+                            )),
                             DeliveryRequest::Query { items, .. } => {
-                                DeliveryAnswer::Query(mailbox.query(&items).await?)
+                                let mut statuses = Vec::with_capacity(items.len());
+                                for item in items {
+                                    statuses.push(
+                                        Outbox::<_, P::Delivery, _>::new(
+                                            scope,
+                                            limits,
+                                            binding.as_ref(),
+                                        )
+                                        .relay_query(owner, item)
+                                        .await?,
+                                    );
+                                }
+                                Ok(DeliveryAnswer::Query(QueryResult { statuses }))
                             }
-                            DeliveryRequest::Retire { call, items, .. } => {
-                                DeliveryAnswer::Retire(mailbox.retire(peer, &call, &items).await?)
+                            DeliveryRequest::Settle {
+                                submitter,
+                                item,
+                                digest,
+                                ..
+                            } => Ok(DeliveryAnswer::Settle(
+                                Outbox::<_, P::Delivery, _>::new(scope, limits, binding.as_ref())
+                                    .relay_settle::<RelayRemoval>(submitter, item, digest, now)
+                                    .await?,
+                            )),
+                            DeliveryRequest::StatusFetch { after, limit, .. } => {
+                                Ok(DeliveryAnswer::StatusFetch(
+                                    StatusStream::<_, P::Delivery>::new(scope, owner, route)
+                                        .fetch(owner, after, limit)
+                                        .await?,
+                                ))
                             }
-                            DeliveryRequest::Settle { item, digest, .. } => {
-                                DeliveryAnswer::Settle(mailbox.settle(item, digest).await?)
+                            DeliveryRequest::StatusAck { through, .. } => {
+                                Ok(DeliveryAnswer::StatusAck(
+                                    StatusStream::<_, P::Delivery>::new(scope, owner, route)
+                                        .acknowledge(through, now)
+                                        .await?,
+                                ))
                             }
-                            DeliveryRequest::StatusFetch { .. }
-                            | DeliveryRequest::StatusAck { .. } => {
-                                return Err(DeliveryError::InvalidBatch);
-                            }
-                        };
-                        admit_publications::<
-                            _,
-                            P::Delivery,
-                            PublishStatus<ServiceObject, Turso, P::Delivery>,
-                        >(scope)
-                        .await?;
-                        Ok::<_, DeliveryError>(answer)
+                        }
                     }
-                    .await
-                    .map_err(delivery_rollback)
+                    .await;
+                    answer.map_err(delivery_rollback)
                 })
             })
             .await;
-        if result.is_ok() {
-            owner.object.host().wake_at(owner.object.host().now()).await.map_err(|error| {
-                tracing::warn!(?mailbox, phase="requestWake", %error, "delivery mailbox operation retry");
-                ServiceError::rule(error)
-            })?;
-        }
-        #[cfg(feature = "test-support")]
-        if retirement && result.is_ok() {
-            self.retirement_reply_probe.after_commit().await;
-        }
         match result {
-            Ok(answer) => Ok(answer),
-            Err(error) => match mailbox_failure_disposition(
-                mailbox,
-                operation,
-                classify_delivery_store_error(error),
-            ) {
-                MailboxFailureDisposition::Answer { answer, corruption } => {
-                    if let Some(corruption) = corruption {
-                        owner.mark_corrupt(corruption.mailbox, &corruption.field);
-                    }
-                    Ok(answer)
+            Ok(answer) => {
+                self.registry
+                    .host()
+                    .wake_at(self.registry.host().now())
+                    .await
+                    .map_err(ServiceError::rule)?;
+                Ok(answer)
+            }
+            Err(error) if stream_request => Err(ServiceError::rule(error)),
+            Err(error) => match classify_delivery_store_error(error) {
+                DeliveryTransactionFailure::Refused(reason) if submitting => {
+                    Ok(DeliveryAnswer::Submit(SubmitResult::Refused { reason }))
                 }
-                MailboxFailureDisposition::Unhandled(error) => {
-                    tracing::warn!(?mailbox, phase="request", %error, "delivery mailbox operation retry");
-                    Err(ServiceError::rule(error))
+                DeliveryTransactionFailure::Refused(reason) if reporting => {
+                    Ok(DeliveryAnswer::Report(ReportResult::Refused { reason }))
+                }
+                DeliveryTransactionFailure::Refused(reason) => {
+                    Ok(DeliveryAnswer::DeliveryUnavailable { reason })
+                }
+                DeliveryTransactionFailure::Corrupt { .. } => {
+                    Ok(DeliveryAnswer::DeliveryUnavailable {
+                        reason: DeliveryRefusal::ProcessingFailed {
+                            kind: DeliveryFailureKind::CustodyCorrupt,
+                        },
+                    })
+                }
+                failure => {
+                    tracing::warn!(?peer,phase="request",%failure,"delivery relay operation retry");
+                    Err(ServiceError::rule(failure))
                 }
             },
         }

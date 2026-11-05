@@ -1,6 +1,5 @@
 use crate::{
-    DeliveryConfigError, custody_record::*, delivery_sizes::canonical_size, inbox_record::*,
-    outbox_record::*, *,
+    DeliveryConfigError, delivery_sizes::canonical_size, inbox_record::*, outbox_record::*, *,
 };
 use serde::Serialize;
 
@@ -95,10 +94,12 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
             largest_size = size;
         }
     }
+    let sender_placeholder = Submitter::Machine(peer);
+    let sender_placeholder_bytes = bytes(&sender_placeholder)?;
     let cancel = DeliveryEnvelope::<NoDelivery>::Cancel(
         DeliveryCancel::new(
             item,
-            (),
+            sender_placeholder,
             Recipient { peer, address: () },
             Some(time),
             CancelBody { target: item },
@@ -106,15 +107,13 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
         .map_err(|error| invalid(Box::new(error)))?,
     );
     let cancel_bytes = bytes(&cancel)?
-        .checked_sub(8)
+        .checked_sub(sender_placeholder_bytes + 4)
         .and_then(|size| size.checked_add(u64::from(D::MAX_SENDER_BYTES)))
         .and_then(|size| size.checked_add(u64::from(D::MAX_ADDRESS_BYTES)))
         .ok_or(DeliveryConfigError::ReserveOverflow)?;
     let statuses = [
         DeliveryStatus::Queued,
-        DeliveryStatus::Sent {
-            seq: DeliverySeq::new(u64::MAX),
-        },
+        DeliveryStatus::Sent,
         DeliveryStatus::AtRecipient,
         DeliveryStatus::Held,
         DeliveryStatus::Delivered { acceptance: () },
@@ -126,7 +125,6 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
         },
     ];
     let mut outbox_header = 0;
-    let mut mailbox_header = 0;
     let mut publication = 0;
     for status in statuses {
         let delivered = matches!(status, DeliveryStatus::Delivered { .. });
@@ -135,6 +133,13 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
                 id: item,
                 digest: digest.as_str().into(),
                 relay: peer,
+                submitter: Some(crate::Submitter::Machine(peer)),
+                consumer_sender: Some("\\".repeat(D::MAX_SENDER_BYTES as usize)),
+                created_at: crate::custody_record::created_at(item),
+                admitted_at: Some(time),
+                handed_off_at: Some(time),
+                last_report_seq: ReportSeq::new(u64::MAX),
+                status_route: Some("x".repeat(D::MAX_STATUS_ROUTE_BYTES as usize)),
                 recipient: peer,
                 valid_until: Some(time),
                 status: status.clone(),
@@ -151,40 +156,10 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
             delivered,
             maximum,
         )?);
-        mailbox_header = mailbox_header.max(with_route::<D>(with_acceptance(
-            &MailRecord::<NoDelivery>::Live(LiveMail {
-                id: item,
-                digest: digest.clone(),
-                origin: peer,
-                status_target: CurrentStatusTarget {
-                    peer,
-                    route: (),
-                    rank: Some(u64::MAX),
-                },
-                stream: DeliveryStream::Controls,
-                seq: DeliverySeq::new(u64::MAX),
-                payload: None,
-                status: status.clone(),
-                version: StatusVersion::new(u64::MAX),
-                last_report_seq: ReportSeq::new(u64::MAX),
-                accepted_at: time,
-                fetched: false,
-                released_at: Some(time),
-                cancel: Some(CancelResult::TooLate {
-                    at: TooLateAt::Uncertain,
-                }),
-                cancel_target: Some(item),
-                acceptance_bound,
-                settlement_bytes: u32::MAX,
-                capacity_slot: false,
-            }),
-            delivered,
-            maximum,
-        )?)?);
         publication = publication.max(with_route::<D>(with_acceptance(
             &(
                 PublicationTarget::StatusStream {
-                    sender: peer,
+                    sender: crate::Submitter::Machine(peer),
                     route: (),
                 },
                 StatusPublication {
@@ -229,9 +204,15 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
         inbox_header = inbox_header.max(
             with_acceptance(
                 &InboxHeader::<NoDelivery> {
+                    relay: Some(peer),
+                    created_at: crate::custody_record::created_at(item),
+                    accepted_at: Some(time),
+                    delivered_at: Some(time),
                     id: item,
                     digest: digest.as_str().into(),
-                    sender: (),
+                    sender: Some(sender_placeholder),
+                    submitter: Some(sender_placeholder),
+                    legacy_read_only: false,
                     recipient: Recipient { peer, address: () },
                     cancel_target: Some(item),
                     valid_until: Some(time),
@@ -249,7 +230,7 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
                 delivered,
                 maximum,
             )?
-            .checked_sub(8)
+            .checked_sub(sender_placeholder_bytes + 4)
             .and_then(|size| size.checked_add(u64::from(D::MAX_SENDER_BYTES)))
             .and_then(|size| size.checked_add(u64::from(D::MAX_ADDRESS_BYTES)))
             .ok_or(DeliveryConfigError::ReserveOverflow)?,
@@ -257,8 +238,6 @@ pub(crate) fn allowance_with_bound<D: DeliveryTypes>(
     }
     const PUBLISHED_STATUS_RANKS: u64 = 4;
     let retained_publications = 2 * PUBLISHED_STATUS_RANKS * publication;
-    let headers = (2 * outbox_header)
-        .max(2 * mailbox_header + retained_publications)
-        .max(2 * inbox_header + 2 * report);
+    let headers = (2 * outbox_header + retained_publications).max(2 * inbox_header + 2 * report);
     u32::try_from(headers + cancel_bytes).map_err(|_| DeliveryConfigError::ReserveOverflow)
 }

@@ -1,0 +1,321 @@
+{
+  "migrations": [
+    "migrations"
+  ],
+  "output": "src/checked_queries/custody.rs",
+  "metadata": "checked-custody-query-metadata.json",
+  "queries": [
+    {
+      "name": "write_outbox_item",
+      "sql": "sql/write_outbox_item.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "live",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "payload_bytes",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "settlement_bytes",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "kind": "text",
+          "nullable": true
+        },
+        {
+          "name": "capacity_slot",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_inbox_item",
+      "sql": "sql/read_inbox_item.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredInboxRow"
+    },
+    {
+      "name": "drop_inbox_item",
+      "sql": "sql/drop_inbox_item.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_inbox_item",
+      "sql": "sql/write_inbox_item.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "live",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "payload_bytes",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "settlement_bytes",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "kind": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "consumer_sender",
+          "kind": "text",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "name": "read_outbox_accounting",
+      "sql": "sql/read_outbox_accounting.sql",
+      "result": "one",
+      "row": "StoredCustodyAccountingRow",
+      "parameters": []
+    },
+    {
+      "name": "read_inbox_accounting",
+      "sql": "sql/read_inbox_accounting.sql",
+      "result": "one",
+      "row": "StoredCustodyAccountingRow",
+      "parameters": []
+    },
+    {
+      "name": "read_outbox_cancel_link",
+      "sql": "sql/read_outbox_cancel_link.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredCustodyCancelLinkRow"
+    },
+    {
+      "name": "write_outbox_cancel_link",
+      "sql": "sql/write_outbox_cancel_link.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "cancel_item",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_outbox_status",
+      "sql": "sql/read_outbox_status.sql",
+      "result": "optional",
+      "parameters": [],
+      "row": "StoredOutboxCursorRow"
+    },
+    {
+      "name": "write_outbox_status",
+      "sql": "sql/write_outbox_status.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_inbox_cancel_link",
+      "sql": "sql/read_inbox_cancel_link.sql",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        }
+      ],
+      "row": "StoredCustodyCancelLinkRow"
+    },
+    {
+      "name": "write_inbox_cancel_link",
+      "sql": "sql/write_inbox_cancel_link.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "target",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "cancel_item",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "drop_inbox_cancel_link",
+      "sql": "sql/drop_inbox_cancel_link.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "remove_retained_status",
+      "sql": "sql/remove_retained_status.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "remove_retained_events",
+      "sql": "sql/remove_retained_events.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "remove_retained_inbox_links",
+      "sql": "sql/remove_retained_inbox_links.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "remove_retained_outbox_links",
+      "sql": "sql/remove_retained_outbox_links.sql",
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "item_id",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    }
+  ]
+}

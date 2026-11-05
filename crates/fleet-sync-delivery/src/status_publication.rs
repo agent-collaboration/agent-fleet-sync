@@ -1,3 +1,4 @@
+use crate::status_row::PublicationRow;
 use crate::{DeliveryError, PublicationRef, checked_queries as queries, custody_record::*};
 use crate::{PublicationTarget, status_stream::canonical_encode};
 use durable_steps::storage::TransactionScope;
@@ -30,14 +31,20 @@ where
     else {
         return Ok(None);
     };
-    let publication: StatusPublication<D::Acceptance> = decode(row.record, "owed publication")?;
+    let target: PublicationTarget<D::StatusRoute> = row.target()?;
+    let publication: StatusPublication<D::Acceptance> = row.publication()?;
     crate::delivery_sizes::check_status::<D>(&publication.status).map_err(|_| {
         DeliveryError::Corrupt {
             field: "stored publication bounds",
         }
     })?;
     let version = integer(row.version, row.version_class, "owed publication version")?;
-    if publication.item != reference.item || publication.version.value() != version || version == 0
+    if publication.item != reference.item
+        || canonical_encode(&target)? != canonical_encode(&reference.target)?
+        || publication.version.value() != version
+        || version == 0
+        || crate::submitter::from_columns(row.submitter_kind, row.submitter_id)?
+            != Some(reference.target.submitter())
     {
         return Err(DeliveryError::Corrupt {
             field: "owed publication identity",
@@ -91,7 +98,8 @@ where
     let rows = queries::list_publications(scope).await.map_err(sql_error)?;
     let mut admitted = Vec::with_capacity(rows.len());
     for row in rows {
-        let publication: StatusPublication<D::Acceptance> = decode(row.record, "owed publication")?;
+        let target: PublicationTarget<D::StatusRoute> = row.target()?;
+        let publication: StatusPublication<D::Acceptance> = row.publication()?;
         let version = integer(row.version, row.version_class, "owed publication version")?;
         if row.item_id.as_deref() != Some(item_key(publication.item).as_str())
             || publication.version.value() != version
@@ -101,21 +109,18 @@ where
                 field: "owed publication identity",
             });
         }
-        let encoded_target = row.target.ok_or(DeliveryError::Corrupt {
-            field: "owed publication target",
-        })?;
-        let target: PublicationTarget<D::StatusRoute> =
-            decode(Some(encoded_target.clone()), "owed publication target")?;
+        if crate::submitter::from_columns(row.submitter_kind.clone(), row.submitter_id.clone())?
+            != Some(target.submitter())
+        {
+            return Err(DeliveryError::Corrupt {
+                field: "owed publication machine",
+            });
+        }
         crate::delivery_sizes::check_status_route::<D>(target.route()).map_err(|_| {
             DeliveryError::Corrupt {
                 field: "stored publication route bounds",
             }
         })?;
-        if canonical_encode(&target)? != encoded_target {
-            return Err(DeliveryError::Corrupt {
-                field: "owed publication target key",
-            });
-        }
         let reference = PublicationRef {
             item: publication.item,
             version: publication.version,

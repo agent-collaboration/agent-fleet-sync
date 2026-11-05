@@ -30,15 +30,21 @@ pub(crate) fn current_lease(lease: &RegistryLease, now: SyncTime) -> LeaseStatus
 }
 
 /// Return the saved renewal decision with current authority; replay never extends the lease.
-pub async fn renew<S>(
-    scope: &mut S,
-    request: &RenewRequest,
-    holder: &PeerId,
+#[expect(
+    clippy::manual_async_fn,
+    reason = "explicit Send avoids the async-fn/GAT lifetime generality error in journal transactions"
+)]
+pub fn renew<'scope, S, H>(
+    scope: &'scope mut S,
+    request: &'scope RenewRequest,
+    holder: &'scope PeerId,
     now: SyncTime,
-    policy: &LeasePolicy,
-) -> Result<RenewAnswer, LeaseError>
+    policy: &'scope LeasePolicy,
+    hook: &'scope H,
+) -> impl std::future::Future<Output = Result<RenewAnswer, LeaseError>> + Send + 'scope
 where
     S: TransactionScope,
+    H: crate::LeaseChangeHook<S>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'value> String:
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
@@ -46,102 +52,119 @@ where
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    let mut storage = RegistryStorage(scope);
-    let database = storage.database(request.database).await?;
-    if database.as_ref().is_some_and(|database| {
-        matches!(
-            database.lifecycle,
-            DatabaseLifecycle::Retired { .. } | DatabaseLifecycle::Retiring { .. }
-        )
-    }) {
-        return Ok(RenewAnswer::Refused(LeaseRefusal::Retired));
-    }
-    let lease = storage.lease(request.database).await?;
-    let transfer = storage
-        .active_transfer(request.database)
-        .await?
-        .map(|transfer| transfer.intent.attempt());
-    if let Some(previous) = storage.renewal(request.database, request.attempt).await? {
-        if previous.request != *request || previous.holder != *holder {
-            return Err(LeaseError::InvalidInput {
-                field: "renewal identity has different contents".into(),
-            });
+    async move {
+        let mut storage = RegistryStorage(scope);
+        let database = storage.database(request.database).await?;
+        if database.as_ref().is_some_and(|database| {
+            matches!(
+                database.lifecycle,
+                DatabaseLifecycle::Retired { .. } | DatabaseLifecycle::Retiring { .. }
+            )
+        }) {
+            return Ok(RenewAnswer::Refused(LeaseRefusal::Retired));
         }
-        return match previous.answer {
-            RenewAnswer::Renewed { recorded, .. } => {
-                let current = lease.ok_or_else(|| LeaseError::Corrupt {
-                    field: "successful renewal has no current lease".into(),
-                })?;
-                Ok(RenewAnswer::Renewed {
-                    recorded,
-                    current: current_lease(&current, now),
-                    transfer_in_progress: transfer,
-                    replayed: true,
-                })
-            }
-            refused => Ok(refused),
-        };
-    }
-    let answer = if database.is_none() {
-        RenewAnswer::Refused(LeaseRefusal::NotRegistered)
-    } else if let Some(mut lease) = lease {
-        if lease.holder == *holder && lease.epoch == request.epoch {
-            if policy.lease_duration.is_zero() {
+        let lease = storage.lease(request.database).await?;
+        let transfer = storage
+            .active_transfer(request.database)
+            .await?
+            .map(|transfer| transfer.intent.attempt());
+        if let Some(previous) = storage.renewal(request.database, request.attempt).await? {
+            if previous.request != *request || previous.holder != *holder {
                 return Err(LeaseError::InvalidInput {
-                    field: "lease duration must be positive".into(),
+                    field: "renewal identity has different contents".into(),
                 });
             }
-            let mut database = database.ok_or_else(|| LeaseError::Corrupt {
-                field: "renewal database".into(),
-            })?;
-            database.validate_grant(Some(&lease))?;
-            let expires_at = now.after(policy.lease_duration);
-            let changed = lease.expires_at != expires_at;
-            if changed {
-                database.advance_revision(lease.epoch, now)?;
-            }
-            lease.expires_at = expires_at;
-            lease.last_renewed_at = now;
-            storage.save_lease(&lease).await?;
-            if changed {
-                storage.save_database(&database).await?;
-            }
-            RenewAnswer::Renewed {
-                recorded: RenewResult {
-                    epoch: lease.epoch,
-                    expires_at: lease.expires_at,
-                },
-                current: current_lease(&lease, now),
-                transfer_in_progress: transfer,
-                replayed: false,
-            }
-        } else if let Some(history) = storage.history(request.database, request.epoch).await?
-            && history.holder == *holder
-            && history.ended_at.is_some()
-        {
-            let ended = history.ended_at.ok_or_else(|| LeaseError::Corrupt {
-                field: "epoch end".into(),
-            })?;
-            RenewAnswer::Refused(LeaseRefusal::StaleEpoch {
-                current_epoch: lease.epoch,
-                epoch_ended_at: ended,
-            })
-        } else {
-            RenewAnswer::Refused(LeaseRefusal::NotWriter {
-                current: Some(lease.epoch),
-            })
+            return match previous.answer {
+                RenewAnswer::Renewed { recorded, .. } => {
+                    let current = lease.ok_or_else(|| LeaseError::Corrupt {
+                        field: "successful renewal has no current lease".into(),
+                    })?;
+                    Ok(RenewAnswer::Renewed {
+                        recorded,
+                        current: current_lease(&current, now),
+                        transfer_in_progress: transfer,
+                        replayed: true,
+                    })
+                }
+                refused => Ok(refused),
+            };
         }
-    } else {
-        RenewAnswer::Refused(LeaseRefusal::NotWriter { current: None })
-    };
-    storage
-        .save_renewal(&RenewalAttempt {
-            request: request.clone(),
-            holder: *holder,
-            answer: answer.clone(),
-        })
-        .await?;
-    Ok(answer)
+        let mut snapshot_before_renewal = None;
+        let answer = if database.is_none() {
+            RenewAnswer::Refused(LeaseRefusal::NotRegistered)
+        } else if let Some(mut lease) = lease {
+            if lease.holder == *holder && lease.epoch == request.epoch {
+                if policy.lease_duration.is_zero() {
+                    return Err(LeaseError::InvalidInput {
+                        field: "lease duration must be positive".into(),
+                    });
+                }
+                let mut database = database.ok_or_else(|| LeaseError::Corrupt {
+                    field: "renewal database".into(),
+                })?;
+                database.validate_grant(Some(&lease))?;
+                snapshot_before_renewal =
+                    crate::registry_snapshot(storage.0, request.database).await?;
+                let expires_at = now.after(policy.lease_duration);
+                let changed = lease.expires_at != expires_at;
+                if changed {
+                    database.advance_revision(lease.epoch, now)?;
+                }
+                lease.expires_at = expires_at;
+                lease.last_renewed_at = now;
+                storage.save_lease(&lease, now).await?;
+                if changed {
+                    storage.save_database(&database, now).await?;
+                }
+                RenewAnswer::Renewed {
+                    recorded: RenewResult {
+                        epoch: lease.epoch,
+                        expires_at: lease.expires_at,
+                    },
+                    current: current_lease(&lease, now),
+                    transfer_in_progress: transfer,
+                    replayed: false,
+                }
+            } else if let Some(history) = storage.history(request.database, request.epoch).await?
+                && history.holder == *holder
+                && history.ended_at.is_some()
+            {
+                let ended = history.ended_at.ok_or_else(|| LeaseError::Corrupt {
+                    field: "epoch end".into(),
+                })?;
+                RenewAnswer::Refused(LeaseRefusal::StaleEpoch {
+                    current_epoch: lease.epoch,
+                    epoch_ended_at: ended,
+                })
+            } else {
+                RenewAnswer::Refused(LeaseRefusal::NotWriter {
+                    current: Some(lease.epoch),
+                })
+            }
+        } else {
+            RenewAnswer::Refused(LeaseRefusal::NotWriter { current: None })
+        };
+        storage
+            .save_renewal(
+                &RenewalAttempt {
+                    request: request.clone(),
+                    holder: *holder,
+                    answer: answer.clone(),
+                },
+                now,
+            )
+            .await?;
+        if let Some(before) = snapshot_before_renewal {
+            crate::lease_change_hook::project_lease_change(
+                storage.0,
+                request.database,
+                Some(before),
+                hook,
+            )
+            .await?;
+        }
+        Ok(answer)
+    }
 }
 
 /// Read a database's current lease without renewing it. Retirement is checked first.

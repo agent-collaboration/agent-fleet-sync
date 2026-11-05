@@ -10,7 +10,8 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-pub(crate) type ProjectionTask = DeliverLocally<TestStore, Turso, TestTypes, ProjectionConsumer>;
+pub(crate) type ProjectionTask =
+    DeliverLocally<TestStore, Turso, TestTypes, ProjectionConsumer, FixtureBindings>;
 
 #[derive(Default)]
 pub(crate) struct ProjectionConsumer {
@@ -120,22 +121,20 @@ pub(crate) async fn read_committed_state(fixture: &Fixture) -> CommittedState {
         .store
         .transaction(|scope| {
             Box::pin(async move {
-                let custody = sqlx_core::query::query::<Turso>(
-                    "SELECT record,payload FROM _fleet_sync_inbox_items ORDER BY item_id",
-                )
-                .fetch_all(scope.executor())
-                .await?
-                .into_iter()
-                .map(|row| Ok((row.try_get("record")?, row.try_get("payload")?)))
-                .collect::<Result<Vec<_>, sqlx_core::Error>>()?;
-                let reports = sqlx_core::query::query::<Turso>(
-                    "SELECT record FROM _fleet_sync_reports ORDER BY item_id,report_seq",
-                )
-                .fetch_all(scope.executor())
-                .await?
-                .into_iter()
-                .map(|row| row.try_get("record"))
-                .collect::<Result<Vec<_>, _>>()?;
+                let custody =
+                    sqlx_core::query::query::<Turso>(include_str!("sql/read_inbox_headers.sql"))
+                        .fetch_all(scope.executor())
+                        .await?
+                        .into_iter()
+                        .map(|row| Ok((row.try_get("record")?, row.try_get("payload")?)))
+                        .collect::<Result<Vec<_>, sqlx_core::Error>>()?;
+                let reports =
+                    sqlx_core::query::query::<Turso>(include_str!("sql/read_report_headers.sql"))
+                        .fetch_all(scope.executor())
+                        .await?
+                        .into_iter()
+                        .map(|row| row.try_get("record"))
+                        .collect::<Result<Vec<_>, _>>()?;
                 let projections = sqlx_core::query::query::<Turso>(
                     "SELECT item,kind,value FROM application_projection ORDER BY event",
                 )
@@ -161,46 +160,29 @@ pub(crate) async fn read_committed_state(fixture: &Fixture) -> CommittedState {
         .unwrap()
 }
 
-pub(crate) fn projection_batch(envelope: DeliveryEnvelope<TestTypes>) -> FetchResult<TestTypes> {
-    FetchResult {
-        stream: envelope.stream(),
-        entries: vec![FetchEntry::Item {
-            seq: DeliverySeq::new(1),
-            item: envelope,
-        }],
-        through: DeliverySeq::new(1),
-    }
-}
-
-pub(crate) async fn receive_projection_item(
+pub(crate) async fn push_projection_item(
     fixture: &Fixture,
     consumer: Arc<ProjectionConsumer>,
     envelope: DeliveryEnvelope<TestTypes>,
     abort: bool,
-) -> Result<ReceiveInput, StoreError> {
+) -> Result<PushResult<Acceptance>, StoreError> {
     fixture
         .store
         .transaction(move |scope| {
             Box::pin(async move {
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
-                let input = inbox
-                    .begin_receive(envelope.stream())
-                    .await
-                    .map_err(storage_error)?
-                    .unwrap();
-                inbox
-                    .store_batch(
-                        input,
-                        projection_batch(envelope),
-                        consumer.as_ref(),
-                        SyncTime::from_unix_millis(0),
-                    )
-                    .await
-                    .map_err(storage_error)?;
+                let answer = accept_fixture_push(
+                    scope,
+                    limits(),
+                    envelope,
+                    consumer.as_ref(),
+                    SyncTime::from_unix_millis(0),
+                )
+                .await
+                .map_err(storage_error)?;
                 if abort {
                     return Err(StoreError::backend("abort after custody and projections"));
                 }
-                Ok(input)
+                Ok(answer)
             })
         })
         .await
@@ -226,7 +208,8 @@ pub(crate) async fn enqueue_projection_attempt(
                     "rich receipt: accepted once".into(),
                 )
                 .unwrap();
-                let mut inbox = Inbox::<_, TestTypes>::new(scope, peer(2), limits());
+                let mut inbox =
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FixtureBindings);
                 let attempt = inbox
                     .enqueue_local(original, &TestConsumer, SyncTime::from_unix_millis(0))
                     .await
@@ -256,6 +239,7 @@ pub(crate) fn projection_engine(
             config().local,
             consumer,
             fixture.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
         ))
         .unwrap();
     engine

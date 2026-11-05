@@ -1,0 +1,44 @@
+{
+  "migrations": [
+    "migrations"
+  ],
+  "migration_target": 202610180001,
+  "output": "src/checked_legacy_queries.rs",
+  "metadata": "checked-legacy-query-metadata.json",
+  "queries": [
+    {
+      "name": "legacy_columns",
+      "row": "LegacyColumnRow",
+      "result": "many",
+      "sql": "sql/legacy/legacy_columns.sql",
+      "parameters": [
+        {
+          "name": "table",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "legacy_sessions",
+      "row": "LegacySessionRow",
+      "result": "many",
+      "sql": "sql/legacy/legacy_sessions.sql",
+      "parameters": []
+    },
+    {
+      "name": "legacy_notices",
+      "row": "LegacyNoticeRow",
+      "result": "many",
+      "sql": "sql/legacy/legacy_notices.sql",
+      "parameters": []
+    },
+    {
+      "name": "legacy_attach_sequences",
+      "row": "LegacyAttachSequenceRow",
+      "result": "many",
+      "sql": "sql/legacy/legacy_attach_sequences.sql",
+      "parameters": []
+    }
+  ]
+}

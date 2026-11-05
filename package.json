@@ -5,7 +5,8 @@
   "scripts": {
     "test:workerd": "node tests/workerd/run-workerd.mjs",
     "test:durable-native": "node tests/durable-steps/run-native.mjs",
-    "test:durable-workerd": "node tests/durable-steps/run-workerd.mjs"
+    "test:durable-workerd": "node tests/durable-steps/run-workerd.mjs",
+    "test:migration-sql-workerd": "node tests/integration/public-migration-sql.mjs"
   },
   "devDependencies": {
     "miniflare": "4.20260730.0"

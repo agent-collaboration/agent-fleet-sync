@@ -78,6 +78,7 @@ where
             field: error.to_string(),
         }
     })?;
+    let now = ctx.now();
     Ok(ctx
         .local(step("save")?, move |scope| {
             Box::pin(async move {
@@ -109,10 +110,13 @@ where
                     last_seen: Some(current.last_renewed_at),
                 };
                 storage
-                    .save_preview(&PreviewRecord {
-                        database,
-                        preview: preview.clone(),
-                    })
+                    .save_preview(
+                        &PreviewRecord {
+                            database,
+                            preview: preview.clone(),
+                        },
+                        now,
+                    )
                     .await
                     .map_err(step_error)?;
                 Ok(preview)

@@ -43,3 +43,31 @@ where
             .collect()
     }
 }
+pub(crate) fn read_relay_delivery_snapshot<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<DeliveryObservationRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_relay_delivery_snapshot.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(DeliveryObservationRow {
+                    category: row.try_get("category")?,
+                    identity: row.try_get("identity")?,
+                    metadata: row.try_get("metadata")?,
+                    content: row.try_get("content")?,
+                    payload_bytes: row.try_get("payload_bytes")?,
+                })
+            })
+            .collect()
+    }
+}

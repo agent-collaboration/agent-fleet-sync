@@ -57,13 +57,7 @@ macro_rules! delivery_counter {
         }
     )+};
 }
-delivery_counter!(
-    DeliverySeq,
-    StatusVersion,
-    ReportSeq,
-    StatusCursor,
-    ReceiveCycle
-);
+delivery_counter!(StatusVersion, ReportSeq, StatusCursor);
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]

@@ -2,24 +2,6 @@ use super::*;
 use sqlx_core::row::Row;
 
 impl NodeState {
-    pub(super) async fn wait_mailbox_unavailable(&self, hop: String) -> TestResult<Value> {
-        loop {
-            let notified = self.changed.notified();
-            tokio::pin!(notified);
-            notified.as_mut().enable();
-            if let Some((_, call)) = self
-                .unavailable
-                .lock()
-                .await
-                .iter()
-                .find(|(kind, _)| kind == &hop)
-            {
-                return Ok(serde_json::to_value(call)?);
-            }
-            notified.await;
-        }
-    }
-
     pub(super) async fn wait_report_retired(&self, item: ItemId) -> TestResult<Value> {
         let mut committed = self.object.subscribe_commits();
         loop {

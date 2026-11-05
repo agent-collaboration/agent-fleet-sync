@@ -123,11 +123,22 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
             Err(reason) => OperationState::Failed { reason },
         };
         let finished_at = self.host.now();
+        let retry_clock = Arc::clone(&self.host);
         let finished = self
             .store
             .transaction(move |scope| {
                 Box::pin(async move {
                     scope.check_token(id, token).await?;
+                    if let OperationState::Running {
+                        next_attempt_at, ..
+                    } = &mut state
+                        && let Some(task) = &task
+                        && let Some(bound) = task
+                            .retry_not_later_than(scope, &record.request_key)
+                            .await?
+                    {
+                        *next_attempt_at = (*next_attempt_at).min(bound).max(retry_clock.now());
+                    }
                     if matches!(state, OperationState::Completed { .. })
                         && scope.step_count(id).await? != position
                     {

@@ -8,43 +8,20 @@ use fleet_sync_test_consumer::{ControlAnswer, ControlRequest, TestResult};
 use fleet_sync_transport_websocket::WebSocketConnection;
 use std::path::Path;
 
-pub async fn corrupt(
+pub async fn relay_row(
     control: &mut WebSocketConnection,
-    mailbox: PeerId,
-    item: ItemId,
-) -> TestResult<(String, i64)> {
-    match control_request(
-        control,
-        ControlRequest::CorruptDeliveryCustody { mailbox, item },
-    )
-    .await?
-    {
-        ControlAnswer::CorruptedDelivery {
-            record,
-            payload_bytes,
-        } => Ok((record, payload_bytes)),
-        _ => Err("no custody fault receipt".into()),
-    }
-}
-pub async fn mail_row(
-    control: &mut WebSocketConnection,
-    mailbox: PeerId,
-    origin: PeerId,
     item: ItemId,
 ) -> TestResult<(serde_json::Value, u64)> {
-    let ControlAnswer::DeliverySnapshot(snapshot) = control_request(
-        control,
-        ControlRequest::DeliverySnapshot { mailbox, origin },
-    )
-    .await?
+    let ControlAnswer::DeliverySnapshot(snapshot) =
+        control_request(control, ControlRequest::DeliverySnapshot).await?
     else {
-        return Err("no mailbox snapshot".into());
+        return Err("no relay snapshot".into());
     };
     let row = snapshot
-        .mailbox
+        .relay
         .iter()
-        .find(|row| row.category == "mailbox" && row.identity == item.as_uuid().to_string())
-        .ok_or("no mailbox row")?;
+        .find(|row| row.category == "outbox" && row.identity == item.as_uuid().to_string())
+        .ok_or("no relay row")?;
     Ok((
         serde_json::from_str(row.content.as_deref().ok_or("no mail record")?)?,
         row.payload_bytes
@@ -53,33 +30,7 @@ pub async fn mail_row(
             .parse()?,
     ))
 }
-pub async fn restore_stopped(
-    directory: &Path,
-    mailbox: PeerId,
-    item: ItemId,
-    original: (String, i64),
-) -> TestResult {
-    use sqlx_turso::sqlx::{ConnectOptions, Connection};
-    let mut db = sqlx_turso::TursoConnectOptions::new()
-        .filename(
-            directory
-                .join("service")
-                .join(format!("delivery-mailbox-{}.db", mailbox.as_uuid())),
-        )
-        .create_if_missing(false)
-        .connect()
-        .await?;
-    sqlx_core::query::query::<sqlx_turso::Turso>(
-        "UPDATE _fleet_sync_mail_items SET record=?1,payload_bytes=?2 WHERE item_id=?3",
-    )
-    .bind(original.0)
-    .bind(original.1)
-    .bind(item.as_uuid().to_string())
-    .execute(&mut db)
-    .await?;
-    db.close().await?;
-    Ok(())
-}
+
 pub async fn stopped_node_row(
     directory: &Path,
     item: ItemId,
@@ -91,11 +42,25 @@ pub async fn stopped_node_row(
         .create_if_missing(false)
         .connect()
         .await?;
-    let sql = if outbox {
-        "SELECT record,payload_bytes FROM _fleet_sync_outbox_items WHERE item_id=?1"
-    } else {
-        "SELECT record,CAST(report_seq AS TEXT) AS payload_bytes FROM _fleet_sync_reports WHERE item_id=?1"
-    };
+    if outbox {
+        let row = sqlx_core::query::query::<sqlx_turso::Turso>(
+            "SELECT item_id,digest,status_kind,CAST(status_version AS TEXT) AS status_version,CAST(last_report_seq AS TEXT) AS last_report_seq,CAST(payload_bytes AS TEXT) AS payload_bytes FROM _fleet_sync_outbox_items WHERE item_id=?1",
+        )
+        .bind(item.as_uuid().to_string())
+        .fetch_one(&mut db)
+        .await?;
+        let record = serde_json::json!({
+            "item_id":row.try_get::<String,_>("item_id")?,
+            "digest":row.try_get::<Option<String>,_>("digest")?,
+            "status_kind":row.try_get::<Option<String>,_>("status_kind")?,
+            "status_version":row.try_get::<Option<String>,_>("status_version")?,
+            "last_report_seq":row.try_get::<String,_>("last_report_seq")?,
+        });
+        let bytes: String = row.try_get("payload_bytes")?;
+        db.close().await?;
+        return Ok(serde_json::json!({"record":record,"bytes":bytes}));
+    }
+    let sql = "SELECT json_object('item',item_id,'reportSeq',report_seq,'outcomeKind',outcome_kind) AS record,CAST(report_seq AS TEXT) AS payload_bytes FROM _fleet_sync_reports WHERE item_id=?1";
     let row = sqlx_core::query::query::<sqlx_turso::Turso>(sql)
         .bind(item.as_uuid().to_string())
         .fetch_one(&mut db)
@@ -107,4 +72,41 @@ pub async fn stopped_node_row(
     };
     db.close().await?;
     Ok(serde_json::json!({"record":record,"bytes":bytes}))
+}
+
+/// Read actual persisted typed columns; does not rebuild the rules' header.
+pub async fn stopped_relay_row(
+    directory: &Path,
+    item: ItemId,
+) -> TestResult<(serde_json::Value, u64)> {
+    use sqlx_core::column::Column;
+    use sqlx_turso::sqlx::{ConnectOptions, Connection, Row};
+    let mut db = sqlx_turso::TursoConnectOptions::new()
+        .filename(directory.join("service/registry.db"))
+        .create_if_missing(false)
+        .connect()
+        .await?;
+    let absent=sqlx_core::query::query::<sqlx_turso::Turso>("SELECT count(*) AS remaining FROM sqlite_schema WHERE type='table' AND name IN ('_fleet_sync_mail_items','_fleet_sync_mail_controls','_fleet_sync_mail_state','_fleet_sync_mail_cancel_links','_fleet_sync_delivery_receipts','_fleet_sync_inbox_state','_fleet_sync_outbox_status','_fleet_sync_inbox_items','_fleet_sync_inbox_cancel_links','_fleet_sync_reports')").fetch_one(&mut db).await?;
+    assert_eq!(
+        absent.try_get::<i64, _>("remaining")?,
+        0,
+        "relay host retained machine or Mailbox tables"
+    );
+    let row = sqlx_core::query::query::<sqlx_turso::Turso>(
+        "SELECT * FROM _fleet_sync_outbox_items WHERE item_id=?1",
+    )
+    .bind(item.as_uuid().to_string())
+    .fetch_one(&mut db)
+    .await?;
+    let mut record = serde_json::Map::new();
+    for column in row.columns() {
+        let value = match row.try_get::<Option<i64>, _>(column.name()) {
+            Ok(value) => serde_json::json!(value),
+            Err(_) => serde_json::json!(row.try_get::<Option<String>, _>(column.name())?),
+        };
+        record.insert(column.name().into(), value);
+    }
+    let bytes = u64::try_from(row.try_get::<i64, _>("payload_bytes")?)?;
+    db.close().await?;
+    Ok((serde_json::Value::Object(record), bytes))
 }

@@ -202,6 +202,7 @@ impl<H: Host> Task for InstallSnapshot<H> {
     fn before_resume<'s, 't>(
         &'s self,
         scope: &'s mut TursoScope<'t, H>,
+        _operation: &'s durable_steps::OperationId,
         key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<InstallRecord>, StoreError>> {
         Box::pin(async move {

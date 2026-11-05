@@ -134,6 +134,7 @@ impl<S: ReplicatedSchema, H: Host> Task for RegisterDatabase<S, H> {
     fn before_resume<'s, 't>(
         &'s self,
         scope: &'s mut WriterJournalScope<'t, H>,
+        _operation: &'s durable_steps::OperationId,
         _: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<Self::Output>, StoreError>> {
         Box::pin(async move {

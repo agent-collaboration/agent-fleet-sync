@@ -292,17 +292,26 @@ impl SenderFixture {
         })
     }
     pub async fn open() -> TestResult<Self> {
+        Self::open_with_clock(Arc::new(runtime_primitives::SystemClock)).await
+    }
+    pub async fn open_with_clock(clock: Arc<dyn runtime_primitives::Clock>) -> TestResult<Self> {
         let directory = tempfile::tempdir()?;
         let peer = PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000002))?;
+        let id = fleet_sync_protocol::DatabaseId::new(Uuid::now_v7())?;
         let database = Arc::new(
-            ReplicatedDatabase::create(
+            ReplicatedDatabase::open_with(
                 &directory.path().join("writer.db"),
+                id,
                 Self::schema()?,
-                peer,
-                LeasePolicy {
-                    lease_duration: Duration::from_secs(600),
-                    renew_interval: Duration::from_secs(10),
-                },
+                fleet_sync_lease::LeaseHolder::provisional(
+                    id,
+                    peer,
+                    LeasePolicy {
+                        lease_duration: Duration::from_secs(600),
+                        renew_interval: Duration::from_secs(10),
+                    },
+                ),
+                clock,
                 WriterOptions::default(),
             )
             .await?,
@@ -437,6 +446,7 @@ impl SenderFixture {
         let schema = database.schema.clone();
         let path = database.path().to_owned();
         let id = database.database();
+        let clock = database.clock.clone();
         drop(sender);
         let NativeTransport {
             mut files, peer, ..
@@ -450,7 +460,7 @@ impl SenderFixture {
             }
         }
         let database = Arc::new(
-            ReplicatedDatabase::open(
+            ReplicatedDatabase::open_with(
                 &path,
                 id,
                 schema,
@@ -462,6 +472,8 @@ impl SenderFixture {
                         renew_interval: Duration::from_secs(10),
                     },
                 ),
+                clock,
+                WriterOptions::default(),
             )
             .await?,
         );

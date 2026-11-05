@@ -38,9 +38,15 @@ pub(crate) fn future_wake_deadline(
 trait RegisteredTask<S: AtomicStore, H: Host>: Send + Sync {
     fn version(&self) -> u32;
     fn keep_result(&self) -> bool;
+    fn retry_not_later_than<'s, 't>(
+        &'s self,
+        scope: &'s mut S::Scope<'t>,
+        key: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Option<crate::SyncTime>, StoreError>>;
     fn before_resume<'s, 't>(
         &'s self,
         scope: &'s mut S::Scope<'t>,
+        operation: &'s crate::OperationId,
         key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<Vec<u8>>, StoreError>>;
     fn on_failed<'s, 't>(
@@ -65,13 +71,21 @@ impl<S: AtomicStore, H: Host, T: Task<Store = S>> RegisteredTask<S, H> for TaskR
     fn keep_result(&self) -> bool {
         T::KEEP_RESULT
     }
-    fn before_resume<'s, 't>(
+    fn retry_not_later_than<'s, 't>(
         &'s self,
         scope: &'s mut S::Scope<'t>,
         key: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Option<crate::SyncTime>, StoreError>> {
+        self.0.retry_not_later_than(scope, key)
+    }
+    fn before_resume<'s, 't>(
+        &'s self,
+        scope: &'s mut S::Scope<'t>,
+        operation: &'s crate::OperationId,
+        key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<Vec<u8>>, StoreError>> {
         Box::pin(async move {
-            match self.0.before_resume(scope, key).await? {
+            match self.0.before_resume(scope, operation, key).await? {
                 Resume::Continue => Ok(Resume::Continue),
                 Resume::Finish(output) => {
                     serde_json::to_vec(&output)
@@ -251,7 +265,7 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
             .transaction(move |scope| {
                 Box::pin(async move {
                     scope.check_token(id, token).await?;
-                    let resumed = match task.before_resume(scope, &key).await? {
+                    let resumed = match task.before_resume(scope, &id, &key).await? {
                         Resume::Continue => Resume::Continue,
                         Resume::Finish(result) => {
                             scope

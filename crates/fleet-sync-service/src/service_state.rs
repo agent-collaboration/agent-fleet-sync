@@ -44,14 +44,8 @@ pub(crate) struct ServiceState<
     pub install_page_probe: crate::install_page_probe::InstallPageProbe,
     #[cfg(feature = "test-support")]
     pub schema_support_probe: crate::schema_support_probe::SchemaSupportProbe,
-    #[cfg(feature = "test-support")]
-    pub retirement_reply_probe: crate::retirement_reply_probe::RetirementReplyProbe,
     pub copies: Mutex<BTreeMap<DatabaseId, Arc<OnceCell<Arc<CopyOwner>>>>>,
     pub copy_added: Notify,
-    pub delivery: Mutex<
-        BTreeMap<crate::delivery_owner::DeliveryObject, Arc<crate::delivery_owner::DeliverySlot>>,
-    >,
-    pub delivery_added: Notify,
     pub sessions: OnceLock<Weak<ServiceSessions<P, C, A>>>,
 }
 impl<

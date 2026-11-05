@@ -2,7 +2,7 @@
   "migrations": [
     "migrations"
   ],
-  "output": "src/checked_queries.rs",
+  "output": "src/checked_queries/registry.rs",
   "metadata": "checked-query-metadata.json",
   "queries": [
     {
@@ -21,7 +21,7 @@
     {
       "name": "read_databases",
       "sql": "sql/read_databases.sql",
-      "row": "StoredDatabaseIdentityRow",
+      "row": "StoredDatabaseRow",
       "result": "many",
       "parameters": []
     },
@@ -38,6 +38,16 @@
         },
         {
           "name": "record",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
           "kind": "text",
           "nullable": false
         }
@@ -71,6 +81,16 @@
           "name": "record",
           "kind": "text",
           "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
         }
       ]
     },
@@ -102,471 +122,14 @@
           "name": "epoch",
           "kind": "text",
           "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "read_renewal",
-      "sql": "sql/read_renewal.sql",
-      "row": "StoredRenewalRow",
-      "result": "optional",
-      "parameters": [
+        },
         {
-          "name": "database",
+          "name": "created_at",
           "kind": "text",
           "nullable": false
         },
         {
-          "name": "attempt",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "write_renewal",
-      "sql": "sql/write_renewal.sql",
-      "row": null,
-      "result": "execute",
-      "parameters": [
-        {
-          "name": "database",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "attempt",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "record",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "read_history",
-      "sql": "sql/read_history.sql",
-      "row": "StoredHistoryRow",
-      "result": "optional",
-      "parameters": [
-        {
-          "name": "database",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "epoch",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "write_history",
-      "sql": "sql/write_history.sql",
-      "row": null,
-      "result": "execute",
-      "parameters": [
-        {
-          "name": "database",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "epoch",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "record",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "read_transfer",
-      "sql": "sql/read_transfer.sql",
-      "row": "StoredTransferRow",
-      "result": "optional",
-      "parameters": [
-        {
-          "name": "attempt",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "write_transfer",
-      "sql": "sql/write_transfer.sql",
-      "row": null,
-      "result": "execute",
-      "parameters": [
-        {
-          "name": "attempt",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "database",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "intent",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "outcome",
-          "kind": "text",
-          "nullable": true
-        },
-        {
-          "name": "phase",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "phase_history",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "read_lifecycle",
-      "sql": "sql/read_lifecycle.sql",
-      "row": "StoredLifecycleRow",
-      "result": "optional",
-      "parameters": [
-        {
-          "name": "attempt",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "write_lifecycle",
-      "sql": "sql/write_lifecycle.sql",
-      "row": null,
-      "result": "execute",
-      "parameters": [
-        {
-          "name": "attempt",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "database",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "intent",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "outcome",
-          "kind": "text",
-          "nullable": true
-        }
-      ]
-    },
-    {
-      "name": "active_transfer",
-      "sql": "sql/active_transfer.sql",
-      "row": "StoredActiveTransferRow",
-      "result": "optional",
-      "parameters": [
-        {
-          "name": "database",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "read_preview",
-      "sql": "sql/read_preview.sql",
-      "row": "StoredPreviewRow",
-      "result": "optional",
-      "parameters": [
-        {
-          "name": "token",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "write_preview",
-      "sql": "sql/write_preview.sql",
-      "row": null,
-      "result": "execute",
-      "parameters": [
-        {
-          "name": "token",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "database",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "record",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "active_lifecycle",
-      "sql": "sql/active_lifecycle.sql",
-      "row": "StoredLifecycleRow",
-      "result": "optional",
-      "parameters": [
-        {
-          "name": "database",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "repair_transfer_epoch",
-      "sql": "sql/repair_transfer_epoch.sql",
-      "result": "execute",
-      "row": null,
-      "parameters": [
-        {
-          "name": "intent",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "attempt",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "read_transfer_admission",
-      "sql": "sql/read_transfer_admission.sql",
-      "row": "StoredTransferAdmissionRow",
-      "result": "optional",
-      "parameters": [
-        {
-          "name": "attempt",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "write_transfer_admission",
-      "sql": "sql/write_transfer_admission.sql",
-      "row": null,
-      "result": "execute",
-      "parameters": [
-        {
-          "name": "attempt",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "operation",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "request",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "requested_by",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "admitted_at",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "target_schema",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "follow_up",
-          "kind": "text",
-          "nullable": true
-        }
-      ]
-    },
-    {
-      "name": "read_transfer_cancel",
-      "sql": "sql/read_transfer_cancel.sql",
-      "row": "StoredTransferCancelRow",
-      "result": "optional",
-      "parameters": [
-        {
-          "name": "attempt",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "write_transfer_cancel",
-      "sql": "sql/write_transfer_cancel.sql",
-      "row": null,
-      "result": "execute",
-      "parameters": [
-        {
-          "name": "attempt",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "record",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "write_cleanup_failure",
-      "sql": "sql/write_cleanup_failure.sql",
-      "row": null,
-      "result": "execute",
-      "parameters": [
-        {
-          "name": "cleanup_failed",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "attempt",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "read_schema_support",
-      "sql": "sql/read_schema_support.sql",
-      "row": "StoredSchemaSupportRow",
-      "result": "optional",
-      "parameters": [
-        {
-          "name": "peer",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "write_schema_support",
-      "sql": "sql/write_schema_support.sql",
-      "row": null,
-      "result": "execute",
-      "parameters": [
-        {
-          "name": "peer",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "record",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "read_history_page",
-      "sql": "sql/read_history_page.sql",
-      "row": "StoredHistoryPageRow",
-      "result": "many",
-      "parameters": [
-        {
-          "name": "database",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "after",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "before",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "limit",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "read_history_successor",
-      "sql": "sql/read_history_successor.sql",
-      "row": "StoredHistorySuccessorRow",
-      "result": "optional",
-      "parameters": [
-        {
-          "name": "database",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "after",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "read_invalid_history_epoch",
-      "sql": "sql/read_invalid_history_epoch.sql",
-      "row": "StoredInvalidHistoryEpochRow",
-      "result": "optional",
-      "parameters": [
-        {
-          "name": "database",
-          "kind": "text",
-          "nullable": false
-        }
-      ]
-    },
-    {
-      "name": "read_history_transfer",
-      "sql": "sql/read_history_transfer.sql",
-      "row": "StoredHistoryTransferRow",
-      "result": "many",
-      "parameters": [
-        {
-          "name": "database",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "intent",
+          "name": "updated_at",
           "kind": "text",
           "nullable": false
         }

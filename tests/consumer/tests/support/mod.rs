@@ -41,29 +41,25 @@ impl ServiceProcess {
         lease_ms: u64,
         move_renewal_ms: u64,
     ) -> TestResult<Self> {
-        Self::start_with_initialization_lock(path, receiver, lease_ms, move_renewal_ms, None).await
+        Self::start_with_clock(path, receiver, lease_ms, move_renewal_ms, None).await
     }
-    #[cfg(feature = "test-support")]
     #[allow(
         dead_code,
-        reason = "startup fault is used by its dedicated native journey"
+        reason = "injected-clock process startup is used by the expiry journey"
     )]
-    pub async fn start_with_mailbox_init_lock(path: &Path, mailbox: PeerId) -> TestResult<Self> {
-        Self::start_with_initialization_lock(path, 3, 600_000, 60_000, Some(mailbox)).await
+    pub async fn start_at(path: &Path, clock: SyncTime) -> TestResult<Self> {
+        Self::start_with_clock(path, 3, 600_000, 60_000, Some(clock)).await
     }
-    async fn start_with_initialization_lock(
+    async fn start_with_clock(
         path: &Path,
         receiver: u128,
         lease_ms: u64,
         move_renewal_ms: u64,
-        mailbox: Option<PeerId>,
+        clock: Option<SyncTime>,
     ) -> TestResult<Self> {
         let mut command = Command::new(env!("CARGO_BIN_EXE_fleet-sync-test-consumer"));
-        if let Some(mailbox) = mailbox {
-            command.env(
-                "FLEET_SYNC_TEST_LOCK_MAILBOX_INIT",
-                mailbox.as_uuid().to_string(),
-            );
+        if let Some(clock) = clock {
+            command.env("FLEET_SYNC_TEST_CLOCK", clock.unix_millis().to_string());
         }
         let mut child = command
             .arg(path)

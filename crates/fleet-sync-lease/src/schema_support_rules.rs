@@ -1,8 +1,5 @@
 //! Registry projection of declarations ordered by the session owner's attach sequence.
-use crate::{
-    LeaseError, checked_queries,
-    registry_storage::{decode, encode},
-};
+use crate::{LeaseError, checked_queries, registry_storage::encode};
 use durable_steps::storage::TransactionScope;
 use fleet_sync_protocol::*;
 use sqlx_core::{
@@ -24,7 +21,7 @@ where
     let Some(row) = checked_queries::read_schema_support(scope, peer.to_string()).await? else {
         return Ok(None);
     };
-    let report: ReportSchemaSupport = decode(row.record, "schema support report")?;
+    let report: ReportSchemaSupport = row.schema_report()?;
     if report.peer != peer || row.peer.as_deref() != Some(peer.to_string().as_str()) {
         return Err(LeaseError::Corrupt {
             field: "schema support peer".into(),
@@ -36,6 +33,7 @@ where
 pub async fn report_schema_support<S>(
     scope: &mut S,
     report: &ReportSchemaSupport,
+    now: SyncTime,
 ) -> Result<SchemaSupportRecorded, LeaseError>
 where
     S: TransactionScope,
@@ -57,6 +55,13 @@ where
             return Ok(SchemaSupportRecorded);
         }
     }
-    checked_queries::write_schema_support(scope, report.peer.to_string(), encode(report)?).await?;
+    checked_queries::write_schema_support(
+        scope,
+        report.peer.to_string(),
+        encode(report)?,
+        now.unix_millis().to_string(),
+        now.unix_millis().to_string(),
+    )
+    .await?;
     Ok(SchemaSupportRecorded)
 }

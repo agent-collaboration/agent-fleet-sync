@@ -23,7 +23,10 @@ where
 {
     let id = crate::change_checks::attempt(request);
     let admitted = scope
-        .admit::<HolderChangeTask<S, D>>(&holder_change_request_key(id)?, request)
+        .admit::<HolderChangeTask<S, D, crate::NoLeaseChangeHook>>(
+            &holder_change_request_key(id)?,
+            request,
+        )
         .await
         .map_err(|error| LeaseError::InvalidInput {
             field: error.to_string(),
@@ -41,14 +44,17 @@ where
                 .await?
                 .map(|report| report.support);
         storage
-            .save_admission(&TransferAdmission {
-                operation: admitted.id(),
-                request: request.clone(),
-                requested_by: requested_by.clone(),
-                admitted_at: now,
-                target_schema,
-                follow_up: None,
-            })
+            .save_admission(
+                &TransferAdmission {
+                    operation: admitted.id(),
+                    request: request.clone(),
+                    requested_by: requested_by.clone(),
+                    admitted_at: now,
+                    target_schema,
+                    follow_up: None,
+                },
+                now,
+            )
             .await?;
     }
     scope.ensure_wake(now).await.map_err(journal_error)?;
@@ -91,7 +97,7 @@ where
         reason: cancel.reason.clone(),
         at: now,
     };
-    storage.save_cancel(cancel.attempt, &recorded).await?;
+    storage.save_cancel(cancel.attempt, &recorded, now).await?;
     scope.ensure_wake(now).await.map_err(journal_error)?;
     Ok(CancelAnswer::Accepted { recorded, phase })
 }

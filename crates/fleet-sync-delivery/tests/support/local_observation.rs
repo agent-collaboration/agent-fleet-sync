@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, dead_code)]
-use crate::support::{Acceptance, item_id, limits, peer};
+use crate::support::{Acceptance, FixtureBindings, item_id, limits, peer};
 use durable_steps::{
     AtomicStore, BoxFuture, CallFailure, CallId, CallResult, CallTarget, Engine, Host,
     OperationContext, OperationFailure, RequestKey, Resume, StepError, StoreError, Task,
@@ -29,6 +29,7 @@ impl DeliveryTypes for ObservationTypes {
     const MAX_STATUS_ROUTE_BYTES: u32 = 64;
     type Body = String;
     type Sender = String;
+
     type Address = String;
     type Acceptance = Acceptance;
     type LocalObservation = String;
@@ -95,8 +96,23 @@ impl DeliveryConsumer<TursoScope<'_, ObservationHost>> for ObservationConsumer {
 }
 
 pub type ObservationStore = TursoStore<ObservationHost>;
+type RecordRemoval = RemoveDeliveryRecord<ObservationStore, Turso>;
 pub type ObservationTask =
-    DeliverLocally<ObservationStore, Turso, ObservationTypes, ObservationConsumer>;
+    DeliverLocally<ObservationStore, Turso, ObservationTypes, ObservationConsumer, FixtureBindings>;
+pub async fn push_observation_envelope(
+    scope: &mut TursoScope<'_, ObservationHost>,
+    envelope: DeliveryEnvelope<ObservationTypes>,
+    consumer: &ObservationConsumer,
+) -> Result<PushResult<Acceptance>, DeliveryError> {
+    Inbox::<_, ObservationTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
+        .accept_push::<
+            ObservationTask,
+            ReportOutcome<ObservationStore, Turso, ObservationTypes, FixtureBindings>,
+            RecordRemoval,
+            _,
+        >(Submitter::Machine(peer(1)), envelope, peer(3), consumer, SyncTime::from_unix_millis(0))
+        .await
+}
 pub struct ObservationHost {
     pub clock: AtomicU64,
     identities: AtomicU64,
@@ -140,7 +156,7 @@ impl Host for ObservationHost {
             .unwrap()
             .transaction(move |scope| {
                 Box::pin(async move {
-                    Inbox::<_, ObservationTypes>::new(scope, peer(2), limits())
+                    Inbox::<_, ObservationTypes, _>::new(scope, peer(2), limits(), &FixtureBindings)
                         .resolve_local_delivery(&reference)
                         .await
                         .map_err(StoreError::backend)
@@ -195,7 +211,12 @@ impl ObservationFixture {
         engine
     }
     pub fn task(&self) -> ObservationTask {
-        ObservationTask::new(config(), self.host.consumer.clone(), self.host.clone())
+        ObservationTask::new(
+            config(),
+            self.host.consumer.clone(),
+            self.host.clone(),
+            std::sync::Arc::new(FixtureBindings),
+        )
     }
     pub async fn enqueue(&self, id: u64, expiry: Option<SyncTime>) {
         let consumer = self.host.consumer.clone();
@@ -213,14 +234,19 @@ impl ObservationFixture {
                         "body".into(),
                     )
                     .unwrap();
-                    Inbox::<_, ObservationTypes>::new(scope, peer(2), limits())
-                        .enqueue_local_and_admit::<ObservationTask, _>(
-                            item,
-                            consumer.as_ref(),
-                            SyncTime::from_unix_millis(0),
-                        )
-                        .await
-                        .map_err(StoreError::backend)?;
+                    Inbox::<_, ObservationTypes, _>::new(
+                        scope,
+                        peer(2),
+                        limits(),
+                        &FixtureBindings,
+                    )
+                    .enqueue_local_and_admit::<ObservationTask, RecordRemoval, _>(
+                        item,
+                        consumer.as_ref(),
+                        SyncTime::from_unix_millis(0),
+                    )
+                    .await
+                    .map_err(StoreError::backend)?;
                     Ok(())
                 })
             })
@@ -269,12 +295,20 @@ impl Task for PausedObservationTask {
             )
             .await
     }
-    fn before_resume<'s, 't>(
+    fn retry_not_later_than<'s, 't>(
         &'s self,
         scope: &'s mut TursoScope<'t, ObservationHost>,
         key: &'s RequestKey,
+    ) -> BoxFuture<'s, Result<Option<durable_steps::SyncTime>, StoreError>> {
+        self.inner.retry_not_later_than(scope, key)
+    }
+    fn before_resume<'s, 't>(
+        &'s self,
+        scope: &'s mut TursoScope<'t, ObservationHost>,
+        operation: &'s durable_steps::OperationId,
+        key: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<()>, StoreError>> {
-        self.inner.before_resume(scope, key)
+        self.inner.before_resume(scope, operation, key)
     }
     fn on_failed<'s, 't>(
         &'s self,

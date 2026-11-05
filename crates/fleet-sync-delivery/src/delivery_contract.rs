@@ -74,6 +74,11 @@ pub type LocalDeliveryOutcome<D> = DispatchOutcome<LocalDeliveryAnswer<D>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeliveryError {
+    #[error("sender binding unavailable for {row:?}: {reason:?}")]
+    SenderBindingUnavailable {
+        row: crate::CustodyRow,
+        reason: SenderBindingFailure,
+    },
     #[error("delivery storage: {0}")]
     Storage(String),
     #[error(transparent)]
@@ -82,6 +87,12 @@ pub enum DeliveryError {
     Refused { reason: DeliveryRefusal },
     #[error("invalid stored delivery field {field}")]
     Corrupt { field: &'static str },
+    #[error("invalid stored {table} row {key:?}: {field}")]
+    CorruptRow {
+        table: &'static str,
+        key: String,
+        field: &'static str,
+    },
     #[error("delivery encoding: {0}")]
     Encoding(String),
     #[error("delivery sequence exhausted")]
@@ -90,8 +101,6 @@ pub enum DeliveryError {
     CallConflict,
     #[error("delivery batch does not continue the requested stream")]
     InvalidBatch,
-    #[error("inbox has no room for the fetched batch yet")]
-    InboxFull,
     #[error("custody row or payload is missing")]
     CustodyMissing,
     #[error("custody digest differs from its call reference")]
@@ -106,7 +115,7 @@ impl DeliveryError {
             Self::ProcessingFailed { kind } => *kind,
             Self::CustodyMissing => DeliveryFailureKind::CustodyMissing,
             Self::DigestMismatch => DeliveryFailureKind::DigestMismatch,
-            Self::Corrupt { .. } => DeliveryFailureKind::CustodyCorrupt,
+            Self::Corrupt { .. } | Self::CorruptRow { .. } => DeliveryFailureKind::CustodyCorrupt,
             _ => DeliveryFailureKind::ExecutionFailed,
         }
     }
@@ -130,7 +139,7 @@ pub trait DeliveryConsumer<S: TransactionScope>: Send + Sync + 'static {
     /// including held attempts and cancellation controls. Returning an error
     /// aborts that transaction. The ID remains usable for corrupt-custody failures.
     /// The observation is present only for a validated local-attempt answer;
-    /// receive-time outcomes, expiry checks, failures and cancellations carry none.
+    /// intake outcomes, expiry checks, failures and cancellations carry none.
     fn on_outcome(
         &self,
         _scope: &mut S,
@@ -188,8 +197,6 @@ pub struct LocalDeliveryConfig {
 pub struct DeliveryTaskConfig {
     pub local: LocalDeliveryConfig,
     pub relay: PeerId,
-    pub fetch_items: u32,
-    pub fetch_bytes: u64,
 }
 
 /// Only the relay's atomic settlement can establish an unknown item's final failure.

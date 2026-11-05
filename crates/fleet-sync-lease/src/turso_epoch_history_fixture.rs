@@ -28,7 +28,7 @@ pub(super) async fn move_to(
     from: u64,
     to: u128,
 ) -> TestResult<HolderChangeAnswer> {
-    task_answer::<HolderChangeTask<TestStore, Turso>>(
+    task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         engine,
         &holder_change_request_key(id)?,
         HolderChangeRequest::Move {
@@ -55,7 +55,7 @@ pub(super) async fn takeover(
         },
     )
     .await?;
-    task_answer::<HolderChangeTask<TestStore, Turso>>(
+    task_answer::<HolderChangeTask<TestStore, Turso, crate::NoLeaseChangeHook>>(
         engine,
         &holder_change_request_key(id)?,
         HolderChangeRequest::Takeover {
@@ -79,7 +79,7 @@ pub(super) async fn records_in_scope(
     scope: &mut <TestStore as AtomicStore>::Scope<'_>,
 ) -> Result<Vec<String>, durable_steps::StoreError> {
     sqlx_core::query::query::<Turso>(
-        "SELECT 'history:' || database || ':' || epoch || ':' || record AS value FROM _fleet_sync_epoch_history UNION ALL SELECT 'lease:' || database || ':' || record AS value FROM _fleet_sync_leases UNION ALL SELECT 'transfer:' || attempt || ':' || database || ':' || intent || ':' || coalesce(outcome,'') || ':' || phase || ':' || phase_history AS value FROM _fleet_sync_transfers UNION ALL SELECT 'floor:' || database || ':' || epoch AS value FROM _fleet_sync_epoch_floor ORDER BY value"
+        "SELECT 'history:' || json_array(id,database,epoch,holder,granted_at,ended_epoch,ended_sequence,created_at,updated_at) AS value FROM _fleet_sync_epoch_history UNION ALL SELECT 'lease:' || json_array(database,holder,epoch,expires_at,last_renewed_at,created_at,updated_at) FROM _fleet_sync_leases UNION ALL SELECT 'transfer:' || json_array(attempt,database,new_epoch,outcome_kind,cancelled_by,granted_epoch,granted_start_epoch,granted_start_sequence,granted_expires_at,pending_transfer,failure_reason,refusal_kind,refusal_last_renewed_at,refusal_last_seen,refusal_gate_code,refusal_gate_detail,refusal_transfer,refusal_migration_state,refusal_store_fingerprint,refusal_holder,refusal_superseded_by,refusal_migration,refusal_store_version,refusal_supported_version,phase_kind,phase_final_epoch,phase_final_sequence,cleanup_failure_reason,cleanup_failed_at,created_at,updated_at) FROM _fleet_sync_transfers UNION ALL SELECT 'phase:' || json_array(id,attempt,position,phase_kind,final_epoch,final_sequence,entered_at,created_at,updated_at) FROM _fleet_sync_transfer_phase_history UNION ALL SELECT 'floor:' || json_array(database,epoch,created_at,updated_at) FROM _fleet_sync_epoch_floor ORDER BY value"
     ).fetch_all(scope.executor()).await?.into_iter().map(|row| row.try_get("value").map_err(storage)).collect()
 }
 

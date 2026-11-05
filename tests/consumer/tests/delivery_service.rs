@@ -1,6 +1,7 @@
 #[cfg(feature = "test-support")]
-#[path = "support/delivery_atomic.rs"]
-mod atomic;
+#[path = "support/delivery_node.rs"]
+#[expect(dead_code, reason = "shared process helpers serve several journeys")]
+mod node;
 #[expect(
     dead_code,
     unused_imports,
@@ -73,14 +74,12 @@ impl DeliveryPeer {
             }
         }
     }
-    async fn wait_publication(&mut self, item: ItemId, minimum: StatusVersion) -> TestResult {
-        println!("OBS waiting publication version {}", minimum.value());
+    async fn wait_delivered_publication(&mut self, item: ItemId) -> TestResult {
         loop {
-            if self
-                .publications
-                .iter()
-                .any(|publication| publication.item == item && publication.version >= minimum)
-            {
+            if self.publications.iter().any(|publication| {
+                publication.item == item
+                    && matches!(publication.status, DeliveryStatus::Delivered { .. })
+            }) {
                 return Ok(());
             }
             match server_frame(&mut self.socket).await? {
@@ -108,7 +107,7 @@ fn peer(value: u128) -> TestResult<PeerId> {
 fn item(id: ItemId, recipient: PeerId, body: &str) -> TestResult<DeliveryEnvelope<SampleDelivery>> {
     Ok(DeliveryEnvelope::Item(DeliveryItem::new(
         id,
-        "sample sender".into(),
+        format!("{}|authorized sender", peer(2)?),
         Recipient {
             peer: recipient,
             address: "inbox".into(),
@@ -126,54 +125,82 @@ async fn connect(process: &ServiceProcess, id: u128) -> TestResult<DeliveryPeer>
     })
 }
 
+#[cfg(feature = "test-support")]
 #[tokio::test]
 async fn native_relay_custody_and_status_stream_are_bound_to_the_authenticated_origin() -> TestResult
 {
-    let temporary = tempfile::tempdir()?;
-    let directory = std::env::var_os("FLEET_DELIVERY_EVIDENCE")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| temporary.path().to_path_buf());
-    tokio::fs::create_dir_all(&directory).await?;
-    let process = ServiceProcess::start(&directory).await?;
-    println!("OBS relay process ready");
+    use fleet_sync_test_consumer::delivery_node::CustodySide;
+    let directory = tempfile::tempdir()?;
+    let process = ServiceProcess::start(directory.path()).await?;
     let mut control = process
         .connect("control", "Bearer consumer-control")
         .await?;
     let mut sender = connect(&process, 2).await?;
-    let mut recipient = connect(&process, 4).await?;
     let mut other = connect(&process, 6).await?;
+    let mut recipient = node::DeliveryNode::start(&directory.path().join("recipient4"), 4).await?;
+    let mut second_recipient =
+        node::DeliveryNode::start(&directory.path().join("recipient5"), 5).await?;
+    recipient.connect(&process).await?;
+    second_recipient.connect(&process).await?;
     let first = ItemId::new(durable_steps::Uuid::now_v7())?;
     let second = ItemId::new(durable_steps::Uuid::now_v7())?;
-    for (id, mailbox) in [(first, peer(4)?), (second, peer(5)?)] {
+    for (identity, target) in [(first, peer(4)?), (second, peer(5)?)] {
         assert!(
-            matches!(sender.request(DeliveryRequest::Submit{call:call("submit")?,item:item(id,mailbox,"one body")?}).await?,DeliveryAnswer::Submit(SubmitResult::Accepted{version,..}) if version.value()==1)
+            matches!(sender.request(DeliveryRequest::Submit {call:call("submit")?,item:item(identity,target,"one body")?}).await?,DeliveryAnswer::Submit(SubmitResult::Accepted {version,..}) if version.value()==1)
         );
-        sender.wait_publication(id, StatusVersion::new(1)).await?;
     }
-    match sender
+    let delivered = recipient
+        .wait(first, CustodySide::Inbox, "delivered")
+        .await?;
+    assert_eq!(node::effect_count(&delivered, first), 1);
+    assert_eq!(
+        node::effect_count(
+            &second_recipient
+                .wait(second, CustodySide::Inbox, "delivered")
+                .await?,
+            second
+        ),
+        1
+    );
+    sender.wait_delivered_publication(first).await?;
+    sender.wait_delivered_publication(second).await?;
+    let fetched = sender
         .request(DeliveryRequest::StatusFetch {
             call: call("status")?,
             after: StatusCursor::new(0),
             limit: 100,
         })
-        .await?
-    {
-        DeliveryAnswer::StatusFetch(batch) => {
-            let ids: std::collections::BTreeSet<_> =
-                batch.events.iter().map(|event| event.item).collect();
-            assert_eq!(ids, std::collections::BTreeSet::from([first, second]));
-            assert!(
-                batch
-                    .events
-                    .windows(2)
-                    .all(|events| events[0].cursor < events[1].cursor)
-            );
-        }
-        _ => return Err("status fetch did not answer".into()),
-    }
-    assert!(
-        matches!(other.request(DeliveryRequest::StatusFetch{call:call("foreign-status")?,after:StatusCursor::new(0),limit:100}).await?,DeliveryAnswer::StatusFetch(batch) if batch.events.is_empty()&&batch.through.value()==0)
+        .await?;
+    let DeliveryAnswer::StatusFetch(page) = fetched else {
+        return Err("missing status page".into());
+    };
+    assert_eq!(
+        page.events
+            .iter()
+            .map(|event| event.item)
+            .collect::<std::collections::BTreeSet<_>>(),
+        std::collections::BTreeSet::from([first, second])
     );
+    assert!(
+        page.events
+            .windows(2)
+            .all(|events| events[0].cursor < events[1].cursor)
+    );
+    assert!(
+        matches!(other.request(DeliveryRequest::StatusFetch {call:call("foreign status")?,after:StatusCursor::new(0),limit:100}).await?,DeliveryAnswer::StatusFetch(page) if page.events.is_empty())
+    );
+    assert!(matches!(
+        other
+            .request(DeliveryRequest::Query {
+                call: call("foreign query")?,
+                mailbox: peer(4)?,
+                items: vec![first]
+            })
+            .await?,
+        DeliveryAnswer::DeliveryUnavailable {
+            reason: DeliveryRefusal::NotSubmitter
+        }
+    ));
     assert!(matches!(
         sender
             .request(DeliveryRequest::Submit {
@@ -181,7 +208,10 @@ async fn native_relay_custody_and_status_stream_are_bound_to_the_authenticated_o
                 item: item(first, peer(4)?, "one body")?
             })
             .await?,
-        DeliveryAnswer::Submit(SubmitResult::Replayed { .. })
+        DeliveryAnswer::Submit(SubmitResult::Replayed {
+            status: DeliveryStatus::Delivered { .. },
+            ..
+        })
     ));
     assert!(matches!(
         sender
@@ -194,36 +224,18 @@ async fn native_relay_custody_and_status_stream_are_bound_to_the_authenticated_o
             reason: DeliveryRefusal::ItemConflict { .. }
         })
     ));
-    let through = match recipient
-        .request(DeliveryRequest::Fetch {
-            call: call("fetch")?,
-            stream: DeliveryStream::Items,
-            after: DeliverySeq::new(0),
-            max_items: 10,
-            max_bytes: 10_000,
-            inbox_room_bytes: None,
-        })
-        .await?
-    {
-        DeliveryAnswer::Fetch(batch) => {
-            assert_eq!(batch.entries.len(), 1);
-            assert!(
-                matches!(batch.entries.first(),Some(FetchEntry::Item{item,..}) if item.id()==first)
-            );
-            batch.through
-        }
-        _ => return Err("fetch did not answer".into()),
-    };
-    assert!(
-        matches!(recipient.request(DeliveryRequest::Received{call:call("received")?,stream:DeliveryStream::Items,through}).await?,DeliveryAnswer::Received(answer) if answer.released_through==through)
-    );
+    // The real recipient has already committed its outcome. A later oversized
+    // report must still be refused before the sequence or canonical state moves.
+    recipient.stop().await?;
+    second_recipient.stop().await?;
+    let mut reporting = connect(&process, 4).await?;
     assert!(matches!(
-        recipient
+        reporting
             .request(DeliveryRequest::Report {
-                call: call("large-report")?,
+                call: call("large report")?,
                 report: RecipientReport {
                     item: first,
-                    report_seq: ReportSeq::new(1),
+                    report_seq: ReportSeq::new(99),
                     outcome: RecipientOutcome::Delivered {
                         acceptance: "x".repeat(256)
                     }
@@ -237,156 +249,51 @@ async fn native_relay_custody_and_status_stream_are_bound_to_the_authenticated_o
         })
     ));
     assert!(matches!(
-        recipient
+        reporting
             .request(DeliveryRequest::Report {
-                call: call("report")?,
+                call: call("unadmitted cancel")?,
                 report: RecipientReport {
                     item: first,
-                    report_seq: ReportSeq::new(1),
-                    outcome: RecipientOutcome::Delivered {
-                        acceptance: "delivered".into()
+                    report_seq: ReportSeq::new(99),
+                    outcome: RecipientOutcome::Prevented {
+                        cancel: ItemId::new(durable_steps::Uuid::now_v7())?
                     }
                 }
             })
             .await?,
-        DeliveryAnswer::Report(ReportResult::Applied {
-            status: DeliveryStatus::Delivered { .. },
-            ..
+        DeliveryAnswer::Report(ReportResult::Refused {
+            reason: DeliveryRefusal::ProcessingFailed {
+                kind: DeliveryFailureKind::ExecutionFailed
+            }
         })
     ));
-    sender
-        .wait_publication(first, StatusVersion::new(3))
-        .await?;
-    assert!(
-        matches!(other.request(DeliveryRequest::Retire{call:call("foreign-retire")?,mailbox:peer(4)?,items:vec![first]}).await?,DeliveryAnswer::Retire(RetireResult{retired,unknown,not_current_target}) if retired.is_empty()&&unknown.is_empty()&&not_current_target==[first])
-    );
-    assert!(
-        matches!(sender.request(DeliveryRequest::Retire{call:call("retire")?,mailbox:peer(4)?,items:vec![first]}).await?,DeliveryAnswer::Retire(RetireResult{retired,..}) if retired==[first])
-    );
-    let controls = match recipient
-        .request(DeliveryRequest::Fetch {
-            call: call("retired-control")?,
-            stream: DeliveryStream::Controls,
-            after: DeliverySeq::new(0),
-            max_items: 10,
-            max_bytes: 10_000,
-            inbox_room_bytes: None,
-        })
-        .await?
-    {
-        DeliveryAnswer::Fetch(batch) => {
-            assert!(
-                matches!(batch.entries.first(),Some(FetchEntry::Retired{items,..}) if items==&[first])
-            );
-            batch.through
-        }
-        _ => return Err("controls fetch did not answer".into()),
-    };
-    recipient
-        .request(DeliveryRequest::Received {
-            call: call("control-receipt")?,
-            stream: DeliveryStream::Controls,
-            through: controls,
+    let canonical = sender
+        .request(DeliveryRequest::Query {
+            call: call("retained status")?,
+            mailbox: peer(4)?,
+            items: vec![first],
         })
         .await?;
-    println!(
-        "OBS real process/WebSocket relay: custody receipts release payload; bounded report refusal stores nothing; authenticated-origin status spans two mailboxes; foreign Retire answers notCurrentTarget; retirement crosses Controls"
+    assert!(
+        matches!(canonical,DeliveryAnswer::Query(result) if matches!(result.statuses[0].state,ItemStatusState::Known {status:DeliveryStatus::Delivered {..},version,..} if (2..=3).contains(&version.value())))
     );
+    for entry in std::fs::read_dir(directory.path().join("service"))? {
+        assert!(
+            !entry?
+                .file_name()
+                .to_string_lossy()
+                .starts_with("delivery-"),
+            "per-peer delivery object survived"
+        );
+    }
+    drop(reporting);
     drop(sender);
-    drop(recipient);
     drop(other);
     process.stop(&mut control).await?;
     Ok(())
 }
 
 #[cfg(feature = "test-support")]
-#[tokio::test]
-async fn native_mailbox_failures_match_the_final_atomic_store_result() -> TestResult {
-    use fleet_sync_delivery::MailboxOperation;
-    let directory = tempfile::tempdir()?;
-    let process = ServiceProcess::start(directory.path()).await?;
-    let mut control = process
-        .connect("control", "Bearer consumer-control")
-        .await?;
-    let mut sender = connect(&process, 2).await?;
-    let mut recipient = connect(&process, 4).await?;
-    let identity = ItemId::new(durable_steps::Uuid::now_v7())?;
-    let oversized = DeliveryEnvelope::Item(DeliveryItem::<SampleDelivery>::new(
-        identity,
-        "x".repeat(256),
-        Recipient {
-            peer: peer(4)?,
-            address: "inbox".into(),
-        },
-        None,
-        "body".into(),
-    )?);
-    let refused = sender
-        .request(DeliveryRequest::Submit {
-            call: call("oversized sender")?,
-            item: oversized,
-        })
-        .await?;
-    assert_eq!(
-        serde_json::to_value(refused)?,
-        atomic::failed_answer(MailboxOperation::Submit, peer(4)?, peer(2)?, identity).await?
-    );
-    assert!(matches!(
-        sender
-            .request(DeliveryRequest::Submit {
-                call: call("healthy before report")?,
-                item: item(identity, peer(4)?, "body")?
-            })
-            .await?,
-        DeliveryAnswer::Submit(SubmitResult::Accepted { .. })
-    ));
-    sender
-        .wait_publication(identity, StatusVersion::new(1))
-        .await?;
-    let refused = recipient
-        .request(DeliveryRequest::Report {
-            call: call("oversized acceptance")?,
-            report: RecipientReport {
-                item: identity,
-                report_seq: ReportSeq::new(1),
-                outcome: RecipientOutcome::Delivered {
-                    acceptance: "x".repeat(256),
-                },
-            },
-        })
-        .await?;
-    assert_eq!(
-        serde_json::to_value(refused)?,
-        atomic::failed_answer(MailboxOperation::Report, peer(4)?, peer(2)?, identity).await?
-    );
-    assert!(matches!(
-        control_request(
-            &mut control,
-            ControlRequest::CorruptDeliveryCustody {
-                mailbox: peer(4)?,
-                item: identity
-            }
-        )
-        .await?,
-        ControlAnswer::CorruptedDelivery { .. }
-    ));
-    let unavailable = sender
-        .request(DeliveryRequest::Query {
-            call: call("corrupt custody")?,
-            mailbox: peer(4)?,
-            items: vec![identity],
-        })
-        .await?;
-    assert_eq!(
-        serde_json::to_value(unavailable)?,
-        atomic::failed_answer(MailboxOperation::Query, peer(4)?, peer(2)?, identity).await?
-    );
-    drop(sender);
-    drop(recipient);
-    process.stop(&mut control).await?;
-    Ok(())
-}
-
 #[cfg(feature = "test-support")]
 #[tokio::test]
 async fn native_status_route_comes_from_the_verified_binding_and_ignores_declared_mail_addresses()
@@ -414,10 +321,10 @@ async fn native_status_route_comes_from_the_verified_binding_and_ignores_declare
     let identity = ItemId::new(durable_steps::Uuid::now_v7())?;
     let envelope = DeliveryEnvelope::Item(DeliveryItem::<SampleDelivery>::new(
         identity,
-        forged_route.into(),
+        format!("{}|authorized sender", peer(2)?),
         Recipient {
             peer: peer(4)?,
-            address: "inbox".into(),
+            address: forged_route.into(),
         },
         None,
         serde_json::json!({"route":forged_route,"message":"untrusted mail address"}).to_string(),
@@ -431,21 +338,17 @@ async fn native_status_route_comes_from_the_verified_binding_and_ignores_declare
             .await?,
         DeliveryAnswer::Submit(SubmitResult::Accepted { .. })
     ));
-    sender
-        .wait_publication(identity, StatusVersion::new(1))
-        .await?;
-    let (record, _) =
-        support::delivery_mail::mail_row(&mut control, peer(4)?, peer(2)?, identity).await?;
-    assert_eq!(record["value"]["origin"], serde_json::json!(peer(2)?));
-    assert_eq!(record["value"]["statusTarget"]["route"], verified_route);
+    let (record, _) = support::delivery_mail::relay_row(&mut control, identity).await?;
     assert_eq!(
-        record["value"]["statusTarget"]["peer"],
-        serde_json::json!(peer(2)?)
+        record["value"]["submitter"],
+        serde_json::json!({"kind":"machine","value":peer(2)?})
     );
-    assert_eq!(
-        record["value"]["statusTarget"]["rank"],
-        serde_json::Value::Null
-    );
+    let route: String = serde_json::from_str(
+        record["value"]["statusRoute"]
+            .as_str()
+            .ok_or("missing stored route")?,
+    )?;
+    assert_eq!(route, verified_route);
     drop(sender);
     process.stop(&mut control).await?;
     Ok(())
@@ -453,125 +356,95 @@ async fn native_status_route_comes_from_the_verified_binding_and_ignores_declare
 
 #[cfg(feature = "test-support")]
 #[tokio::test]
-async fn native_retirement_reply_lost_after_commit_replays_once_after_process_restart() -> TestResult
-{
+async fn corrupt_typed_relay_row_is_unavailable_without_poisoning_other_items() -> TestResult {
+    use sqlx_turso::sqlx::{ConnectOptions, Connection};
     let directory = tempfile::tempdir()?;
-    let mut process = ServiceProcess::start(directory.path()).await?;
-    let mut control = process
-        .connect("control", "Bearer consumer-control")
-        .await?;
-    let mut sender = connect(&process, 2).await?;
-    let mut recipient = connect(&process, 4).await?;
-    let identity = ItemId::new(durable_steps::Uuid::now_v7())?;
-    assert!(matches!(
-        sender
-            .request(DeliveryRequest::Submit {
-                call: call("submit before lost retirement")?,
-                item: item(identity, peer(4)?, "body")?
-            })
-            .await?,
-        DeliveryAnswer::Submit(SubmitResult::Accepted { .. })
-    ));
-    sender
-        .wait_publication(identity, StatusVersion::new(1))
-        .await?;
-    assert!(matches!(
-        recipient
-            .request(DeliveryRequest::Report {
-                call: call("terminal before lost retirement")?,
-                report: RecipientReport {
-                    item: identity,
-                    report_seq: ReportSeq::new(1),
-                    outcome: RecipientOutcome::Delivered {
-                        acceptance: "done".into()
-                    }
-                }
-            })
-            .await?,
-        DeliveryAnswer::Report(ReportResult::Applied { .. })
-    ));
-    sender
-        .wait_publication(identity, StatusVersion::new(2))
-        .await?;
-    assert!(matches!(
-        control_request(&mut control, ControlRequest::HoldNextRetirementReply).await?,
-        ControlAnswer::Ok
-    ));
-    let retirement = call("retirement reply lost")?;
-    sender
-        .socket
-        .send(
-            serde_json::to_vec(&ClientFrame::<SampleProtocol>::Request {
-                frame: FrameId::new(durable_steps::Uuid::now_v7())?,
-                body: OperationRequest::Delivery(DeliveryRequest::Retire {
-                    call: retirement.clone(),
-                    mailbox: peer(4)?,
-                    items: vec![identity],
-                }),
-            })?
-            .into(),
-        )
-        .await?;
-    assert!(matches!(
-        control_request(&mut control, ControlRequest::WaitRetirementReplyCommitted).await?,
-        ControlAnswer::Ok
-    ));
-    let (before, _) =
-        support::delivery_mail::mail_row(&mut control, peer(4)?, peer(2)?, identity).await?;
-    assert_eq!(before["kind"], "compacted");
-    // This is an actual process death before the held socket answer, not a discarded API result.
-    process.kill().await?;
-    drop(sender);
-    drop(recipient);
-    drop(control);
     let process = ServiceProcess::start(directory.path()).await?;
     let mut control = process
         .connect("control", "Bearer consumer-control")
         .await?;
     let mut sender = connect(&process, 2).await?;
-    let mut recipient = connect(&process, 4).await?;
-    for _ in 0..2 {
-        match sender
-            .request(DeliveryRequest::Retire {
-                call: retirement.clone(),
+    let identity = ItemId::new(durable_steps::Uuid::now_v7())?;
+    let digest = item(identity, peer(4)?, "not submitted")?.digest().clone();
+    assert!(matches!(
+        sender
+            .request(DeliveryRequest::Settle {
+                call: call("seed negative")?,
+                submitter: Submitter::Machine(peer(2)?),
                 mailbox: peer(4)?,
-                items: vec![identity],
+                item: identity,
+                digest
             })
-            .await?
-        {
-            DeliveryAnswer::Retire(result) => {
-                assert_eq!(result.retired, [identity]);
-                assert!(result.not_current_target.is_empty());
-                assert!(result.unknown.is_empty());
-            }
-            _ => return Err("retirement receipt did not replay".into()),
-        }
-    }
-    let (after, _) =
-        support::delivery_mail::mail_row(&mut control, peer(4)?, peer(2)?, identity).await?;
-    assert_eq!(before, after);
-    match recipient
-        .request(DeliveryRequest::Fetch {
-            call: call("one retirement control")?,
-            stream: DeliveryStream::Controls,
-            after: DeliverySeq::new(0),
-            max_items: 10,
-            max_bytes: 10_000,
-            inbox_room_bytes: None,
-        })
-        .await?
-    {
-        DeliveryAnswer::Fetch(batch) => {
-            assert_eq!(batch.through.value(), 1);
-            assert_eq!(batch.entries.len(), 1);
-            assert!(
-                matches!(batch.entries.first().ok_or("missing retirement control")?, FetchEntry::Retired { items, .. } if items==&[identity])
-            );
-        }
-        _ => return Err("retirement control did not survive restart".into()),
-    }
+            .await?,
+        DeliveryAnswer::Settle(_)
+    ));
     drop(sender);
-    drop(recipient);
+    process.stop(&mut control).await?;
+    let mut db = sqlx_turso::TursoConnectOptions::new()
+        .filename(directory.path().join("service/registry.db"))
+        .create_if_missing(false)
+        .connect()
+        .await?;
+    // Deliberately seed a non-v7 stored identity in the stopped isolated fixture.
+    sqlx_core::query::query::<sqlx_turso::Turso>("UPDATE _fleet_sync_outbox_items SET submitter_id='00000000-0000-4000-8000-000000000002' WHERE item_id=?1").bind(identity.as_uuid().to_string()).execute(&mut db).await?;
+    db.close().await?;
+    let process = ServiceProcess::start(directory.path()).await?;
+    let mut control = process
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let mut sender = connect(&process, 2).await?;
+    assert!(matches!(
+        sender
+            .request(DeliveryRequest::Query {
+                call: call("corrupt query")?,
+                mailbox: peer(4)?,
+                items: vec![identity]
+            })
+            .await?,
+        DeliveryAnswer::DeliveryUnavailable {
+            reason: DeliveryRefusal::ProcessingFailed {
+                kind: DeliveryFailureKind::CustodyCorrupt
+            }
+        }
+    ));
+    let other = ItemId::new(durable_steps::Uuid::now_v7())?;
+    let digest = item(other, peer(4)?, "another negative")?.digest().clone();
+    assert!(matches!(
+        sender
+            .request(DeliveryRequest::Settle {
+                call: call("independent negative")?,
+                submitter: Submitter::Machine(peer(2)?),
+                mailbox: peer(4)?,
+                item: other,
+                digest
+            })
+            .await?,
+        DeliveryAnswer::Settle(_)
+    ));
+    drop(sender);
+    process.stop(&mut control).await?;
+    let mut db = sqlx_turso::TursoConnectOptions::new()
+        .filename(directory.path().join("service/registry.db"))
+        .create_if_missing(false)
+        .connect()
+        .await?;
+    sqlx_core::query::query::<sqlx_turso::Turso>(
+        "UPDATE _fleet_sync_outbox_items SET submitter_id=?1 WHERE item_id=?2",
+    )
+    .bind(peer(2)?.as_uuid().to_string())
+    .bind(identity.as_uuid().to_string())
+    .execute(&mut db)
+    .await?;
+    db.close().await?;
+    let process = ServiceProcess::start(directory.path()).await?;
+    let mut control = process
+        .connect("control", "Bearer consumer-control")
+        .await?;
+    let mut sender = connect(&process, 2).await?;
+    assert!(
+        matches!(sender.request(DeliveryRequest::Query {call:call("restored query")?,mailbox:peer(4)?,items:vec![identity]}).await?,DeliveryAnswer::Query(answer) if matches!(answer.statuses[0].state,ItemStatusState::Known {..}))
+    );
+    drop(sender);
     process.stop(&mut control).await?;
     Ok(())
 }

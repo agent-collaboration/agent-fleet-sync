@@ -12,13 +12,15 @@ use sqlx_core::{
 };
 
 /// Seal retirement before deleting the copy. A failed attempt leaves Retiring for a later attempt.
-pub async fn retire<C, D>(
+pub async fn retire<C, D, H>(
     ctx: &mut C,
     request: &Retirement,
     config: &RegistryConfig,
+    hook: std::sync::Arc<H>,
 ) -> Result<RetirementAnswer, LeaseError>
 where
     C: OperationContext,
+    for<'t> H: crate::LeaseChangeHook<<C::Store as AtomicStore>::Scope<'t>>,
     D: Database,
     for<'t> <C::Store as AtomicStore>::Scope<'t>: TransactionScope<Database = D>,
     D::Arguments: IntoArguments<D>,
@@ -28,6 +30,7 @@ where
 {
     let operation = *ctx.id();
     let offered = request.clone();
+    let now = ctx.now();
     let decision = ctx
         .local(step("check")?, move |scope| {
             Box::pin(async move {
@@ -39,9 +42,13 @@ where
                 if let DatabaseLifecycle::Retired { at } = record.lifecycle {
                     return Ok(Decision::Answer(RetirementAnswer::Retired { at }));
                 }
-                let mut attempt =
-                    open_lifecycle(scope, operation, LifecycleIntent::Retire(offered.clone()))
-                        .await?;
+                let mut attempt = open_lifecycle(
+                    scope,
+                    operation,
+                    LifecycleIntent::Retire(offered.clone()),
+                    now,
+                )
+                .await?;
                 if let Some(outcome) = attempt.outcome {
                     if let Some(error) = saved_failure(&outcome) {
                         return Err(step_error(error));
@@ -74,7 +81,10 @@ where
                 if let Some(refusal) = refusal {
                     let answer = RetirementAnswer::Refused(refusal);
                     attempt.outcome = Some(LifecycleOutcome::Retirement(answer.clone()));
-                    storage.save_lifecycle(&attempt).await.map_err(step_error)?;
+                    storage
+                        .save_lifecycle(&attempt, now)
+                        .await
+                        .map_err(step_error)?;
                     return Ok(Decision::Answer(answer));
                 }
                 Ok(Decision::Continue)
@@ -95,11 +105,12 @@ where
         .await?;
     match gate {
         GateAnswer::Refused { reason } => {
-            return finish::<C, D>(
+            return finish::<C, D, H>(
                 ctx,
                 request,
                 "refuse_admission",
                 Some(RetirementRefusal::GateRefused { reason }),
+                hook,
             )
             .await;
         }
@@ -112,9 +123,14 @@ where
     }
     let offered = request.clone();
     let retiring_at = ctx.now();
+    let now = retiring_at;
+    let retiring_hook = std::sync::Arc::clone(&hook);
     let decision = ctx
         .local(step("retiring")?, move |scope| {
             Box::pin(async move {
+                let before = crate::registry_snapshot(scope, offered.database)
+                    .await
+                    .map_err(step_error)?;
                 let mut storage = RegistryStorage(scope);
                 let mut record = storage
                     .database(offered.database)
@@ -153,7 +169,10 @@ where
                             })
                         })?;
                     attempt.outcome = Some(LifecycleOutcome::Retirement(answer.clone()));
-                    storage.save_lifecycle(&attempt).await.map_err(step_error)?;
+                    storage
+                        .save_lifecycle(&attempt, now)
+                        .await
+                        .map_err(step_error)?;
                     return Ok(Decision::Answer(answer));
                 }
                 record
@@ -164,7 +183,18 @@ where
                         retiring_at,
                     )
                     .map_err(step_error)?;
-                storage.save_database(&record).await.map_err(step_error)?;
+                storage
+                    .save_database(&record, now)
+                    .await
+                    .map_err(step_error)?;
+                crate::lease_change_hook::project_lease_change(
+                    storage.0,
+                    offered.database,
+                    before,
+                    retiring_hook.as_ref(),
+                )
+                .await
+                .map_err(step_error)?;
                 Ok(Decision::Continue)
             })
         })
@@ -186,36 +216,40 @@ where
         )
         .await?;
     match retired {
-        RetireCopyAnswer::Retired => finish::<C, D>(ctx, request, "retire", None).await,
+        RetireCopyAnswer::Retired => finish::<C, D, H>(ctx, request, "retire", None, hook).await,
         RetireCopyAnswer::Mismatch { fence, acked } => {
-            finish::<C, D>(
+            finish::<C, D, H>(
                 ctx,
                 request,
                 "refuse_copy_mismatch",
                 Some(RetirementRefusal::CopyMismatch { fence, acked }),
+                hook,
             )
             .await
         }
         RetireCopyAnswer::NotInitialized => {
-            finish::<C, D>(
+            finish::<C, D, H>(
                 ctx,
                 request,
                 "refuse_missing_copy",
                 Some(RetirementRefusal::CopyNotInitialized),
+                hook,
             )
             .await
         }
     }
 }
 
-async fn finish<C, D>(
+async fn finish<C, D, H>(
     ctx: &mut C,
     request: &Retirement,
     name: &str,
     refusal: Option<RetirementRefusal>,
+    hook: std::sync::Arc<H>,
 ) -> Result<RetirementAnswer, LeaseError>
 where
     C: OperationContext,
+    for<'t> H: crate::LeaseChangeHook<<C::Store as AtomicStore>::Scope<'t>>,
     D: Database,
     for<'t> <C::Store as AtomicStore>::Scope<'t>: TransactionScope<Database = D>,
     D::Arguments: IntoArguments<D>,
@@ -226,6 +260,7 @@ where
     let offered = request.clone();
     let now = ctx.now();
     Ok(ctx.local(step(name)?,move|scope|Box::pin(async move{
+        let before=crate::registry_snapshot(scope,offered.database).await.map_err(step_error)?;
         let mut storage=RegistryStorage(scope);
         let mut attempt=storage.lifecycle(offered.attempt).await.map_err(step_error)?.ok_or_else(||step_error(LeaseError::Corrupt{field:"retirement attempt".into()}))?;
         let mut record=storage.database(offered.database).await.map_err(step_error)?.ok_or_else(||step_error(LeaseError::NotRegistered))?;
@@ -233,11 +268,12 @@ where
             else if let Some(refusal)=refusal{RetirementAnswer::Refused(refusal)}else{
                 if !matches!(record.lifecycle,DatabaseLifecycle::Retiring{attempt} if attempt==offered.attempt){return Err(step_error(LeaseError::Corrupt{field:"retirement seal".into()}));}
                 record.change_lifecycle(DatabaseLifecycle::Retired{at:now},now).map_err(step_error)?;
-                storage.save_database(&record).await.map_err(step_error)?;
+                storage.save_database(&record, now).await.map_err(step_error)?;
                 RetirementAnswer::Retired{at:now}
             };
         attempt.outcome=Some(LifecycleOutcome::Retirement(answer.clone()));
-        storage.save_lifecycle(&attempt).await.map_err(step_error)?;
+        storage.save_lifecycle(&attempt, now).await.map_err(step_error)?;
+        crate::lease_change_hook::project_lease_change(storage.0,offered.database,before,hook.as_ref()).await.map_err(step_error)?;
         Ok(answer)
     })).await?)
 }

@@ -36,6 +36,7 @@ where
     fn before_resume<'s, 't>(
         &'s self,
         scope: &'s mut S::Scope<'t>,
+        _operation: &'s durable_steps::OperationId,
         request: &'s RequestKey,
     ) -> BoxFuture<'s, Result<Resume<u64>, StoreError>> {
         // Synchronous invocation is observable even if a later token failure

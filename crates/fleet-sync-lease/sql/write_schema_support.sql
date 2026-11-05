@@ -1,1 +1,1 @@
-INSERT INTO _fleet_sync_schema_support(peer,record) VALUES(?1,?2) ON CONFLICT(peer) DO UPDATE SET record=excluded.record
+INSERT INTO _fleet_sync_schema_support(peer,session_id,attach_seq,max_version,created_at,updated_at) VALUES(?1,json_extract(?2,'$.sessionId'),NULLIF(?2 -> '$.attachSeq','null'),NULLIF(?2 -> '$.support.maxVersion','null'),CAST(?3 AS INTEGER),CAST(?4 AS INTEGER)) ON CONFLICT(peer) DO UPDATE SET session_id=excluded.session_id,attach_seq=excluded.attach_seq,max_version=excluded.max_version,updated_at=excluded.updated_at

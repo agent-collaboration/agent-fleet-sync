@@ -7,7 +7,6 @@ mod node;
     reason = "shared helpers serve other journeys"
 )]
 mod support;
-use fleet_sync_protocol::*;
 use fleet_sync_test_consumer::{
     TestResult,
     delivery_node::{CustodySide, FaultMode, NodeCommand, peer},
@@ -16,8 +15,7 @@ use node::*;
 use support::*;
 
 #[tokio::test]
-async fn restart_during_overlapping_received_ack_and_local_effect_keeps_one_uncertain_effect()
--> TestResult {
+async fn restart_during_unanswered_local_effect_keeps_one_uncertain_effect() -> TestResult {
     use sqlx_turso::sqlx::{ConnectOptions, Connection, Row};
     let directory = tempfile::tempdir()?;
     let recipient_path = directory.path().join("recipient");
@@ -26,30 +24,6 @@ async fn restart_during_overlapping_received_ack_and_local_effect_keeps_one_unce
     let mut recipient = DeliveryNode::start(&recipient_path, 4).await?;
     sender.connect(&relay).await?;
     recipient.connect(&relay).await?;
-    let item = enqueue(&mut sender, 910, peer(4)?).await?;
-    sender.wait(item, CustodySide::Outbox, "sent").await?;
-    // First establish a no-effect Held outcome, while Received remains held.
-    // Existing controls then start a fresh local attempt at an exact call gap.
-    recipient
-        .command(NodeCommand::SetHeld { enabled: true })
-        .await?;
-    recipient
-        .command(NodeCommand::Arm {
-            hop: "received".into(),
-            mode: FaultMode::Pause,
-        })
-        .await?;
-    recipient
-        .command(NodeCommand::Receive {
-            stream: DeliveryStream::Items,
-        })
-        .await?;
-    let received = recipient.command(NodeCommand::WaitBarrier).await?;
-    assert_eq!(received["hop"], "received");
-    let held = recipient.wait(item, CustodySide::Inbox, "held").await?;
-    assert_eq!(effect_count(&held, item), 0);
-    // FaultGate has consumed its Received arm, but that call still waits for
-    // Resume. Re-arming Local leaves both independent calls held for the kill.
     recipient
         .command(NodeCommand::Arm {
             hop: "local".into(),
@@ -59,7 +33,7 @@ async fn restart_during_overlapping_received_ack_and_local_effect_keeps_one_unce
     recipient
         .command(NodeCommand::SetHeld { enabled: false })
         .await?;
-    recipient.command(NodeCommand::Release { item }).await?;
+    let item = enqueue(&mut sender, 910, peer(4)?).await?;
     let local = recipient.command(NodeCommand::WaitBarrier).await?;
     assert_eq!(local["hop"], "local");
     let before = recipient.command(NodeCommand::Inspect { item }).await?;
@@ -92,11 +66,6 @@ async fn restart_during_overlapping_received_ack_and_local_effect_keeps_one_unce
         .await?;
     assert_eq!(effect_count(&recovered, item), 1);
     sender.wait(item, CustodySide::Outbox, "uncertain").await?;
-    recipient
-        .command(NodeCommand::Receive {
-            stream: DeliveryStream::Items,
-        })
-        .await?;
     assert_eq!(
         effect_count(
             &recipient.command(NodeCommand::Inspect { item }).await?,
@@ -105,7 +74,7 @@ async fn restart_during_overlapping_received_ack_and_local_effect_keeps_one_unce
         1
     );
     eprintln!(
-        "OBS Received acknowledgment remained held while a fresh local effect committed; killed journal had one NeverRepeat call without output; restart persisted Uncertain and kept one effect"
+        "OBS a real Push admitted a local effect whose answer remained held; killed journal had one NeverRepeat call without output; restart persisted Uncertain and kept one effect"
     );
     recipient.stop().await?;
     sender.stop().await?;

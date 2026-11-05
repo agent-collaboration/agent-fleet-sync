@@ -11,7 +11,7 @@ use fleet_sync_tokio_runner::{
     InstallCoordinator, InstallSnapshot, ObjectKey, ObjectOptions, ObjectStore, SessionHost,
     StagingStore, TokioRunner,
 };
-use runtime_primitives::SystemClock;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     future::IntoFuture,
@@ -92,15 +92,31 @@ impl<
             .object(
                 ObjectKey::new("registry").map_err(ServiceError::rule)?,
                 ObjectOptions::default(),
-                Arc::new(ServiceHost::new(call_router.clone(), SystemClock)),
+                Arc::new(ServiceHost::new(
+                    call_router.clone(),
+                    crate::ServiceClock(options.clock.clone()),
+                )),
             )
             .await?;
-        let registry_engine = Arc::new(registry_engine(registry.clone(), options.registry).await?);
+        let mut registry_engine = registry_engine(registry.clone(), options.registry).await?;
+        if let Some(config) = &options.delivery {
+            crate::delivery_relay::install::<P, C>(
+                &registry,
+                &mut registry_engine,
+                config,
+                consumer.clone(),
+            )
+            .await?;
+        }
+        let registry_engine = Arc::new(registry_engine);
         let control = objects
             .object(
                 ObjectKey::new("control").map_err(ServiceError::rule)?,
                 ObjectOptions::default(),
-                Arc::new(ServiceHost::new(call_router.clone(), SystemClock)),
+                Arc::new(ServiceHost::new(
+                    call_router.clone(),
+                    crate::ServiceClock(options.clock.clone()),
+                )),
             )
             .await?;
         let installs = Arc::new(
@@ -134,19 +150,18 @@ impl<
             install_page_probe: Default::default(),
             #[cfg(feature = "test-support")]
             schema_support_probe: Default::default(),
-            #[cfg(feature = "test-support")]
-            retirement_reply_probe: Default::default(),
             copies: Mutex::new(BTreeMap::new()),
             copy_added: Notify::new(),
-            delivery: Mutex::new(BTreeMap::new()),
-            delivery_added: Notify::new(),
             sessions: OnceLock::new(),
         });
         let session_object = objects
             .object(
                 ObjectKey::new("sessions").map_err(ServiceError::rule)?,
                 ObjectOptions::default(),
-                Arc::new(ServiceHost::new(call_router, SystemClock)),
+                Arc::new(ServiceHost::new(
+                    call_router,
+                    crate::ServiceClock(state.options.clock.clone()),
+                )),
             )
             .await?;
         let sessions = Arc::new(
@@ -173,23 +188,6 @@ impl<
             .map_err(ServiceError::io)?;
         while let Some(entry) = files.next_entry().await.map_err(ServiceError::io)? {
             let name = entry.file_name();
-            if state.options.delivery.is_some()
-                && let Some(key) = name
-                    .to_str()
-                    .map(crate::delivery_owner::DeliveryObject::from_file)
-                    .transpose()?
-                    .flatten()
-            {
-                match key {
-                    crate::delivery_owner::DeliveryObject::Mailbox(_) => {
-                        state.delivery_slot(key).await;
-                    }
-                    crate::delivery_owner::DeliveryObject::Status(_) => {
-                        state.delivery_owner(key).await?;
-                    }
-                }
-                continue;
-            }
             let Some(id) = name
                 .to_str()
                 .and_then(|name| name.strip_prefix(&prefix))
@@ -270,7 +268,6 @@ impl<
                 .map_err(ServiceError::from)
         });
         let mut started = BTreeSet::new();
-        let mut delivery_started = BTreeSet::new();
         let mut server_finished = false;
         let result = loop {
             if *shutdown.borrow() {
@@ -279,10 +276,7 @@ impl<
             self.start_copy_runners(&mut started, &mut tasks, &stopped)
                 .await;
             self.start_source_runners(&mut tasks, &stopped).await;
-            self.start_delivery_runners(&mut delivery_started, &mut tasks, &stopped)
-                .await;
             tokio::select! {
-                _=self.state.delivery_added.notified()=>{},
                 result=&mut server=>{server_finished=true;break result.map_err(ServiceError::io);}
                 changed=shutdown.changed()=>if changed.is_err() || *shutdown.borrow() {break Ok(());},
                 _=self.state.copy_added.notified()=>{},
@@ -349,46 +343,6 @@ impl<
                 .map_err(ServiceError::io)?;
         }
         result
-    }
-    async fn start_delivery_runners(
-        &self,
-        started: &mut BTreeSet<crate::delivery_owner::DeliveryObject>,
-        tasks: &mut JoinSet<Result<(), ServiceError>>,
-        shutdown: &watch::Receiver<bool>,
-    ) {
-        let owners = self
-            .state
-            .delivery
-            .lock()
-            .await
-            .iter()
-            .map(|(key, slot)| (*key, slot.owner.get().cloned()))
-            .collect::<Vec<_>>();
-        for (key, owner) in owners {
-            if started.contains(&key) {
-                continue;
-            }
-            if let crate::delivery_owner::DeliveryObject::Mailbox(mailbox) = key {
-                started.insert(key);
-                let state = self.state.clone();
-                let shutdown = shutdown.clone();
-                let Some(limits) = self.state.options.delivery else {
-                    continue;
-                };
-                tasks.spawn(async move {
-                    crate::delivery_deadlines::run_mailbox(state, mailbox, limits, shutdown).await;
-                    Ok(())
-                });
-                continue;
-            }
-            let Some(owner) = owner else {
-                continue;
-            };
-            started.insert(key);
-            let runner = TokioRunner::new(owner.engine.clone(), owner.object.host());
-            let shutdown = shutdown.clone();
-            tasks.spawn(async move { runner.run(shutdown).await.map_err(ServiceError::from) });
-        }
     }
     async fn start_copy_runners(
         &self,

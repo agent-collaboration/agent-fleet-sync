@@ -37,17 +37,67 @@ impl<
         if kind == fleet_sync_delivery::PublishCall::<P::Delivery>::KIND {
             return self.delivery_publication(target, request, call).await;
         }
+        if kind == fleet_sync_delivery::PushCall::<P::Delivery>::KIND {
+            let target: fleet_sync_delivery::PushCall<P::Delivery> = decode(target)?;
+            let reference: DeliveryItemRef = decode(request)?;
+            let config = self.options.delivery.as_ref().ok_or_else(unreachable)?;
+            let limits = config.limits;
+            let binding = self.consumer.clone();
+            let now = self.registry.host().now();
+            let resolved = self
+                .registry
+                .transaction(move |scope| {
+                    Box::pin(async move {
+                        fleet_sync_delivery::Outbox::<_, P::Delivery, _>::new(
+                            scope,
+                            limits,
+                            binding.as_ref(),
+                        )
+                        .resolve_push(&reference, now)
+                        .await
+                        .map_err(fleet_sync_delivery::delivery_rollback)
+                    })
+                })
+                .await
+                .map_err(lost)?;
+            let Some(resolved) = resolved else {
+                return Err(CallFailure::AnswerLost);
+            };
+            if resolved.item.recipient().peer != target.recipient {
+                return Err(unreachable());
+            }
+            let answer = self
+                .sessions()
+                .map_err(lost)?
+                .request_peer(
+                    target.recipient,
+                    ServerRequest::Crate(ServerCall::Push {
+                        call,
+                        submitter: resolved.submitter,
+                        item: resolved.item,
+                    }),
+                    self.options.call_timeout,
+                )
+                .await?;
+            return match answer {
+                ClientAnswer::Crate(ServerCallAnswer::Pushed(result)) => {
+                    encode(fleet_sync_delivery::PushCall::<P::Delivery>::validated_answer(result)?)
+                }
+                _ => Err(CallFailure::AnswerLost),
+            };
+        }
         match kind {
             fleet_sync_session::SchemaSupportRegistry::KIND => {
                 let _: fleet_sync_session::SchemaSupportRegistry = decode(target)?;
                 let request: ReportSchemaSupport = decode(request)?;
                 #[cfg(feature = "test-support")]
                 self.schema_support_probe.before_report(&request).await;
+                let now = self.registry.host().now();
                 encode(
                     self.registry
                         .transaction(move |scope| {
                             Box::pin(async move {
-                                report_schema_support(scope, &request)
+                                report_schema_support(scope, &request, now)
                                     .await
                                     .map_err(StoreError::backend)
                             })

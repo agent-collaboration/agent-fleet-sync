@@ -1,1 +1,1 @@
-SELECT record FROM _fleet_sync_reports WHERE item_id = ?1 AND report_seq = CAST(?2 AS INTEGER);
+SELECT item_id,typeof(report_seq) AS report_seq_class,CAST(report_seq AS TEXT) AS report_seq,outcome_kind,outcome_acceptance,refusal_kind,refusal_code,refusal_failure,refusal_size_field,refusal_digest,refusal_item_id,outcome_cancel_item_id,outcome_too_late_at FROM _fleet_sync_reports WHERE item_id=?1 AND report_seq=CAST(?2 AS INTEGER);

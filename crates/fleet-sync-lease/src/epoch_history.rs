@@ -74,6 +74,15 @@ where
     if let Some(row) =
         checked_queries::read_invalid_history_epoch(scope, database.as_uuid().to_string()).await?
     {
+        crate::registry_row::stored_row_id(
+            &row.id,
+            "_fleet_sync_epoch_history",
+            &format!(
+                "{}/{}",
+                database,
+                row.epoch.as_deref().unwrap_or("<missing>")
+            ),
+        )?;
         stored_epoch(row.epoch)?;
         return Err(corrupt("epoch history key"));
     }
@@ -89,8 +98,8 @@ where
     let mut grants = rows
         .into_iter()
         .map(|row| {
-            let epoch = stored_epoch(row.epoch)?;
-            decode_history(database, epoch, row.record)
+            let epoch = stored_epoch(row.epoch.clone())?;
+            decode_history(database, epoch, row.history_record()?)
         })
         .collect::<Result<Vec<_>, _>>()?;
     let has_more =
@@ -171,8 +180,8 @@ where
         };
         let successor = decode_history(
             grant.database,
-            stored_epoch(successor.epoch)?,
-            successor.record,
+            stored_epoch(successor.epoch.clone())?,
+            successor.history_record()?,
         )?;
         let ended_at = grant
             .ended_at

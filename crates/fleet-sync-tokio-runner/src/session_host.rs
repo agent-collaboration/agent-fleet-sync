@@ -5,7 +5,6 @@ use crate::{
 use durable_steps::{AtomicStore, Host, StoreError, Uuid, storage::TransactionScope};
 use fleet_sync_protocol::*;
 use fleet_sync_session::*;
-use sqlx_core::migrate::Migrator;
 use sqlx_turso::Turso;
 use std::{collections::BTreeMap, future::Future, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, mpsc, oneshot, watch};
@@ -138,10 +137,8 @@ impl<
         object
             .transaction(|scope| {
                 Box::pin(async move {
-                    let mut migrator = Migrator::with_migrations(
-                        SESSION_MIGRATOR.iter().cloned().collect::<Vec<_>>(),
-                    );
-                    migrator.dangerous_set_table_name("_fleet_sync_session_history");
+                    let migrator =
+                        SESSION_MIGRATOR.with_history_table("_fleet_sync_session_history");
                     migrator
                         .run_direct(None, scope.executor(), false)
                         .await

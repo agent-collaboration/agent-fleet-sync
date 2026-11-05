@@ -6,10 +6,12 @@
 mod actor_reference;
 mod copy_failure;
 mod crate_call_frame;
+mod delivery_binding;
 mod delivery_identity;
 mod delivery_item;
 mod delivery_message;
 mod delivery_outcome;
+mod delivery_push;
 mod encoded_size;
 mod gate_message;
 mod holder_change_message;
@@ -31,16 +33,19 @@ mod schema_support_report;
 mod session_frame;
 mod snapshot_manifest;
 mod snapshot_page;
+mod submitter;
 mod transaction_part;
 pub mod unit_budget;
 
 pub use actor_reference::*;
 pub use copy_failure::*;
 pub use crate_call_frame::*;
+pub use delivery_binding::*;
 pub use delivery_identity::*;
 pub use delivery_item::*;
 pub use delivery_message::*;
 pub use delivery_outcome::*;
+pub use delivery_push::*;
 pub use gate_message::*;
 pub use holder_change_message::*;
 pub use lease_message::*;
@@ -60,6 +65,7 @@ pub use schema_support_report::*;
 pub use session_frame::*;
 pub use snapshot_manifest::*;
 pub use snapshot_page::*;
+pub use submitter::Submitter;
 pub use transaction_part::*;
 
 #[cfg(test)]

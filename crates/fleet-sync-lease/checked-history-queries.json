@@ -1,0 +1,137 @@
+{
+  "migrations": [
+    "migrations"
+  ],
+  "output": "src/checked_queries/history.rs",
+  "metadata": "checked-history-query-metadata.json",
+  "queries": [
+    {
+      "name": "read_history",
+      "sql": "sql/read_history.sql",
+      "row": "StoredHistoryRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "epoch",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "write_history",
+      "sql": "sql/write_history.sql",
+      "row": null,
+      "result": "execute",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "epoch",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "record",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_history_page",
+      "sql": "sql/read_history_page.sql",
+      "row": "StoredHistoryRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "after",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "before",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "limit",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_history_successor",
+      "sql": "sql/read_history_successor.sql",
+      "row": "StoredHistoryRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "after",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_invalid_history_epoch",
+      "sql": "sql/read_invalid_history_epoch.sql",
+      "row": "StoredInvalidHistoryEpochRow",
+      "result": "optional",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "read_history_transfer",
+      "sql": "sql/read_history_transfer.sql",
+      "row": "StoredHistoryTransferRow",
+      "result": "many",
+      "parameters": [
+        {
+          "name": "database",
+          "kind": "text",
+          "nullable": false
+        },
+        {
+          "name": "intent",
+          "kind": "text",
+          "nullable": false
+        }
+      ]
+    }
+  ]
+}

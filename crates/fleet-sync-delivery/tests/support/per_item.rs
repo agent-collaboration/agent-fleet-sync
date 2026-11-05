@@ -11,6 +11,7 @@ impl DeliveryTypes for VariableTypes {
     const MAX_LOCAL_OBSERVATION_BYTES: u32 = 4;
     type Body = String;
     type Sender = String;
+
     type Address = String;
     type Acceptance = Acceptance;
     type LocalObservation = ();
@@ -38,8 +39,6 @@ pub fn variable_item(identity: u64, body: &str) -> DeliveryItem<VariableTypes> {
 }
 pub fn variable_limits(bytes: u64) -> DeliveryLimits {
     DeliveryLimits::new::<VariableTypes>(
-        bytes,
-        20,
         bytes,
         20,
         bytes,

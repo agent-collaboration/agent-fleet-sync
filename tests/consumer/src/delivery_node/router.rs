@@ -37,9 +37,13 @@ impl CallRouter for NodeRouter {
                     .object
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
-                            Outbox::<_, SampleDelivery>::new(scope, config.limits)
-                                .resolve_submit(&lookup)
-                                .await
+                            Outbox::<_, SampleDelivery, _>::new(
+                                scope,
+                                config.limits,
+                                &SampleSenderBinding,
+                            )
+                            .resolve_submit(&lookup)
+                            .await
                         })
                     })
                     .await;
@@ -58,7 +62,17 @@ impl CallRouter for NodeRouter {
                         let DeliveryAnswer::Submit(answer) = answer else {
                             return Err(CallFailure::AnswerLost);
                         };
-                        encoded(DispatchOutcome::Answered(answer))
+                        encoded(SubmitCall::<SampleDelivery>::validated_answer(
+                            DispatchOutcome::Answered(answer),
+                        )?)
+                    }
+                    Err(DeliveryError::SenderBindingUnavailable { reason, .. }) => {
+                        Err(CallFailure::Retryable {
+                            reason: durable_steps::CallRetryReason {
+                                code: reason.code().into(),
+                                detail: "consumer sender binding is not established".into(),
+                            },
+                        })
                     }
                     Err(DeliveryError::Storage(_)) => Err(unreachable()),
                     _ => {
@@ -66,6 +80,7 @@ impl CallRouter for NodeRouter {
                             .link
                             .request(DeliveryRequest::Settle {
                                 call,
+                                submitter: Submitter::Machine(state.owner),
                                 mailbox: target.mailbox,
                                 item: reference.item,
                                 digest: reference.digest,
@@ -84,9 +99,14 @@ impl CallRouter for NodeRouter {
                     .object
                     .rule_transaction::<_, DeliveryError, _>(move |scope| {
                         Box::pin(async move {
-                            Inbox::<_, SampleDelivery>::new(scope, config.owner, config.limits)
-                                .resolve_local_delivery(&reference)
-                                .await
+                            Inbox::<_, SampleDelivery, _>::new(
+                                scope,
+                                config.owner,
+                                config.limits,
+                                &SampleSenderBinding,
+                            )
+                            .resolve_local_delivery(&reference)
+                            .await
                         })
                     })
                     .await;
@@ -106,58 +126,20 @@ impl CallRouter for NodeRouter {
                         encoded(answer)
                     }
                     Err(DeliveryError::Storage(_)) => Err(unreachable()),
+                    Err(DeliveryError::SenderBindingUnavailable { reason, .. }) => {
+                        Err(CallFailure::Retryable {
+                            reason: durable_steps::CallRetryReason {
+                                code: reason.code().into(),
+                                detail: "consumer sender binding is not established".into(),
+                            },
+                        })
+                    }
                     Err(error) => encoded(LocalDeliveryOutcome::<SampleDelivery>::Unresolvable {
                         reason: error.failure_kind(),
                     }),
                 }
             }
-            FetchCall::<SampleDelivery>::KIND => {
-                let target: FetchCall<SampleDelivery> = decoded(target)?;
-                if target.mailbox != config.owner
-                    || target.relay != state.remote_config().map_err(|_| unreachable())?.relay
-                {
-                    return Err(unreachable());
-                }
-                let request: FetchInput = decoded(request)?;
-                let answer = state
-                    .link
-                    .request(DeliveryRequest::Fetch {
-                        call,
-                        stream: request.stream,
-                        after: request.after,
-                        max_items: request.max_items,
-                        max_bytes: request.max_bytes,
-                        inbox_room_bytes: request.inbox_room_bytes,
-                    })
-                    .await?;
-                match answer {
-                    DeliveryAnswer::Fetch(answer) => encoded(answer),
-                    DeliveryAnswer::MailboxUnavailable { .. } => Err(CallFailure::AnswerLost),
-                    _ => Err(CallFailure::AnswerLost),
-                }
-            }
-            ReceivedCall::KIND => {
-                let target: ReceivedCall = decoded(target)?;
-                if target.mailbox != config.owner
-                    || target.relay != state.remote_config().map_err(|_| unreachable())?.relay
-                {
-                    return Err(unreachable());
-                }
-                let request: ReceiptInput = decoded(request)?;
-                let answer = state
-                    .link
-                    .request(DeliveryRequest::Received {
-                        call,
-                        stream: request.stream,
-                        through: request.through,
-                    })
-                    .await?;
-                match answer {
-                    DeliveryAnswer::Received(answer) => encoded(answer),
-                    DeliveryAnswer::MailboxUnavailable { .. } => Err(CallFailure::AnswerLost),
-                    _ => Err(CallFailure::AnswerLost),
-                }
-            }
+
             ReportCall::<SampleDelivery>::KIND => {
                 let target: ReportCall<SampleDelivery> = decoded(target)?;
                 if target.mailbox != config.owner

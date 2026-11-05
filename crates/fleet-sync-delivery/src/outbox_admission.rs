@@ -7,19 +7,25 @@ use sqlx_core::{
 };
 
 use crate::Outbox;
-impl<S, D> Outbox<'_, S, D>
+impl<S, D, B> Outbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    pub async fn enqueue_and_admit<T: durable_steps::Task<Input = SubmitInput>>(
+    pub async fn enqueue_and_admit<
+        T: durable_steps::Task<Input = SubmitInput>,
+        TRetention: durable_steps::Task<Input = ItemId>,
+    >(
         &mut self,
         item: DeliveryItem<D>,
         relay: PeerId,
+        submitter: crate::Submitter,
+        now: SyncTime,
     ) -> Result<
         (
             OutboxAdmission<D::Acceptance>,
@@ -28,18 +34,32 @@ where
         DeliveryError,
     >
     where
-        S: durable_steps::JournalScope,
+        S: durable_steps::JournalScope + durable_steps::storage::JournalStorage,
     {
+        let identity = item.id();
         let mailbox = item.recipient().peer;
-        let answer = self.enqueue(item, relay).await?;
+        let answer = self.enqueue(item, relay, submitter, now).await?;
         let admitted = self.admit_submission::<T>(&answer, relay, mailbox).await?;
+        if !matches!(
+            answer,
+            OutboxAdmission::BindingUnavailable { .. }
+                | OutboxAdmission::Refused { .. }
+                | OutboxAdmission::CancelAlreadyRequested { .. }
+        ) {
+            crate::admit_record_removal::<_, TRetention>(self.scope, identity).await?;
+        }
         Ok((answer, admitted))
     }
-    pub async fn enqueue_cancel_and_admit<T: durable_steps::Task<Input = SubmitInput>, C>(
+    pub async fn enqueue_cancel_and_admit<
+        T: durable_steps::Task<Input = SubmitInput>,
+        TRetention: durable_steps::Task<Input = ItemId>,
+        C,
+    >(
         &mut self,
         cancel: DeliveryCancel<D>,
         relay: PeerId,
-
+        submitter: crate::Submitter,
+        now: SyncTime,
         consumer: &C,
     ) -> Result<
         (
@@ -49,13 +69,24 @@ where
         DeliveryError,
     >
     where
-        S: durable_steps::JournalScope,
+        S: durable_steps::JournalScope + durable_steps::storage::JournalStorage,
         C: crate::DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        let identity = cancel.id();
         let mailbox = cancel.recipient().peer;
-        let answer = self.enqueue_cancel(cancel, relay, consumer).await?;
+        let answer = self
+            .enqueue_cancel(cancel, relay, submitter, now, consumer)
+            .await?;
         let admitted = self.admit_submission::<T>(&answer, relay, mailbox).await?;
+        if !matches!(
+            answer,
+            OutboxAdmission::BindingUnavailable { .. }
+                | OutboxAdmission::Refused { .. }
+                | OutboxAdmission::CancelAlreadyRequested { .. }
+        ) {
+            crate::admit_record_removal::<_, TRetention>(self.scope, identity).await?;
+        }
         Ok((answer, admitted))
     }
     async fn admit_submission<T: durable_steps::Task<Input = SubmitInput>>(
@@ -65,7 +96,7 @@ where
         mailbox: PeerId,
     ) -> Result<Option<durable_steps::Admitted>, DeliveryError>
     where
-        S: durable_steps::JournalScope,
+        S: durable_steps::JournalScope + durable_steps::storage::JournalStorage,
     {
         let OutboxAdmission::Queued { reference } = answer else {
             return Ok(None);
@@ -86,25 +117,71 @@ where
         &mut self,
         item: DeliveryItem<D>,
         relay: PeerId,
+        submitter: crate::Submitter,
+        now: SyncTime,
     ) -> Result<OutboxAdmission<D::Acceptance>, DeliveryError> {
-        self.enqueue_envelope(DeliveryEnvelope::Item(item), relay, false)
+        let verified = match crate::sender_binding::verify_sender::<S, D, B>(
+            self.scope,
+            self.binding,
+            item.sender(),
+            crate::CustodyRow::Outbox(item.id()),
+        )
+        .await
+        {
+            Ok(verified) => verified,
+            Err(DeliveryError::SenderBindingUnavailable { reason, .. }) => {
+                return Ok(OutboxAdmission::BindingUnavailable { reason });
+            }
+            Err(error) => return Err(error),
+        };
+        if submitter != verified.owner() {
+            return Ok(OutboxAdmission::Refused {
+                reason: DeliveryRefusal::NotSubmitter,
+            });
+        }
+        self.enqueue_envelope(DeliveryEnvelope::Item(item), relay, submitter, now, false)
             .await
     }
     pub async fn enqueue_cancel<C>(
         &mut self,
         cancel: DeliveryCancel<D>,
         relay: PeerId,
-
+        submitter: crate::Submitter,
+        now: SyncTime,
         consumer: &C,
     ) -> Result<OutboxAdmission<D::Acceptance>, DeliveryError>
     where
         C: crate::DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        let verified = match crate::sender_binding::verify_sender::<S, D, B>(
+            self.scope,
+            self.binding,
+            cancel.sender(),
+            crate::CustodyRow::Outbox(cancel.id()),
+        )
+        .await
+        {
+            Ok(verified) => verified,
+            Err(DeliveryError::SenderBindingUnavailable { reason, .. }) => {
+                return Ok(OutboxAdmission::BindingUnavailable { reason });
+            }
+            Err(error) => return Err(error),
+        };
+        if submitter != verified.owner() {
+            return Ok(OutboxAdmission::Refused {
+                reason: DeliveryRefusal::NotSubmitter,
+            });
+        }
         self.limits.validate::<D>()?;
+        if crate::item_is_too_old(cancel.id(), now) {
+            return Ok(OutboxAdmission::Refused {
+                reason: DeliveryRefusal::TooOld,
+            });
+        }
         let envelope = DeliveryEnvelope::Cancel(cancel);
         crate::delivery_sizes::check_envelope(&envelope)?;
-        if let Some(answer) = self.existing_admission(&envelope).await? {
+        if let Some(answer) = self.existing_admission(&envelope, submitter).await? {
             return Ok(answer);
         }
         let DeliveryEnvelope::Cancel(cancel) = envelope else {
@@ -116,7 +193,13 @@ where
             .is_some()
         {
             return self
-                .enqueue_envelope(DeliveryEnvelope::Cancel(cancel), relay, false)
+                .enqueue_envelope(
+                    DeliveryEnvelope::Cancel(cancel),
+                    relay,
+                    submitter,
+                    now,
+                    false,
+                )
                 .await;
         }
         let mut withdrawn = false;
@@ -144,25 +227,42 @@ where
                 }
                 original.header.status = DeliveryStatus::Cancelled;
                 original.payload = None;
-                self.save(&original).await?;
+                self.save(&original, now).await?;
                 withdrawn = true;
             }
         }
-        self.enqueue_envelope(DeliveryEnvelope::Cancel(cancel), relay, withdrawn)
-            .await
+        self.enqueue_envelope(
+            DeliveryEnvelope::Cancel(cancel),
+            relay,
+            submitter,
+            now,
+            withdrawn,
+        )
+        .await
     }
-    async fn existing_admission(
+    pub(crate) async fn existing_admission(
         &mut self,
         envelope: &DeliveryEnvelope<D>,
+        submitter: crate::Submitter,
     ) -> Result<Option<OutboxAdmission<D::Acceptance>>, DeliveryError> {
         let Some(state) = self.header_state(envelope.id()).await? else {
             return Ok(None);
         };
-        let (digest, status, version) = match state {
+        let (digest, status, version, owner) = match state {
+            OutboxHeaderState::Legacy { .. } => {
+                return Ok(Some(OutboxAdmission::Refused {
+                    reason: DeliveryRefusal::NotSubmitter,
+                }));
+            }
             OutboxHeaderState::Unresolvable { kind, .. } => {
                 return Err(DeliveryError::ProcessingFailed { kind });
             }
-            OutboxHeaderState::Recovered(record) => (record.digest, record.status, record.version),
+            OutboxHeaderState::Recovered(record) => (
+                record.digest,
+                record.status,
+                record.version,
+                record.submitter,
+            ),
             OutboxHeaderState::Item(header) => {
                 header.validate()?;
                 (
@@ -171,27 +271,36 @@ where
                     })?,
                     header.status,
                     header.version,
+                    header.submitter,
                 )
             }
         };
-        Ok(Some(if digest == *envelope.digest() {
-            OutboxAdmission::Replayed { status, version }
-        } else {
-            OutboxAdmission::Refused {
-                reason: DeliveryRefusal::ItemConflict { existing: digest },
-            }
-        }))
+        Ok(Some(
+            if digest == *envelope.digest() && owner.is_none_or(|owner| owner == submitter) {
+                OutboxAdmission::Replayed { status, version }
+            } else {
+                OutboxAdmission::Refused {
+                    reason: DeliveryRefusal::ItemConflict { existing: digest },
+                }
+            },
+        ))
     }
-    async fn enqueue_envelope(
+    pub(crate) async fn enqueue_envelope(
         &mut self,
         envelope: DeliveryEnvelope<D>,
         relay: PeerId,
-
+        submitter: crate::Submitter,
+        now: SyncTime,
         withdrawn: bool,
     ) -> Result<OutboxAdmission<D::Acceptance>, DeliveryError> {
+        if crate::item_is_too_old(envelope.id(), now) {
+            return Ok(OutboxAdmission::Refused {
+                reason: DeliveryRefusal::TooOld,
+            });
+        }
         self.limits.validate::<D>()?;
         crate::delivery_sizes::check_envelope(&envelope)?;
-        if let Some(answer) = self.existing_admission(&envelope).await? {
+        if let Some(answer) = self.existing_admission(&envelope, submitter).await? {
             return Ok(answer);
         }
         let cancel_target = match &envelope {
@@ -229,6 +338,11 @@ where
                     Some(OutboxHeaderState::Unresolvable { kind, .. }) => {
                         return Err(DeliveryError::ProcessingFailed { kind });
                     }
+                    Some(OutboxHeaderState::Legacy { .. }) => {
+                        return Ok(OutboxAdmission::Refused {
+                            reason: DeliveryRefusal::NotSubmitter,
+                        });
+                    }
                     None => {
                         return Err(DeliveryError::Corrupt {
                             field: "outbox cancel link missing item",
@@ -257,7 +371,7 @@ where
                         field: "cancel exceeds outbox settlement allowance",
                     },
                 )?;
-                self.update_header(&original).await?;
+                self.update_header(&original, now).await?;
                 acceptance_bound = original.acceptance_bound;
                 capacity_slot = false;
                 settlement = 0;
@@ -289,7 +403,13 @@ where
             id: reference.item,
             digest: reference.digest.as_str().to_owned(),
             relay,
-
+            submitter: Some(submitter),
+            consumer_sender: Some(encode(envelope.sender())?),
+            created_at: created_at(reference.item),
+            admitted_at: Some(now),
+            handed_off_at: None,
+            last_report_seq: ReportSeq::new(0),
+            status_route: None,
             recipient: envelope.recipient().peer,
             valid_until: envelope.valid_until(),
             status: if withdrawn {
@@ -315,12 +435,14 @@ where
             header,
             payload: if withdrawn { None } else { Some(envelope) },
         };
-        self.save(&record).await?;
+        self.save(&record, now).await?;
         if let Some(target) = cancel_target {
             queries::write_outbox_cancel_link(
                 self.scope,
                 item_key(target),
                 item_key(reference.item),
+                now.unix_millis().to_string(),
+                now.unix_millis().to_string(),
             )
             .await
             .map_err(sql_error)?;

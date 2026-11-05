@@ -289,8 +289,10 @@ where
                 through: piece.through,
                 part: piece.part.clone(),
             };
+            let request_started = self.database.clock.now();
             let answer = self.transport.send_piece(copy, piece).await?;
-            let (mut answered, continuation) = self.answer(copy, &sent, answer).await?;
+            let (mut answered, continuation) =
+                self.answer(copy, &sent, answer, request_started).await?;
             events.append(&mut answered);
             match continuation {
                 PieceContinuation::NextPart => {}
@@ -319,6 +321,7 @@ where
         copy: ReceiverId,
         sent: &SentPiece,
         answer: ReplicationAnswer,
+        request_started: fleet_sync_protocol::SyncTime,
     ) -> Result<(Vec<ReplicationEvents>, PieceContinuation), SenderError> {
         let mut control = self.database.control.lock().await;
         let mut connection = self.database.maintenance.acquire().await?;
@@ -445,7 +448,7 @@ where
                             current_epoch: newer,
                             epoch_ended_at: ended_at,
                         }),
-                        request_started: self.database.clock.now(),
+                        request_started,
                     },
                 )
                 .await?;
@@ -481,7 +484,7 @@ where
                             &mut transaction,
                             crate::writer_authority::AuthorityObservation::Renewal {
                                 answer: RenewAnswer::Refused(refusal),
-                                request_started: self.database.clock.now(),
+                                request_started,
                             },
                         )
                         .await?,

@@ -86,6 +86,7 @@ impl<S: AtomicStore> Task for PrunedResume<S> {
     fn before_resume<'scope, 'transaction>(
         &'scope self,
         _: &'scope mut S::Scope<'transaction>,
+        _operation: &'scope durable_steps::OperationId,
         _: &'scope RequestKey,
     ) -> BoxFuture<'scope, Result<Resume<u64>, StoreError>> {
         Box::pin(async { Ok(Resume::Finish(73)) })

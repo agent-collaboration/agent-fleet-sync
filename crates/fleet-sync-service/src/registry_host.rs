@@ -9,7 +9,6 @@ use fleet_sync_lease::*;
 use fleet_sync_protocol::*;
 use fleet_sync_session::PeerAuthenticator;
 use runtime_primitives::{Clock, WakeScheduler};
-use sqlx_core::migrate::Migrator;
 use sqlx_turso::Turso;
 use std::sync::Arc;
 
@@ -20,9 +19,7 @@ pub(crate) async fn registry_engine(
     object
         .transaction(|scope| {
             Box::pin(async move {
-                let mut migrator =
-                    Migrator::with_migrations(LEASE_MIGRATOR.iter().cloned().collect::<Vec<_>>());
-                migrator.dangerous_set_table_name("_fleet_sync_registry_migrations");
+                let migrator = LEASE_MIGRATOR.with_history_table("_fleet_sync_registry_migrations");
                 migrator
                     .run_direct(None, scope.executor(), false)
                     .await
@@ -31,14 +28,43 @@ pub(crate) async fn registry_engine(
         })
         .await?;
     let mut engine = Engine::new(object.clone(), object.host());
-    engine.register(RegistrationTask::<ServiceObject, Turso>::new(config))?;
-    engine.register(ImportTask::<ServiceObject, Turso>::new(config))?;
-    engine.register(RetirementTask::<ServiceObject, Turso>::new(config))?;
-    engine.register(PreviewTakeoverTask::<ServiceObject, Turso>::new(config))?;
     let clock: Arc<dyn Clock> = object.host();
-    engine.register(HolderChangeTask::<ServiceObject, Turso>::new(
+    engine.register(RegistrationTask::<
+        ServiceObject,
+        Turso,
+        fleet_sync_lease::NoLeaseChangeHook,
+    >::new(
         config,
         clock.clone(),
+        std::sync::Arc::new(fleet_sync_lease::NoLeaseChangeHook),
+    ))?;
+    engine.register(ImportTask::<
+        ServiceObject,
+        Turso,
+        fleet_sync_lease::NoLeaseChangeHook,
+    >::new(
+        config,
+        clock.clone(),
+        std::sync::Arc::new(fleet_sync_lease::NoLeaseChangeHook),
+    ))?;
+    engine.register(RetirementTask::<
+        ServiceObject,
+        Turso,
+        fleet_sync_lease::NoLeaseChangeHook,
+    >::new(
+        config,
+        clock.clone(),
+        std::sync::Arc::new(fleet_sync_lease::NoLeaseChangeHook),
+    ))?;
+    engine.register(PreviewTakeoverTask::<ServiceObject, Turso>::new(config))?;
+    engine.register(HolderChangeTask::<
+        ServiceObject,
+        Turso,
+        fleet_sync_lease::NoLeaseChangeHook,
+    >::new(
+        config,
+        clock.clone(),
+        std::sync::Arc::new(fleet_sync_lease::NoLeaseChangeHook),
     ))?;
     engine.register(HolderChangeCancelTask::<ServiceObject, Turso>::new(
         config, clock,
@@ -101,7 +127,7 @@ impl<
             return Ok(RegistrationAnswer::Refused(RegistrationRefusal::Retired));
         }
         let key = lifecycle_request_key(request.attempt).map_err(ServiceError::rule)?;
-        self.execute_registry::<RegistrationTask<ServiceObject, Turso>>(key, request)
+        self.execute_registry::<RegistrationTask<ServiceObject, Turso, fleet_sync_lease::NoLeaseChangeHook>>(key, request)
             .await
     }
     pub(crate) async fn renew(
@@ -119,9 +145,16 @@ impl<
         self.registry
             .transaction(move |scope| {
                 Box::pin(async move {
-                    fleet_sync_lease::renew(scope, &request, &peer, now, &policy)
-                        .await
-                        .map_err(StoreError::backend)
+                    fleet_sync_lease::renew(
+                        scope,
+                        &request,
+                        &peer,
+                        now,
+                        &policy,
+                        &fleet_sync_lease::NoLeaseChangeHook,
+                    )
+                    .await
+                    .map_err(StoreError::backend)
                 })
             })
             .await

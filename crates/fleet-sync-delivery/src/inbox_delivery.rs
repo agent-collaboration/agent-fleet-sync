@@ -10,10 +10,11 @@ use sqlx_core::{
     encode::Encode, types::Type,
 };
 
-impl<S, D> Inbox<'_, S, D>
+impl<S, D, B> Inbox<'_, S, D, B>
 where
     S: TransactionScope,
     D: DeliveryTypes,
+    B: crate::SenderBinding<S, D>,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'v> String: Type<S::Database> + Encode<'v, S::Database>,
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
@@ -24,18 +25,22 @@ where
         input: DeliveryAttempt,
         kind: DeliveryFailureKind,
         consumer: &C,
-        _now: SyncTime,
+        now: SyncTime,
     ) -> Result<InboxEffects, DeliveryError>
     where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        if now >= crate::removal_deadline(input.item) {
+            return Ok(InboxEffects::default());
+        }
         self.record_terminal(
             input,
             RecipientOutcome::Refused {
                 reason: DeliveryRefusal::ProcessingFailed { kind },
             },
             consumer,
+            now,
         )
         .await
     }
@@ -44,6 +49,7 @@ where
         input: DeliveryAttempt,
         outcome: RecipientOutcome<D::Acceptance>,
         consumer: &C,
+        now: SyncTime,
     ) -> Result<InboxEffects, DeliveryError>
     where
         C: DeliveryConsumer<S>,
@@ -68,10 +74,10 @@ where
         header.release_requested = false;
         let mut effects = InboxEffects::default();
         effects.reports.extend(
-            self.record_header_outcome(&mut header, outcome, consumer, None)
+            self.record_header_outcome(&mut header, outcome, consumer, None, now)
                 .await?,
         );
-        self.update_header(&header).await?;
+        self.update_header(&header, now).await?;
         Ok(effects)
     }
     pub async fn local_outcome(
@@ -107,6 +113,9 @@ where
         input: DeliveryAttempt,
         now: SyncTime,
     ) -> Result<DeliveryCheck<D::Acceptance>, DeliveryError> {
+        if now >= crate::removal_deadline(input.item) {
+            return Ok(DeliveryCheck::Finish { outcome: None });
+        }
         let Some(mut header) = self.header(input.item).await? else {
             return Err(DeliveryError::Corrupt {
                 field: "delivery item missing",
@@ -138,7 +147,7 @@ where
                         }
                     })?,
                 };
-                self.update_header(&header).await?;
+                self.update_header(&header, now).await?;
                 Ok(DeliveryCheck::Deliver { reference })
             }
             InboxProgress::Held { .. } => Ok(DeliveryCheck::Finish { outcome: None }),
@@ -159,6 +168,9 @@ where
         C: DeliveryConsumer<S>,
         C::Protocol: ConsumerProtocol<Delivery = D>,
     {
+        if now >= crate::removal_deadline(input.item) {
+            return Ok(InboxEffects::default());
+        }
         if let LocalOutcome::Delivered { acceptance } = &outcome {
             crate::delivery_sizes::check_status::<D>(&DeliveryStatus::Delivered {
                 acceptance: copy_wire(acceptance)?,
@@ -234,12 +246,15 @@ where
                 outcome: copy_wire(&recipient_outcome)?,
             };
         }
+        if matches!(recipient_outcome, RecipientOutcome::Delivered { .. }) {
+            record.header.delivered_at = Some(now);
+        }
         record.header.release_requested = false;
         effects.reports.extend(
-            self.record_outcome(&mut record, recipient_outcome, consumer, observation)
+            self.record_outcome(&mut record, recipient_outcome, consumer, observation, now)
                 .await?,
         );
-        self.save(&record).await?;
+        self.save(&record, now).await?;
         let cancellation = self
             .apply_pending_cancel(input.item, consumer, now, false)
             .await?;
@@ -284,7 +299,7 @@ where
             }
             InboxProgress::Final { .. } | InboxProgress::Control { .. } => None,
         };
-        self.update_header(&header).await?;
+        self.update_header(&header, now).await?;
         match next {
             Some(input) => {
                 let key = durable_steps::RequestKey::new(encode(&(input.item, input.attempt))?)
