@@ -95,9 +95,13 @@ impl TransportConnection for WebSocketConnection {
         }
         match timeout(self.send_timeout, self.socket.send(Message::Binary(frame))).await {
             Ok(Ok(())) => Ok(()),
-            _ => {
+            Ok(Err(_)) => {
                 self.closed = true;
                 Err(ConnectionClosed::Transport)
+            }
+            Err(_) => {
+                self.closed = true;
+                Err(ConnectionClosed::SendTimeout)
             }
         }
     }
@@ -128,3 +132,7 @@ impl TransportConnection for WebSocketConnection {
         let _ = timeout(self.send_timeout, self.socket.close(None)).await;
     }
 }
+
+#[cfg(test)]
+#[path = "client_socket_test.rs"]
+mod tests;

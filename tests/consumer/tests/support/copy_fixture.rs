@@ -214,8 +214,12 @@ impl CopySession {
                         readiness.welcomes.fetch_add(1, Ordering::SeqCst);
                         readiness.ready.notify_waiters();
                     }
-                    ClientEvent::Notice { position, .. } => {
-                        let _ = acknowledging.acknowledge_notice(position).await;
+                    ClientEvent::Notice {
+                        session_id,
+                        position,
+                        ..
+                    } => {
+                        let _ = acknowledging.acknowledge_notice(session_id, position).await;
                     }
                     _ => {}
                 }
