@@ -50,6 +50,8 @@ where
     for<'t> S::Scope<'t>: BusinessScope,
 {
     let mut passed = Vec::new();
+    reconciliation_cases::live_lost_answer(store.clone(), host.clone()).await?;
+    passed.push("live AnswerLost reconciles once without another dispatch");
     reconciliation_cases::recovered_answer(store.clone(), host.clone()).await?;
     passed.push(
         "read-only reconciliation saves recovered answer without dispatch and replays CallDone",
@@ -63,7 +65,7 @@ where
     reconciliation_cases::deduplicating_target(store.clone(), host.clone()).await?;
     passed.push("deduplicating recovery never reconciles");
     reconciliation_cases::fresh_and_safe_retries(store.clone(), host.clone()).await?;
-    passed.push("fresh, NeverSent and NoEffect calls never reconcile");
+    passed.push("fresh, NeverSent and NoEffect calls dispatch without a preflight lookup");
     task_cases::running_keys(Arc::clone(&store), Arc::clone(&host)).await?;
     passed.push("running request keys are kind-scoped and share journal commit/rollback");
     task_cases::admission_and_rollback(Arc::clone(&store), Arc::clone(&host)).await?;

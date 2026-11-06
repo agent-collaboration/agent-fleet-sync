@@ -28,7 +28,8 @@ For related queries that must share a snapshot, use `database.reader().begin_rea
 ## Non-repeating call reconciliation
 
 A `CallTarget` with `DEDUPLICATES = false` can opt into
-`RECONCILES = true`. On recovery of a possibly reached call, the engine asks
+`RECONCILES = true`. On recovery of a possibly reached call, or after a live
+dispatch returns `AnswerLost`, the engine asks
 `Host::reconcile(target, request, CallId)` for an already established answer.
 The lookup runs outside the journal transaction and must only read: it must
 never dispatch the call or perform its effect. `Some(answer)` is saved as the
@@ -36,8 +37,9 @@ normal `CallDone` answer before the task advances; saved answers replay without
 another lookup. `None` keeps the existing `Uncertain` outcome. Errors use the
 same failure handling as dispatch and cannot erase earlier possible reach.
 
-The engine never reconciles fresh calls, `NeverSent` or `NoEffect` retries, or
-deduplicating calls, even if they opt in. The target flag defaults to false;
+Fresh calls and `NeverSent`/`NoEffect` retries dispatch first; only a lost
+answer can then trigger a read-only lookup. Deduplicating calls never reconcile,
+even if they opt in. The target flag defaults to false;
 the Host method defaults to `Ok(None)`. Tokio hosts forward through the existing
 `CallEnvelope` to `CallRouter::reconcile`, which also defaults to `Ok(None)`.
 Malformed reconciled answers become `AnswerLost`, as malformed dispatch answers do.

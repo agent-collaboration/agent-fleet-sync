@@ -48,7 +48,7 @@ cp tests/durable-steps/shim.mjs tests/durable-steps/build/shim.mjs
 node tests/durable-steps/run-workerd.mjs
 ```
 
-The `/suite` endpoint compiles the same 27-case conformance module for real DO SQLite transactions. The six reconciliation cases cover a recovered answer saved before task advancement, lookup absence and errors, default targets, deduplicating targets, and fresh/safe-retry exclusions. A native run of these shared sources does not establish a new workerd observation.
+The `/suite` endpoint compiles the same 28-case conformance module for real DO SQLite transactions. The seven reconciliation cases cover a recovered answer saved before task advancement, live AnswerLost reconciliation, lookup absence and errors, default targets, deduplicating targets, and fresh/safe-retry exclusions. A native run of these shared sources does not establish a new workerd observation.
 
 `/alarm-atomic` tests alarm rollback with a business write and absolute, earlier-only scheduling. `/alarm-concurrent` concurrently polls actual `AlarmOwner` clones in the same object event: both deadline orders outside and inside a caller transaction, both deadline orders across two independently started caller transactions, then both polling orders of an external wake and a deadline-writing transaction. All eight must finish and retain the earlier stored alarm. The compiled adapter failed the early-then-late case before shared async exclusion was added, and passed afterward. No cached alarm value or nested transaction substitutes for the real storage operations.
 

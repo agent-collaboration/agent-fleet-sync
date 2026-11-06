@@ -118,8 +118,9 @@ pub trait JournalScope: Send {
 pub trait CallTarget: Serialize + DeserializeOwned + Send + Sync + 'static {
     const KIND: &'static str;
     const DEDUPLICATES: bool = true;
-    /// Allow a read-only host lookup when recovering a possibly reached,
-    /// non-deduplicating call. Fresh and deduplicating calls never reconcile.
+    /// Allow a read-only host lookup for a possibly reached non-deduplicating
+    /// call, including a live dispatch returning AnswerLost. Deduplicating
+    /// calls never reconcile, and no lookup precedes a fresh dispatch.
     const RECONCILES: bool = false;
     type Request: Serialize + DeserializeOwned + Send;
     type Answer: Serialize + DeserializeOwned + Send;

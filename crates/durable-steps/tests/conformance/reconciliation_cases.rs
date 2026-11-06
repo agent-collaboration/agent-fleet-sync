@@ -366,28 +366,42 @@ pub async fn fresh_and_safe_retries<S: AtomicStore>(
             "fresh, NeverSent and NoEffect paths must never reconcile",
         )?;
     }
-    let engine = engine::<S, ReconcilingTarget<false>>(store, host.clone(), false)?;
+    Ok(())
+}
+
+pub async fn live_lost_answer<S: AtomicStore>(
+    store: Arc<S>,
+    host: Arc<TestHost>,
+) -> Result<(), StoreError> {
+    let engine = engine::<S, ReconcilingTarget<false>>(store.clone(), host.clone(), true)?;
     let reconciliations = host.reconciliations.load(Ordering::SeqCst);
+    let dispatches = host.deliveries.load(Ordering::SeqCst);
+    let effects = host.effects.load(Ordering::SeqCst);
     host.lose_answers.store(1, Ordering::SeqCst);
     let id = engine
         .start::<ReconcileTask<S, ReconcilingTarget<false>>>(
             &key("reconcile-fresh-answer-lost")?,
-            13,
+            19,
         )
         .await
         .map_err(StoreError::backend)?;
+    store.transaction(move |scope|Box::pin(async move {
+        match scope.step(id,0).await?.map(|record|record.state) {
+            Some(StepState::CallDone {attempt,output,..})=>check(attempt.reach==CallReach::MayHaveReached && serde_json::from_slice::<CallResult<u64>>(&output).map_err(StoreError::backend)?==CallResult::Answered(38),"live AnswerLost reconciliation must save the validated answer before advancing"),
+            _=>Err(StoreError::backend("live AnswerLost must reconcile to CallDone")),
+        }
+    })).await?;
+    host.advance(100);
+    engine.drive_due().await?;
     check(
-        matches!(
-            engine.status(&id).await?.state,
-            OperationState::Failed {
-                reason: OperationFailure::Uncertain { .. }
-            }
-        ),
-        "fresh answer loss must preserve the existing Uncertain result",
+        matches!(engine.status(&id).await?.state,OperationState::Completed {result} if serde_json::from_slice::<u64>(&result).map_err(StoreError::backend)?==38),
+        "live reconciled answer must complete on replay",
     )?;
     check(
-        host.reconciliations.load(Ordering::SeqCst) == reconciliations,
-        "fresh answer loss must not invoke recovery reconciliation",
+        host.reconciliations.load(Ordering::SeqCst) == reconciliations + 1
+            && host.deliveries.load(Ordering::SeqCst) == dispatches + 1
+            && host.effects.load(Ordering::SeqCst) == effects + 1,
+        "live AnswerLost must use one read-only lookup and never dispatch twice",
     )?;
     Ok(())
 }
