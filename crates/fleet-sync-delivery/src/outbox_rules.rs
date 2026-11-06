@@ -255,6 +255,13 @@ where
             }
             Ok(Some(OutboxHeaderState::Unresolvable { .. })) => {}
             Ok(None) | Err(DeliveryError::Corrupt { .. }) => {
+                self.project_terminal_outcome(
+                    item,
+                    &DeliveryStatus::Refused {
+                        reason: DeliveryRefusal::ProcessingFailed { kind },
+                    },
+                )
+                .await?;
                 let failed = OutboxHeaderState::<D::Acceptance>::Unresolvable { item, kind };
                 queries::write_outbox_item(
                     self.scope,
@@ -373,6 +380,8 @@ where
         record: &RecoveredOutbox<D::Acceptance>,
         now: SyncTime,
     ) -> Result<(), DeliveryError> {
+        self.project_terminal_outcome(record.item, &record.status)
+            .await?;
         let state = OutboxHeaderState::<D::Acceptance>::Recovered(copy_wire(record)?);
         queries::write_outbox_item(
             self.scope,
@@ -600,6 +609,8 @@ where
             crate::CustodyRow::Outbox(header.id),
         )
         .await?;
+        self.project_terminal_outcome(header.id, &header.status)
+            .await?;
         let state = OutboxHeaderState::<D::Acceptance>::Item(copy_wire(header)?);
         queries::write_outbox_item(
             self.scope,

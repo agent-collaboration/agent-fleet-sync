@@ -28,6 +28,7 @@ mod inbox_record;
 mod inbox_retirement;
 mod inbox_row;
 mod inbox_storage;
+mod outbox_outcome;
 mod outbox_record;
 mod outbox_rules;
 mod outbox_status;
