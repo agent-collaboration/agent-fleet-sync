@@ -71,7 +71,7 @@ Replays, newer versions of an already terminal status, and non-terminal advances
 do not call it. An error aborts custody, status cursors and consumer projection
 writes together. In library tasks, `DeliveryError::Storage` retries the step
 (as does the existing `SenderBindingUnavailable` class); other errors fail the
-owning task, whose `on_failed` records `ProcessingFailed`.
+owning task; `SubmitItem::on_failed` records `ProcessingFailed`.
 
 The submission gate releases expired items without marking them terminal, so the
 gate alone does not call the hook. Removing a non-terminal item at the 60-day
