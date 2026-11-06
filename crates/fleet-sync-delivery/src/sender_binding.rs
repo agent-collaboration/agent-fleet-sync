@@ -24,8 +24,9 @@ pub trait SenderBinding<S: TransactionScope, D: DeliveryTypes>: Send + Sync {
     /// Replays and non-terminal advances do not call this hook. The item ID
     /// remains available after compaction and during missing-custody recovery.
     /// An error aborts the transaction, including the projection's writes.
-    /// In library tasks, Storage retries (as does SenderBindingUnavailable);
+    /// In task steps, Storage retries (as does SenderBindingUnavailable);
     /// other errors fail the task; SubmitItem's on_failed records ProcessingFailed.
+    /// Hook errors in before_resume and on_failed are retried by the engine.
     fn on_outbox_outcome(
         &self,
         _scope: &mut S,

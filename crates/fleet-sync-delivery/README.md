@@ -69,9 +69,10 @@ deadline settlement, receipts, recipient reports and unknown-item relay
 settlement all use this projection.
 Replays, newer versions of an already terminal status, and non-terminal advances
 do not call it. An error aborts custody, status cursors and consumer projection
-writes together. In library tasks, `DeliveryError::Storage` retries the step
+writes together. In task steps, `DeliveryError::Storage` retries the step
 (as does the existing `SenderBindingUnavailable` class); other errors fail the
 owning task; `SubmitItem::on_failed` records `ProcessingFailed`.
+Hook errors in `before_resume` and `on_failed` are retried by the engine.
 
 The submission gate releases expired items without marking them terminal, so the
 gate alone does not call the hook. Removing a non-terminal item at the 60-day
