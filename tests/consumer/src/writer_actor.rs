@@ -270,9 +270,9 @@ pub async fn run_writer(
                 let current=*acked.borrow();acked.send_replace(Some(current.map_or(through,|old:ReplicationPosition|old.max(through))));
             },
             event=async {match initial_events.pop_front() {Some(event)=>Some(event),None=>incoming.recv().await}}=>match event {
-                Some(ClientEvent::Notice {position,body})=>{
+                Some(ClientEvent::Notice {session_id,position,body})=>{
                     if matches!(body,Notice::LeaseChanged {database:changed} if changed==database.database()){runtime.prompt_renewal().await?;}
-                    requests.acknowledge_notice(position).await?;
+                    requests.acknowledge_notice(session_id, position).await?;
                 }
                 Some(ClientEvent::Request {frame,body:ServerRequest::Crate(ServerCall::Release {call,request})})=>{
                     let work=runtime.clone();

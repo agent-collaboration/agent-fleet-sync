@@ -44,6 +44,17 @@ pub enum ClientError {
     RetryAt { at: SyncTime },
     #[error("the session ended; start a new session after authentication")]
     SessionEnded,
+    #[error("peer credential was revoked")]
+    Revoked,
+    #[error("peer credential rejected: {reason:?}")]
+    CredentialRejected { reason: AuthRefusal },
+    #[error("a newer session owns this peer")]
+    ReplacedByNewerSession,
+    #[error("notice acknowledgment belongs to {received:?}, current session is {expected:?}")]
+    StaleNoticeAcknowledgement {
+        expected: SessionId,
+        received: SessionId,
+    },
 }
 
 pub enum ClientEvent<P: ConsumerProtocol = NoConsumer> {
@@ -59,6 +70,7 @@ pub enum ClientEvent<P: ConsumerProtocol = NoConsumer> {
         body: ServerRequest<P>,
     },
     Notice {
+        session_id: SessionId,
         position: NoticePosition,
         body: Notice<P>,
     },
@@ -69,6 +81,11 @@ pub enum ClientEvent<P: ConsumerProtocol = NoConsumer> {
         reason: Option<CloseReason>,
         retry_at: Option<SyncTime>,
     },
+}
+
+struct QueuedClientEvent<P: ConsumerProtocol> {
+    event: ClientEvent<P>,
+    transport_close: Option<ConnectionClosed>,
 }
 
 /// Runtime-free owner of one current connection. Call `connect` on the host's
@@ -97,7 +114,9 @@ pub struct SessionClient<
     connection: Option<T::Connection>,
     welcomed: bool,
     pending: BTreeSet<FrameId>,
-    events: VecDeque<ClientEvent<P>>,
+    events: VecDeque<QueuedClientEvent<P>>,
+    last_frame_at: Option<SyncTime>,
+    last_transport_close: Option<ConnectionClosed>,
     notice_seen: NoticePosition,
     protocol: PhantomData<P>,
 }
@@ -136,6 +155,8 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
             welcomed: false,
             pending: BTreeSet::new(),
             events: VecDeque::new(),
+            last_frame_at: None,
+            last_transport_close: None,
             notice_seen,
             protocol: PhantomData,
         })
@@ -146,6 +167,17 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
     }
     pub const fn reconnect_at(&self) -> Option<SyncTime> {
         self.retry_at
+    }
+
+    /// Latest inbound binary session message on the current connection.
+    /// Transport-private Ping/Pong frames are not session messages.
+    pub const fn last_frame_at(&self) -> Option<SyncTime> {
+        self.last_frame_at
+    }
+
+    /// Transport cause of the most recently returned Disconnected event.
+    pub fn last_transport_close(&self) -> Option<&ConnectionClosed> {
+        self.last_transport_close.as_ref()
     }
 
     /// Activate the transport and send Hello. Keep pumping `receive` until the
@@ -167,10 +199,13 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         {
             return Err(ClientError::RetryAt { at });
         }
+        self.last_frame_at = None;
         let mut connection = match self.transport.connect(endpoint, credential).await {
             Ok(connection) => connection,
             Err(error) => {
-                if !matches!(error, ConnectFailure::CredentialRejected(_)) {
+                if matches!(error, ConnectFailure::CredentialRejected(_)) {
+                    self.retry_at = None;
+                } else {
                     self.schedule_retry(host).await?;
                 }
                 return Err(error.into());
@@ -209,7 +244,7 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         let connection = self.connection.as_mut().ok_or(ClientError::NotConnected)?;
         self.pending.insert(frame);
         if let Err(error) = connection.send(encoded.into()).await {
-            self.disconnected(None, host).await?;
+            self.transport_disconnected(error.clone(), host).await?;
             return Err(error.into());
         }
         Ok(())
@@ -225,7 +260,7 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
             .map_err(|_| ClientError::Encoding)?;
         let connection = self.connection.as_mut().ok_or(ClientError::NotConnected)?;
         if let Err(error) = connection.send(encoded.into()).await {
-            self.disconnected(None, host).await?;
+            self.transport_disconnected(error.clone(), host).await?;
             return Err(error.into());
         }
         Ok(())
@@ -237,16 +272,25 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
     ) -> Result<ClientEvent<P>, ClientError> {
         loop {
             if let Some(event) = self.events.pop_front() {
-                return Ok(event);
+                if matches!(event.event, ClientEvent::Disconnected { .. }) {
+                    self.last_transport_close = event.transport_close;
+                }
+                return Ok(event.event);
             }
             let connection = self.connection.as_mut().ok_or(ClientError::NotConnected)?;
             let encoded = match connection.receive().await {
                 Some(Ok(encoded)) => encoded,
-                Some(Err(_)) | None => {
-                    self.disconnected(None, host).await?;
+                Some(Err(error)) => {
+                    self.transport_disconnected(error, host).await?;
+                    continue;
+                }
+                None => {
+                    self.transport_disconnected(ConnectionClosed::Transport, host)
+                        .await?;
                     continue;
                 }
             };
+            self.last_frame_at = Some(host.now());
             let frame = match serde_json::from_slice::<ServerFrame<P>>(&encoded) {
                 Ok(frame) => frame,
                 Err(_) => {
@@ -281,7 +325,11 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
                 ServerFrame::Notice { position, body } => {
                     if position > self.state.notice_cursor {
                         self.notice_seen = self.notice_seen.max(position);
-                        return Ok(ClientEvent::Notice { position, body });
+                        return Ok(ClientEvent::Notice {
+                            session_id: self.state.session_id,
+                            position,
+                            body,
+                        });
                     }
                 }
                 ServerFrame::Closed { reason } => {
@@ -294,8 +342,15 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
     /// Persist only after the consumer has handled a notice, never on receipt alone.
     pub async fn acknowledge_notice(
         &mut self,
+        session_id: SessionId,
         position: NoticePosition,
     ) -> Result<(), ClientError> {
+        if session_id != self.state.session_id {
+            return Err(ClientError::StaleNoticeAcknowledgement {
+                expected: self.state.session_id,
+                received: session_id,
+            });
+        }
         if position > self.notice_seen {
             return Err(ClientError::Protocol);
         }
@@ -329,7 +384,6 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         self.state = updated;
         self.notice_seen = NoticePosition::default();
         self.ended = false;
-        self.attempt = 0;
         self.retry_at = None;
         Ok(())
     }
@@ -340,10 +394,38 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         }
     }
 
+    /// Close an attachment and schedule another connection under the host's
+    /// recovery policy. In-flight frames become Unknown; no operation is replayed.
+    /// An ended session still requires `start_new_session`.
+    pub async fn retry_connection<H: Clock + WakeScheduler>(
+        &mut self,
+        backoff: Option<Backoff>,
+        host: &H,
+    ) -> Result<(), ClientError> {
+        if self.ended {
+            return Err(ClientError::SessionEnded);
+        }
+        if let Some(connection) = self.connection.take() {
+            connection.close(CloseReason::ClientClosed).await;
+        }
+        self.report_unknown();
+        self.welcomed = false;
+        // Replacing a just-scheduled transport retry changes its policy without
+        // counting the same failure twice.
+        if backoff.is_some() && self.retry_at.is_some() {
+            self.attempt = self.attempt.saturating_sub(1);
+        }
+        self.schedule_retry_with(backoff.unwrap_or(self.backoff), host)
+            .await
+    }
+
     fn report_unknown(&mut self) {
         if !self.pending.is_empty() {
-            self.events.push_back(ClientEvent::Unknown {
-                frames: std::mem::take(&mut self.pending).into_iter().collect(),
+            self.events.push_back(QueuedClientEvent {
+                event: ClientEvent::Unknown {
+                    frames: std::mem::take(&mut self.pending).into_iter().collect(),
+                },
+                transport_close: None,
             });
         }
     }
@@ -351,7 +433,14 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         &mut self,
         host: &H,
     ) -> Result<(), ClientError> {
-        let at = host.now().after(self.backoff.delay(self.attempt));
+        self.schedule_retry_with(self.backoff, host).await
+    }
+    async fn schedule_retry_with<H: Clock + WakeScheduler>(
+        &mut self,
+        backoff: Backoff,
+        host: &H,
+    ) -> Result<(), ClientError> {
+        let at = host.now().after(backoff.delay(self.attempt));
         self.attempt = self.attempt.saturating_add(1);
         self.retry_at = Some(at);
         host.wake_at(at).await?;
@@ -369,17 +458,37 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         self.welcomed = false;
         self.ended = matches!(
             reason,
-            Some(CloseReason::SessionEnded | CloseReason::CredentialRejected(AuthRefusal::Revoked))
+            Some(
+                CloseReason::SessionEnded
+                    | CloseReason::CredentialRejected(
+                        AuthRefusal::Revoked | AuthRefusal::WrongKind
+                    )
+            )
         );
         if self.ended {
             self.retry_at = None;
         } else {
             self.schedule_retry(host).await?;
         }
-        self.events.push_back(ClientEvent::Disconnected {
-            reason,
-            retry_at: self.retry_at,
+        self.events.push_back(QueuedClientEvent {
+            event: ClientEvent::Disconnected {
+                reason,
+                retry_at: self.retry_at,
+            },
+            transport_close: None,
         });
+        Ok(())
+    }
+
+    async fn transport_disconnected<H: Clock + WakeScheduler>(
+        &mut self,
+        error: ConnectionClosed,
+        host: &H,
+    ) -> Result<(), ClientError> {
+        self.disconnected(None, host).await?;
+        if let Some(event) = self.events.back_mut() {
+            event.transport_close = Some(error);
+        }
         Ok(())
     }
 }

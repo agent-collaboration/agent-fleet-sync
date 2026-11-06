@@ -335,12 +335,12 @@ async fn notice_cursor_advances_only_after_handling_and_survives_client_recreati
     );
     assert!(
         client
-            .acknowledge_notice(NoticePosition::new(2))
+            .acknowledge_notice(client.state().session_id, NoticePosition::new(2))
             .await
             .is_err()
     );
     client
-        .acknowledge_notice(NoticePosition::new(1))
+        .acknowledge_notice(client.state().session_id, NoticePosition::new(1))
         .await
         .unwrap();
     let id = client.state().session_id;

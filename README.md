@@ -55,6 +55,99 @@ The unreleased seed protocol includes `SeedPageAnswer::UnitTooLarge`, encoded as
 
 Registry copy calls use `CallFailure::Retryable` only for known no-new-effect refusals. The call remains pending with its generic code/detail reason, while `holder_change_view.waiting.copy_unavailable` decodes the closed copy reason. `CallReach::NoEffect` records a receiver response with no earlier unresolved possible effect. It survives restart, cannot satisfy an unsent timeout, and records `Dispatching` before retry; an earlier `MayHaveReached` is never cleared by a later refusal. Unknown retry codes fail closed. Final holder-change refusals remain terminal. The library's `test-fault` feature supplies controls on the actual native copy transaction replies and host timer; normal builds omit them.
 
+### Native session recovery
+
+`SessionPump::new` keeps recovery opt-in. One correction also applies to hosts
+that do not opt in: a credential refusal following an earlier scheduled retry
+now returns an error instead of leaving the pump alive waiting for a consumed
+wake. Existing attached credential-expiry retries continue under the client's
+connection backoff. `WrongKind`, `InvalidEndpoint`, and `InvalidCredential`
+always terminate because they are configuration errors. Every host now receives
+`Revoked`, `CredentialRejected { reason }`, and `ReplacedByNewerSession` from
+`run()` for those terminal causes, replacing the former overloaded
+`SessionEnded` or `Connect(CredentialRejected(..))` errors.
+
+Hosts opt in before running the pump, retaining the same `SessionRequests`
+handles:
+
+```rust
+use fleet_sync_tokio_runner::SessionRecoveryPolicy;
+use std::time::Duration;
+
+let pump = pump.with_recovery_policy(SessionRecoveryPolicy {
+    welcome_timeout: Some(Duration::from_secs(30)),
+    ..SessionRecoveryPolicy::default()
+});
+let status = pump.link_state();
+let events = pump.observe_link();
+// Run pump.run(shutdown) under the host's existing task owner.
+```
+
+The explicit default policy retries credential refusals with exponential backoff
+from one second to a five-minute cap. Hosts choose another cap with
+`CredentialRejectedRecovery::Retry { backoff }`, or select `Terminal` for either
+recovery policy. A `SessionEnded` received before Welcome can indicate a stale
+stored session identity: the default starts a new persisted session and waits
+for the client's connection backoff before connecting. Consecutive pre-Welcome
+restarts retain the retry count and increase that delay up to its cap; a matching
+Welcome resets it. A `SessionEnded` after
+Welcome means a newer live session owns the peer; that pump stops with status
+`Refused` and drop reason `ReplacedByNewerSession`, preventing two owners from
+continually replacing each other.
+An older owner that reconnects after being superseded can still renew its stale
+session before Welcome and replace the newer live owner. This consequence is
+accepted for now: one owner survives, but it may be the older owner.
+
+Revocation always terminates the pump; the host owns re-enrollment. `run()`
+returns distinct `ClientError::Revoked`, `CredentialRejected { reason }`, and
+`ReplacedByNewerSession` terminal results. `welcome_timeout` is disabled by
+default. When supplied, it bounds attachment after Hello, closes a socket that
+has not delivered a matching Welcome, and applies connection backoff before
+reconnecting. Recovery never replays operations; an in-flight request whose
+answer is lost still requires reconciliation.
+Every terminal error exit leaves the watch in `Refused { reason }`, including
+an ended session before Welcome under a terminal policy or without opt-in.
+
+Every `ClientEvent::Notice` includes its `session_id`. Pass that identity to
+`acknowledge_notice(session_id, position)` after handling the notice. A stale
+identity returns `ClientError::StaleNoticeAcknowledgement` and cannot advance
+the current session's cursor, even when both sessions have the same position.
+
+`link_state()` returns a watch receiver of `SessionLinkState { instance, status,
+connection, since, last_frame_at, last_drop, revision }`. `connection` increases
+on every connect attempt. `since` records when the current status was entered;
+`last_drop` retains `{ reason, at, connection }` through reconnect and Welcome.
+`instance` is a random `u64` minted when the pump is created and retained through
+its snapshots. `revision` increases with every publication within that one pump
+instance. Downstream owners compare revisions only for the same instance and
+handle a new instance separately. The pump is the only publisher and builds contact updates from
+its current state rather than a queued snapshot. The initial, not-yet-run
+snapshot has connection and revision zero; `since` is a placeholder until
+`run_with_clock` initializes it from its supplied clock before the first status
+transition (`run` uses the system clock).
+
+`last_frame_at` is the last inbound binary session message on the current
+connection, including frames consumed internally by the client. It excludes
+transport-private Ping/Pong frames. Contact-only watch updates are coalesced to
+about ten-second intervals; status transitions always include the latest
+contact time. A new connection clears the contact time. Transports can return
+`ConnectionClosed::IdleTimeout` or `SendTimeout`, retained as those typed
+`SessionDropReason` values; existing `Transport` errors remain supported.
+Connect failures retain `ConnectFailed { kind }`, where
+`SessionConnectFailureKind` distinguishes `Unavailable`, `InvalidEndpoint`, and
+`InvalidCredential` without endpoint or credential material. Unsupported
+transport frames retain `UnsupportedFrame`. These reasons appear in both the
+watch's `last_drop` and the disconnection event.
+
+`observe_link()` returns a broadcast receiver of `SessionLinkEvent { connection,
+kind }` for transitions, including session replacement and Welcome timeout.
+A slow event reader handles `RecvError::Lagged` and reads the watch for current
+status. Broadcast publication does not wait for receivers; watch updates do not
+wait for an acknowledgment, but a held watch borrow blocks its write lock.
+Clone the snapshot and release the borrow before doing slow or asynchronous
+work. The application still consumes the separate `ClientEvent` channel.
+Observations contain typed refusal and close reasons, never credential material.
+
 ## Receiver foreign-key integrity
 
 Seed replacement and each assembled replicated transaction validate the final

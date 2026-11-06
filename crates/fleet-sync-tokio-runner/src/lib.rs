@@ -2,6 +2,12 @@
 
 mod call_host;
 mod client_pump;
+mod session_recovery;
+pub use session_recovery::{
+    CredentialRejectedRecovery, SessionConnectFailureKind, SessionDrop, SessionDropReason,
+    SessionEndedRecovery, SessionLinkEvent, SessionLinkEventKind, SessionLinkState,
+    SessionLinkStatus, SessionRecoveryPolicy,
+};
 #[cfg(feature = "test-support")]
 mod seed_answer_probe;
 mod writer_installer;

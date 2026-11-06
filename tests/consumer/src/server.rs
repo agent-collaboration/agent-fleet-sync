@@ -155,7 +155,7 @@ pub async fn run_server_with_policy(
                     loop {
                         tokio::select! {
                             event=source.events.recv()=>match event {
-                                Some(fleet_sync_session::ClientEvent::Notice { position, .. })=>source.requests.acknowledge_notice(position).await?,
+                                Some(fleet_sync_session::ClientEvent::Notice { session_id, position, .. })=>source.requests.acknowledge_notice(session_id, position).await?,
                                 Some(_)=>{},
                                 None=>break,
                             },
