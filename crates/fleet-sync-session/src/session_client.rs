@@ -14,6 +14,12 @@ pub struct ClientSessionState {
     pub notice_cursor: NoticePosition,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CredentialRejectedRecovery {
+    Terminal,
+    Retry { backoff: Backoff },
+}
+
 pub trait SessionClientStore: Send + Sync + 'static {
     fn load(&self) -> impl Future<Output = Result<Option<ClientSessionState>, StoreError>> + Send;
     fn save(
@@ -91,6 +97,7 @@ pub struct SessionClient<
     state: ClientSessionState,
     schema_support: SchemaSupport,
     backoff: Backoff,
+    credential_recovery: Option<CredentialRejectedRecovery>,
     attempt: u32,
     retry_at: Option<SyncTime>,
     ended: bool,
@@ -129,6 +136,7 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
             state,
             schema_support,
             backoff,
+            credential_recovery: None,
             attempt: 0,
             retry_at: None,
             ended: false,
@@ -146,6 +154,12 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
     }
     pub const fn reconnect_at(&self) -> Option<SyncTime> {
         self.retry_at
+    }
+
+    /// Apply one host policy to both upgrade refusals and attached expiry.
+    /// Without this call, the client's existing refusal behavior is preserved.
+    pub fn set_credential_recovery(&mut self, recovery: CredentialRejectedRecovery) {
+        self.credential_recovery = Some(recovery);
     }
 
     /// Activate the transport and send Hello. Keep pumping `receive` until the
@@ -170,8 +184,16 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         let mut connection = match self.transport.connect(endpoint, credential).await {
             Ok(connection) => connection,
             Err(error) => {
-                if !matches!(error, ConnectFailure::CredentialRejected(_)) {
-                    self.schedule_retry(host).await?;
+                match error {
+                    ConnectFailure::CredentialRejected(reason) => {
+                        if reason != AuthRefusal::Revoked
+                            && let Some(CredentialRejectedRecovery::Retry { backoff }) =
+                                self.credential_recovery
+                        {
+                            self.schedule_retry_with(backoff, host).await?;
+                        }
+                    }
+                    _ => self.schedule_retry(host).await?,
                 }
                 return Err(error.into());
             }
@@ -340,6 +362,24 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         }
     }
 
+    /// Close an attachment and schedule another connection under the host's
+    /// recovery policy. In-flight frames become Unknown; no operation is replayed.
+    /// An ended session still requires `start_new_session`.
+    pub async fn retry_connection<H: Clock + WakeScheduler>(
+        &mut self,
+        host: &H,
+    ) -> Result<(), ClientError> {
+        if self.ended {
+            return Err(ClientError::SessionEnded);
+        }
+        if let Some(connection) = self.connection.take() {
+            connection.close(CloseReason::ClientClosed).await;
+        }
+        self.report_unknown();
+        self.welcomed = false;
+        self.schedule_retry(host).await
+    }
+
     fn report_unknown(&mut self) {
         if !self.pending.is_empty() {
             self.events.push_back(ClientEvent::Unknown {
@@ -351,7 +391,14 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         &mut self,
         host: &H,
     ) -> Result<(), ClientError> {
-        let at = host.now().after(self.backoff.delay(self.attempt));
+        self.schedule_retry_with(self.backoff, host).await
+    }
+    async fn schedule_retry_with<H: Clock + WakeScheduler>(
+        &mut self,
+        backoff: Backoff,
+        host: &H,
+    ) -> Result<(), ClientError> {
+        let at = host.now().after(backoff.delay(self.attempt));
         self.attempt = self.attempt.saturating_add(1);
         self.retry_at = Some(at);
         host.wake_at(at).await?;
@@ -371,8 +418,17 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
             reason,
             Some(CloseReason::SessionEnded | CloseReason::CredentialRejected(AuthRefusal::Revoked))
         );
+        if matches!(reason, Some(CloseReason::CredentialRejected(_)))
+            && self.credential_recovery == Some(CredentialRejectedRecovery::Terminal)
+        {
+            self.ended = true;
+        }
         if self.ended {
             self.retry_at = None;
+        } else if let Some(CloseReason::CredentialRejected(_)) = reason
+            && let Some(CredentialRejectedRecovery::Retry { backoff }) = self.credential_recovery
+        {
+            self.schedule_retry_with(backoff, host).await?;
         } else {
             self.schedule_retry(host).await?;
         }

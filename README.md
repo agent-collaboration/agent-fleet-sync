@@ -55,6 +55,44 @@ The unreleased seed protocol includes `SeedPageAnswer::UnitTooLarge`, encoded as
 
 Registry copy calls use `CallFailure::Retryable` only for known no-new-effect refusals. The call remains pending with its generic code/detail reason, while `holder_change_view.waiting.copy_unavailable` decodes the closed copy reason. `CallReach::NoEffect` records a receiver response with no earlier unresolved possible effect. It survives restart, cannot satisfy an unsent timeout, and records `Dispatching` before retry; an earlier `MayHaveReached` is never cleared by a later refusal. Unknown retry codes fail closed. Final holder-change refusals remain terminal. The library's `test-fault` feature supplies controls on the actual native copy transaction replies and host timer; normal builds omit them.
 
+### Native session recovery
+
+`SessionPump::new` preserves existing behavior. Hosts opt in before running the
+pump, retaining the same `SessionRequests` handles:
+
+```rust
+use fleet_sync_tokio_runner::SessionRecoveryPolicy;
+use std::time::Duration;
+
+let pump = pump.with_recovery_policy(SessionRecoveryPolicy {
+    welcome_timeout: Some(Duration::from_secs(30)),
+    ..SessionRecoveryPolicy::default()
+});
+let status = pump.link_state();
+let events = pump.observe_link();
+// Run pump.run(shutdown) under the host's existing task owner.
+```
+
+The explicit default policy retries credential refusals with exponential backoff
+from one second to a five-minute cap, and starts a new persisted session after
+`SessionEnded`. Hosts can supply `CredentialRejectedRecovery::Retry { backoff }`
+to choose the cap, or select `Terminal` for either recovery policy. Revocation
+always terminates the pump; the host owns re-enrollment. `welcome_timeout` is
+disabled by default. When supplied, it bounds attachment after Hello, closes a
+socket that has not delivered a matching Welcome, and uses the client's existing
+connection backoff before reconnecting. Recovery never replays operations; an
+in-flight request whose answer is lost still requires reconciliation.
+
+`link_state()` returns a watch receiver of `SessionLinkState { status,
+last_drop_reason }`. Status distinguishes connecting, welcomed, disconnected,
+credential rejection (including its optional retry time), and revoked. The last
+drop reason remains through reconnect and Welcome. `observe_link()` returns a
+broadcast receiver for transitions, including session replacement and Welcome
+timeout. Neither observer can block the pump. A slow event reader handles
+`RecvError::Lagged` and reads the watch for current status; the application still
+consumes the separate `ClientEvent` channel as before. Link observations contain
+typed refusal and close reasons, never credential material.
+
 ## Receiver foreign-key integrity
 
 Seed replacement and each assembled replicated transaction validate the final
