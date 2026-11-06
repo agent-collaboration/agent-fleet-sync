@@ -1,5 +1,6 @@
 #![allow(clippy::panic, clippy::panic_in_result_fn)]
 
+mod call_reconciliation;
 #[cfg(feature = "turso")]
 mod journal_constraints;
 #[cfg(feature = "turso")]

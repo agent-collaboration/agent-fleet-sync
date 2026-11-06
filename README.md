@@ -25,6 +25,28 @@ The checked-query fixtures and offline metadata are imported with the Turso driv
 
 For related queries that must share a snapshot, use `database.reader().begin_read().await?` and pass `&mut read` to SQLx. `ReadTransaction` guards every statement as read-only and exposes no raw connection. `read.close().await?` rolls back; drop and cancelled close use the existing pooled rollback cleanup. An open read transaction keeps maintenance's `ActiveReaders` refusal until released; retry maintenance after closing it.
 
+## Non-repeating call reconciliation
+
+A `CallTarget` with `DEDUPLICATES = false` can opt into
+`RECONCILES = true`. On recovery of a possibly reached call, the engine asks
+`Host::reconcile(target, request, CallId)` for an already established answer.
+The lookup runs outside the journal transaction and must only read: it must
+never dispatch the call or perform its effect. `Some(answer)` is saved as the
+normal `CallDone` answer before the task advances; saved answers replay without
+another lookup. `None` keeps the existing `Uncertain` outcome. Errors use the
+same failure handling as dispatch and cannot erase earlier possible reach.
+
+The engine never reconciles fresh calls, `NeverSent` or `NoEffect` retries, or
+deduplicating calls, even if they opt in. The target flag defaults to false;
+the Host method defaults to `Ok(None)`. Tokio hosts forward through the existing
+`CallEnvelope` to `CallRouter::reconcile`, which also defaults to `Ok(None)`.
+Malformed reconciled answers become `AnswerLost`, as malformed dispatch answers do.
+
+Delivery's non-repeating `DeliverCall` opts in. Existing hosts and routers keep
+returning `None` and preserve the previous `Uncertain` behavior without another
+dispatch. A consumer can return a recorded answer for a supported item kind and
+`None` for everything else. The library adds no receipt store or persisted format.
+
 ## Holder-change workflows
 
 The registry's authenticated host starts moves, takeovers and claims with `admit_holder_change::<Store, Database>(scope, request, requested_by, now)` inside its transaction, then drives the engine after commit. Admission binds the attempt to the engine's operation ID and keeps the first requester on repeats. Register `HolderChangeTask`, `HolderChangeCancelTask` and `SettleReservationTask`; the first two take the registry configuration and the same shared `Clock` as the engine host. Apply every registry migration before admitting work.

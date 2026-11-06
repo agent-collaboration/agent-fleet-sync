@@ -12,6 +12,7 @@ use std::time::Duration;
 enum Preparation {
     Replay(Vec<u8>),
     Dispatch(CallAttempt),
+    Reconcile(CallAttempt),
     Uncertain,
 }
 
@@ -63,7 +64,10 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
                                 if attempt.reach == CallReach::Dispatching {
                                     attempt.reach = CallReach::MayHaveReached;
                                 }
-                                if !C::DEDUPLICATES && attempt.reach == CallReach::MayHaveReached {
+                                if !C::DEDUPLICATES
+                                    && !C::RECONCILES
+                                    && attempt.reach == CallReach::MayHaveReached
+                                {
                                     return Ok(Preparation::Uncertain);
                                 }
                                 attempt
@@ -101,13 +105,26 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
                             token,
                         )
                         .await?;
-                    Ok(Preparation::Dispatch(previous))
+                    Ok(
+                        if !C::DEDUPLICATES
+                            && C::RECONCILES
+                            && previous.reach == CallReach::MayHaveReached
+                        {
+                            Preparation::Reconcile(previous)
+                        } else {
+                            Preparation::Dispatch(previous)
+                        },
+                    )
                 })
             })
             .await
             .map_err(step_error)?;
 
-        let mut attempt = match preparation {
+        let call = CallId {
+            operation: id,
+            step: name.clone(),
+        };
+        let (mut attempt, answer) = match preparation {
             Preparation::Replay(bytes) => {
                 return serde_json::from_slice(&bytes)
                     .map_err(|error| step_error(invalid_payload(error)));
@@ -117,19 +134,23 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
                     step: name,
                 }));
             }
-            Preparation::Dispatch(attempt) => attempt,
+            Preparation::Dispatch(attempt) => {
+                (attempt, self.host.dispatch(target, request, call).await)
+            }
+            Preparation::Reconcile(attempt) => {
+                // Recovery asks only for an existing answer. No branch here
+                // may fall back to dispatching this non-repeating effect.
+                match self.host.reconcile(target, request, call).await {
+                    Ok(Some(answer)) => (attempt, Ok(answer)),
+                    Ok(None) => {
+                        return Err(StepError::Failed(OperationFailure::Uncertain {
+                            step: name,
+                        }));
+                    }
+                    Err(error) => (attempt, Err(error)),
+                }
+            }
         };
-        let answer = self
-            .host
-            .dispatch(
-                target,
-                request,
-                CallId {
-                    operation: id,
-                    step: name.clone(),
-                },
-            )
-            .await;
         attempt.retry_reason = None;
         let result = match answer {
             Ok(answer) => Some(CallResult::Answered(answer)),

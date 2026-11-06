@@ -57,6 +57,7 @@ impl<D> Default for DeliverCall<D> {
 impl<D: DeliveryTypes> CallTarget for DeliverCall<D> {
     const KIND: &'static str = "fleet-sync.delivery.deliver";
     const DEDUPLICATES: bool = false;
+    const RECONCILES: bool = true;
     type Request = DeliveryItemRef;
     type Answer = LocalDeliveryOutcome<D>;
 }
