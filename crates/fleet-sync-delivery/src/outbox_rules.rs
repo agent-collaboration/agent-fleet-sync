@@ -347,9 +347,7 @@ where
             Ok(Some(OutboxHeaderState::Recovered(record))) if record.status.is_terminal() => {
                 return Ok(());
             }
-            Ok(Some(OutboxHeaderState::Legacy { status, .. })) if status.is_terminal() => {
-                return Ok(());
-            }
+            Ok(Some(OutboxHeaderState::Legacy { .. })) => return Ok(()),
             Ok(Some(OutboxHeaderState::Unresolvable { .. })) => return Ok(()),
             Ok(Some(OutboxHeaderState::Item(header))) if header.digest == input.digest.as_str() => {
                 header.acceptance_bound
