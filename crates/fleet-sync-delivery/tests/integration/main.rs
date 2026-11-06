@@ -46,6 +46,7 @@ mod nonrepeating_reconciliation;
 mod outbox_integrity;
 mod outbox_legacy_recovery;
 mod outbox_outcome_hooks;
+mod outbox_outcome_replay;
 mod outbox_recovery;
 
 mod outbox_release_gate;

@@ -7,6 +7,10 @@ use sqlx_core::{
     encode::Encode, types::Type,
 };
 
+#[cfg(test)]
+#[path = "outbox_outcome_test.rs"]
+mod tests;
+
 impl<S, D, B> Outbox<'_, S, D, B>
 where
     S: TransactionScope,

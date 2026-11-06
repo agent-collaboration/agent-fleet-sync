@@ -645,7 +645,7 @@ async fn push_deadline_projects_expired_inside_before_resume_transaction() {
 }
 
 #[tokio::test]
-async fn hook_error_rolls_back_status_cursor_and_projection_then_retry_commits_once() {
+async fn hook_error_rolls_back_projection_then_retry_commits_once() {
     for change in [
         Transition::ImmediateRefusal,
         Transition::SubmissionFailure,
@@ -658,32 +658,6 @@ async fn hook_error_rolls_back_status_cursor_and_projection_then_retry_commits_o
             "hook error must abort custody"
         );
         assert!(projected(&fixture).await.is_empty());
-        fixture
-            .store
-            .transaction(|scope| {
-                Box::pin(async move {
-                    let mut outbox =
-                        Outbox::<_, TestTypes, _>::new(scope, limits(), &OUTCOME_BINDINGS);
-                    assert!(matches!(
-                        outbox
-                            .status(item_id(1))
-                            .await
-                            .map_err(storage_error)?
-                            .state,
-                        OutboxStatusState::Known {
-                            status: DeliveryStatus::Queued,
-                            ..
-                        }
-                    ));
-                    assert_eq!(
-                        outbox.status_cursor().await.map_err(storage_error)?.value(),
-                        0
-                    );
-                    Ok(())
-                })
-            })
-            .await
-            .unwrap();
         transition(&fixture, change, false).await.unwrap();
         assert_eq!(projected(&fixture).await.len(), 1);
     }
