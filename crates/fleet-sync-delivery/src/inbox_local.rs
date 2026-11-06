@@ -89,6 +89,18 @@ where
         if item.recipient().peer != self.owner {
             return Err(DeliveryError::InvalidBatch);
         }
+        let verified = crate::sender_binding::verify_sender::<S, D, B>(
+            self.scope,
+            self.binding,
+            item.sender(),
+            crate::CustodyRow::Inbox(item.id()),
+        )
+        .await?;
+        if matches!(verified.owner(), Submitter::Fleet(_)) {
+            return Err(DeliveryError::Refused {
+                reason: DeliveryRefusal::NotSubmitter,
+            });
+        }
         if let Some(existing) = self.load(item.id()).await? {
             if existing.header.digest != item.digest().as_str() {
                 let existing = ItemDigest::try_from(existing.header.digest).map_err(|_| {
@@ -102,13 +114,6 @@ where
             }
             return Ok(LocalItemAdmission::Replayed);
         }
-        let verified = crate::sender_binding::verify_sender::<S, D, B>(
-            self.scope,
-            self.binding,
-            item.sender(),
-            crate::CustodyRow::Inbox(item.id()),
-        )
-        .await?;
         let input = DeliveryAttempt {
             item: item.id(),
             attempt: 0,
@@ -225,6 +230,11 @@ where
             crate::CustodyRow::Inbox(envelope.id()),
         )
         .await?;
+        if matches!(verified.owner(), Submitter::Fleet(_)) {
+            return Err(DeliveryError::Refused {
+                reason: DeliveryRefusal::NotSubmitter,
+            });
+        }
         crate::delivery_sizes::check_envelope(&envelope)?;
         if envelope.recipient().peer != self.owner {
             return Err(DeliveryError::InvalidBatch);

@@ -794,6 +794,114 @@ async fn machine_submit_refuses_fleet_submitters_without_writes() {
         .await
         .unwrap();
     assert_eq!(counts(&fixture.store).await, before);
+
+    let mut observations = Vec::new();
+    for admit_tasks in [false, true] {
+        let fixture = Fixture::new().await;
+        fixture
+            .store
+            .transaction(|scope| {
+                Box::pin(async move {
+                    assert!(matches!(
+                        Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FleetBindings)
+                            .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
+                                Submitter::Fleet(fleet_id()),
+                                fleet_envelope(41),
+                                peer(3),
+                                &TestConsumer,
+                                now()
+                            )
+                            .await
+                            .map_err(storage_error)?,
+                        PushResult::Accepted { .. }
+                    ));
+                    Ok(())
+                })
+            })
+            .await
+            .unwrap();
+        let before_custody = super::cancellation_support::snapshot(&fixture).await;
+        let before_tasks = admitted_task_rows(&fixture.store).await;
+        let admissions = fixture
+            .store
+            .transaction(move |scope| {
+                Box::pin(async move {
+                    let mut inbox =
+                        Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FleetBindings);
+                    let mut item_admissions = Vec::new();
+                    // The second id already has genuine Fleet Push custody: replay must refuse too.
+                    for identity in [44, 41] {
+                        let DeliveryEnvelope::Item(item) = fleet_envelope(identity) else {
+                            panic!("fixture item")
+                        };
+                        let admission = if admit_tasks {
+                            inbox
+                                .enqueue_local_and_admit::<DeliverTask, RecordRemoval, _>(
+                                    item,
+                                    &TestConsumer,
+                                    now(),
+                                )
+                                .await
+                        } else {
+                            inbox.enqueue_local(item, &TestConsumer, now()).await
+                        };
+                        item_admissions.push(admission.map(|_| ()));
+                    }
+                    let cancel = super::cancellation_support::local_cancel(45, 41, "fleet");
+                    let cancellation = if admit_tasks {
+                        inbox
+                            .enqueue_local_cancel_and_admit::<RecordRemoval, _>(
+                                cancel,
+                                &TestConsumer,
+                                now(),
+                            )
+                            .await
+                    } else {
+                        inbox
+                            .enqueue_local_cancel(cancel, &TestConsumer, now())
+                            .await
+                    };
+                    item_admissions.push(cancellation.map(|_| ()));
+                    // Commit even when admission returns an error, exposing any premature writes.
+                    Ok(item_admissions)
+                })
+            })
+            .await
+            .unwrap();
+        let refused: Vec<bool> = admissions
+            .into_iter()
+            .map(|answer| {
+                matches!(
+                    answer,
+                    Err(DeliveryError::Refused {
+                        reason: DeliveryRefusal::NotSubmitter
+                    })
+                )
+            })
+            .collect();
+        observations.push((
+            admit_tasks,
+            refused,
+            super::cancellation_support::snapshot(&fixture).await == before_custody,
+            admitted_task_rows(&fixture.store).await == before_tasks,
+        ));
+    }
+    assert_eq!(
+        observations,
+        vec![
+            (false, vec![true, true, true], true, true),
+            (true, vec![true, true, true], true, true),
+        ],
+        "fresh/replayed items and cancellation must refuse without committed custody or task changes"
+    );
+}
+
+async fn admitted_task_rows(store: &TestStore) -> Vec<String> {
+    store.transaction(|scope| Box::pin(async move {
+        let rows = query::<Turso>("SELECT json_array(operation_id,kind,kind_version,request_key,hex(input),hex(input_digest),state,hex(result),failure,finished_at,next_attempt_at,attempt,drive_token,drive_until,created_at,updated_at) AS record FROM _fleet_sync_operations ORDER BY operation_id")
+            .fetch_all(scope.executor()).await?;
+        rows.into_iter().map(|row| row.try_get("record").map_err(StoreError::backend)).collect()
+    })).await.unwrap()
 }
 
 #[tokio::test]
