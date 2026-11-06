@@ -86,6 +86,8 @@ pub enum SessionLinkStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SessionDropReason {
+    ConnectFailed { kind: SessionConnectFailureKind },
+    UnsupportedFrame,
     ReplacedByNewerSession,
     IdleTimeout,
     SendTimeout,
@@ -93,6 +95,13 @@ pub enum SessionDropReason {
     CredentialRejected { reason: AuthRefusal },
     Revoked,
     WelcomeTimeout,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionConnectFailureKind {
+    Unavailable,
+    InvalidEndpoint,
+    InvalidCredential,
 }
 
 /// A transition correlated with one monotonic connection attempt.

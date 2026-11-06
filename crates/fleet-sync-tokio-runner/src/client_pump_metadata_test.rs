@@ -190,10 +190,11 @@ async fn old_contact_flush_cannot_replace_a_new_connection_snapshot() {
     task.await.unwrap().unwrap();
 }
 
-async fn assert_transport_timeout_drop(error: ConnectionClosed, expected: SessionDropReason) {
+async fn assert_transport_drop(error: ConnectionClosed, expected: SessionDropReason) {
     let (connection, mut server) = socket();
     let (requests, mut incoming, pump, _, _) = setup(vec![Ok(connection)]).await;
     let mut state = pump.link_state();
+    let mut events = pump.observe_link();
     let (stop, stopped) = watch::channel(false);
     let task = tokio::spawn(pump.run_with_clock(stopped, TestClock(Instant::now())));
     server.welcome().await;
@@ -208,6 +209,17 @@ async fn assert_transport_timeout_drop(error: ConnectionClosed, expected: Sessio
     assert_eq!(last_drop.reason, expected);
     assert_eq!(last_drop.connection, 1);
     assert_eq!(last_drop.at, SyncTime::from_unix_millis(2000));
+    loop {
+        let event = timeout(Duration::from_secs(10), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        if let SessionLinkEventKind::Disconnected { reason } = event.kind {
+            assert_eq!(reason, expected);
+            assert_eq!(event.connection, 1);
+            break;
+        }
+    }
     assert!(!requests.is_closed());
     stop.send(true).unwrap();
     task.await.unwrap().unwrap();
@@ -215,7 +227,7 @@ async fn assert_transport_timeout_drop(error: ConnectionClosed, expected: Sessio
 
 #[tokio::test(start_paused = true)]
 async fn idle_timeout_is_retained_as_its_typed_drop_reason() {
-    assert_transport_timeout_drop(
+    assert_transport_drop(
         ConnectionClosed::IdleTimeout,
         SessionDropReason::IdleTimeout,
     )
@@ -224,7 +236,7 @@ async fn idle_timeout_is_retained_as_its_typed_drop_reason() {
 
 #[tokio::test(start_paused = true)]
 async fn send_timeout_is_retained_as_its_typed_drop_reason() {
-    assert_transport_timeout_drop(
+    assert_transport_drop(
         ConnectionClosed::SendTimeout,
         SessionDropReason::SendTimeout,
     )
@@ -269,4 +281,80 @@ async fn outbound_send_timeout_keeps_its_old_connection_identity_after_reconnect
     second_server.answer_request(&requests).await;
     stop.send(true).unwrap();
     task.await.unwrap().unwrap();
+}
+
+async fn assert_connect_failure_kind(
+    error: ConnectFailure,
+    kind: crate::SessionConnectFailureKind,
+) {
+    let (requests, _incoming, pump, attempts, _) = setup(vec![Err(error)]).await;
+    let mut state = pump.link_state();
+    let mut events = pump.observe_link();
+    let (stop, stopped) = watch::channel(false);
+    let task = tokio::spawn(pump.run_with_clock(stopped, TestClock(Instant::now())));
+    let dropped = snapshot(&mut state, |value| value.last_drop.is_some()).await;
+    let drop = dropped.last_drop.unwrap();
+    assert_eq!(drop.reason, SessionDropReason::ConnectFailed { kind });
+    assert_eq!(drop.connection, 1);
+    assert_eq!(drop.at, SyncTime::from_unix_millis(0));
+    let connecting = timeout(Duration::from_secs(10), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(connecting.connection, 1);
+    assert_eq!(
+        connecting.kind,
+        SessionLinkEventKind::Connecting { attempt: 1 }
+    );
+    let failed = timeout(Duration::from_secs(10), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(failed.connection, 1);
+    assert_eq!(
+        failed.kind,
+        SessionLinkEventKind::Disconnected {
+            reason: SessionDropReason::ConnectFailed { kind }
+        }
+    );
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    assert!(!requests.is_closed());
+    stop.send(true).unwrap();
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn connect_failure_unavailable_has_typed_drop_reason() {
+    assert_connect_failure_kind(
+        ConnectFailure::Unavailable,
+        crate::SessionConnectFailureKind::Unavailable,
+    )
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn connect_failure_invalid_endpoint_has_typed_drop_reason() {
+    assert_connect_failure_kind(
+        ConnectFailure::InvalidEndpoint,
+        crate::SessionConnectFailureKind::InvalidEndpoint,
+    )
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn connect_failure_invalid_credential_has_typed_drop_reason() {
+    assert_connect_failure_kind(
+        ConnectFailure::InvalidCredential,
+        crate::SessionConnectFailureKind::InvalidCredential,
+    )
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn unsupported_frame_has_typed_drop_reason() {
+    assert_transport_drop(
+        ConnectionClosed::UnsupportedFrame,
+        SessionDropReason::UnsupportedFrame,
+    )
+    .await;
 }

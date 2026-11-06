@@ -119,6 +119,11 @@ about ten-second intervals; status transitions always include the latest
 contact time. A new connection clears the contact time. Transports can return
 `ConnectionClosed::IdleTimeout` or `SendTimeout`, retained as those typed
 `SessionDropReason` values; existing `Transport` errors remain supported.
+Connect failures retain `ConnectFailed { kind }`, where
+`SessionConnectFailureKind` distinguishes `Unavailable`, `InvalidEndpoint`, and
+`InvalidCredential` without endpoint or credential material. Unsupported
+transport frames retain `UnsupportedFrame`. These reasons appear in both the
+watch's `last_drop` and the disconnection event.
 
 `observe_link()` returns a broadcast receiver of `SessionLinkEvent { connection,
 kind }` for transitions, including session replacement and Welcome timeout.

@@ -1,6 +1,7 @@
 use crate::{
-    CredentialRejectedRecovery, SessionDropReason, SessionEndedRecovery, SessionLinkEvent,
-    SessionLinkEventKind, SessionLinkState, SessionLinkStatus, SessionRecoveryPolicy,
+    CredentialRejectedRecovery, SessionConnectFailureKind, SessionDropReason, SessionEndedRecovery,
+    SessionLinkEvent, SessionLinkEventKind, SessionLinkState, SessionLinkStatus,
+    SessionRecoveryPolicy,
 };
 use durable_steps::{CallFailure, NotSentReason, Uuid};
 use fleet_sync_protocol::{
@@ -227,7 +228,11 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionPum
                         Err(ClientError::Connection(error)) if self.client.reconnect_at().is_some() => {
                             self.report_link(SessionLinkEventKind::Disconnected { reason: transport_drop(None, Some(&error)) }, &host);
                         }
-                        Err(ClientError::RetryAt { .. } | ClientError::Connect(_)) if self.client.reconnect_at().is_some() => {
+                        Err(ClientError::Connect(error)) => {
+                            self.report_link(SessionLinkEventKind::Disconnected { reason: connect_drop(&error) }, &host);
+                            if self.client.reconnect_at().is_none() { break Err(error.into()); }
+                        }
+                        Err(ClientError::RetryAt { .. }) if self.client.reconnect_at().is_some() => {
                             self.report_link(SessionLinkEventKind::Disconnected { reason: transport_drop(None, None) }, &host);
                         }
                         Err(error) => {
@@ -446,14 +451,39 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionPum
     }
 }
 
+fn connect_drop(error: &ConnectFailure) -> SessionDropReason {
+    match error {
+        ConnectFailure::Unavailable => SessionDropReason::ConnectFailed {
+            kind: SessionConnectFailureKind::Unavailable,
+        },
+        ConnectFailure::InvalidEndpoint => SessionDropReason::ConnectFailed {
+            kind: SessionConnectFailureKind::InvalidEndpoint,
+        },
+        ConnectFailure::InvalidCredential => SessionDropReason::ConnectFailed {
+            kind: SessionConnectFailureKind::InvalidCredential,
+        },
+        ConnectFailure::CredentialRejected(reason) => {
+            SessionDropReason::CredentialRejected { reason: *reason }
+        }
+    }
+}
+
 fn transport_drop(
     reason: Option<CloseReason>,
     transport: Option<&ConnectionClosed>,
 ) -> SessionDropReason {
-    match (reason, transport) {
-        (None, Some(ConnectionClosed::IdleTimeout)) => SessionDropReason::IdleTimeout,
-        (None, Some(ConnectionClosed::SendTimeout)) => SessionDropReason::SendTimeout,
-        (reason, _) => SessionDropReason::Disconnected { reason },
+    if let Some(reason) = reason {
+        return SessionDropReason::Disconnected {
+            reason: Some(reason),
+        };
+    }
+    match transport {
+        Some(ConnectionClosed::IdleTimeout) => SessionDropReason::IdleTimeout,
+        Some(ConnectionClosed::SendTimeout) => SessionDropReason::SendTimeout,
+        Some(ConnectionClosed::UnsupportedFrame) => SessionDropReason::UnsupportedFrame,
+        Some(ConnectionClosed::Transport) | None => {
+            SessionDropReason::Disconnected { reason: None }
+        }
     }
 }
 
