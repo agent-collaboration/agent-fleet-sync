@@ -128,6 +128,8 @@ pub trait CallTarget: Serialize + DeserializeOwned + Send + Sync + 'static {
 pub trait Host: Clock + IdSource + WakeScheduler + Send + Sync + 'static {
     /// Read an already established answer without performing the call's effect.
     /// `None` leaves the outcome uncertain. Errors use dispatch failure rules.
+    /// A returned answer must pass the same target-specific validator as a
+    /// dispatched answer before it is returned for journaling.
     fn reconcile<C: CallTarget>(
         &self,
         _target: C,

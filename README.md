@@ -46,6 +46,8 @@ Delivery's non-repeating `DeliverCall` opts in. Existing hosts and routers keep
 returning `None` and preserve the previous `Uncertain` behavior without another
 dispatch. A consumer can return a recorded answer for a supported item kind and
 `None` for everything else. The library adds no receipt store or persisted format.
+A reconciled answer must pass the same target-specific validator as a dispatched
+answer before journaling; decoding the answer's shape alone is insufficient.
 
 ## Holder-change workflows
 

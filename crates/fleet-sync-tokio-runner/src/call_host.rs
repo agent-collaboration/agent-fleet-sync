@@ -17,6 +17,8 @@ pub struct CallEnvelope {
 pub trait CallRouter: Send + Sync + 'static {
     /// Only read an existing answer. Never dispatch or perform the effect here.
     /// Absence leaves the non-deduplicating call uncertain.
+    /// A returned answer must pass the same target-specific validator as a
+    /// dispatched answer; decoding its JSON shape alone is insufficient.
     fn reconcile(
         &self,
         _call: CallEnvelope,
