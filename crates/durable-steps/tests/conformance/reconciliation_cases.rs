@@ -227,15 +227,6 @@ pub async fn failures_preserve_possible_reach<S: AtomicStore>(
                 reason: NotSentReason::Overloaded,
             },
         ),
-        (
-            "reconcile-retryable",
-            CallFailure::Retryable {
-                reason: durable_steps::CallRetryReason {
-                    code: "lookupUnavailable".into(),
-                    detail: "fixture".into(),
-                },
-            },
-        ),
     ] {
         let engine = engine::<S, ReconcilingTarget<false>>(store.clone(), host.clone(), false)?;
         let id = interrupted::<S, ReconcilingTarget<false>>(&*store, &host, &engine, name).await?;
@@ -287,6 +278,25 @@ pub async fn default_target<S: AtomicStore>(
         host.deliveries.load(Ordering::SeqCst) == dispatches
             && host.reconciliations.load(Ordering::SeqCst) == reconciliations,
         "default target must neither dispatch nor reconcile",
+    )?;
+    host.lose_answers.store(1, Ordering::SeqCst);
+    let live_id = engine
+        .start::<ReconcileTask<S, DefaultTarget>>(&key("default-live-answer-lost")?, 19)
+        .await
+        .map_err(StoreError::backend)?;
+    check(
+        matches!(
+            engine.status(&live_id).await?.state,
+            OperationState::Failed {
+                reason: OperationFailure::Uncertain { .. }
+            }
+        ),
+        "non-opted live AnswerLost must remain Uncertain",
+    )?;
+    check(
+        host.deliveries.load(Ordering::SeqCst) == dispatches + 1
+            && host.reconciliations.load(Ordering::SeqCst) == reconciliations,
+        "non-opted live answer loss must not reconcile",
     )
 }
 
@@ -318,6 +328,29 @@ pub async fn deduplicating_target<S: AtomicStore>(
             && host.effects.load(Ordering::SeqCst) == effects
             && host.reconciliations.load(Ordering::SeqCst) == reconciliations,
         "deduplicating recovery dispatches, never reconciles",
+    )?;
+    host.lose_answers.store(1, Ordering::SeqCst);
+    let live_id = engine
+        .start::<ReconcileTask<S, ReconcilingTarget<true>>>(
+            &key("deduplicating-live-answer-lost")?,
+            19,
+        )
+        .await
+        .map_err(StoreError::backend)?;
+    host.advance(100);
+    engine.drive_due().await?;
+    check(
+        matches!(
+            engine.status(&live_id).await?.state,
+            OperationState::Completed { .. }
+        ),
+        "deduplicating live AnswerLost must use ordinary dispatch replay",
+    )?;
+    check(
+        host.deliveries.load(Ordering::SeqCst) == dispatches + 3
+            && host.effects.load(Ordering::SeqCst) == effects + 1
+            && host.reconciliations.load(Ordering::SeqCst) == reconciliations,
+        "deduplicating live answer loss must replay dispatch without lookup",
     )
 }
 
@@ -403,5 +436,132 @@ pub async fn live_lost_answer<S: AtomicStore>(
             && host.effects.load(Ordering::SeqCst) == effects + 1,
         "live AnswerLost must use one read-only lookup and never dispatch twice",
     )?;
+    Ok(())
+}
+
+pub async fn retryable_lookup<S: AtomicStore>(
+    store: Arc<S>,
+    host: Arc<TestHost>,
+    live: bool,
+) -> Result<(), StoreError> {
+    let engine = engine::<S, ReconcilingTarget<false>>(store.clone(), host.clone(), false)?;
+    let dispatches = host.deliveries.load(Ordering::SeqCst);
+    let effects = host.effects.load(Ordering::SeqCst);
+    let lookups = host.reconciliations.load(Ordering::SeqCst);
+    let reason = durable_steps::CallRetryReason {
+        code: "lookupBusy".into(),
+        detail: "record is temporarily unavailable".into(),
+    };
+    let id = if live {
+        host.reconciliation_failures
+            .lock()
+            .map_err(StoreError::backend)?
+            .push_back(CallFailure::Retryable {
+                reason: reason.clone(),
+            });
+        host.lose_answers.store(1, Ordering::SeqCst);
+        engine
+            .start::<ReconcileTask<S, ReconcilingTarget<false>>>(&key("retry-live-lookup")?, 19)
+            .await
+            .map_err(StoreError::backend)?
+    } else {
+        let id = interrupted::<S, ReconcilingTarget<false>>(
+            &*store,
+            &host,
+            &engine,
+            "retry-recovered-lookup",
+        )
+        .await?;
+        host.reconciliation_failures
+            .lock()
+            .map_err(StoreError::backend)?
+            .push_back(CallFailure::Retryable {
+                reason: reason.clone(),
+            });
+        engine.drive_due().await?;
+        id
+    };
+    let retry_at = match engine.status(&id).await?.state {
+        OperationState::Running {
+            next_attempt_at,
+            attempt: 1,
+            ..
+        } => next_attempt_at,
+        _ => {
+            return Err(StoreError::backend(
+                "Retryable reconciliation must remain Running, not Uncertain",
+            ));
+        }
+    };
+    check(
+        // Engine::new's first retry uses its existing 10 ms backoff.
+        retry_at.unix_millis() == host.clock.load(Ordering::SeqCst) + 10,
+        "read-only retry must use normal backoff",
+    )?;
+    store.transaction(move |scope|Box::pin(async move {
+        check(matches!(scope.step(id,0).await?.map(|step|step.state),Some(StepState::CallPending {attempt,..}) if attempt.reach==CallReach::MayHaveReached && attempt.retry_reason==Some(reason)),"lookup retry must persist MayHaveReached and the exact retry reason")
+    })).await?;
+    engine.drive_due().await?;
+    check(
+        host.reconciliations.load(Ordering::SeqCst) == lookups + 1,
+        "lookup must wait for its retry deadline",
+    )?;
+    host.clock.store(retry_at.unix_millis(), Ordering::SeqCst);
+    engine.drive_due().await?;
+    check(
+        matches!(engine.status(&id).await?.state,OperationState::Completed {result} if serde_json::from_slice::<u64>(&result).map_err(StoreError::backend)?==38),
+        "retry must accept the later saved answer",
+    )?;
+    engine.drive_due().await?;
+    check(
+        host.reconciliations.load(Ordering::SeqCst) == lookups + 2
+            && host.deliveries.load(Ordering::SeqCst) == dispatches + 1
+            && host.effects.load(Ordering::SeqCst) == effects + 1,
+        "read-only retries must never perform another dispatch or effect",
+    )
+}
+
+pub async fn live_non_retryable<S: AtomicStore>(
+    store: Arc<S>,
+    host: Arc<TestHost>,
+) -> Result<(), StoreError> {
+    for (name, failure) in [
+        ("live-lookup-lost", CallFailure::AnswerLost),
+        (
+            "live-lookup-not-sent",
+            CallFailure::NotSent {
+                reason: NotSentReason::Overloaded,
+            },
+        ),
+    ] {
+        let engine = engine::<S, ReconcilingTarget<false>>(store.clone(), host.clone(), false)?;
+        let dispatches = host.deliveries.load(Ordering::SeqCst);
+        let lookups = host.reconciliations.load(Ordering::SeqCst);
+        host.reconciliation_failures
+            .lock()
+            .map_err(StoreError::backend)?
+            .push_back(failure);
+        host.lose_answers.store(1, Ordering::SeqCst);
+        let id = engine
+            .start::<ReconcileTask<S, ReconcilingTarget<false>>>(&key(name)?, 19)
+            .await
+            .map_err(StoreError::backend)?;
+        check(
+            matches!(
+                engine.status(&id).await?.state,
+                OperationState::Failed {
+                    reason: OperationFailure::Uncertain { .. }
+                }
+            ),
+            "non-retryable live lookup failure must remain Uncertain",
+        )?;
+        host.advance(100);
+        engine.drive_due().await?;
+        check(
+            host.reconciliations.load(Ordering::SeqCst) == lookups + 1
+                && host.deliveries.load(Ordering::SeqCst) == dispatches + 1,
+            "non-retryable lookup must neither retry nor redispatch",
+        )?;
+    }
     Ok(())
 }

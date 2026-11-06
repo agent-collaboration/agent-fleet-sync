@@ -34,8 +34,10 @@ dispatch returns `AnswerLost`, the engine asks
 The lookup runs outside the journal transaction and must only read: it must
 never dispatch the call or perform its effect. `Some(answer)` is saved as the
 normal `CallDone` answer before the task advances; saved answers replay without
-another lookup. `None` keeps the existing `Uncertain` outcome. Errors use the
-same failure handling as dispatch and cannot erase earlier possible reach.
+another lookup. `None` and non-retryable lookup errors keep the `Uncertain`
+outcome. A `Retryable` lookup error retains `MayHaveReached` and its retry reason,
+then retries only the read through the engine's normal backoff. It never clears
+earlier possible reach or falls back to dispatching the effect.
 
 Fresh calls and `NeverSent`/`NoEffect` retries dispatch first; only a lost
 answer can then trigger a read-only lookup. Deduplicating calls never reconcile,

@@ -50,6 +50,12 @@ where
     for<'t> S::Scope<'t>: BusinessScope,
 {
     let mut passed = Vec::new();
+    reconciliation_cases::retryable_lookup(store.clone(), host.clone(), false).await?;
+    passed.push("Retryable recovered lookup retains MayHaveReached and retries to an answer");
+    reconciliation_cases::retryable_lookup(store.clone(), host.clone(), true).await?;
+    passed.push("Retryable live lookup retries without another dispatch");
+    reconciliation_cases::live_non_retryable(store.clone(), host.clone()).await?;
+    passed.push("non-retryable live lookup remains Uncertain");
     reconciliation_cases::live_lost_answer(store.clone(), host.clone()).await?;
     passed.push("live AnswerLost reconciles once without another dispatch");
     reconciliation_cases::recovered_answer(store.clone(), host.clone()).await?;

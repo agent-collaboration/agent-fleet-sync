@@ -16,6 +16,11 @@ enum Preparation {
     Uncertain,
 }
 
+enum AnswerSource {
+    Dispatch,
+    Reconciliation,
+}
+
 impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
     pub(crate) async fn execute_call<C: CallTarget>(
         &mut self,
@@ -122,7 +127,7 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
             operation: id,
             step: name.clone(),
         };
-        let (mut attempt, answer) = match preparation {
+        let (mut attempt, answer, answer_source) = match preparation {
             Preparation::Replay(bytes) => {
                 return serde_json::from_slice(&bytes)
                     .map_err(|error| step_error(invalid_payload(error)));
@@ -145,29 +150,31 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
                     None
                 };
                 let mut answer = self.host.dispatch(target, request, call.clone()).await;
+                let mut answer_source = AnswerSource::Dispatch;
                 if matches!(answer, Err(CallFailure::AnswerLost))
                     && let Some((target, request)) = reconciliation_input
                 {
                     attempt.reach = CallReach::MayHaveReached;
+                    answer_source = AnswerSource::Reconciliation;
                     answer = self
                         .host
                         .reconcile(target, request, call)
                         .await
                         .and_then(|answer| answer.ok_or(CallFailure::AnswerLost));
                 }
-                (attempt, answer)
+                (attempt, answer, answer_source)
             }
             Preparation::Reconcile(attempt) => {
                 // Recovery asks only for an existing answer. No branch here
                 // may fall back to dispatching this non-repeating effect.
                 match self.host.reconcile(target, request, call).await {
-                    Ok(Some(answer)) => (attempt, Ok(answer)),
+                    Ok(Some(answer)) => (attempt, Ok(answer), AnswerSource::Reconciliation),
                     Ok(None) => {
                         return Err(StepError::Failed(OperationFailure::Uncertain {
                             step: name,
                         }));
                     }
-                    Err(error) => (attempt, Err(error)),
+                    Err(error) => (attempt, Err(error), AnswerSource::Reconciliation),
                 }
             }
         };
@@ -235,6 +242,15 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
             .await?;
         match result {
             Some(result) => Ok(result),
+            None if matches!(answer_source, AnswerSource::Reconciliation)
+                && attempt.retry_reason.is_some() =>
+            {
+                // The effect's possible reach stays fenced. Only the read-only
+                // lookup is retried, through the engine's ordinary backoff.
+                Err(StepError::Retry {
+                    after: Duration::ZERO,
+                })
+            }
             None if !C::DEDUPLICATES && attempt.reach == CallReach::MayHaveReached => {
                 Err(StepError::Failed(OperationFailure::Uncertain {
                     step: uncertain_step,

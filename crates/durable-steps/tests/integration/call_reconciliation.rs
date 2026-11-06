@@ -5,6 +5,33 @@ use durable_steps::{StoreError, volatile_store::VolatileStore};
 use std::sync::Arc;
 
 #[test]
+fn retryable_recovered_lookup_retries_then_answers() -> Result<(), StoreError> {
+    let host = TestHost::new();
+    futures_executor::block_on(cases::retryable_lookup(
+        Arc::new(VolatileStore::new(host.clone())),
+        host,
+        false,
+    ))
+}
+#[test]
+fn retryable_live_lookup_retries_then_answers() -> Result<(), StoreError> {
+    let host = TestHost::new();
+    futures_executor::block_on(cases::retryable_lookup(
+        Arc::new(VolatileStore::new(host.clone())),
+        host,
+        true,
+    ))
+}
+#[test]
+fn non_retryable_live_lookup_stays_uncertain() -> Result<(), StoreError> {
+    let host = TestHost::new();
+    futures_executor::block_on(cases::live_non_retryable(
+        Arc::new(VolatileStore::new(host.clone())),
+        host,
+    ))
+}
+
+#[test]
 fn live_answer_lost_reconciles_without_second_dispatch() -> Result<(), StoreError> {
     let host = TestHost::new();
     futures_executor::block_on(cases::live_lost_answer(
