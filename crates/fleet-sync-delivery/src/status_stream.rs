@@ -275,6 +275,10 @@ where
                 project,
                 route: state.owner_route.clone(),
             },
+            sender @ crate::Submitter::Fleet(_) => PublicationTarget::StatusStream {
+                sender,
+                route: state.owner_route.clone(),
+            },
         };
         queries::write_publication(
             self.scope,

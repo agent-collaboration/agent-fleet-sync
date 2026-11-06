@@ -134,7 +134,7 @@ where
             }
             Err(error) => return Err(error),
         };
-        if submitter != verified.owner() {
+        if submitter != verified.owner() || matches!(submitter, Submitter::Fleet(_)) {
             return Ok(OutboxAdmission::Refused {
                 reason: DeliveryRefusal::NotSubmitter,
             });
@@ -168,7 +168,7 @@ where
             }
             Err(error) => return Err(error),
         };
-        if submitter != verified.owner() {
+        if submitter != verified.owner() || matches!(submitter, Submitter::Fleet(_)) {
             return Ok(OutboxAdmission::Refused {
                 reason: DeliveryRefusal::NotSubmitter,
             });

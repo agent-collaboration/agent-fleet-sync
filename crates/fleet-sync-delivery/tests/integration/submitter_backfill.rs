@@ -18,7 +18,7 @@ async fn released_consumer_sources_map_exactly_and_completion_is_a_cheap_stable_
         ] {
             let sql=format!("SELECT submitter_kind,submitter_id,consumer_sender,created_at FROM {table} WHERE item_id=?1");
             let row=query::<Turso>(sqlx_core::sql_str::AssertSqlSafe(sql)).bind(item_id(identity).as_uuid().to_string()).fetch_one(scope.executor()).await?;
-            assert_eq!(row.try_get::<String,_>("submitter_kind")?,match owner {Submitter::Machine(_)=>"machine",Submitter::Project(_)=>"project"});
+            assert_eq!(row.try_get::<String,_>("submitter_kind")?,match owner {Submitter::Machine(_)=>"machine",Submitter::Project(_)=>"project",Submitter::Fleet(_)=>"fleet"});
             assert_eq!(row.try_get::<String,_>("submitter_id")?,owner.as_uuid().to_string());
             let source:String=serde_json::from_str(&row.try_get::<String,_>("consumer_sender")?).map_err(StoreError::backend)?;
             assert_eq!(source,owned_sender(owner,"legacy/session"));

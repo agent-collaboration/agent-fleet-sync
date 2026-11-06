@@ -290,3 +290,76 @@ async fn sixty_one_day_recipient_report_is_refused_even_after_custody_was_remove
         .unwrap();
     assert!(identities(&fixture.store, "outbox").await.is_empty());
 }
+
+struct UnavailableBinding;
+impl<S: TransactionScope> SenderBinding<S, TestTypes> for UnavailableBinding {
+    async fn resolve_submitter<'a>(
+        &'a self,
+        _scope: &'a mut S,
+        _sender: &'a String,
+    ) -> Result<Submitter, SenderBindingFailure> {
+        Err(SenderBindingFailure::Unavailable)
+    }
+}
+
+#[tokio::test]
+async fn source_less_legacy_local_replay_preserves_custody_when_binding_is_unavailable() {
+    use super::support::legacy_submitters::{
+        legacy_store, project, snapshot, startup, startup_time,
+    };
+
+    let fixture = legacy_store(0).await;
+    fixture.store.transaction(|scope| Box::pin(async move {
+        // The old terminal rows lost their source with their payload; startup classifies them.
+        query::<Turso>("UPDATE _fleet_sync_inbox_items SET live=0,payload_bytes=0,settlement_charge_bytes=0,payload=NULL,consumer_sender=NULL,progress='final',outcome_kind='expired'")
+            .execute(scope.executor()).await?;
+        Ok(())
+    })).await.unwrap();
+    assert_eq!(startup(&fixture.store).await.unwrap(), 4);
+    let before = snapshot(&fixture.store).await;
+
+    for (identity, owner) in [(3, Submitter::Machine(peer(1))), (4, project())] {
+        let original = DeliveryItem::<TestTypes>::new(
+            item_id(identity),
+            owned_sender(owner, "legacy/session"),
+            Recipient {
+                peer: peer(2),
+                address: "inbox".into(),
+            },
+            None,
+            "legacy body".into(),
+        )
+        .unwrap();
+        fixture
+            .store
+            .transaction(move |scope| {
+                Box::pin(async move {
+                    let mut inbox = Inbox::<_, TestTypes, _>::new(
+                        scope,
+                        peer(2),
+                        limits(),
+                        &UnavailableBinding,
+                    );
+                    // Validate the retained shape through the real decoder before attempting replay.
+                    assert!(matches!(
+                        inbox
+                            .local_outcome(item_id(identity))
+                            .await
+                            .map_err(storage_error)?,
+                        Some(RecipientOutcome::Expired)
+                    ));
+                    assert!(matches!(
+                        inbox
+                            .enqueue_local(original, &TestConsumer, startup_time())
+                            .await
+                            .map_err(storage_error)?,
+                        LocalItemAdmission::Replayed
+                    ));
+                    Ok(())
+                })
+            })
+            .await
+            .unwrap();
+    }
+    assert_eq!(snapshot(&fixture.store).await, before);
+}

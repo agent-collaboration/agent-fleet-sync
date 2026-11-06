@@ -19,12 +19,69 @@ where
     for<'v> Option<String>: Type<S::Database> + Decode<'v, S::Database> + Encode<'v, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
-    /// Admit the next hop and its Push task in the caller's custody transaction.
+    /// Admit machine or project mail and its Push task in the custody transaction.
     #[expect(
         clippy::manual_async_fn,
         reason = "explicit Send avoids async-fn/GAT lifetime generality errors in journal transactions"
     )]
     pub fn submit_relay<'call, TPush, TRetention>(
+        &'call mut self,
+        submitter: crate::Submitter,
+        item: DeliveryEnvelope<D>,
+        relay: PeerId,
+        route: D::StatusRoute,
+        now: SyncTime,
+    ) -> impl std::future::Future<Output = Result<SubmitResult<D::Acceptance>, DeliveryError>>
+    + Send
+    + 'call
+    where
+        S: JournalScope + durable_steps::storage::JournalStorage,
+        TRetention: Task<Input = ItemId>,
+        TPush: Task<Input = PushInput>,
+    {
+        async move {
+            if matches!(submitter, Submitter::Fleet(_)) {
+                return Ok(SubmitResult::Refused {
+                    reason: DeliveryRefusal::NotSubmitter,
+                });
+            }
+            self.admit_relay::<TPush, TRetention>(submitter, item, relay, route, now)
+                .await
+        }
+    }
+
+    /// Admit Fleet-origin mail from the Fleet's own handlers in its custody transaction.
+    /// Hosts restrict access to those handlers; the sender binding verifies identity.
+    #[expect(
+        clippy::manual_async_fn,
+        reason = "explicit Send avoids async-fn/GAT lifetime generality errors in journal transactions"
+    )]
+    pub fn submit_fleet<'call, TPush, TRetention>(
+        &'call mut self,
+        fleet: FleetId,
+        item: DeliveryEnvelope<D>,
+        relay: PeerId,
+        route: D::StatusRoute,
+        now: SyncTime,
+    ) -> impl std::future::Future<Output = Result<SubmitResult<D::Acceptance>, DeliveryError>>
+    + Send
+    + 'call
+    where
+        S: JournalScope + durable_steps::storage::JournalStorage,
+        TRetention: Task<Input = ItemId>,
+        TPush: Task<Input = PushInput>,
+    {
+        async move {
+            self.admit_relay::<TPush, TRetention>(Submitter::Fleet(fleet), item, relay, route, now)
+                .await
+        }
+    }
+
+    #[expect(
+        clippy::manual_async_fn,
+        reason = "explicit Send avoids async-fn/GAT lifetime generality errors in journal transactions"
+    )]
+    fn admit_relay<'call, TPush, TRetention>(
         &'call mut self,
         submitter: crate::Submitter,
         item: DeliveryEnvelope<D>,
