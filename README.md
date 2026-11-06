@@ -57,8 +57,15 @@ Registry copy calls use `CallFailure::Retryable` only for known no-new-effect re
 
 ### Native session recovery
 
-`SessionPump::new` preserves existing behavior. Hosts opt in before running the
-pump, retaining the same `SessionRequests` handles:
+`SessionPump::new` keeps recovery opt-in. One correction also applies to hosts
+that do not opt in: a credential refusal following an earlier scheduled retry
+now returns an error instead of leaving the pump alive waiting for a consumed
+wake. Existing attached credential-expiry retries continue under the client's
+connection backoff. `WrongKind` is always terminal because it is a configuration
+error.
+
+Hosts opt in before running the pump, retaining the same `SessionRequests`
+handles:
 
 ```rust
 use fleet_sync_tokio_runner::SessionRecoveryPolicy;
@@ -74,24 +81,53 @@ let events = pump.observe_link();
 ```
 
 The explicit default policy retries credential refusals with exponential backoff
-from one second to a five-minute cap, and starts a new persisted session after
-`SessionEnded`. Hosts can supply `CredentialRejectedRecovery::Retry { backoff }`
-to choose the cap, or select `Terminal` for either recovery policy. Revocation
-always terminates the pump; the host owns re-enrollment. `welcome_timeout` is
-disabled by default. When supplied, it bounds attachment after Hello, closes a
-socket that has not delivered a matching Welcome, and uses the client's existing
-connection backoff before reconnecting. Recovery never replays operations; an
-in-flight request whose answer is lost still requires reconciliation.
+from one second to a five-minute cap. Hosts choose another cap with
+`CredentialRejectedRecovery::Retry { backoff }`, or select `Terminal` for either
+recovery policy. A `SessionEnded` received before Welcome can indicate a stale
+stored session identity: the default starts a new persisted session and waits
+for the client's connection backoff before connecting. A `SessionEnded` after
+Welcome means a newer live session owns the peer; that pump stops with status
+`Refused` and drop reason `ReplacedByNewerSession`, preventing two owners from
+continually replacing each other.
+
+Revocation always terminates the pump; the host owns re-enrollment. `run()`
+returns distinct `ClientError::Revoked`, `CredentialRejected { reason }`, and
+`ReplacedByNewerSession` terminal results. `welcome_timeout` is disabled by
+default. When supplied, it bounds attachment after Hello, closes a socket that
+has not delivered a matching Welcome, and applies connection backoff before
+reconnecting. Recovery never replays operations; an in-flight request whose
+answer is lost still requires reconciliation.
+
+Every `ClientEvent::Notice` includes its `session_id`. Pass that identity to
+`acknowledge_notice(session_id, position)` after handling the notice. A stale
+identity returns `ClientError::StaleNoticeAcknowledgement` and cannot advance
+the current session's cursor, even when both sessions have the same position.
 
 `link_state()` returns a watch receiver of `SessionLinkState { status,
-last_drop_reason }`. Status distinguishes connecting, welcomed, disconnected,
-credential rejection (including its optional retry time), and revoked. The last
-drop reason remains through reconnect and Welcome. `observe_link()` returns a
-broadcast receiver for transitions, including session replacement and Welcome
-timeout. Neither observer can block the pump. A slow event reader handles
-`RecvError::Lagged` and reads the watch for current status; the application still
-consumes the separate `ClientEvent` channel as before. Link observations contain
-typed refusal and close reasons, never credential material.
+connection, since, last_frame_at, last_drop, revision }`. `connection` increases
+on every connect attempt. `since` records when the current status was entered;
+`last_drop` retains `{ reason, at, connection }` through reconnect and Welcome.
+`revision` increases with every publication, so downstream owners can reject
+older snapshots. The pump is the only publisher and builds contact updates from
+its current state rather than a queued snapshot. The initial, not-yet-run
+snapshot has connection and revision zero.
+
+`last_frame_at` is the last inbound binary session message on the current
+connection, including frames consumed internally by the client. It excludes
+transport-private Ping/Pong frames. Contact-only watch updates are coalesced to
+about ten-second intervals; status transitions always include the latest
+contact time. A new connection clears the contact time. Transports can return
+`ConnectionClosed::IdleTimeout` or `SendTimeout`, retained as those typed
+`SessionDropReason` values; existing `Transport` errors remain supported.
+
+`observe_link()` returns a broadcast receiver of `SessionLinkEvent { connection,
+kind }` for transitions, including session replacement and Welcome timeout.
+A slow event reader handles `RecvError::Lagged` and reads the watch for current
+status. Broadcast publication does not wait for receivers; watch updates do not
+wait for an acknowledgment, but a held watch borrow blocks its write lock.
+Clone the snapshot and release the borrow before doing slow or asynchronous
+work. The application still consumes the separate `ClientEvent` channel.
+Observations contain typed refusal and close reasons, never credential material.
 
 ## Receiver foreign-key integrity
 

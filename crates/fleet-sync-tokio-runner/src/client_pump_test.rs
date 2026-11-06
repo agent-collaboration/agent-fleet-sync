@@ -1,7 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 use super::*;
 use crate::{
-    CredentialRejectedRecovery, SessionEndedRecovery, SessionLinkEvent, SessionRecoveryPolicy,
+    CredentialRejectedRecovery, SessionEndedRecovery, SessionLinkEvent, SessionLinkEventKind,
+    SessionRecoveryPolicy,
 };
 use fleet_sync_protocol::*;
 use fleet_sync_session::{
@@ -55,26 +56,34 @@ impl SessionTransport for ScriptedTransport {
     }
 }
 struct ScriptedConnection {
-    incoming: mpsc::Receiver<Bytes>,
+    incoming: mpsc::Receiver<Result<Bytes, ConnectionClosed>>,
     outgoing: mpsc::Sender<Bytes>,
     closed: mpsc::UnboundedSender<CloseReason>,
+    request_send_error: Option<ConnectionClosed>,
 }
 impl TransportConnection for ScriptedConnection {
     async fn send(&mut self, frame: Bytes) -> Result<(), ConnectionClosed> {
+        if matches!(
+            serde_json::from_slice::<ClientFrame>(&frame),
+            Ok(ClientFrame::Request { .. })
+        ) && let Some(error) = self.request_send_error.take()
+        {
+            return Err(error);
+        }
         self.outgoing
             .send(frame)
             .await
             .map_err(|_| ConnectionClosed::Transport)
     }
     async fn receive(&mut self) -> Option<Result<Bytes, ConnectionClosed>> {
-        self.incoming.recv().await.map(Ok)
+        self.incoming.recv().await
     }
     async fn close(self, reason: CloseReason) {
         self.closed.send(reason).unwrap();
     }
 }
 struct ServerSocket {
-    send: mpsc::Sender<Bytes>,
+    send: mpsc::Sender<Result<Bytes, ConnectionClosed>>,
     received: mpsc::Receiver<Bytes>,
     closed: mpsc::UnboundedReceiver<CloseReason>,
 }
@@ -87,6 +96,7 @@ fn socket() -> (ScriptedConnection, ServerSocket) {
             incoming,
             outgoing,
             closed,
+            request_send_error: None,
         },
         ServerSocket {
             send,
@@ -107,7 +117,7 @@ impl ServerSocket {
     }
     async fn send(&self, frame: ServerFrame) {
         self.send
-            .send(serde_json::to_vec(&frame).unwrap().into())
+            .send(Ok(serde_json::to_vec(&frame).unwrap().into()))
             .await
             .unwrap();
     }
@@ -184,11 +194,12 @@ async fn setup(
 }
 async fn next_link(
     events: &mut tokio::sync::broadcast::Receiver<SessionLinkEvent>,
-) -> SessionLinkEvent {
+) -> SessionLinkEventKind {
     timeout(Duration::from_secs(10), events.recv())
         .await
         .unwrap()
         .unwrap()
+        .kind
 }
 async fn welcomed(events: &mut mpsc::Receiver<ClientEvent>) {
     assert!(matches!(
@@ -215,11 +226,11 @@ async fn credential_refusal_retries_with_backoff_and_preserves_request_handle() 
     let task = tokio::spawn(pump.run_with_clock(stopped, TestClock(Instant::now())));
     assert_eq!(
         next_link(&mut links).await,
-        SessionLinkEvent::Connecting { attempt: 1 }
+        SessionLinkEventKind::Connecting { attempt: 1 }
     );
     assert_eq!(
         next_link(&mut links).await,
-        SessionLinkEvent::CredentialRejected {
+        SessionLinkEventKind::CredentialRejected {
             reason: AuthRefusal::Unknown
         }
     );
@@ -258,8 +269,12 @@ async fn ended_session_gets_new_persisted_identity_and_same_requests_work() {
         pump.with_recovery_policy(policy())
             .run_with_clock(stopped, TestClock(Instant::now())),
     );
-    let old = first_server.welcome().await;
-    welcomed(&mut incoming).await;
+    let ClientFrame::Hello {
+        session_id: old, ..
+    } = first_server.receive().await
+    else {
+        panic!("expected Hello")
+    };
     first_server
         .send(ServerFrame::Closed {
             reason: CloseReason::SessionEnded,
@@ -278,7 +293,7 @@ async fn ended_session_gets_new_persisted_identity_and_same_requests_work() {
         }
     }
     while !restarted {
-        restarted = matches!(next_link(&mut links).await, SessionLinkEvent::SessionRestarted { old: a, new: b } if a == old && b == new);
+        restarted = matches!(next_link(&mut links).await, SessionLinkEventKind::SessionRestarted { old: a, new: b } if a == old && b == new);
     }
     second_server.answer_request(&requests).await;
     stop.send(true).unwrap();
@@ -297,19 +312,14 @@ async fn revoked_upgrade_is_terminal_and_observed_even_with_recovery() {
         .with_recovery_policy(policy())
         .run_with_clock(stopped, TestClock(Instant::now()))
         .await;
-    assert!(matches!(
-        result,
-        Err(ClientError::Connect(ConnectFailure::CredentialRejected(
-            AuthRefusal::Revoked
-        )))
-    ));
+    assert!(matches!(result, Err(ClientError::Revoked)));
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     assert!(requests.is_closed());
     assert_eq!(
         next_link(&mut links).await,
-        SessionLinkEvent::Connecting { attempt: 1 }
+        SessionLinkEventKind::Connecting { attempt: 1 }
     );
-    assert_eq!(next_link(&mut links).await, SessionLinkEvent::Revoked);
+    assert_eq!(next_link(&mut links).await, SessionLinkEventKind::Revoked);
 }
 
 #[tokio::test(start_paused = true)]
@@ -339,7 +349,7 @@ async fn welcome_timeout_closes_socket_before_backoff_then_recovers() {
         Some(CloseReason::ClientClosed)
     );
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
-    while next_link(&mut links).await != SessionLinkEvent::WelcomeTimeout {}
+    while next_link(&mut links).await != SessionLinkEventKind::WelcomeTimeout {}
     tokio::time::advance(Duration::from_secs(1)).await;
     second_server.welcome().await;
     while let Some(event) = timeout(Duration::from_secs(10), incoming.recv())
@@ -395,7 +405,11 @@ async fn slow_link_observer_never_blocks_repeated_recovery() {
         crate::SessionLinkStatus::Welcomed { session_id }
     );
     assert_eq!(
-        state.borrow().last_drop_reason,
+        state
+            .borrow()
+            .last_drop
+            .as_ref()
+            .map(|drop| drop.reason.clone()),
         Some(crate::SessionDropReason::CredentialRejected {
             reason: AuthRefusal::Unknown
         })
@@ -433,14 +447,19 @@ async fn credential_terminal_policy_also_stops_an_attached_expiry() {
         .await
         .unwrap()
         .unwrap();
-    assert!(matches!(result, Err(ClientError::SessionEnded)));
+    assert!(matches!(
+        result,
+        Err(ClientError::CredentialRejected {
+            reason: AuthRefusal::Expired
+        })
+    ));
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     assert!(requests.is_closed());
     let mut refusal_seen = false;
     while let Ok(event) = links.try_recv() {
         refusal_seen |= matches!(
-            event,
-            SessionLinkEvent::CredentialRejected {
+            event.kind,
+            SessionLinkEventKind::CredentialRejected {
                 reason: AuthRefusal::Expired
             }
         );
@@ -461,19 +480,19 @@ async fn constructor_without_policy_keeps_upgrade_refusal_terminal_and_reports_i
         .await;
     assert!(matches!(
         result,
-        Err(ClientError::Connect(ConnectFailure::CredentialRejected(
-            AuthRefusal::Expired
-        )))
+        Err(ClientError::CredentialRejected {
+            reason: AuthRefusal::Expired
+        })
     ));
     assert!(requests.is_closed());
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     assert_eq!(
         next_link(&mut links).await,
-        SessionLinkEvent::Connecting { attempt: 1 }
+        SessionLinkEventKind::Connecting { attempt: 1 }
     );
     assert_eq!(
         next_link(&mut links).await,
-        SessionLinkEvent::CredentialRejected {
+        SessionLinkEventKind::CredentialRejected {
             reason: AuthRefusal::Expired
         }
     );
@@ -482,7 +501,7 @@ async fn constructor_without_policy_keeps_upgrade_refusal_terminal_and_reports_i
 #[tokio::test(start_paused = true)]
 async fn session_ended_can_remain_terminal_under_explicit_policy() {
     let (connection, mut server) = socket();
-    let (requests, mut incoming, pump, attempts, store) = setup(vec![Ok(connection)]).await;
+    let (requests, _incoming, pump, attempts, store) = setup(vec![Ok(connection)]).await;
     let configured = SessionRecoveryPolicy {
         session_ended: SessionEndedRecovery::Terminal,
         ..policy()
@@ -492,8 +511,12 @@ async fn session_ended_can_remain_terminal_under_explicit_policy() {
         pump.with_recovery_policy(configured)
             .run_with_clock(stopped, TestClock(Instant::now())),
     );
-    let old = server.welcome().await;
-    welcomed(&mut incoming).await;
+    let ClientFrame::Hello {
+        session_id: old, ..
+    } = server.receive().await
+    else {
+        panic!("expected Hello")
+    };
     server
         .send(ServerFrame::Closed {
             reason: CloseReason::SessionEnded,
@@ -541,14 +564,19 @@ async fn attached_revocation_loses_pending_answer_without_replay_or_identity_rep
             .await
             .unwrap()
             .unwrap(),
-        Err(ClientError::SessionEnded)
+        Err(ClientError::Revoked)
     ));
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     assert_eq!(store.load().await.unwrap().unwrap().session_id, old);
     assert!(requests.is_closed());
     let mut revoked_seen = false;
     while let Ok(event) = links.try_recv() {
-        revoked_seen |= event == SessionLinkEvent::Revoked;
+        revoked_seen |= event.kind == SessionLinkEventKind::Revoked;
     }
     assert!(revoked_seen);
 }
+
+#[path = "client_pump_metadata_test.rs"]
+mod metadata;
+#[path = "client_pump_review_test.rs"]
+mod review;

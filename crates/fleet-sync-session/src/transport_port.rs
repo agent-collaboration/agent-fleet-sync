@@ -55,6 +55,10 @@ pub enum ConnectFailure {
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ConnectionClosed {
+    #[error("connection idle timeout")]
+    IdleTimeout,
+    #[error("connection send timeout")]
+    SendTimeout,
     #[error("connection closed")]
     Transport,
     #[error("only binary data frames are supported")]

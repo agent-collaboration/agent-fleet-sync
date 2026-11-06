@@ -1,7 +1,11 @@
 use fleet_sync_protocol::{AuthRefusal, CloseReason, SessionId};
-pub use fleet_sync_session::CredentialRejectedRecovery;
 use runtime_primitives::{Backoff, SyncTime};
 use std::time::Duration;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CredentialRejectedRecovery {
+    Terminal,
+    Retry { backoff: Backoff },
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SessionEndedRecovery {
@@ -48,18 +52,22 @@ impl Default for SessionRecoveryPolicy {
 /// Link transition, published without waiting for an observer. A slow broadcast
 /// receiver may lag and miss intermediate events. No authentication material.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SessionLinkEvent {
+pub enum SessionLinkEventKind {
     Connecting { attempt: u32 },
     Welcomed { session_id: SessionId },
-    Disconnected { reason: Option<CloseReason> },
+    Disconnected { reason: SessionDropReason },
     CredentialRejected { reason: AuthRefusal },
     SessionRestarted { old: SessionId, new: SessionId },
     Revoked,
     WelcomeTimeout,
+    ReplacedByNewerSession,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SessionLinkStatus {
+    Refused {
+        reason: SessionDropReason,
+    },
     Connecting {
         attempt: u32,
     },
@@ -78,65 +86,129 @@ pub enum SessionLinkStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SessionDropReason {
+    ReplacedByNewerSession,
+    IdleTimeout,
+    SendTimeout,
     Disconnected { reason: Option<CloseReason> },
     CredentialRejected { reason: AuthRefusal },
     Revoked,
     WelcomeTimeout,
 }
 
-/// A retained status snapshot, even when the event stream lags. The last drop
-/// reason remains available after reconnect and Welcome until another drop.
+/// A transition correlated with one monotonic connection attempt.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SessionLinkEvent {
+    pub connection: u64,
+    pub kind: SessionLinkEventKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SessionDrop {
+    pub reason: SessionDropReason,
+    pub at: SyncTime,
+    pub connection: u64,
+}
+
+/// The pump's retained, revisioned snapshot. Contact timestamps describe inbound
+/// session bytes; transports may handle control Ping/Pong frames privately.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SessionLinkState {
     pub status: SessionLinkStatus,
-    pub last_drop_reason: Option<SessionDropReason>,
+    pub connection: u64,
+    pub since: SyncTime,
+    pub last_frame_at: Option<SyncTime>,
+    pub last_drop: Option<SessionDrop>,
+    pub revision: u64,
 }
 
 impl Default for SessionLinkState {
     fn default() -> Self {
         Self {
             status: SessionLinkStatus::Disconnected { reason: None },
-            last_drop_reason: None,
+            connection: 0,
+            since: SyncTime::from_unix_millis(0),
+            last_frame_at: None,
+            last_drop: None,
+            revision: 0,
         }
     }
 }
 
 impl SessionLinkState {
-    pub(crate) fn observe(&mut self, event: &SessionLinkEvent, retry_at: Option<SyncTime>) {
-        match event {
-            SessionLinkEvent::Connecting { attempt } => {
+    pub(crate) fn observe(
+        &mut self,
+        event: &SessionLinkEventKind,
+        retry_at: Option<SyncTime>,
+        connection: u64,
+        at: SyncTime,
+        last_frame_at: Option<SyncTime>,
+    ) -> bool {
+        let previous_status = self.status.clone();
+        let previous_connection = self.connection;
+        let drop_reason = match event {
+            SessionLinkEventKind::Connecting { attempt } => {
                 self.status = SessionLinkStatus::Connecting { attempt: *attempt };
+                None
             }
-            SessionLinkEvent::Welcomed { session_id } => {
+            SessionLinkEventKind::Welcomed { session_id } => {
                 self.status = SessionLinkStatus::Welcomed {
                     session_id: *session_id,
                 };
+                None
             }
-            SessionLinkEvent::Disconnected { reason } => {
+            SessionLinkEventKind::Disconnected { reason } => {
                 self.status = SessionLinkStatus::Disconnected {
-                    reason: reason.clone(),
+                    reason: match reason {
+                        SessionDropReason::Disconnected { reason } => reason.clone(),
+                        _ => None,
+                    },
                 };
-                self.last_drop_reason = Some(SessionDropReason::Disconnected {
-                    reason: reason.clone(),
-                });
+                Some(reason.clone())
             }
-            SessionLinkEvent::CredentialRejected { reason } => {
+            SessionLinkEventKind::CredentialRejected { reason } => {
                 self.status = SessionLinkStatus::CredentialRejected {
                     reason: *reason,
                     retry_at,
                 };
-                self.last_drop_reason =
-                    Some(SessionDropReason::CredentialRejected { reason: *reason });
+                Some(SessionDropReason::CredentialRejected { reason: *reason })
             }
-            SessionLinkEvent::Revoked => {
+            SessionLinkEventKind::Revoked => {
                 self.status = SessionLinkStatus::Revoked;
-                self.last_drop_reason = Some(SessionDropReason::Revoked);
+                Some(SessionDropReason::Revoked)
             }
-            SessionLinkEvent::WelcomeTimeout => {
+            SessionLinkEventKind::WelcomeTimeout => {
                 self.status = SessionLinkStatus::Disconnected { reason: None };
-                self.last_drop_reason = Some(SessionDropReason::WelcomeTimeout);
+                Some(SessionDropReason::WelcomeTimeout)
             }
-            SessionLinkEvent::SessionRestarted { .. } => {}
+            SessionLinkEventKind::ReplacedByNewerSession => {
+                self.status = SessionLinkStatus::Refused {
+                    reason: SessionDropReason::ReplacedByNewerSession,
+                };
+                Some(SessionDropReason::ReplacedByNewerSession)
+            }
+            SessionLinkEventKind::SessionRestarted { .. } => None,
+        };
+        let next_drop = drop_reason.map(|reason| SessionDrop {
+            reason,
+            at,
+            connection,
+        });
+        let status_changed = self.status != previous_status || connection != previous_connection;
+        let drop_changed = next_drop
+            .as_ref()
+            .is_some_and(|drop| self.last_drop.as_ref() != Some(drop));
+        if !status_changed && !drop_changed {
+            return false;
         }
+        self.connection = connection;
+        self.last_frame_at = last_frame_at;
+        if status_changed {
+            self.since = at;
+        }
+        self.revision = self.revision.saturating_add(1);
+        if let Some(drop) = next_drop {
+            self.last_drop = Some(drop);
+        }
+        true
     }
 }
