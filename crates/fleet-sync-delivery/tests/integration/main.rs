@@ -43,6 +43,7 @@ mod local_observations;
 mod local_retirement;
 
 mod outbox_integrity;
+mod outbox_recovery;
 
 mod outbox_release_gate;
 

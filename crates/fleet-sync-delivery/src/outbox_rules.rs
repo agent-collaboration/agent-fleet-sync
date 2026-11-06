@@ -332,6 +332,18 @@ where
             ),
         };
         let acceptance_bound = match self.recovery_header(input.item).await {
+            // A canonical terminal result can arrive before the submit reply.
+            // Recovery must preserve it just as item-backed custody does.
+            Ok(Some(OutboxHeaderState::Item(header))) if header.status.is_terminal() => {
+                return Ok(());
+            }
+            Ok(Some(OutboxHeaderState::Recovered(record))) if record.status.is_terminal() => {
+                return Ok(());
+            }
+            Ok(Some(OutboxHeaderState::Legacy { status, .. })) if status.is_terminal() => {
+                return Ok(());
+            }
+            Ok(Some(OutboxHeaderState::Unresolvable { .. })) => return Ok(()),
             Ok(Some(OutboxHeaderState::Item(header))) if header.digest == input.digest.as_str() => {
                 header.acceptance_bound
             }
