@@ -128,8 +128,12 @@ pub trait CallTarget: Serialize + DeserializeOwned + Send + Sync + 'static {
 
 pub trait Host: Clock + IdSource + WakeScheduler + Send + Sync + 'static {
     /// Read an already established answer without performing the call's effect.
-    /// `None` and non-retryable errors leave the outcome uncertain. Retryable
-    /// errors keep MayHaveReached pending through the engine's normal backoff.
+    /// Return Some once the answer is recorded, Retryable while the effect may
+    /// still be in flight, and None only when no answer will ever be established.
+    /// None and non-retryable errors are a final Uncertain outcome.
+    /// Retryable errors keep MayHaveReached pending through normal backoff;
+    /// reserve them for conditions that will clear. The engine retries without
+    /// an attempt limit until the owning task ends.
     /// A returned answer must pass the same target-specific validator as a
     /// dispatched answer before it is returned for journaling.
     fn reconcile<C: CallTarget>(

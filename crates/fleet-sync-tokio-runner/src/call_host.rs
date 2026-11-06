@@ -16,8 +16,11 @@ pub struct CallEnvelope {
 /// runner preserves the task's CallId across both routes.
 pub trait CallRouter: Send + Sync + 'static {
     /// Only read an existing answer. Never dispatch or perform the effect here.
-    /// Absence leaves the non-deduplicating call uncertain.
-    /// Retryable errors retry only this lookup; other errors remain Uncertain.
+    /// Return Some once the answer is recorded, Retryable while the effect may
+    /// still be in flight, and None only when no answer will ever be established.
+    /// None and non-retryable errors are a final Uncertain outcome.
+    /// Reserve Retryable for conditions that will clear: the engine retries only
+    /// this lookup, without an attempt limit, until the owning task ends.
     /// A returned answer must pass the same target-specific validator as a
     /// dispatched answer; decoding its JSON shape alone is insufficient.
     fn reconcile(

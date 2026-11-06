@@ -34,10 +34,17 @@ dispatch returns `AnswerLost`, the engine asks
 The lookup runs outside the journal transaction and must only read: it must
 never dispatch the call or perform its effect. `Some(answer)` is saved as the
 normal `CallDone` answer before the task advances; saved answers replay without
-another lookup. `None` and non-retryable lookup errors keep the `Uncertain`
-outcome. A `Retryable` lookup error retains `MayHaveReached` and its retry reason,
+another lookup. Return `Some` once the answer is recorded, `Retryable` while the
+effect may still be in flight, and `None` only when no answer will ever be
+established. `None` and non-retryable errors are a final `Uncertain` outcome.
+A `Retryable` lookup error retains `MayHaveReached` and its retry reason,
 then retries only the read through the engine's normal backoff. It never clears
 earlier possible reach or falls back to dispatching the effect.
+Reserve `Retryable` for conditions that will clear; the engine retries without
+an attempt limit until the owning task ends.
+
+The timeout case concerns the opted-in consumer's own `CallRouter`.
+`ServiceCalls` routes no opted-in target.
 
 Fresh calls and `NeverSent`/`NoEffect` retries dispatch first; only a lost
 answer can then trigger a read-only lookup. Deduplicating calls never reconcile,
@@ -48,8 +55,8 @@ Malformed reconciled answers become `AnswerLost`, as malformed dispatch answers 
 
 Delivery's non-repeating `DeliverCall` opts in. Existing hosts and routers keep
 returning `None` and preserve the previous `Uncertain` behavior without another
-dispatch. A consumer can return a recorded answer for a supported item kind and
-`None` for everything else. The library adds no receipt store or persisted format.
+dispatch. Consumers reconcile the item kinds they support; unsupported kinds
+return final `None`. The library adds no receipt store or persisted format.
 A reconciled answer must pass the same target-specific validator as a dispatched
 answer before journaling; decoding the answer's shape alone is insufficient.
 
