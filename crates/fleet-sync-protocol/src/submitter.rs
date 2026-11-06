@@ -1,4 +1,4 @@
-use crate::{DatabaseId, PeerId};
+use crate::{DatabaseId, FleetId, PeerId};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -13,6 +13,7 @@ use uuid::Uuid;
 pub enum Submitter {
     Machine(PeerId),
     Project(DatabaseId),
+    Fleet(FleetId),
 }
 
 impl Submitter {
@@ -20,6 +21,11 @@ impl Submitter {
         match self {
             Self::Machine(peer) => peer.as_uuid(),
             Self::Project(project) => project.as_uuid(),
+            Self::Fleet(fleet) => fleet.as_uuid(),
         }
     }
 }
+
+#[cfg(test)]
+#[path = "submitter_test.rs"]
+mod tests;

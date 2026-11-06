@@ -60,6 +60,7 @@ macro_rules! uuid_id {
 uuid_id!(runtime_primitives::uuid_v7, runtime_primitives::canonical_uuid_v7;
     DatabaseId,
     PeerId,
+    FleetId,
     ReceiverId,
     SessionId,
     RequestId,

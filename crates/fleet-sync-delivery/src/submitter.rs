@@ -1,5 +1,5 @@
 use crate::DeliveryError;
-use fleet_sync_protocol::{DatabaseId, PeerId, Submitter};
+use fleet_sync_protocol::{DatabaseId, FleetId, PeerId, Submitter};
 
 pub(crate) enum SourceRetention {
     Item,
@@ -76,6 +76,7 @@ pub(crate) const fn kind(owner: Submitter) -> &'static str {
     match owner {
         Submitter::Machine(_) => "machine",
         Submitter::Project(_) => "project",
+        Submitter::Fleet(_) => "fleet",
     }
 }
 
@@ -98,6 +99,10 @@ pub(crate) fn from_columns(
             .map_err(|_| corrupt()),
         (Some("project"), Some(id)) => DatabaseId::try_from(id)
             .map(Submitter::Project)
+            .map(Some)
+            .map_err(|_| corrupt()),
+        (Some("fleet"), Some(id)) => FleetId::try_from(id)
+            .map(Submitter::Fleet)
             .map(Some)
             .map_err(|_| corrupt()),
         _ => Err(corrupt()),

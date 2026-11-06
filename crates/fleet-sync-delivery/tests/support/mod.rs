@@ -293,6 +293,7 @@ pub fn owned_sender(owner: Submitter, address: &str) -> String {
     let kind = match owner {
         Submitter::Machine(_) => "m",
         Submitter::Project(_) => "p",
+        Submitter::Fleet(_) => "f",
     };
     format!("{kind}:{}|{address}", owner.as_uuid())
 }

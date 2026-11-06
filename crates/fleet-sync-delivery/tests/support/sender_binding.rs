@@ -44,6 +44,15 @@ where
                     .map(Submitter::Machine)
                     .map_err(|_| SenderBindingFailure::Unknown);
             }
+            if let Some(fleet) = source.strip_prefix("f:") {
+                let identity = fleet
+                    .split('|')
+                    .next()
+                    .ok_or(SenderBindingFailure::Unknown)?;
+                return FleetId::try_from(identity.to_owned())
+                    .map(Submitter::Fleet)
+                    .map_err(|_| SenderBindingFailure::Unknown);
+            }
             // Unqualified session addresses in this fixture belong to its
             // explicitly known producer. They are not a public SDK fallback.
             return Ok(Submitter::Machine(peer(1)));

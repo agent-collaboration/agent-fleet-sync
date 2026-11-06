@@ -36,6 +36,7 @@ fn kind(owner: Submitter) -> &'static str {
     match owner {
         Submitter::Machine(_) => "machine",
         Submitter::Project(_) => "project",
+        Submitter::Fleet(_) => "fleet",
     }
 }
 async fn counts(store: &TestStore) -> (i64, i64, i64, i64) {
@@ -301,6 +302,7 @@ async fn both_owner_kinds_survive_three_custody_records_replay_and_payload_relea
                     let other = match owner {
                         Submitter::Machine(_) => owners()[1],
                         Submitter::Project(_) => owners()[0],
+                        Submitter::Fleet(_) => owners()[0],
                     };
                     assert!(matches!(
                         outbox.relay_query(other, item_id(11)).await,
@@ -555,4 +557,278 @@ async fn project_publication_waits_without_a_holder_then_resolves_the_current_ma
         })
         .await
         .unwrap();
+}
+
+fn fleet_id() -> FleetId {
+    FleetId::new(peer(1).as_uuid()).unwrap()
+}
+
+struct FleetBindings;
+impl<S: TransactionScope<Database = Turso>> SenderBinding<S, TestTypes> for FleetBindings {
+    async fn resolve_submitter<'a>(
+        &'a self,
+        _scope: &'a mut S,
+        sender: &'a String,
+    ) -> Result<Submitter, SenderBindingFailure> {
+        match sender.as_str() {
+            "fleet" => Ok(Submitter::Fleet(fleet_id())),
+            "sender" => Ok(Submitter::Machine(peer(1))),
+            _ => Err(SenderBindingFailure::Unknown),
+        }
+    }
+}
+
+fn fleet_envelope(identity: u64) -> DeliveryEnvelope<TestTypes> {
+    DeliveryEnvelope::Item(
+        DeliveryItem::new(
+            item_id(identity),
+            "fleet".into(),
+            Recipient {
+                peer: peer(2),
+                address: "inbox".into(),
+            },
+            None,
+            "Fleet command".into(),
+        )
+        .unwrap(),
+    )
+}
+
+#[tokio::test]
+async fn fleet_submitter_survives_internal_admission_push_payload_release_and_reopen() {
+    let fixture = Fixture::new().await;
+    let recipient = Fixture::new().await;
+    let pushed = fixture
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FleetBindings);
+                assert!(matches!(
+                    outbox
+                        .submit_fleet::<PushTask, RecordRemoval>(
+                            fleet_id(),
+                            fleet_envelope(40),
+                            peer(3),
+                            "fleet route".into(),
+                            now()
+                        )
+                        .await
+                        .map_err(storage_error)?,
+                    SubmitResult::Accepted { .. }
+                ));
+                let reference = DeliveryItemRef {
+                    item: item_id(40),
+                    digest: fleet_envelope(40).digest().clone(),
+                };
+                let pushed = outbox
+                    .resolve_push(&reference, now())
+                    .await
+                    .map_err(storage_error)?
+                    .unwrap();
+                assert_eq!(pushed.submitter, Submitter::Fleet(fleet_id()));
+                assert!(matches!(
+                    outbox
+                        .submit_fleet::<PushTask, RecordRemoval>(
+                            fleet_id(),
+                            fleet_envelope(40),
+                            peer(3),
+                            "fleet route".into(),
+                            now()
+                        )
+                        .await
+                        .map_err(storage_error)?,
+                    SubmitResult::Replayed { .. }
+                ));
+                Ok(pushed)
+            })
+        })
+        .await
+        .unwrap();
+    recipient
+        .store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                assert!(matches!(
+                    Inbox::<_, TestTypes, _>::new(scope, peer(2), limits(), &FleetBindings)
+                        .accept_push::<DeliverTask, ReportTask, RecordRemoval, _>(
+                            pushed.submitter,
+                            pushed.item,
+                            peer(3),
+                            &TestConsumer,
+                            now()
+                        )
+                        .await
+                        .map_err(storage_error)?,
+                    PushResult::Accepted { .. }
+                ));
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+    fixture
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let reference = DeliveryItemRef {
+                    item: item_id(40),
+                    digest: fleet_envelope(40).digest().clone(),
+                };
+                assert!(matches!(
+                    Outbox::<_, TestTypes, _>::new(scope, limits(), &FleetBindings)
+                        .receipt::<PublishTask>(
+                            peer(2),
+                            &reference,
+                            PushResult::Accepted { accepted_at: now() },
+                            now()
+                        )
+                        .await
+                        .map_err(storage_error)?,
+                    StatusPublicationResult::Applied
+                ));
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let Fixture {
+        store,
+        host,
+        directory,
+    } = fixture;
+    drop(store);
+    let reopened = TestStore::open_and_migrate(directory.path().join("delivery.db"), host)
+        .await
+        .unwrap();
+    reopened.transaction(|scope| Box::pin(async move {
+        assert_eq!(backfill_submitters::<TestTypes, _, _>(scope, DeliveryHostRole::Relay, &FleetBindings, now()).await.map_err(storage_error)?, 0);
+        let row = query::<Turso>("SELECT payload,submitter_kind,submitter_id,consumer_sender FROM _fleet_sync_outbox_items WHERE item_id=?1")
+            .bind(item_id(40).as_uuid().to_string()).fetch_one(scope.executor()).await?;
+        assert!(row.try_get::<Option<String>, _>("payload")?.is_none());
+        assert_eq!(row.try_get::<String, _>("submitter_kind")?, "fleet");
+        assert_eq!(row.try_get::<String, _>("submitter_id")?, fleet_id().to_string());
+        assert_eq!(row.try_get::<String, _>("consumer_sender")?, "\"fleet\"");
+        let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FleetBindings);
+        assert_eq!(outbox.relay_submitter(item_id(40)).await.map_err(storage_error)?, Some(Submitter::Fleet(fleet_id())));
+        assert!(matches!(outbox.relay_query(Submitter::Fleet(fleet_id()), item_id(40)).await.map_err(storage_error)?.state,
+            ItemStatusState::Known { status: DeliveryStatus::AtRecipient, .. }));
+        assert!(outbox.resolve_push(&DeliveryItemRef { item: item_id(40), digest: fleet_envelope(40).digest().clone() }, now()).await.map_err(storage_error)?.is_none());
+        assert!(matches!(outbox.submit_fleet::<PushTask, RecordRemoval>(fleet_id(), fleet_envelope(40), peer(3), "fleet route".into(), now()).await.map_err(storage_error)?, SubmitResult::Replayed { .. }));
+        let publication = resolve_publication::<_, TestTypes>(scope, PublicationRef {
+            item: item_id(40), version: StatusVersion::new(2),
+            target: PublicationTarget::StatusStream { sender: Submitter::Fleet(fleet_id()), route: "fleet route".into() },
+        }).await.map_err(storage_error)?.unwrap();
+        assert!(matches!(publication.status, DeliveryStatus::AtRecipient));
+        Ok(())
+    })).await.unwrap();
+}
+
+#[tokio::test]
+async fn machine_submit_refuses_fleet_submitters_without_writes() {
+    let fixture = Fixture::new().await;
+    let before = counts(&fixture.store).await;
+    fixture
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FleetBindings);
+                assert!(matches!(
+                    outbox
+                        .submit_relay::<PushTask, RecordRemoval>(
+                            Submitter::Fleet(fleet_id()),
+                            fleet_envelope(41),
+                            peer(3),
+                            "route".into(),
+                            now()
+                        )
+                        .await
+                        .map_err(storage_error)?,
+                    SubmitResult::Refused {
+                        reason: DeliveryRefusal::NotSubmitter
+                    }
+                ));
+                let DeliveryEnvelope::Item(item) = fleet_envelope(41) else {
+                    panic!("fixture item")
+                };
+                assert!(matches!(
+                    outbox
+                        .enqueue(item, peer(3), Submitter::Fleet(fleet_id()), now())
+                        .await
+                        .map_err(storage_error)?,
+                    OutboxAdmission::Refused {
+                        reason: DeliveryRefusal::NotSubmitter
+                    }
+                ));
+                let cancel = DeliveryCancel::new(
+                    item_id(42),
+                    "fleet".into(),
+                    Recipient {
+                        peer: peer(2),
+                        address: "inbox".into(),
+                    },
+                    None,
+                    CancelBody {
+                        target: item_id(41),
+                    },
+                )
+                .unwrap();
+                assert!(matches!(
+                    outbox
+                        .enqueue_cancel(
+                            cancel,
+                            peer(3),
+                            Submitter::Fleet(fleet_id()),
+                            now(),
+                            &TestConsumer
+                        )
+                        .await
+                        .map_err(storage_error)?,
+                    OutboxAdmission::Refused {
+                        reason: DeliveryRefusal::NotSubmitter
+                    }
+                ));
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+    assert_eq!(counts(&fixture.store).await, before);
+}
+
+#[tokio::test]
+async fn internal_fleet_admission_refuses_other_bound_owners_without_writes() {
+    let fixture = Fixture::new().await;
+    let before = counts(&fixture.store).await;
+    fixture
+        .store
+        .transaction(|scope| {
+            Box::pin(async move {
+                let mut outbox = Outbox::<_, TestTypes, _>::new(scope, limits(), &FleetBindings);
+                for (fleet, envelope) in [
+                    (fleet_id(), item(43, "machine source")),
+                    (FleetId::new(peer(9).as_uuid()).unwrap(), fleet_envelope(43)),
+                ] {
+                    assert!(matches!(
+                        outbox
+                            .submit_fleet::<PushTask, RecordRemoval>(
+                                fleet,
+                                envelope,
+                                peer(3),
+                                "route".into(),
+                                now()
+                            )
+                            .await
+                            .map_err(storage_error)?,
+                        SubmitResult::Refused {
+                            reason: DeliveryRefusal::NotSubmitter
+                        }
+                    ));
+                }
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+    assert_eq!(counts(&fixture.store).await, before);
 }
