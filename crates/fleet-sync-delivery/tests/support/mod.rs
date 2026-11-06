@@ -4,6 +4,7 @@ pub mod existing_removals;
 pub mod interleaving;
 pub mod legacy_submitters;
 pub mod network;
+pub mod outbox_projection;
 pub mod publication_network;
 pub mod push_checkpoint;
 pub mod push_expiry;

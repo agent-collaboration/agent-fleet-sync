@@ -10,14 +10,31 @@ use std::future::Future;
 /// without awaiting that owner while holding the custody transaction. The host
 /// refreshes outside the failed transaction, then retries through this seam;
 /// returning Unknown must not leave refresh waiting for a periodic timer.
-/// Implementations must not write business or directory rows here, perform I/O
-/// in Serde, use a global cache, or derive an owner from its stored claim.
+/// The resolver must not write business or directory rows, perform I/O in
+/// Serde, use a global cache, or derive an owner from its stored claim.
+/// The separate outcome hook may write consumer projections in this scope.
 pub trait SenderBinding<S: TransactionScope, D: DeliveryTypes>: Send + Sync {
     fn resolve_submitter<'a>(
         &'a self,
         scope: &'a mut S,
         sender: &'a D::Sender,
     ) -> impl Future<Output = Result<Submitter, SenderBindingFailure>> + Send + 'a;
+
+    /// Project the first terminal outbox status in its custody transaction.
+    /// Replays and non-terminal advances do not call this hook. The item ID
+    /// remains available after compaction and during missing-custody recovery.
+    /// An error aborts the transaction, including the projection's writes.
+    /// In task steps, Storage retries (as does SenderBindingUnavailable);
+    /// other errors fail the task; SubmitItem's on_failed records ProcessingFailed.
+    /// Hook errors in before_resume and on_failed are retried by the engine.
+    fn on_outbox_outcome(
+        &self,
+        _scope: &mut S,
+        _item: ItemId,
+        _status: &crate::DeliveryStatus<D::Acceptance>,
+    ) -> impl Future<Output = Result<(), DeliveryError>> + Send {
+        async { Ok(()) }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

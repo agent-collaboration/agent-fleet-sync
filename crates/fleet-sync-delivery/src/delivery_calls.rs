@@ -36,6 +36,9 @@ impl<D: DeliveryTypes> CallTarget for SubmitCall<D> {
     type Answer = SubmitOutcome<D::Acceptance>;
 }
 
+/// A reconciled answer must pass the same validator as a dispatched answer:
+/// use `ResolvedDelivery::validated_answer` for bound per-item receipt evidence,
+/// or the legacy `DeliverCall::validated_answer` contract where applicable.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields, bound = "")]
 pub struct DeliverCall<D> {
@@ -57,6 +60,7 @@ impl<D> Default for DeliverCall<D> {
 impl<D: DeliveryTypes> CallTarget for DeliverCall<D> {
     const KIND: &'static str = "fleet-sync.delivery.deliver";
     const DEDUPLICATES: bool = false;
+    const RECONCILES: bool = true;
     type Request = DeliveryItemRef;
     type Answer = LocalDeliveryOutcome<D>;
 }

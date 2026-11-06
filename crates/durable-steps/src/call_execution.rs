@@ -12,7 +12,13 @@ use std::time::Duration;
 enum Preparation {
     Replay(Vec<u8>),
     Dispatch(CallAttempt),
+    Reconcile(CallAttempt),
     Uncertain,
+}
+
+enum AnswerSource {
+    Dispatch,
+    Reconciliation,
 }
 
 impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
@@ -27,15 +33,13 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
         let token = self.token;
         let position = self.position;
         let now = self.host.now();
+        let request_bytes = crate::canonical_payload::encode(&request).map_err(invalid_payload)?;
         let intent = CallIntent {
             target: String::from_utf8(
                 crate::canonical_payload::encode(&(C::KIND, &target)).map_err(invalid_payload)?,
             )
             .map_err(|error| step_error(invalid_payload(error)))?,
-            request_digest: Sha256::digest(
-                crate::canonical_payload::encode(&request).map_err(invalid_payload)?,
-            )
-            .to_vec(),
+            request_digest: Sha256::digest(&request_bytes).to_vec(),
             replay: if C::DEDUPLICATES {
                 CallReplay::Deduplicated
             } else {
@@ -63,7 +67,10 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
                                 if attempt.reach == CallReach::Dispatching {
                                     attempt.reach = CallReach::MayHaveReached;
                                 }
-                                if !C::DEDUPLICATES && attempt.reach == CallReach::MayHaveReached {
+                                if !C::DEDUPLICATES
+                                    && !C::RECONCILES
+                                    && attempt.reach == CallReach::MayHaveReached
+                                {
                                     return Ok(Preparation::Uncertain);
                                 }
                                 attempt
@@ -101,13 +108,26 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
                             token,
                         )
                         .await?;
-                    Ok(Preparation::Dispatch(previous))
+                    Ok(
+                        if !C::DEDUPLICATES
+                            && C::RECONCILES
+                            && previous.reach == CallReach::MayHaveReached
+                        {
+                            Preparation::Reconcile(previous)
+                        } else {
+                            Preparation::Dispatch(previous)
+                        },
+                    )
                 })
             })
             .await
             .map_err(step_error)?;
 
-        let mut attempt = match preparation {
+        let call = CallId {
+            operation: id,
+            step: name.clone(),
+        };
+        let (mut attempt, answer, answer_source) = match preparation {
             Preparation::Replay(bytes) => {
                 return serde_json::from_slice(&bytes)
                     .map_err(|error| step_error(invalid_payload(error)));
@@ -117,19 +137,47 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
                     step: name,
                 }));
             }
-            Preparation::Dispatch(attempt) => attempt,
+            Preparation::Dispatch(mut attempt) => {
+                // Host dispatch consumes its inputs. Preserve the exact checked
+                // wire values before an effect, without adding Clone bounds.
+                let reconciliation_input = if !C::DEDUPLICATES && C::RECONCILES {
+                    let (_, saved_target): (String, C) = serde_json::from_str(&intent.target)
+                        .map_err(|error| step_error(invalid_payload(error)))?;
+                    let saved_request = serde_json::from_slice::<C::Request>(&request_bytes)
+                        .map_err(|error| step_error(invalid_payload(error)))?;
+                    Some((saved_target, saved_request))
+                } else {
+                    None
+                };
+                let mut answer = self.host.dispatch(target, request, call.clone()).await;
+                let mut answer_source = AnswerSource::Dispatch;
+                if matches!(answer, Err(CallFailure::AnswerLost))
+                    && let Some((target, request)) = reconciliation_input
+                {
+                    attempt.reach = CallReach::MayHaveReached;
+                    answer_source = AnswerSource::Reconciliation;
+                    answer = self
+                        .host
+                        .reconcile(target, request, call)
+                        .await
+                        .and_then(|answer| answer.ok_or(CallFailure::AnswerLost));
+                }
+                (attempt, answer, answer_source)
+            }
+            Preparation::Reconcile(attempt) => {
+                // Recovery asks only for an existing answer. No branch here
+                // may fall back to dispatching this non-repeating effect.
+                match self.host.reconcile(target, request, call).await {
+                    Ok(Some(answer)) => (attempt, Ok(answer), AnswerSource::Reconciliation),
+                    Ok(None) => {
+                        return Err(StepError::Failed(OperationFailure::Uncertain {
+                            step: name,
+                        }));
+                    }
+                    Err(error) => (attempt, Err(error), AnswerSource::Reconciliation),
+                }
+            }
         };
-        let answer = self
-            .host
-            .dispatch(
-                target,
-                request,
-                CallId {
-                    operation: id,
-                    step: name.clone(),
-                },
-            )
-            .await;
         attempt.retry_reason = None;
         let result = match answer {
             Ok(answer) => Some(CallResult::Answered(answer)),
@@ -194,6 +242,15 @@ impl<S: AtomicStore, H: Host> EngineContext<'_, S, H> {
             .await?;
         match result {
             Some(result) => Ok(result),
+            None if matches!(answer_source, AnswerSource::Reconciliation)
+                && attempt.retry_reason.is_some() =>
+            {
+                // The effect's possible reach stays fenced. Only the read-only
+                // lookup is retried, through the engine's ordinary backoff.
+                Err(StepError::Retry {
+                    after: Duration::ZERO,
+                })
+            }
             None if !C::DEDUPLICATES && attempt.reach == CallReach::MayHaveReached => {
                 Err(StepError::Failed(OperationFailure::Uncertain {
                     step: uncertain_step,

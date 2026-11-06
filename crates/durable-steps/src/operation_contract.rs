@@ -118,11 +118,32 @@ pub trait JournalScope: Send {
 pub trait CallTarget: Serialize + DeserializeOwned + Send + Sync + 'static {
     const KIND: &'static str;
     const DEDUPLICATES: bool = true;
+    /// Allow a read-only host lookup for a possibly reached non-deduplicating
+    /// call, including a live dispatch returning AnswerLost. Deduplicating
+    /// calls never reconcile, and no lookup precedes a fresh dispatch.
+    const RECONCILES: bool = false;
     type Request: Serialize + DeserializeOwned + Send;
     type Answer: Serialize + DeserializeOwned + Send;
 }
 
 pub trait Host: Clock + IdSource + WakeScheduler + Send + Sync + 'static {
+    /// Read an already established answer without performing the call's effect.
+    /// Return Some once the answer is recorded, Retryable while the effect may
+    /// still be in flight, and None only when no answer will ever be established.
+    /// None and non-retryable errors are a final Uncertain outcome.
+    /// Retryable errors keep MayHaveReached pending through normal backoff;
+    /// reserve them for conditions that will clear. The engine retries without
+    /// an attempt limit until the owning task ends.
+    /// A returned answer must pass the same target-specific validator as a
+    /// dispatched answer before it is returned for journaling.
+    fn reconcile<C: CallTarget>(
+        &self,
+        _target: C,
+        _request: C::Request,
+        _call: CallId,
+    ) -> impl Future<Output = Result<Option<C::Answer>, CallFailure>> + Send {
+        async { Ok(None) }
+    }
     fn dispatch<C: CallTarget>(
         &self,
         target: C,

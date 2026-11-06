@@ -255,6 +255,13 @@ where
             }
             Ok(Some(OutboxHeaderState::Unresolvable { .. })) => {}
             Ok(None) | Err(DeliveryError::Corrupt { .. }) => {
+                self.project_terminal_outcome(
+                    item,
+                    &DeliveryStatus::Refused {
+                        reason: DeliveryRefusal::ProcessingFailed { kind },
+                    },
+                )
+                .await?;
                 let failed = OutboxHeaderState::<D::Acceptance>::Unresolvable { item, kind };
                 queries::write_outbox_item(
                     self.scope,
@@ -332,6 +339,16 @@ where
             ),
         };
         let acceptance_bound = match self.recovery_header(input.item).await {
+            // A canonical terminal result can arrive before the submit reply.
+            // Recovery must preserve it just as item-backed custody does.
+            Ok(Some(OutboxHeaderState::Item(header))) if header.status.is_terminal() => {
+                return Ok(());
+            }
+            Ok(Some(OutboxHeaderState::Recovered(record))) if record.status.is_terminal() => {
+                return Ok(());
+            }
+            Ok(Some(OutboxHeaderState::Legacy { .. })) => return Ok(()),
+            Ok(Some(OutboxHeaderState::Unresolvable { .. })) => return Ok(()),
             Ok(Some(OutboxHeaderState::Item(header))) if header.digest == input.digest.as_str() => {
                 header.acceptance_bound
             }
@@ -361,6 +378,8 @@ where
         record: &RecoveredOutbox<D::Acceptance>,
         now: SyncTime,
     ) -> Result<(), DeliveryError> {
+        self.project_terminal_outcome(record.item, &record.status)
+            .await?;
         let state = OutboxHeaderState::<D::Acceptance>::Recovered(copy_wire(record)?);
         queries::write_outbox_item(
             self.scope,
@@ -588,6 +607,8 @@ where
             crate::CustodyRow::Outbox(header.id),
         )
         .await?;
+        self.project_terminal_outcome(header.id, &header.status)
+            .await?;
         let state = OutboxHeaderState::<D::Acceptance>::Item(copy_wire(header)?);
         queries::write_outbox_item(
             self.scope,

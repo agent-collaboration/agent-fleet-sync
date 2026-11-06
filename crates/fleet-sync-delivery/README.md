@@ -49,6 +49,36 @@ deduplicate by that pair and apply statuses forward-only by `StatusVersion`.
 Retiring a `PublicationRef` does not retire status events; acknowledgement owns
 that deletion.
 
+## Outbox outcome projection
+
+`SenderBinding::on_outbox_outcome(scope, item, status)` projects an outbox
+item's first terminal status in the same custody transaction. The binding is
+already supplied to every Outbox, including status publication and recovery;
+the hook needs no separate delivery consumer. Its default does nothing.
+
+The hook receives the item ID and complete terminal `DeliveryStatus`, including
+acceptance or refusal. It runs for delivered, uncertain, expired, cancelled and
+refused outcomes, and for a newly recorded `ExpiredAtUpgrade`. It also runs when
+recovery establishes a terminal status with missing or corrupt custody. The
+envelope is deliberately absent: successful handoff compacts it before most
+terminal outcomes arrive. Consumers correlate the item ID with their own records.
+
+Submission answers and failures, task failures, direct publications and fetched
+status batches, withdrawal before submission, relay admission expiry, Push
+deadline settlement, receipts, recipient reports and unknown-item relay
+settlement all use this projection.
+Replays, newer versions of an already terminal status, and non-terminal advances
+do not call it. An error aborts custody, status cursors and consumer projection
+writes together. In task steps, `DeliveryError::Storage` retries the step
+(as does the existing `SenderBindingUnavailable` class); other errors fail the
+owning task; `SubmitItem::on_failed` records `ProcessingFailed`.
+Hook errors in `before_resume` and `on_failed` are retried by the engine.
+
+The submission gate releases expired items without marking them terminal, so the
+gate alone does not call the hook. Removing a non-terminal item at the 60-day
+retention deadline is deletion, not a terminal transition, and does not call it.
+Migrations do not retroactively project existing terminal records.
+
 ## Local cancellation
 
 Pass the delivery consumer to `Inbox::enqueue_local` or

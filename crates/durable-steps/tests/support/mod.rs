@@ -23,6 +23,9 @@ pub struct TestHost {
     next_id: AtomicU64,
     pub deliveries: AtomicU64,
     pub effects: AtomicU64,
+    pub reconciliations: AtomicU64,
+    pub reconciliation_missing: AtomicBool,
+    pub reconciliation_failures: Mutex<VecDeque<CallFailure>>,
     pub lose_answers: AtomicU64,
     pub retry_calls: AtomicBool,
     pub hang_after_effect: AtomicBool,
@@ -40,6 +43,9 @@ impl TestHost {
             next_id: AtomicU64::new(1),
             deliveries: AtomicU64::new(0),
             effects: AtomicU64::new(0),
+            reconciliations: AtomicU64::new(0),
+            reconciliation_missing: AtomicBool::new(false),
+            reconciliation_failures: Mutex::new(VecDeque::new()),
             lose_answers: AtomicU64::new(0),
             retry_calls: AtomicBool::new(false),
             hang_after_effect: AtomicBool::new(false),
@@ -71,6 +77,35 @@ impl IdSource for TestHost {
     }
 }
 impl Host for TestHost {
+    async fn reconcile<C: CallTarget>(
+        &self,
+        _target: C,
+        request: C::Request,
+        call: CallId,
+    ) -> Result<Option<C::Answer>, CallFailure> {
+        self.reconciliations.fetch_add(1, Ordering::SeqCst);
+        if let Some(failure) = self
+            .reconciliation_failures
+            .lock()
+            .map_err(refused)?
+            .pop_front()
+        {
+            return Err(failure);
+        }
+        if self.reconciliation_missing.load(Ordering::SeqCst) {
+            return Ok(None);
+        }
+        let key = serde_json::to_string(&call).map_err(refused)?;
+        let request = serde_json::to_vec(&request).map_err(refused)?;
+        let receiver = self.receiver.lock().map_err(refused)?;
+        match receiver.get(&key) {
+            Some(receipt) if receipt.request == request => serde_json::from_slice(&receipt.answer)
+                .map(Some)
+                .map_err(refused),
+            Some(_) => Err(CallFailure::AnswerLost),
+            None => Ok(None),
+        }
+    }
     async fn dispatch<C: CallTarget>(
         &self,
         _target: C,

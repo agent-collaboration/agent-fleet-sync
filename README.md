@@ -8,7 +8,7 @@ The repository contains owned SQLx drivers and durable operations for Turso and 
 - `sqlx-durable-object`, `sqlx-durable-object-core`: SQLx over Durable Object SQLite, without owned unsafe code.
 - `runtime-primitives`: shared time, call identity, backoff and earlier-only wake scheduling; Tokio timer and Durable Object alarm adapters behind features.
 - `durable-steps`: a runtime-free execution core, atomic local steps and receipted calls, with volatile, Turso and Durable Object stores. See [its conformance and recovery journeys](tests/durable-steps/README.md).
-- `fleet-sync-delivery`: durable custody and status recovery. See the [status-event acknowledgement contract](crates/fleet-sync-delivery/README.md#status-event-acknowledgement).
+- `fleet-sync-delivery`: durable custody and status recovery. See the [status-event acknowledgement contract](crates/fleet-sync-delivery/README.md#status-event-acknowledgement) and [transactional outbox outcome hook](crates/fleet-sync-delivery/README.md#outbox-outcome-projection).
 
 ## Checks
 
@@ -24,6 +24,41 @@ cargo check --target wasm32-unknown-unknown -p sqlx-durable-object -p sqlx-durab
 The checked-query fixtures and offline metadata are imported with the Turso driver. `SQLX_OFFLINE=true` is configured in `.cargo/config.toml`. Tests cover checked-query diagnostics, migrations, constraints, engine pinning, contention and pool return.
 
 For related queries that must share a snapshot, use `database.reader().begin_read().await?` and pass `&mut read` to SQLx. `ReadTransaction` guards every statement as read-only and exposes no raw connection. `read.close().await?` rolls back; drop and cancelled close use the existing pooled rollback cleanup. An open read transaction keeps maintenance's `ActiveReaders` refusal until released; retry maintenance after closing it.
+
+## Non-repeating call reconciliation
+
+A `CallTarget` with `DEDUPLICATES = false` can opt into
+`RECONCILES = true`. On recovery of a possibly reached call, or after a live
+dispatch returns `AnswerLost`, the engine asks
+`Host::reconcile(target, request, CallId)` for an already established answer.
+The lookup runs outside the journal transaction and must only read: it must
+never dispatch the call or perform its effect. `Some(answer)` is saved as the
+normal `CallDone` answer before the task advances; saved answers replay without
+another lookup. Return `Some` once the answer is recorded, `Retryable` while the
+effect may still be in flight, and `None` only when no answer will ever be
+established. `None` and non-retryable errors are a final `Uncertain` outcome.
+A `Retryable` lookup error retains `MayHaveReached` and its retry reason,
+then retries only the read through the engine's normal backoff. It never clears
+earlier possible reach or falls back to dispatching the effect.
+Reserve `Retryable` for conditions that will clear; the engine retries without
+an attempt limit until the owning task ends.
+
+The timeout case concerns the opted-in consumer's own `CallRouter`.
+`ServiceCalls` routes no opted-in target.
+
+Fresh calls and `NeverSent`/`NoEffect` retries dispatch first; only a lost
+answer can then trigger a read-only lookup. Deduplicating calls never reconcile,
+even if they opt in. The target flag defaults to false;
+the Host method defaults to `Ok(None)`. Tokio hosts forward through the existing
+`CallEnvelope` to `CallRouter::reconcile`, which also defaults to `Ok(None)`.
+Malformed reconciled answers become `AnswerLost`, as malformed dispatch answers do.
+
+Delivery's non-repeating `DeliverCall` opts in. Existing hosts and routers keep
+returning `None` and preserve the previous `Uncertain` behavior without another
+dispatch. Consumers reconcile the item kinds they support; unsupported kinds
+return final `None`. The library adds no receipt store or persisted format.
+A reconciled answer must pass the same target-specific validator as a dispatched
+answer before journaling; decoding the answer's shape alone is insufficient.
 
 ## Holder-change workflows
 

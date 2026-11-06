@@ -3,6 +3,7 @@
 
 mod call_cases;
 pub mod reborrow_cases;
+mod reconciliation_cases;
 mod resume_cases;
 mod resume_rollback_case;
 mod resume_token_case;
@@ -49,6 +50,28 @@ where
     for<'t> S::Scope<'t>: BusinessScope,
 {
     let mut passed = Vec::new();
+    reconciliation_cases::retryable_lookup(store.clone(), host.clone(), false).await?;
+    passed.push("Retryable recovered lookup retains MayHaveReached and retries to an answer");
+    reconciliation_cases::retryable_lookup(store.clone(), host.clone(), true).await?;
+    passed.push("Retryable live lookup retries without another dispatch");
+    reconciliation_cases::live_non_retryable(store.clone(), host.clone()).await?;
+    passed.push("non-retryable live lookup remains Uncertain");
+    reconciliation_cases::live_lost_answer(store.clone(), host.clone()).await?;
+    passed.push("live AnswerLost reconciles once without another dispatch");
+    reconciliation_cases::recovered_answer(store.clone(), host.clone()).await?;
+    passed.push(
+        "read-only reconciliation saves recovered answer without dispatch and replays CallDone",
+    );
+    reconciliation_cases::missing_answer(store.clone(), host.clone()).await?;
+    passed.push("missing read-only reconciliation stays Uncertain");
+    reconciliation_cases::failures_preserve_possible_reach(store.clone(), host.clone()).await?;
+    passed.push("reconciliation failures preserve possible effect without dispatch");
+    reconciliation_cases::default_target(store.clone(), host.clone()).await?;
+    passed.push("default target preserves nonrepeating Uncertain behavior");
+    reconciliation_cases::deduplicating_target(store.clone(), host.clone()).await?;
+    passed.push("deduplicating recovery never reconciles");
+    reconciliation_cases::fresh_and_safe_retries(store.clone(), host.clone()).await?;
+    passed.push("fresh, NeverSent and NoEffect calls dispatch without a preflight lookup");
     task_cases::running_keys(Arc::clone(&store), Arc::clone(&host)).await?;
     passed.push("running request keys are kind-scoped and share journal commit/rollback");
     task_cases::admission_and_rollback(Arc::clone(&store), Arc::clone(&host)).await?;
