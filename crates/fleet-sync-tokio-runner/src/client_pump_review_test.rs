@@ -136,9 +136,10 @@ async fn terminal_refusal_after_transport_retry_has_no_retry_deadline() {
     ));
     assert_eq!(
         state.borrow().status,
-        SessionLinkStatus::CredentialRejected {
-            reason: AuthRefusal::Expired,
-            retry_at: None
+        SessionLinkStatus::Refused {
+            reason: SessionDropReason::CredentialRejected {
+                reason: AuthRefusal::Expired
+            }
         }
     );
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
@@ -169,9 +170,10 @@ async fn wrong_kind_is_terminal_even_under_retry_policy() {
     assert!(requests.is_closed());
     assert_eq!(
         state.borrow().status,
-        SessionLinkStatus::CredentialRejected {
-            reason: AuthRefusal::WrongKind,
-            retry_at: None
+        SessionLinkStatus::Refused {
+            reason: SessionDropReason::CredentialRejected {
+                reason: AuthRefusal::WrongKind
+            }
         }
     );
 }

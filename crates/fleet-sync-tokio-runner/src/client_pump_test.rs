@@ -423,51 +423,6 @@ async fn slow_link_observer_never_blocks_repeated_recovery() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn credential_terminal_policy_also_stops_an_attached_expiry() {
-    let (connection, mut server) = socket();
-    let (requests, mut incoming, pump, attempts, _) = setup(vec![Ok(connection)]).await;
-    let mut links = pump.observe_link();
-    let configured = SessionRecoveryPolicy {
-        credential_rejected: CredentialRejectedRecovery::Terminal,
-        ..policy()
-    };
-    let (_stop, stopped) = watch::channel(false);
-    let task = tokio::spawn(
-        pump.with_recovery_policy(configured)
-            .run_with_clock(stopped, TestClock(Instant::now())),
-    );
-    server.welcome().await;
-    welcomed(&mut incoming).await;
-    server
-        .send(ServerFrame::Closed {
-            reason: CloseReason::CredentialRejected(AuthRefusal::Expired),
-        })
-        .await;
-    let result = timeout(Duration::from_secs(2), task)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(matches!(
-        result,
-        Err(ClientError::CredentialRejected {
-            reason: AuthRefusal::Expired
-        })
-    ));
-    assert_eq!(attempts.load(Ordering::SeqCst), 1);
-    assert!(requests.is_closed());
-    let mut refusal_seen = false;
-    while let Ok(event) = links.try_recv() {
-        refusal_seen |= matches!(
-            event.kind,
-            SessionLinkEventKind::CredentialRejected {
-                reason: AuthRefusal::Expired
-            }
-        );
-    }
-    assert!(refusal_seen);
-}
-
-#[tokio::test(start_paused = true)]
 async fn constructor_without_policy_keeps_upgrade_refusal_terminal_and_reports_it() {
     let (requests, _incoming, pump, attempts, _) = setup(vec![Err(
         ConnectFailure::CredentialRejected(AuthRefusal::Expired),
@@ -502,6 +457,7 @@ async fn constructor_without_policy_keeps_upgrade_refusal_terminal_and_reports_i
 async fn session_ended_can_remain_terminal_under_explicit_policy() {
     let (connection, mut server) = socket();
     let (requests, _incoming, pump, attempts, store) = setup(vec![Ok(connection)]).await;
+    let state = pump.link_state();
     let configured = SessionRecoveryPolicy {
         session_ended: SessionEndedRecovery::Terminal,
         ..policy()
@@ -529,6 +485,14 @@ async fn session_ended_can_remain_terminal_under_explicit_policy() {
             .unwrap(),
         Err(ClientError::SessionEnded)
     ));
+    assert_eq!(
+        state.borrow().status,
+        crate::SessionLinkStatus::Refused {
+            reason: crate::SessionDropReason::Disconnected {
+                reason: Some(CloseReason::SessionEnded)
+            }
+        }
+    );
     assert!(requests.is_closed());
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     assert_eq!(store.load().await.unwrap().unwrap().session_id, old);
@@ -578,5 +542,7 @@ async fn attached_revocation_loses_pending_answer_without_replay_or_identity_rep
 
 #[path = "client_pump_metadata_test.rs"]
 mod metadata;
+#[path = "client_pump_minor_test.rs"]
+mod minor;
 #[path = "client_pump_review_test.rs"]
 mod review;

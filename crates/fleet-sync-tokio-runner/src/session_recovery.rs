@@ -53,6 +53,7 @@ impl Default for SessionRecoveryPolicy {
 /// receiver may lag and miss intermediate events. No authentication material.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SessionLinkEventKind {
+    Refused { reason: SessionDropReason },
     Connecting { attempt: u32 },
     Welcomed { session_id: SessionId },
     Disconnected { reason: SessionDropReason },
@@ -122,6 +123,7 @@ pub struct SessionDrop {
 /// session bytes; transports may handle control Ping/Pong frames privately.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SessionLinkState {
+    pub instance: u64,
     pub status: SessionLinkStatus,
     pub connection: u64,
     pub since: SyncTime,
@@ -133,6 +135,7 @@ pub struct SessionLinkState {
 impl Default for SessionLinkState {
     fn default() -> Self {
         Self {
+            instance: 0,
             status: SessionLinkStatus::Disconnected { reason: None },
             connection: 0,
             since: SyncTime::from_unix_millis(0),
@@ -155,6 +158,12 @@ impl SessionLinkState {
         let previous_status = self.status.clone();
         let previous_connection = self.connection;
         let drop_reason = match event {
+            SessionLinkEventKind::Refused { reason } => {
+                self.status = SessionLinkStatus::Refused {
+                    reason: reason.clone(),
+                };
+                Some(reason.clone())
+            }
             SessionLinkEventKind::Connecting { attempt } => {
                 self.status = SessionLinkStatus::Connecting { attempt: *attempt };
                 None

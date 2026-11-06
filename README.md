@@ -61,8 +61,11 @@ Registry copy calls use `CallFailure::Retryable` only for known no-new-effect re
 that do not opt in: a credential refusal following an earlier scheduled retry
 now returns an error instead of leaving the pump alive waiting for a consumed
 wake. Existing attached credential-expiry retries continue under the client's
-connection backoff. `WrongKind` is always terminal because it is a configuration
-error.
+connection backoff. `WrongKind`, `InvalidEndpoint`, and `InvalidCredential`
+always terminate because they are configuration errors. Every host now receives
+`Revoked`, `CredentialRejected { reason }`, and `ReplacedByNewerSession` from
+`run()` for those terminal causes, replacing the former overloaded
+`SessionEnded` or `Connect(CredentialRejected(..))` errors.
 
 Hosts opt in before running the pump, retaining the same `SessionRequests`
 handles:
@@ -85,10 +88,15 @@ from one second to a five-minute cap. Hosts choose another cap with
 `CredentialRejectedRecovery::Retry { backoff }`, or select `Terminal` for either
 recovery policy. A `SessionEnded` received before Welcome can indicate a stale
 stored session identity: the default starts a new persisted session and waits
-for the client's connection backoff before connecting. A `SessionEnded` after
+for the client's connection backoff before connecting. Consecutive pre-Welcome
+restarts retain the retry count and increase that delay up to its cap; a matching
+Welcome resets it. A `SessionEnded` after
 Welcome means a newer live session owns the peer; that pump stops with status
 `Refused` and drop reason `ReplacedByNewerSession`, preventing two owners from
 continually replacing each other.
+An older owner that reconnects after being superseded can still renew its stale
+session before Welcome and replace the newer live owner. This consequence is
+accepted for now: one owner survives, but it may be the older owner.
 
 Revocation always terminates the pump; the host owns re-enrollment. `run()`
 returns distinct `ClientError::Revoked`, `CredentialRejected { reason }`, and
@@ -97,20 +105,26 @@ default. When supplied, it bounds attachment after Hello, closes a socket that
 has not delivered a matching Welcome, and applies connection backoff before
 reconnecting. Recovery never replays operations; an in-flight request whose
 answer is lost still requires reconciliation.
+Every terminal error exit leaves the watch in `Refused { reason }`, including
+an ended session before Welcome under a terminal policy or without opt-in.
 
 Every `ClientEvent::Notice` includes its `session_id`. Pass that identity to
 `acknowledge_notice(session_id, position)` after handling the notice. A stale
 identity returns `ClientError::StaleNoticeAcknowledgement` and cannot advance
 the current session's cursor, even when both sessions have the same position.
 
-`link_state()` returns a watch receiver of `SessionLinkState { status,
+`link_state()` returns a watch receiver of `SessionLinkState { instance, status,
 connection, since, last_frame_at, last_drop, revision }`. `connection` increases
 on every connect attempt. `since` records when the current status was entered;
 `last_drop` retains `{ reason, at, connection }` through reconnect and Welcome.
-`revision` increases with every publication, so downstream owners can reject
-older snapshots. The pump is the only publisher and builds contact updates from
+`instance` is a random `u64` minted when the pump is created and retained through
+its snapshots. `revision` increases with every publication within that one pump
+instance. Downstream owners compare revisions only for the same instance and
+handle a new instance separately. The pump is the only publisher and builds contact updates from
 its current state rather than a queued snapshot. The initial, not-yet-run
-snapshot has connection and revision zero.
+snapshot has connection and revision zero; `since` is a placeholder until
+`run_with_clock` initializes it from its supplied clock before the first status
+transition (`run` uses the system clock).
 
 `last_frame_at` is the last inbound binary session message on the current
 connection, including frames consumed internally by the client. It excludes

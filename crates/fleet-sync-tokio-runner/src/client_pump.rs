@@ -146,7 +146,7 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionPum
                 connection: 0,
                 link_events: broadcast::channel(128).0,
                 link_state: watch::channel(SessionLinkState {
-                    since: SystemClock.now(),
+                    instance: Uuid::now_v7().as_u64_pair().1,
                     ..SessionLinkState::default()
                 })
                 .0,
@@ -166,6 +166,13 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionPum
     pub fn link_state(&self) -> watch::Receiver<SessionLinkState> {
         self.link_state.subscribe()
     }
+    fn initialize_link_clock(&self, clock: &impl Clock) {
+        let since = clock.now();
+        self.link_state.send_modify(|state| {
+            state.since = since;
+            state.revision = state.revision.saturating_add(1);
+        });
+    }
     pub async fn run(self, shutdown: watch::Receiver<bool>) -> Result<(), ClientError> {
         self.run_with_clock(shutdown, SystemClock).await
     }
@@ -176,6 +183,7 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionPum
         clock: C,
     ) -> Result<(), ClientError> {
         let host = PumpClock::new(clock);
+        self.initialize_link_clock(&host);
         let mut pending = BTreeMap::new();
         let mut connected = false;
         let mut welcome_deadline = None;
@@ -230,7 +238,8 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionPum
                         }
                         Err(ClientError::Connect(error)) => {
                             self.report_link(SessionLinkEventKind::Disconnected { reason: connect_drop(&error) }, &host);
-                            if self.client.reconnect_at().is_none() { break Err(error.into()); }
+                            if matches!(error, ConnectFailure::InvalidEndpoint | ConnectFailure::InvalidCredential)
+                                || self.client.reconnect_at().is_none() { break Err(error.into()); }
                         }
                         Err(ClientError::RetryAt { .. }) if self.client.reconnect_at().is_some() => {
                             self.report_link(SessionLinkEventKind::Disconnected { reason: transport_drop(None, None) }, &host);
@@ -335,6 +344,28 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionPum
                 },
                 &host,
             );
+        } else if let Err(error) = &result {
+            let reason = match error {
+                ClientError::Revoked => SessionDropReason::Revoked,
+                ClientError::CredentialRejected { reason } => {
+                    SessionDropReason::CredentialRejected { reason: *reason }
+                }
+                ClientError::ReplacedByNewerSession => SessionDropReason::ReplacedByNewerSession,
+                ClientError::SessionEnded => SessionDropReason::Disconnected {
+                    reason: Some(CloseReason::SessionEnded),
+                },
+                ClientError::Connect(error) => connect_drop(error),
+                ClientError::Connection(error) => transport_drop(None, Some(error)),
+                _ => self
+                    .link_state
+                    .borrow()
+                    .last_drop
+                    .as_ref()
+                    .map_or(SessionDropReason::Disconnected { reason: None }, |drop| {
+                        drop.reason.clone()
+                    }),
+            };
+            self.report_link(SessionLinkEventKind::Refused { reason }, &host);
         }
         self.client.close().await;
         result
@@ -358,8 +389,9 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionPum
         } else {
             self.client.reconnect_at()
         };
+        let now = host.now();
         self.link_state.send_if_modified(|state| {
-            state.observe(&kind, retry_at, self.connection, host.now(), last_frame_at)
+            state.observe(&kind, retry_at, self.connection, now, last_frame_at)
         });
         let _ = self.link_events.send(SessionLinkEvent {
             connection: self.connection,

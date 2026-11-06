@@ -318,9 +318,24 @@ async fn assert_connect_failure_kind(
         }
     );
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
-    assert!(!requests.is_closed());
-    stop.send(true).unwrap();
-    task.await.unwrap().unwrap();
+    match kind {
+        crate::SessionConnectFailureKind::Unavailable => {
+            assert!(!requests.is_closed());
+            stop.send(true).unwrap();
+            task.await.unwrap().unwrap();
+        }
+        crate::SessionConnectFailureKind::InvalidEndpoint
+        | crate::SessionConnectFailureKind::InvalidCredential => {
+            assert!(requests.is_closed());
+            assert_eq!(
+                state.borrow().status,
+                SessionLinkStatus::Refused {
+                    reason: SessionDropReason::ConnectFailed { kind }
+                }
+            );
+            assert!(matches!(task.await.unwrap(), Err(ClientError::Connect(_))));
+        }
+    }
 }
 
 #[tokio::test(start_paused = true)]

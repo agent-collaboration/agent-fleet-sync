@@ -384,7 +384,6 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         self.state = updated;
         self.notice_seen = NoticePosition::default();
         self.ended = false;
-        self.attempt = 0;
         self.retry_at = None;
         Ok(())
     }
