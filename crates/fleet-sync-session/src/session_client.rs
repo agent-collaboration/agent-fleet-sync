@@ -121,6 +121,7 @@ pub struct SessionClient<
     attempt: u32,
     retry_at: Option<SyncTime>,
     ended: bool,
+    replaced: bool,
     connection_replaced: ConnectionReplacedRecovery,
     connection: Option<T::Connection>,
     welcomed: bool,
@@ -162,6 +163,7 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
             attempt: 0,
             retry_at: None,
             ended: false,
+            replaced: false,
             connection_replaced: ConnectionReplacedRecovery::default(),
             connection: None,
             welcomed: false,
@@ -207,6 +209,9 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         credential: &PeerCredential,
         host: &H,
     ) -> Result<(), ClientError> {
+        if self.replaced {
+            return Err(ClientError::ConnectionReplaced);
+        }
         if self.ended {
             return Err(ClientError::SessionEnded);
         }
@@ -386,6 +391,9 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
     }
 
     pub async fn start_new_session(&mut self, ids: &impl IdSource) -> Result<(), ClientError> {
+        if self.replaced {
+            return Err(ClientError::ConnectionReplaced);
+        }
         let session_id = SessionId::new(ids.new_id()).map_err(|_| ClientError::Protocol)?;
         if session_id == self.state.session_id {
             return Err(ClientError::Protocol);
@@ -421,6 +429,9 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         backoff: Option<Backoff>,
         host: &H,
     ) -> Result<(), ClientError> {
+        if self.replaced {
+            return Err(ClientError::ConnectionReplaced);
+        }
         if self.ended {
             return Err(ClientError::SessionEnded);
         }
@@ -483,9 +494,10 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
                         AuthRefusal::Revoked | AuthRefusal::WrongKind
                     )
             )
-        ) || (matches!(reason, Some(CloseReason::ConnectionReplaced))
-            && self.connection_replaced == ConnectionReplacedRecovery::Terminal);
-        if self.ended {
+        );
+        self.replaced |= matches!(reason, Some(CloseReason::ConnectionReplaced))
+            && self.connection_replaced == ConnectionReplacedRecovery::Terminal;
+        if self.ended || self.replaced {
             self.retry_at = None;
         } else {
             self.schedule_retry(host).await?;

@@ -514,3 +514,52 @@ fn credential_debug_is_redacted_and_endpoints_refuse_embedded_credentials() {
     assert!(Endpoint::new("ws://user:private@localhost/session").is_err());
     assert!(Endpoint::new("not a URL").is_err());
 }
+
+#[tokio::test]
+async fn terminal_replacement_keeps_its_typed_cause_on_manual_reactivation() {
+    // Arrange: a direct client sees a terminal replacement, without a pump wrapper.
+    let host = TestHost::default();
+    let store = MemoryClientStore::default();
+    let (connection, send, mut received) = channel();
+    let mut client = Client::load(
+        ChannelTransport(Mutex::new(VecDeque::from([connection]))),
+        store.clone(),
+        &host,
+        SchemaSupport { max_version: 1 },
+        backoff(),
+    )
+    .await
+    .unwrap();
+    client.set_connection_replaced_recovery(ConnectionReplacedRecovery::Terminal);
+    client
+        .connect(&endpoint(), &credential(), &host)
+        .await
+        .unwrap();
+    let _hello = read_bytes(&mut received).await;
+    let original = client.state().session_id;
+    send_server(
+        &send,
+        ServerFrame::Closed {
+            reason: CloseReason::ConnectionReplaced,
+        },
+    )
+    .await;
+    let _closed = event(&mut client, &host).await;
+    let before = host.wakes.lock().unwrap().len();
+
+    // Act: both activation entry points retain the actual terminal reason.
+    let reconnect = client.connect(&endpoint(), &credential(), &host).await;
+    let retry = client.retry_connection(None, &host).await;
+    assert!(
+        matches!(reconnect, Err(ClientError::ConnectionReplaced))
+            && matches!(retry, Err(ClientError::ConnectionReplaced)),
+        "replacement cause changed: connect={reconnect:?}, retry={retry:?}"
+    );
+    let renewed = client.start_new_session(&host).await;
+
+    // Assert: following ended-session recovery cannot silently take the peer back.
+    assert!(matches!(renewed, Err(ClientError::ConnectionReplaced)));
+    assert_eq!(client.state().session_id, original);
+    assert_eq!(store.load().await.unwrap().unwrap().session_id, original);
+    assert_eq!(host.wakes.lock().unwrap().len(), before);
+}
