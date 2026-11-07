@@ -57,6 +57,23 @@ jobs:
             cat delivery-dependencies.txt
             exit 1
           fi
+  # Runs the durable-steps Durable Object store and the public migration SQL on
+  # real workerd (Miniflare), not just a wasm32 compile.
+  workerd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
+      - run: npx pnpm@12.11.2 install --frozen-lockfile
+      - run: cargo build -p durable-steps-worker --target wasm32-unknown-unknown --locked
+      - run: wasm-bindgen --target bundler --no-typescript --out-dir tests/durable-steps/build --out-name index target/wasm32-unknown-unknown/debug/durable_steps_worker.wasm
+      - run: cp tests/durable-steps/shim.mjs tests/durable-steps/build/shim.mjs
+      - run: node tests/durable-steps/run-workerd.mjs
+      - run: node tests/integration/public-migration-sql.mjs
   consumer:
     runs-on: ubuntu-latest
     env:
