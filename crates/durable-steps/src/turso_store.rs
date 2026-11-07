@@ -68,10 +68,21 @@ impl<H: Host> TursoStore<H> {
     }
 }
 
+/// The journal's migration files, embedded at build time.
+static JOURNAL_CORPUS: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
+/// The journal's migrations in version order, read-only. A host that stacks
+/// its own migrations can compare against this corpus. Apply it only through
+/// `migrate_journal`, which records versions in `_fleet_sync_migrations`.
+pub fn journal_migrations() -> std::slice::Iter<'static, sqlx::migrate::Migration> {
+    JOURNAL_CORPUS.iter()
+}
+
 /// Migrate the journal on the caller's connection. The caller owns the
 /// surrounding transaction and its commit or rollback, just as for business SQL.
 pub async fn migrate_journal(connection: &mut TursoConnection) -> Result<(), StoreError> {
-    let mut migrator = sqlx::migrate!("./migrations");
+    let mut migrator =
+        sqlx::migrate::Migrator::with_migrations(journal_migrations().cloned().collect());
     migrator.dangerous_set_table_name("_fleet_sync_migrations");
     migrator
         .run_direct(None, connection, false)
