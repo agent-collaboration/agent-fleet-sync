@@ -1,10 +1,20 @@
 import { Miniflare, Log, LogLevel } from "miniflare";
 import { fileURLToPath } from "node:url";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import assert from "node:assert/strict";
+
+// /suite returns each shared conformance case's name after it passes. The
+// expected list comes from the module itself, so a case that is added, renamed
+// or skipped on workerd fails this run instead of drifting from a fixed count.
+const conformanceSource = await readFile(
+  new URL("../../crates/durable-steps/tests/conformance/mod.rs", import.meta.url), "utf8",
+);
+const conformanceCases = [...conformanceSource.matchAll(/passed\.push\(\s*"((?:[^"\\]|\\.)*)"\s*,?\s*\)/g)]
+  .map(([, name]) => JSON.parse(`"${name}"`));
+assert.ok(conformanceCases.length > 0, "no conformance cases found");
 
 const stateRoot = await mkdtemp(join(tmpdir(), "2026-10-durable-steps-workerd-"));
 const entropy = JSON.stringify([...randomBytes(10)]);
@@ -27,7 +37,7 @@ try {
       const body = await response.text();
       console.log(JSON.stringify({ path, status: response.status, body }));
       assert.equal(response.status, 200);
-      if (path === "/suite") assert.equal(JSON.parse(body).length, 21);
+      if (path === "/suite") assert.deepEqual(JSON.parse(body), conformanceCases);
       else if (path === "/metadata-upgrade") assert.deepEqual(JSON.parse(body), [
         "v1 history and metadata survive upgrade",
         "repeat bootstrap preserves row ids",
