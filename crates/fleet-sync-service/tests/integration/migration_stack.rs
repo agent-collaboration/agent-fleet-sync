@@ -1,5 +1,5 @@
 //! Every public migration path must fit beneath its host's retained caller frames.
-use durable_steps::turso_store::migrate_journal;
+use durable_steps::turso_store::{journal_migrations, migrate_journal};
 use fleet_sync_delivery::DELIVERY_MIGRATOR;
 use fleet_sync_lease::LEASE_MIGRATOR;
 use fleet_sync_session::SESSION_MIGRATOR;
@@ -19,10 +19,7 @@ fn corpus(engine: &str) -> Vec<Migration> {
         "delivery" => DELIVERY_MIGRATOR.iter().cloned().collect(),
         "lease" => LEASE_MIGRATOR.sql_migrations().cloned().collect(),
         "session" => SESSION_MIGRATOR.sql_migrations().cloned().collect(),
-        "journal" => sqlx::migrate!("../durable-steps/migrations")
-            .iter()
-            .cloned()
-            .collect(),
+        "journal" => journal_migrations().cloned().collect(),
         _ => panic!("unknown migration engine"),
     }
 }
