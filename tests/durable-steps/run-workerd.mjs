@@ -16,11 +16,14 @@ const conformanceSource = await readFile(
 // compiled worker returns.
 const rustEscapes = { n: "\n", r: "\r", t: "\t", "\\": "\\", "0": "\0", "'": "'", '"': '"' };
 function decodeRustString(literal) {
-  return literal.replace(/\\(x[0-7][0-9a-fA-F]|u\{([0-9a-fA-F_]{1,8})\}|\n\s*|.)/g, (escape, body, unicode) => {
+  // Rust: \x takes two hex digits up to 7F; \u{} takes one to six hex digits,
+  // each optionally followed by underscores; a line continuation skips only
+  // tab, LF, CR and space.
+  return literal.replace(/\\(x([0-7][0-9a-fA-F])|u\{((?:[0-9a-fA-F]_*){1,6})\}|\n[\t\n\r ]*|[\s\S])/g, (escape, body, ascii, unicode) => {
     if (unicode !== undefined) return String.fromCodePoint(parseInt(unicode.replaceAll("_", ""), 16));
-    if (body.startsWith("x")) return String.fromCharCode(parseInt(body.slice(1), 16));
+    if (ascii !== undefined) return String.fromCharCode(parseInt(ascii, 16));
     if (body.startsWith("\n")) return "";
-    if (body in rustEscapes) return rustEscapes[body];
+    if (Object.hasOwn(rustEscapes, body)) return rustEscapes[body];
     throw new Error(`unsupported Rust escape ${escape} in a conformance label`);
   });
 }
