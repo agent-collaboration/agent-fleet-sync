@@ -1,4 +1,5 @@
 use fleet_sync_protocol::{AuthRefusal, CloseReason, SessionId};
+pub use fleet_sync_session::ConnectionReplacedRecovery;
 use runtime_primitives::{Backoff, SyncTime};
 use std::time::Duration;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -17,6 +18,7 @@ pub enum SessionEndedRecovery {
 /// Revoked credentials are terminal under every policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionRecoveryPolicy {
+    pub connection_replaced: ConnectionReplacedRecovery,
     pub credential_rejected: CredentialRejectedRecovery,
     pub session_ended: SessionEndedRecovery,
     pub welcome_timeout: Option<Duration>,
@@ -26,6 +28,7 @@ impl SessionRecoveryPolicy {
     /// Disable recovery for credential refusals and ended sessions.
     pub const fn terminal() -> Self {
         Self {
+            connection_replaced: ConnectionReplacedRecovery::Reconnect,
             credential_rejected: CredentialRejectedRecovery::Terminal,
             session_ended: SessionEndedRecovery::Terminal,
             welcome_timeout: None,
@@ -36,6 +39,7 @@ impl SessionRecoveryPolicy {
 impl Default for SessionRecoveryPolicy {
     fn default() -> Self {
         Self {
+            connection_replaced: ConnectionReplacedRecovery::Reconnect,
             credential_rejected: CredentialRejectedRecovery::Retry {
                 backoff: Backoff {
                     initial: Duration::from_secs(1),

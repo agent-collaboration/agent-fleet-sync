@@ -120,6 +120,70 @@ async fn send_server(sender: &mpsc::Sender<Bytes>, frame: ServerFrame) {
         .unwrap();
 }
 type Client = SessionClient<ChannelTransport, MemoryClientStore>;
+
+#[tokio::test]
+async fn terminal_connection_replacement_has_no_retry_deadline_or_scheduled_wake() {
+    for selected in [
+        None,
+        Some(ConnectionReplacedRecovery::Reconnect),
+        Some(ConnectionReplacedRecovery::Terminal),
+    ] {
+        // Arrange: the runtime-free client's own injected scheduler records every wake.
+        let host = TestHost::default();
+        let (connection, send, mut received) = channel();
+        let mut client = Client::load(
+            ChannelTransport(Mutex::new(VecDeque::from([connection]))),
+            MemoryClientStore::default(),
+            &host,
+            SchemaSupport { max_version: 1 },
+            backoff(),
+        )
+        .await
+        .unwrap();
+        if let Some(recovery) = selected {
+            client.set_connection_replaced_recovery(recovery);
+        }
+        client
+            .connect(&endpoint(), &credential(), &host)
+            .await
+            .unwrap();
+        let _hello = read_bytes(&mut received).await;
+        let before = host.wakes.lock().unwrap().len();
+
+        // Act: the kernel must apply the same selected policy before scheduling a wake.
+        send_server(
+            &send,
+            ServerFrame::Closed {
+                reason: CloseReason::ConnectionReplaced,
+            },
+        )
+        .await;
+        let disconnected = event(&mut client, &host).await;
+
+        // Assert: Terminal never schedules then cancels a reconnect; default still schedules.
+        if selected == Some(ConnectionReplacedRecovery::Terminal) {
+            assert!(matches!(
+                disconnected,
+                ClientEvent::Disconnected {
+                    reason: Some(CloseReason::ConnectionReplaced),
+                    retry_at: None
+                }
+            ));
+            assert_eq!(client.reconnect_at(), None);
+            assert_eq!(host.wakes.lock().unwrap().len(), before);
+        } else {
+            assert!(matches!(
+                disconnected,
+                ClientEvent::Disconnected {
+                    reason: Some(CloseReason::ConnectionReplaced),
+                    retry_at: Some(_)
+                }
+            ));
+            assert!(client.reconnect_at().is_some());
+            assert_eq!(host.wakes.lock().unwrap().len(), before + 1);
+        }
+    }
+}
 async fn read_bytes(reader: &mut mpsc::Receiver<Bytes>) -> Bytes {
     timeout(Duration::from_secs(1), reader.recv())
         .await

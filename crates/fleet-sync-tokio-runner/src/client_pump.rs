@@ -154,6 +154,8 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionPum
         )
     }
     pub fn with_recovery_policy(mut self, policy: SessionRecoveryPolicy) -> Self {
+        self.client
+            .set_connection_replaced_recovery(policy.connection_replaced);
         self.recovery = Some(policy);
         self
     }
@@ -446,6 +448,20 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionPum
         host: &(impl Clock + WakeScheduler),
     ) -> Result<(), ClientError> {
         match reason {
+            Some(CloseReason::ConnectionReplaced)
+                if self.client.connection_replaced_recovery()
+                    == crate::ConnectionReplacedRecovery::Terminal =>
+            {
+                self.report_link(
+                    SessionLinkEventKind::Refused {
+                        reason: SessionDropReason::Disconnected {
+                            reason: reason.clone(),
+                        },
+                    },
+                    host,
+                );
+                Err(ClientError::ConnectionReplaced)
+            }
             Some(CloseReason::CredentialRejected(reason)) => {
                 self.recover_credential_refusal(
                     *reason,
