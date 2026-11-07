@@ -12,8 +12,20 @@ import assert from "node:assert/strict";
 const conformanceSource = await readFile(
   new URL("../../crates/durable-steps/tests/conformance/mod.rs", import.meta.url), "utf8",
 );
-const conformanceCases = [...conformanceSource.matchAll(/passed\.push\(\s*"((?:[^"\\]|\\.)*)"\s*,?\s*\)/g)]
-  .map(([, name]) => JSON.parse(`"${name}"`));
+// Decode the escapes a Rust string literal allows, so a label matches what the
+// compiled worker returns.
+const rustEscapes = { n: "\n", r: "\r", t: "\t", "\\": "\\", "0": "\0", "'": "'", '"': '"' };
+function decodeRustString(literal) {
+  return literal.replace(/\\(x[0-7][0-9a-fA-F]|u\{([0-9a-fA-F_]{1,8})\}|\n\s*|.)/g, (escape, body, unicode) => {
+    if (unicode !== undefined) return String.fromCodePoint(parseInt(unicode.replaceAll("_", ""), 16));
+    if (body.startsWith("x")) return String.fromCharCode(parseInt(body.slice(1), 16));
+    if (body.startsWith("\n")) return "";
+    if (body in rustEscapes) return rustEscapes[body];
+    throw new Error(`unsupported Rust escape ${escape} in a conformance label`);
+  });
+}
+const conformanceCases = [...conformanceSource.matchAll(/passed\.push\(\s*"((?:[^"\\]|\\[\s\S])*)"\s*,?\s*\)/g)]
+  .map(([, name]) => decodeRustString(name));
 assert.ok(conformanceCases.length > 0, "no conformance cases found");
 
 const stateRoot = await mkdtemp(join(tmpdir(), "2026-10-durable-steps-workerd-"));
