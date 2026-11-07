@@ -155,6 +155,7 @@ fn backoff() -> Backoff {
 }
 fn policy() -> SessionRecoveryPolicy {
     SessionRecoveryPolicy {
+        connection_replaced: crate::ConnectionReplacedRecovery::Reconnect,
         credential_rejected: CredentialRejectedRecovery::Retry { backoff: backoff() },
         session_ended: SessionEndedRecovery::StartNewSession,
         welcome_timeout: Some(Duration::from_secs(5)),
@@ -544,5 +545,7 @@ async fn attached_revocation_loses_pending_answer_without_replay_or_identity_rep
 mod metadata;
 #[path = "client_pump_minor_test.rs"]
 mod minor;
+#[path = "client_pump_replacement_test.rs"]
+mod replacement;
 #[path = "client_pump_review_test.rs"]
 mod review;

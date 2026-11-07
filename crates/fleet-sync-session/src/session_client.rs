@@ -14,6 +14,14 @@ pub struct ClientSessionState {
     pub notice_cursor: NoticePosition,
 }
 
+/// Whether another physical connection for this peer ends this client.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ConnectionReplacedRecovery {
+    #[default]
+    Reconnect,
+    Terminal,
+}
+
 pub trait SessionClientStore: Send + Sync + 'static {
     fn load(&self) -> impl Future<Output = Result<Option<ClientSessionState>, StoreError>> + Send;
     fn save(
@@ -50,6 +58,8 @@ pub enum ClientError {
     CredentialRejected { reason: AuthRefusal },
     #[error("a newer session owns this peer")]
     ReplacedByNewerSession,
+    #[error("another connection owns this peer")]
+    ConnectionReplaced,
     #[error("notice acknowledgment belongs to {received:?}, current session is {expected:?}")]
     StaleNoticeAcknowledgement {
         expected: SessionId,
@@ -111,6 +121,8 @@ pub struct SessionClient<
     attempt: u32,
     retry_at: Option<SyncTime>,
     ended: bool,
+    replaced: bool,
+    connection_replaced: ConnectionReplacedRecovery,
     connection: Option<T::Connection>,
     welcomed: bool,
     pending: BTreeSet<FrameId>,
@@ -151,6 +163,8 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
             attempt: 0,
             retry_at: None,
             ended: false,
+            replaced: false,
+            connection_replaced: ConnectionReplacedRecovery::default(),
             connection: None,
             welcomed: false,
             pending: BTreeSet::new(),
@@ -164,6 +178,13 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
 
     pub fn state(&self) -> &ClientSessionState {
         &self.state
+    }
+    /// Select replacement handling before receiving the server's close frame.
+    pub fn set_connection_replaced_recovery(&mut self, recovery: ConnectionReplacedRecovery) {
+        self.connection_replaced = recovery;
+    }
+    pub const fn connection_replaced_recovery(&self) -> ConnectionReplacedRecovery {
+        self.connection_replaced
     }
     pub const fn reconnect_at(&self) -> Option<SyncTime> {
         self.retry_at
@@ -188,6 +209,9 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         credential: &PeerCredential,
         host: &H,
     ) -> Result<(), ClientError> {
+        if self.replaced {
+            return Err(ClientError::ConnectionReplaced);
+        }
         if self.ended {
             return Err(ClientError::SessionEnded);
         }
@@ -367,6 +391,9 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
     }
 
     pub async fn start_new_session(&mut self, ids: &impl IdSource) -> Result<(), ClientError> {
+        if self.replaced {
+            return Err(ClientError::ConnectionReplaced);
+        }
         let session_id = SessionId::new(ids.new_id()).map_err(|_| ClientError::Protocol)?;
         if session_id == self.state.session_id {
             return Err(ClientError::Protocol);
@@ -402,6 +429,9 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
         backoff: Option<Backoff>,
         host: &H,
     ) -> Result<(), ClientError> {
+        if self.replaced {
+            return Err(ClientError::ConnectionReplaced);
+        }
         if self.ended {
             return Err(ClientError::SessionEnded);
         }
@@ -465,7 +495,9 @@ impl<T: SessionTransport, S: SessionClientStore, P: ConsumerProtocol> SessionCli
                     )
             )
         );
-        if self.ended {
+        self.replaced |= matches!(reason, Some(CloseReason::ConnectionReplaced))
+            && self.connection_replaced == ConnectionReplacedRecovery::Terminal;
+        if self.ended || self.replaced {
             self.retry_at = None;
         } else {
             self.schedule_retry(host).await?;

@@ -183,6 +183,7 @@ fn explicit_default_recovery_policy_pins_the_documented_contract() {
     assert_eq!(
         SessionRecoveryPolicy::default(),
         SessionRecoveryPolicy {
+            connection_replaced: crate::ConnectionReplacedRecovery::Reconnect,
             credential_rejected: CredentialRejectedRecovery::Retry {
                 backoff: Backoff {
                     initial: Duration::from_secs(1),
