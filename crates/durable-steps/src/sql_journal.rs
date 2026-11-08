@@ -118,6 +118,29 @@ impl<S: JournalQueries> JournalScope for S {
         }
         Ok(Admitted::New(id))
     }
+    async fn make_due(&mut self, id: OperationId, now: SyncTime) -> Result<bool, StoreError> {
+        let Some(mut record) = self.operation(id).await? else {
+            return Ok(false);
+        };
+        let previous_token = match &mut record.execution {
+            OperationExecution::Running {
+                next_attempt_at,
+                drive,
+                ..
+            } if *next_attempt_at > now => {
+                *next_attempt_at = now;
+                drive.as_ref().map(|lease| lease.token.to_string())
+            }
+            _ => return Ok(false),
+        };
+        let changed = self
+            .update_operation(StoredOperationRow::encode(record)?, previous_token)
+            .await?;
+        if changed {
+            self.ensure_wake(now).await?;
+        }
+        Ok(changed)
+    }
     async fn ensure_wake(&mut self, at: SyncTime) -> Result<(), StoreError> {
         self.ensure_alarm(at).await
     }

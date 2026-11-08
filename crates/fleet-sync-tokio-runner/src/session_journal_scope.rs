@@ -25,6 +25,9 @@ impl<
     ) -> Result<Admitted, StartRefusal> {
         self.inner.admit::<T>(key, input).await
     }
+    async fn make_due(&mut self, id: OperationId, now: SyncTime) -> Result<bool, StoreError> {
+        self.inner.make_due(id, now).await
+    }
     async fn ensure_wake(&mut self, at: SyncTime) -> Result<(), StoreError> {
         self.inner.ensure_wake(at).await
     }

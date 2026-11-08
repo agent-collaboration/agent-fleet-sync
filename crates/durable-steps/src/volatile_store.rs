@@ -161,6 +161,22 @@ impl<H: Host> JournalScope for VolatileScope<'_, H> {
         Ok(Admitted::New(id))
     }
 
+    async fn make_due(&mut self, id: OperationId, now: SyncTime) -> Result<bool, StoreError> {
+        let Some(record) = self.state.operations.get_mut(&id) else {
+            return Ok(false);
+        };
+        match &mut record.execution {
+            OperationExecution::Running {
+                next_attempt_at, ..
+            } if *next_attempt_at > now => {
+                *next_attempt_at = now;
+            }
+            _ => return Ok(false),
+        }
+        self.ensure_wake(now).await?;
+        Ok(true)
+    }
+
     async fn ensure_wake(&mut self, at: SyncTime) -> Result<(), StoreError> {
         self.state.wake = Some(self.state.wake.map_or(at, |current| current.min(at)));
         Ok(())

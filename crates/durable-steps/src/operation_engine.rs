@@ -253,6 +253,20 @@ impl<S: AtomicStore, H: Host> Engine<S, H> {
         }
     }
 
+    /// Drive only the named operation; other due operations are never driven.
+    /// Reports it as yielded when it is not due, has a live lease, is finished,
+    /// or is unknown.
+    #[expect(
+        clippy::manual_async_fn,
+        reason = "explicit Send makes higher-ranked store tasks spawnable; engine_send pins this contract"
+    )]
+    pub fn drive_one(
+        &self,
+        id: OperationId,
+    ) -> impl Future<Output = Result<DriveReport, StoreError>> + Send {
+        async move { self.drive_operation(id).await }
+    }
+
     async fn before_resume(
         &self,
         task: Arc<dyn RegisteredTask<S, H>>,
