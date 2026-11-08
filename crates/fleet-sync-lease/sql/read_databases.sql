@@ -1,1 +1,0 @@
-SELECT database,lifecycle_kind,origin_kind,origin_epoch,origin_sequence,import_digest,retiring_attempt,CAST(retired_at AS TEXT) AS retired_at,revision_epoch,revision_change,CAST(changed_at AS TEXT) AS changed_at FROM _fleet_sync_databases ORDER BY database

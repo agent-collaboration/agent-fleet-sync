@@ -1,1 +1,0 @@
-SELECT CAST(rowid AS TEXT) AS legacy_rowid,CAST(CASE WHEN typeof(database)='text' THEN database END AS TEXT) AS database,CAST(CASE WHEN typeof(attempt)='text' THEN attempt END AS TEXT) AS attempt,CAST(CASE WHEN typeof(record)='text' THEN record END AS TEXT) AS record FROM _fleet_sync_renewal_attempts

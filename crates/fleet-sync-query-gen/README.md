@@ -14,7 +14,7 @@ On macOS, an inherited Homebrew C compiler may need to be replaced for the comma
 
 Each consumer supplies a manifest like [the executable test corpus](checked-test-queries.json). Paths are relative to its package. Migrations build a fresh native schema; query files contain exactly the statements used by the generated functions. Results are `many`, `optional`, `one`, `execute`, or `exists`. Parameter kinds are `text`, `integer`, `real`, and `blob`, with explicit nullability. These are bind types, not result-type overrides.
 
-Set the optional `migration_target` integer to describe queries against a historical schema prefix. The [session legacy corpus](../fleet-sync-session/checked-legacy-queries.json) uses this for validation before typed columns replace the old records; omitting it describes the complete current schema.
+Set the optional `migration_target` integer to describe queries against a historical schema prefix. Only migrations at or below that version are applied; omitting it describes the complete current schema. The [historical-prefix test](tests/integration/native_corpus.rs) exercises this with a generated local fixture.
 
 An `exists` query declares `row: null` and returns `bool` from row presence. It still prepares and describes the exact statement against the migrated schema, but accepts empty or unknown result metadata and decodes no columns. This permits direct PRAGMA statements; misspelled tables in queries still fail generation. Preparation does not certify engine feature support: Turso 0.8.1 silently treats unsupported `PRAGMA foreign_key_check` as a no-op, so this mode alone cannot establish an FK-validation gate.
 

@@ -1,1 +1,0 @@
-DELETE FROM _fleet_sync_install_pages

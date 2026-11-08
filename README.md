@@ -1,14 +1,14 @@
-one-way, lease-based replication, durable steps and delivery for fleets of agent machines
+Durable workflow execution and owned SQLx drivers for Turso and Cloudflare Durable Objects
 
 # agent-fleet-sync
 
-The repository contains owned SQLx drivers and durable operations for Turso and Cloudflare Durable Object SQL. Replication, sessions and delivery build on these foundations.
+The repository contains the general durable-steps workflow engine, runtime primitives, owned SQLx drivers and a typed query generator for Turso and Cloudflare Durable Object SQL. The fleet sync layer moved to [codex-router](https://github.com/agent-collaboration/agent-collaboration).
 
 - `sqlx-turso`, `sqlx-turso-core`, `sqlx-turso-macros`: native Turso 0.8.1, checked queries and migrations.
 - `sqlx-durable-object`, `sqlx-durable-object-core`: SQLx over Durable Object SQLite, without owned unsafe code.
 - `runtime-primitives`: shared time, call identity, backoff and earlier-only wake scheduling; Tokio timer and Durable Object alarm adapters behind features.
 - `durable-steps`: a runtime-free execution core, atomic local steps and receipted calls, with volatile, Turso and Durable Object stores. See [its conformance and recovery journeys](tests/durable-steps/README.md).
-- `fleet-sync-delivery`: durable custody and status recovery. See the [status-event acknowledgement contract](crates/fleet-sync-delivery/README.md#status-event-acknowledgement) and [transactional outbox outcome hook](crates/fleet-sync-delivery/README.md#outbox-outcome-projection).
+- `fleet-sync-query-gen`: describes SQL with the owned Turso driver and generates typed calls over borrowed workflow transactions. See [the generator guide](crates/fleet-sync-query-gen/README.md).
 
 ## Checks
 
@@ -22,8 +22,6 @@ cargo check --target wasm32-unknown-unknown -p sqlx-durable-object -p sqlx-durab
 ```
 
 The checked-query fixtures and offline metadata are imported with the Turso driver. `SQLX_OFFLINE=true` is configured in `.cargo/config.toml`. Tests cover checked-query diagnostics, migrations, constraints, engine pinning, contention and pool return.
-
-For related queries that must share a snapshot, use `database.reader().begin_read().await?` and pass `&mut read` to SQLx. `ReadTransaction` guards every statement as read-only and exposes no raw connection. `read.close().await?` rolls back; drop and cancelled close use the existing pooled rollback cleanup. An open read transaction keeps maintenance's `ActiveReaders` refusal until released; retry maintenance after closing it.
 
 ## Non-repeating call reconciliation
 
@@ -43,167 +41,28 @@ earlier possible reach or falls back to dispatching the effect.
 Reserve `Retryable` for conditions that will clear; the engine retries without
 an attempt limit until the owning task ends.
 
-The timeout case concerns the opted-in consumer's own `CallRouter`.
-`ServiceCalls` routes no opted-in target.
-
 Fresh calls and `NeverSent`/`NoEffect` retries dispatch first; only a lost
 answer can then trigger a read-only lookup. Deduplicating calls never reconcile,
 even if they opt in. The target flag defaults to false;
-the Host method defaults to `Ok(None)`. Tokio hosts forward through the existing
-`CallEnvelope` to `CallRouter::reconcile`, which also defaults to `Ok(None)`.
+the Host method defaults to `Ok(None)`.
 Malformed reconciled answers become `AnswerLost`, as malformed dispatch answers do.
 
-Delivery's non-repeating `DeliverCall` opts in. Existing hosts and routers keep
-returning `None` and preserve the previous `Uncertain` behavior without another
-dispatch. Consumers reconcile the item kinds they support; unsupported kinds
-return final `None`. The library adds no receipt store or persisted format.
 A reconciled answer must pass the same target-specific validator as a dispatched
 answer before journaling; decoding the answer's shape alone is insufficient.
 
-## Holder-change workflows
+## Fleet sync moved to codex-router
 
-The registry's authenticated host starts moves, takeovers and claims with `admit_holder_change::<Store, Database>(scope, request, requested_by, now)` inside its transaction, then drives the engine after commit. Admission binds the attempt to the engine's operation ID and keeps the first requester on repeats. Register `HolderChangeTask`, `HolderChangeCancelTask` and `SettleReservationTask`; the first two take the registry configuration and the same shared `Clock` as the engine host. Apply every registry migration before admitting work.
+Fleet-specific APIs and integration guidance now live with their owners:
 
-`holder_change_view` reads the current phase, retained phase history, pending dependency and scheduled retry time through the public journal interface. A claim's outcome is final when decided; `settlement_owed` separately shows unfinished settlement. A failed follow-up keeps that debt and exposes `follow_up_failure`; only an acknowledged completion clears it. Released means the old holder stopped at its final captured position; the copy can still be behind, and granting waits for its acknowledgement. Read repeated answers through `holder_change_answer`: a cancelled move's compact engine result can remain Pending while its withdrawal task later records Cancelled.
+- [fleet-mail-delivery](https://github.com/agent-collaboration/agent-collaboration/tree/6862368070f3a1ad274b6eeb97a240bf0781c89a/crates/fleet-mail-delivery): custody, status recovery and delivery reconciliation.
+- [fleet-project-lease](https://github.com/agent-collaboration/agent-collaboration/tree/6862368070f3a1ad274b6eeb97a240bf0781c89a/crates/fleet-project-lease): holder-change admission, claims, moves and takeovers.
+- [fleet-project-writer](https://github.com/agent-collaboration/agent-collaboration/tree/6862368070f3a1ad274b6eeb97a240bf0781c89a/crates/fleet-project-writer): guarded read transactions, retained files and native file admission.
+- [fleet-session](https://github.com/agent-collaboration/agent-collaboration/tree/6862368070f3a1ad274b6eeb97a240bf0781c89a/crates/fleet-session) and [fleet-native-session](https://github.com/agent-collaboration/agent-collaboration/tree/6862368070f3a1ad274b6eeb97a240bf0781c89a/crates/fleet-native-session): session protocol, schema publication and native session ownership.
+- [fleet-session-client](https://github.com/agent-collaboration/agent-collaboration/tree/6862368070f3a1ad274b6eeb97a240bf0781c89a/crates/fleet-session-client) and [fleet-websocket-transport](https://github.com/agent-collaboration/agent-collaboration/tree/6862368070f3a1ad274b6eeb97a240bf0781c89a/crates/fleet-websocket-transport): attachment, recovery, link state and typed upgrade refusals.
+- [fleet-project-copy](https://github.com/agent-collaboration/agent-collaboration/tree/6862368070f3a1ad274b6eeb97a240bf0781c89a/crates/fleet-project-copy): replication, seed/snapshot application and foreign-key integrity.
+- [fleet-native-services](https://github.com/agent-collaboration/agent-collaboration/tree/6862368070f3a1ad274b6eeb97a240bf0781c89a/crates/fleet-native-services) and [fleet-tokio-objects](https://github.com/agent-collaboration/agent-collaboration/tree/6862368070f3a1ad274b6eeb97a240bf0781c89a/crates/fleet-tokio-objects): native service composition and object publication.
 
-The admin surface can call `cancel_holder_change` before Fencing commits. A move stays Cancelling until its release is withdrawn, or a takeover supersedes it. A permanently failed withdrawal records its first cleanup failure and leaves the move active for takeover. A claim records Cancelled and owes its gate a settlement; the gate must refuse a late reservation after settlement. Once Fencing commits, cancellation is TooLate, including during floor repair. Retry times are schedules, and an already-dispatched call can remain unanswered. `move_needs_renewal_within` independently bounds the holder's renewal age when a move starts; consumers choose the bound.
-
-These registry tests use actual Turso journals and receipted holder-call fixtures. The real holder's withdrawal, writer resumption and session integration belong to the writer/runner/service layer. Historical development transfer rows without admission identity or phase history fail closed; this foundation has no compatibility path that invents an authenticated requester.
-
-## Session schema support
-
-An unsuccessful peer WebSocket upgrade carries one `fleet-sync-auth-refusal` response header with the existing `AuthRefusal` JSON value, such as `"expired"`. The service uses 401, or 403 for `WrongKind`. Native clients decode that single header strictly; missing, malformed, unknown or repeated values mean `Unknown`. A bare 403 also means `Unknown`. There is no body fallback or session frame on rejection.
-
-Before welcoming an attachment, the session owner durably reports its schema support to the registry. A per-peer `AttachSequence` orders reports across connection replacement and restart; an older report cannot overwrite a newer declaration. This projection is capability data, persists after disconnect, and has no expiry. `admit_holder_change` freezes the target's `Option<SchemaSupport>` in its admission transaction. Repeats, restart and both fence calls use that value. A target without an accepted report is refused with `SchemaTooNew { supported: None, .. }`; there is no global schema maximum in `RegistryConfig`.
-
-Every host implements `SessionScope::publish_schema_support(input, now)` by admitting `PublishSchemaSupport` and ensuring its durable deadline through the Hello transaction's borrowed journal. `welcome_after_commit(connection, peer, session_id)` buffers a host effect, while the finalizing local step records only `()`. A successful commit publishes staged registration edits and exposes effects; rollback discards both. External effects run after transaction exclusion is released, and the runtime then supplies activation. Route `SchemaSupportRegistry` to the registry's `report_schema_support` rule inside its own transaction.
-
-`FleetService` owns and joins the native session publication runner. Consumers embedding `SessionHost` directly also join its `run` future alongside their connection tasks and shutdown signal. Its adapter stages under the input path's runtime-to-connection lock order, publishes registrations on commit, drops both guards, then signals its native timer and dispatches Welcome. The connection, session and attach sequence are checked in the finalizing transaction; the later send by connection ID is not another identity check.
-
-`SessionClient::connect` activates the transport and sends Hello. Keep pumping receive and server answers during attachment; only the matching Welcome makes operation requests ready. `send_request` refuses before Welcome without sending a frame. A readiness or connection refusal returned before dispatch is `CallFailure::NotSent`; a timeout or uncertain dispatch stays `AnswerLost`, including other pre-send failures and the pump's local reply timeout. Only a durably settled NotSent with no earlier uncertain reach preserves NeverSent.
-
-Request and answer envelopes are identified before their body is decoded. A readable kind and frame ID with an invalid body gets a correlated `OperationAnswer::InvalidShape { field }` and leaves the session open. The field names a missing, unknown or duplicate field when reported by the decoder, or `body` for errors without a field location, and is capped at 64 Unicode characters. An unreadable kind or frame ID closes as `MalformedFrame`.
-
-A replication callback that refuses before applying or successfully rolls back can answer `CopyUnavailable { reason }`. The sender retains its piece, and seed and snapshot callers retain their generation or pinned install and retry. Store-boundary uncertainty answers `OutcomeUnknown { reason: StoreBoundary { detail } }` on the same socket; its diagnostic is validated and capped at 1024 characters. Callers reconcile the original identity through `AnswerLost`, including when a reason cannot decode. A failed timer hint after commit preserves the committed answer; durable follow-ups recover on the next wake or startup.
-
-The unreleased seed protocol includes `SeedPageAnswer::UnitTooLarge`, encoded as `{"kind":"unitTooLarge"}` with no payload. The receiver checks the serialized page against the encoded unit limit before staging it. This reply ends the durable seed operation with `SeedCopyRefusal`; it schedules no retry. Sender and receiver must use the same protocol revision; there is no compatibility fallback.
-
-Registry copy calls use `CallFailure::Retryable` only for known no-new-effect refusals. The call remains pending with its generic code/detail reason, while `holder_change_view.waiting.copy_unavailable` decodes the closed copy reason. `CallReach::NoEffect` records a receiver response with no earlier unresolved possible effect. It survives restart, cannot satisfy an unsent timeout, and records `Dispatching` before retry; an earlier `MayHaveReached` is never cleared by a later refusal. Unknown retry codes fail closed. Final holder-change refusals remain terminal. The library's `test-fault` feature supplies controls on the actual native copy transaction replies and host timer; normal builds omit them.
-
-### Native session recovery
-
-`SessionPump::new` keeps recovery opt-in. One correction also applies to hosts
-that do not opt in: a credential refusal following an earlier scheduled retry
-now returns an error instead of leaving the pump alive waiting for a consumed
-wake. Existing attached credential-expiry retries continue under the client's
-connection backoff. `WrongKind`, `InvalidEndpoint`, and `InvalidCredential`
-always terminate because they are configuration errors. Every host now receives
-`Revoked`, `CredentialRejected { reason }`, and `ReplacedByNewerSession` from
-`run()` for those terminal causes, replacing the former overloaded
-`SessionEnded` or `Connect(CredentialRejected(..))` errors.
-
-Hosts opt in before running the pump, retaining the same `SessionRequests`
-handles:
-
-```rust
-use fleet_sync_tokio_runner::SessionRecoveryPolicy;
-use std::time::Duration;
-
-let pump = pump.with_recovery_policy(SessionRecoveryPolicy {
-    welcome_timeout: Some(Duration::from_secs(30)),
-    ..SessionRecoveryPolicy::default()
-});
-let status = pump.link_state();
-let events = pump.observe_link();
-// Run pump.run(shutdown) under the host's existing task owner.
-```
-
-The explicit default policy retries credential refusals with exponential backoff
-from one second to a five-minute cap. Hosts choose another cap with
-`CredentialRejectedRecovery::Retry { backoff }`, or select `Terminal` for either
-recovery policy. A `SessionEnded` received before Welcome can indicate a stale
-stored session identity: the default starts a new persisted session and waits
-for the client's connection backoff before connecting. Consecutive pre-Welcome
-restarts retain the retry count and increase that delay up to its cap; a matching
-Welcome resets it. A `SessionEnded` after
-Welcome means a newer live session owns the peer; that pump stops with status
-`Refused` and drop reason `ReplacedByNewerSession`, preventing two owners from
-continually replacing each other.
-An older owner that reconnects after being superseded can still renew its stale
-session before Welcome and replace the newer live owner. This consequence is
-accepted for now: one owner survives, but it may be the older owner.
-
-Revocation always terminates the pump; the host owns re-enrollment. `run()`
-returns distinct `ClientError::Revoked`, `CredentialRejected { reason }`, and
-`ReplacedByNewerSession` terminal results. `welcome_timeout` is disabled by
-default. When supplied, it bounds attachment after Hello, closes a socket that
-has not delivered a matching Welcome, and applies connection backoff before
-reconnecting. Recovery never replays operations; an in-flight request whose
-answer is lost still requires reconciliation.
-Every terminal error exit leaves the watch in `Refused { reason }`, including
-an ended session before Welcome under a terminal policy or without opt-in.
-
-Every `ClientEvent::Notice` includes its `session_id`. Pass that identity to
-`acknowledge_notice(session_id, position)` after handling the notice. A stale
-identity returns `ClientError::StaleNoticeAcknowledgement` and cannot advance
-the current session's cursor, even when both sessions have the same position.
-
-`link_state()` returns a watch receiver of `SessionLinkState { instance, status,
-connection, since, last_frame_at, last_drop, revision }`. `connection` increases
-on every connect attempt. `since` records when the current status was entered;
-`last_drop` retains `{ reason, at, connection }` through reconnect and Welcome.
-`instance` is a random `u64` minted when the pump is created and retained through
-its snapshots. `revision` increases with every publication within that one pump
-instance. Downstream owners compare revisions only for the same instance and
-handle a new instance separately. The pump is the only publisher and builds contact updates from
-its current state rather than a queued snapshot. The initial, not-yet-run
-snapshot has connection and revision zero; `since` is a placeholder until
-`run_with_clock` initializes it from its supplied clock before the first status
-transition (`run` uses the system clock).
-
-`last_frame_at` is the last inbound binary session message on the current
-connection, including frames consumed internally by the client. It excludes
-transport-private Ping/Pong frames. Contact-only watch updates are coalesced to
-about ten-second intervals; status transitions always include the latest
-contact time. A new connection clears the contact time. Transports can return
-`ConnectionClosed::IdleTimeout` or `SendTimeout`, retained as those typed
-`SessionDropReason` values; existing `Transport` errors remain supported.
-Connect failures retain `ConnectFailed { kind }`, where
-`SessionConnectFailureKind` distinguishes `Unavailable`, `InvalidEndpoint`, and
-`InvalidCredential` without endpoint or credential material. Unsupported
-transport frames retain `UnsupportedFrame`. These reasons appear in both the
-watch's `last_drop` and the disconnection event.
-
-`observe_link()` returns a broadcast receiver of `SessionLinkEvent { connection,
-kind }` for transitions, including session replacement and Welcome timeout.
-A slow event reader handles `RecvError::Lagged` and reads the watch for current
-status. Broadcast publication does not wait for receivers; watch updates do not
-wait for an acknowledgment, but a held watch borrow blocks its write lock.
-Clone the snapshot and release the borrow before doing slow or asynchronous
-work. The application still consumes the separate `ClientEvent` channel.
-Observations contain typed refusal and close reasons, never credential material.
-
-## Receiver foreign-key integrity
-
-Seed replacement and each assembled replicated transaction validate the final
-relationships of the replicated tables before publication, receipts or the
-acknowledged position advance. Durable Object replay defers immediate foreign
-keys within that transaction; the native receiver uses the same metadata-based
-orphan check. A matching snapshot manifest does not replace this check during
-native staging verification. FK declarations and schema fingerprints stay intact.
-
-`SeedAnswer::IntegrityViolation { table, references }` and
-`PieceRefusal::IntegrityViolation { table, references }` name only the child and
-parent tables. They carry no row keys or content. A violating transaction rolls
-back, and consumers treat the refusal as terminal for that seed attempt or piece,
-not as retryable storage unavailability. These additions to exhaustive enums
-require the coordinated v0.2.0 update on both sides of the protocol.
-
-Turso 0.8.1 does not implement `PRAGMA defer_foreign_keys`; successful execution
-of an unsupported pragma is not an integrity check. Receiver tests explicitly
-disable native engine FKs to prove the metadata gate rejects orphans itself.
-The regular writer pool enables native engine FKs; captured child-first writes
-in the regression use a declared deferred constraint, preserving source validity.
+These links pin the codex-router revision that introduced the new crate homes.
 
 ## Local workerd integration
 

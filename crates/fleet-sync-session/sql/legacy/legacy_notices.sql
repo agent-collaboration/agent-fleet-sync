@@ -1,1 +1,0 @@
-SELECT CAST(rowid AS TEXT) AS legacy_rowid,CAST(CASE WHEN typeof(peer)='text' THEN peer END AS TEXT) AS peer,CAST(CASE WHEN typeof(session_id)='text' THEN session_id END AS TEXT) AS session_id,CAST(CASE WHEN typeof(position)='text' THEN position END AS TEXT) AS position,CAST(CASE WHEN typeof(body)='text' THEN body END AS TEXT) AS body FROM _fleet_sync_notices

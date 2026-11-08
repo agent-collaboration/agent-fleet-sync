@@ -1,1 +1,0 @@
-SELECT CAST(rowid AS TEXT) AS legacy_rowid,CAST(CASE WHEN typeof(database)='text' THEN database END AS TEXT) AS database,CAST(CASE WHEN typeof(epoch)='text' THEN epoch END AS TEXT) AS epoch FROM _fleet_sync_epoch_floor

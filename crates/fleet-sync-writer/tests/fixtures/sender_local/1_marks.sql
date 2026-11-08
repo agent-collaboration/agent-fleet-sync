@@ -1,1 +1,0 @@
-CREATE TABLE local_marks(id TEXT NOT NULL PRIMARY KEY);
