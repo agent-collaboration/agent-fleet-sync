@@ -111,6 +111,15 @@ pub trait JournalScope: Send {
         request_key: &RequestKey,
         input: &T::Input,
     ) -> impl Future<Output = Result<Admitted, StartRefusal>> + Send;
+    /// Lower a running operation's retry deadline to now and ensure its wake,
+    /// preserving any drive lease. Returns false for unknown, finished or
+    /// already-due work. Record the triggering event (for example a reply) in
+    /// this same transaction, then call Engine::drive_one after commit.
+    fn make_due(
+        &mut self,
+        id: OperationId,
+        now: SyncTime,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send;
     fn ensure_wake(&mut self, at: SyncTime) -> impl Future<Output = Result<(), StoreError>> + Send;
 }
 

@@ -3,8 +3,8 @@ use crate::{
     writer_authority::restore_authority,
 };
 use durable_steps::{
-    Admitted, AtomicStore, BoxFuture, Host, JournalScope, RequestKey, StartRefusal, StoreError,
-    SyncTime, Task,
+    Admitted, AtomicStore, BoxFuture, Host, JournalScope, OperationId, RequestKey, StartRefusal,
+    StoreError, SyncTime, Task,
     storage::TransactionScope,
     turso_store::{TursoScope, migrate_journal},
 };
@@ -272,6 +272,9 @@ impl<H: Host> JournalScope for WriterJournalScope<'_, H> {
         input: &T::Input,
     ) -> Result<Admitted, StartRefusal> {
         self.journal().admit::<T>(key, input).await
+    }
+    async fn make_due(&mut self, id: OperationId, now: SyncTime) -> Result<bool, StoreError> {
+        self.journal().make_due(id, now).await
     }
     async fn ensure_wake(&mut self, at: SyncTime) -> Result<(), StoreError> {
         self.journal().ensure_wake(at).await

@@ -57,6 +57,7 @@ where
         .await
         .map_err(StoreError::backend)?;
     require_send(engine.drive_due()).await?;
+    require_send(engine.drive_one(id)).await?;
     let status = require_send(engine.status(&id)).await?;
     assert_eq!(
         status.state,
