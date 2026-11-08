@@ -2,6 +2,7 @@
 #![allow(clippy::panic, clippy::panic_in_result_fn, clippy::expect_used)]
 
 mod call_cases;
+mod event_resume_cases;
 pub mod reborrow_cases;
 mod reconciliation_cases;
 mod resume_cases;
@@ -50,6 +51,12 @@ where
     for<'t> S::Scope<'t>: BusinessScope,
 {
     let mut passed = Vec::new();
+    event_resume_cases::named_operation_only(store.clone(), host.clone()).await?;
+    passed.push("drive_one advances only its named operation");
+    event_resume_cases::resume_backoff(store.clone(), host.clone()).await?;
+    passed.push("make_due resumes backoff with the same CallId without clock advance");
+    event_resume_cases::preserve_live_lease(store.clone(), host.clone()).await?;
+    passed.push("make_due preserves live lease exclusion across engines");
     reconciliation_cases::retryable_lookup(store.clone(), host.clone(), false).await?;
     passed.push("Retryable recovered lookup retains MayHaveReached and retries to an answer");
     reconciliation_cases::retryable_lookup(store.clone(), host.clone(), true).await?;
