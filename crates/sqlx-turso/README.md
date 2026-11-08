@@ -64,7 +64,7 @@ let task = sqlx_turso::query!(r#"SELECT status AS "status!: String" FROM tasks W
 - `read_only(true)` or `?mode=ro` requests the engine's read-only file mode and refuses
   missing files. The caller must exclude live writable SDK instances by physical file
   identity before opening: Turso's process cache can otherwise reuse a writable instance.
-  `fleet-sync-writer::RetainedFile` owns this admission for retained library files.
+  [`fleet_project_writer::RetainedFile`](https://github.com/agent-collaboration/agent-collaboration/tree/6862368070f3a1ad274b6eeb97a240bf0781c89a/crates/fleet-project-writer/src/retained_file.rs) in codex-router owns this admission for retained fleet files.
 
 ## Offline metadata
 
