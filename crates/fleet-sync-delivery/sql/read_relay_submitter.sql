@@ -1,1 +1,0 @@
-SELECT record_kind,consumer_sender,CAST(legacy_read_only AS TEXT) AS legacy_read_only,typeof(legacy_read_only) AS legacy_read_only_class,submitter_kind,submitter_id FROM _fleet_sync_outbox_items WHERE item_id=?1;

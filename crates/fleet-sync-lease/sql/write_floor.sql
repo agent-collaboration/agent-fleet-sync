@@ -1,1 +1,0 @@
-INSERT INTO _fleet_sync_epoch_floor(database,epoch,created_at,updated_at) VALUES(?1,?2,CAST(?3 AS INTEGER),CAST(?4 AS INTEGER)) ON CONFLICT(database) DO UPDATE SET epoch=excluded.epoch,updated_at=excluded.updated_at

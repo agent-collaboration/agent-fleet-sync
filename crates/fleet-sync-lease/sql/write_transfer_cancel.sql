@@ -1,1 +1,0 @@
-INSERT INTO _fleet_sync_transfer_cancels(attempt,cancelled_by,reason,cancelled_at,created_at,updated_at) VALUES(?1,json_extract(?2,'$.by'),json_extract(?2,'$.reason'),json_extract(?2,'$.at'),CAST(?3 AS INTEGER),CAST(?4 AS INTEGER)) ON CONFLICT(attempt) DO NOTHING

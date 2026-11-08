@@ -16,9 +16,8 @@ verification_worker_target="$CARGO_TARGET_DIR"
 ```
 
 Native executables land in `target/debug`; wasm uses Cargo's normal target-triple
-layout beneath this same target. The session launcher already honors
-`CARGO_TARGET_DIR`; export it when driving an archive so its fallback cannot
-create an archive-local target. No `.runs/*/target` or scratch target copies.
+layout beneath this same target. Export `CARGO_TARGET_DIR` when driving an
+archive so Cargo uses the assigned normal worktree target. No `.runs/*/target` or scratch target copies.
 Permanent fixtures keep their own transient child-build and cleanup behavior.
 
 Independence comes from the pinned source archive, checked source/configuration

@@ -1,1 +1,0 @@
-SELECT CAST(rowid AS TEXT) AS legacy_rowid,CAST(CASE WHEN typeof(peer)='text' THEN peer END AS TEXT) AS peer,CAST(CASE WHEN typeof(sequence)='text' THEN sequence END AS TEXT) AS sequence FROM _fleet_sync_attach_sequences

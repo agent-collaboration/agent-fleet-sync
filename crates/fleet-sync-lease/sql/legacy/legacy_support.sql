@@ -1,1 +1,0 @@
-SELECT CAST(rowid AS TEXT) AS legacy_rowid,CAST(CASE WHEN typeof(peer)='text' THEN peer END AS TEXT) AS peer,CAST(CASE WHEN typeof(record)='text' THEN record END AS TEXT) AS record FROM _fleet_sync_schema_support

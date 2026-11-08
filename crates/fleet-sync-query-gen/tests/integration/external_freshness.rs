@@ -48,8 +48,6 @@ fn copy_source_entry(source: &Path, destination: &Path, relative: &Path) -> Test
             "tests/workerd/build",
             "tests/workerd/workerd-state",
             "tests/durable-steps/build",
-            "tests/normal-migrations-worker/build",
-            "tests/normal-migrations-worker/evidence",
             "crates/sqlx-durable-object/tests/worker/build",
         ]
         .iter()

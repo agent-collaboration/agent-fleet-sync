@@ -1,1 +1,0 @@
-SELECT attempt,operation,request_kind,database,from_epoch,to_peer,claimant,reason,preview_token,preview_holder,preview_fence,preview_acked_epoch,preview_acked_sequence,CAST(preview_last_seen AS TEXT) AS preview_last_seen,requested_by,CAST(admitted_at AS TEXT) AS admitted_at,target_schema_max_version,follow_up FROM _fleet_sync_transfer_admissions WHERE attempt=?1
