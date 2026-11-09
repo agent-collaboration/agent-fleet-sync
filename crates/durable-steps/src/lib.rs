@@ -6,8 +6,11 @@
 extern crate self as durable_steps;
 
 #[cfg(any(feature = "turso", feature = "durable-object"))]
-// The portable corpus includes writes used only by the callback-based DO host.
-#[cfg_attr(not(feature = "durable-object"), allow(dead_code))]
+// The portable corpus includes queries used only by each storage host.
+#[cfg_attr(
+    not(all(feature = "durable-object", feature = "turso")),
+    allow(dead_code)
+)]
 mod checked_migration_queries;
 
 mod call_execution;

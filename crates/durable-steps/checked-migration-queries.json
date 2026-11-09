@@ -42,6 +42,13 @@
       "row": "MigrationTableRow",
       "result": "many",
       "parameters": []
+    },
+    {
+      "name": "read_migration_columns",
+      "sql": "migration-queries/read_migration_columns.sql",
+      "row": "MigrationColumnRow",
+      "result": "many",
+      "parameters": []
     }
   ]
 }

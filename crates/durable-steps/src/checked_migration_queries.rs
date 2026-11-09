@@ -99,3 +99,34 @@ where
             .collect()
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct MigrationColumnRow {
+    pub column_name: Option<String>,
+    pub declared_type: Option<String>,
+}
+pub(crate) fn read_migration_columns<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<MigrationColumnRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/migration-queries/read_migration_columns.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(MigrationColumnRow {
+                    column_name: row.try_get("column_name")?,
+                    declared_type: row.try_get("declared_type")?,
+                })
+            })
+            .collect()
+    }
+}

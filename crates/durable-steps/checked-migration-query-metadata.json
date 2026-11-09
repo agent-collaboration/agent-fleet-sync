@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-migration-queries.json": "7f14cbba99d0edcb10d455eca5b5140c984cfbed028e04587d6d82ad6ff0b2f9",
+    "checked-migration-queries.json": "3565b20521d61ad28e3fab4316844e1dc3d5de9a7bde2ca48544e537e1eb9592",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -54,6 +54,7 @@
     "generator:sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
     "generator:workspace/Cargo.lock": "9cddb21fd9fbfa173b3935edc9e647c9a9b7fcf2cb0ea9f33e389255f4e14d31",
     "generator:workspace/rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
+    "migration-queries/read_migration_columns.sql": "326ec3996ceb1014d42a8b950d9bb5e7e25c52f0ad195b7a7ee2f0d43aa97adf",
     "migration-queries/read_migration_receipts.sql": "146fb90feb5062723c3c3c59506211f570436ede84bd914a7d24fab76df47900",
     "migration-queries/read_migration_tables.sql": "2c25740cdb79fa1d67df49b8ff97609bb8496498626e1d45d4c9c1d978fba453",
     "migration-queries/write_migration_receipt.sql": "66cfeb0695b7a0e12dee214a24caa0b5f16f7983693dba873a1d49b4d247d8b6",
@@ -61,9 +62,9 @@
     "migrations/0002_journal_metadata.sql": "dd1b0814420de627963a243815b5d68e73ccd67a5327af987214a59c3822b718",
     "migrations/0003_sqlx_journal_receipts.sql": "9a97765b34c84834e523c22d7b30b8593cadaa5528afd14e125ea8b1b114e59f",
     "query-schema/99990000_journal_receipts.sql": "56ff05f5b68c9a1632719717c6bfe0ca9c2c80b388bf7009cdcafafba1ababc3",
-    "src/checked_migration_queries.rs": "3a0cb62dbfe6792cce7c0f11c6eab1ec3fb57f0aad7d97520a2f5ee17e696f94"
+    "src/checked_migration_queries.rs": "e6dd7a241b2ceb97c8b415b77a1ee97b988b87493fd47b58c8f7ae48ffc5650d"
   },
-  "queries_digest": "c96aa633ae9a23f18ced08fece0b438f2cc646899855d8d12fe664bf8030e2ba",
+  "queries_digest": "979b434fac26981dc9f76842ea5cf4bdbfa953b13f4e21cbb5b6bea07e6854bf",
   "queries": [
     {
       "name": "read_migration_receipts",
@@ -128,6 +129,26 @@
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "driver"
+        }
+      ]
+    },
+    {
+      "name": "read_migration_columns",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "column_name",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "declared_type",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
         }
       ]
     }
