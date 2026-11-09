@@ -1,1 +1,1 @@
-SELECT CAST(version AS TEXT) AS version, typeof(version) AS version_class, CAST(checksum AS TEXT) AS checksum, typeof(checksum) AS checksum_class FROM _fleet_sync_hook_migrations
+SELECT CAST(version AS TEXT) AS version, typeof(version) AS version_class, checksum, typeof(checksum) AS checksum_class, CAST(success AS TEXT) AS success, typeof(success) AS success_class FROM _fleet_sync_hook_migrations ORDER BY version

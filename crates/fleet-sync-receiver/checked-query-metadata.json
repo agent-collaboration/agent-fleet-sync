@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-queries.json": "822df54223483d13fa7b649ed7aeb5671aa0a5a0717ecc07fc57a0b7bacf0e0d",
+    "checked-queries.json": "e6507fcc1d0c4046e962f4d6cf246484a9da6d196f7e7e7e953c5d4e9adca0ae",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -52,12 +52,14 @@
     "generator:sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "generator:sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "generator:sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "generator:workspace/Cargo.lock": "e6dd6bbdd6d3915326e1bb54c57870a5d55f515e4be70732d385a2c7fd5bebbe",
+    "generator:workspace/Cargo.lock": "9cddb21fd9fbfa173b3935edc9e647c9a9b7fcf2cb0ea9f33e389255f4e14d31",
     "generator:workspace/rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "migrations/0001_copy_rules.sql": "2edfb5ed73cfa0d0c0f17ff38ca3aabb9da25ec57b806904cbb006f5ae573e85",
     "migrations/0002_replicated_schema.sql": "56450d0f0ff8c8ec0e6d9354ca71902447bba3e415ae9398893ce57618af4c9e",
     "migrations/0003_snapshot_install.sql": "cccd97bc8517afc90d74f3b0094805b3f3c0265c777bb1d069170ea8f46c0e04",
+    "migrations/0004_hook_sqlx_receipts.sql": "d5d3ab4276c02f7be342275875cd6e0ff65a6953638a6f38f511a07afb839adc",
     "sql/drop_copy_table.sql": "8112c8faca8e402ef60bc3bf3954c9ba048aa240ffdc7b02f89f9df7e92abac4",
+    "sql/drop_legacy_hook_migrations.sql": "1fc759ae05677bc70d8a7cade46f1c1306f2de81f9747039ab7bb27d2a30be2a",
     "sql/drop_parts.sql": "1e9b957ad66ac0c9fe34732322431b167dcd9f0c8d319c7976f2a2bc04b1bbbc",
     "sql/drop_seed_pages.sql": "0e30e843bd90a7b2386f84cef9e78a0c5eb11e9eeb5ee52b07eefa6fc9dcfd1e",
     "sql/erase_copy_tables.sql": "bf03e6a59e72a07c875127dab289b704cad60dd69a570b7ae3ebd87fd4a73557",
@@ -78,11 +80,12 @@
     "sql/read_epoch_fence.sql": "f455e28f2ecbde42be7c8cc044dd31b65b51f61efaa5bbaac28fe4dcb477325b",
     "sql/read_fence_receipt.sql": "bde95c4e455efd2ddd0b1f20468d6987067931a1bca91b6bcb76d1bd1ae13ce8",
     "sql/read_foreign_keys.sql": "7ecca70236bf3d19a579874c974a159bd9ed565aa2523e305c8b8870a4d22387",
-    "sql/read_hook_migrations.sql": "48772108665c87eb58ddc8cd533860d4fa607be9fa5389ba5e6e6a95bd4b424a",
+    "sql/read_hook_migrations.sql": "52656a68c105c538341e6894fb7b87adf15fc8737507a7561bd075922785e546",
     "sql/read_inspection_corpus.sql": "5abcee590b18f409ff4949e892e16e031ad8095976e2e51757ce4e8cceee0836",
     "sql/read_inspection_parts.sql": "63a88de452402a8e0fcdcc6efabf3010de27ff074b40f6e4ae26fe70eecfb6b2",
     "sql/read_install.sql": "58204d10e3a2a0f9f50985f5415c92e18c4804357cf83c850e57d81dc231bac6",
     "sql/read_install_pages.sql": "1c76ee82df66ecf76bcdeb568d80d5ba1c53ff54a53a7df89f901b3bb3940c8b",
+    "sql/read_legacy_hook_migrations.sql": "135860b42d2977827c68f61d7b97e4b90ee33ddd4773967143a4140784266f69",
     "sql/read_parts.sql": "2fe22ce90680daad8cb3383c1b56df163c14c99dd133035f1dd5c448ed8b46ac",
     "sql/read_receipt.sql": "ce1cc00141af64623c12bd8454c45b4d242c0e22a747a3ae30a5831bd7136ac6",
     "sql/read_schema_entries.sql": "93797f46475d01b3a5e33f02141c704b0ba59feb6c57636e7df29b5163ef1f05",
@@ -97,7 +100,7 @@
     "sql/write_copy_table.sql": "a77c9cb1ab23750f8310ee875ca3873dada19ee3045482e19cc4e067ef6b13cc",
     "sql/write_creation.sql": "1f459ccb509d1a52e09df02494b92c27980795632d509711881f07c338e8fd6d",
     "sql/write_fence_receipt.sql": "96763c9ef34e03898784cbb4a3b256c18c6e5590460fcd77bf6c08131c8922cd",
-    "sql/write_hook_migration.sql": "50a9a1a5e71a1a8010d385d1aa00a5fa63d26fc8d73ba9586fde9926491e392d",
+    "sql/write_hook_migration.sql": "10f1c9c1a20850059aa6c8ffeca7bb22b296311d9fe42adc06f3a279b1dae703",
     "sql/write_install.sql": "46ac95e13a81f62d6cb978aa0ad0c6cf191f26581790fb88a9f78d1b55a88d12",
     "sql/write_install_page.sql": "cadf4805f3927d7f8206c2dd90bf938b3733d86297b3aa7cc57b6308883cbffa",
     "sql/write_part.sql": "bda6c2e03a637c6b7b98df8bf004384031e849d4495899e70df3278e2f9cbad3",
@@ -106,9 +109,9 @@
     "sql/write_seed.sql": "1760686d585a282c49d7eee530ebe6bcd883d49623d339587ba861adfb372783",
     "sql/write_seed_attempt.sql": "6b7bb9dd642308388c49521b264703c0291d95870d6c172caece780aecd583eb",
     "sql/write_seed_page.sql": "2f10b3342821b1a27f8683e064f8445dd16f74c761b5d095a0c56e0f991c95d8",
-    "src/checked_queries.rs": "ee6133caa9996326ed2b701e17dbd0331f7947dd38fa5a820726f171947541bc"
+    "src/checked_queries.rs": "f9a2f56d0f2396cce6713bfc1bb01930a6da754c40274328e1d04739e3528901"
   },
-  "queries_digest": "c9ee68d4829fb05c243f3b00bea5e3620ac028539d48069d57635ca02131e640",
+  "queries_digest": "f538282802b313d050a8a3f417aebdae7da3b601fb46c0d8d81e56529e473adf",
   "queries": [
     {
       "name": "read_copy",
@@ -532,13 +535,27 @@
         },
         {
           "name": "checksum",
+          "sql_type": "BLOB",
+          "rust_type": "Option<Vec<u8>>",
+          "nullable": null,
+          "type_source": "driver"
+        },
+        {
+          "name": "checksum_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "success",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
           "type_source": "cast"
         },
         {
-          "name": "checksum_class",
+          "name": "success_class",
           "sql_type": "TEXT",
           "rust_type": "Option<String>",
           "nullable": null,
@@ -548,7 +565,7 @@
     },
     {
       "name": "write_hook_migration",
-      "bind_slots": 2,
+      "bind_slots": 4,
       "columns": []
     },
     {
@@ -914,6 +931,45 @@
           "type_source": "typeof"
         }
       ]
+    },
+    {
+      "name": "read_legacy_hook_migrations",
+      "bind_slots": 0,
+      "columns": [
+        {
+          "name": "version",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "version_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        },
+        {
+          "name": "checksum",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "cast"
+        },
+        {
+          "name": "checksum_class",
+          "sql_type": "TEXT",
+          "rust_type": "Option<String>",
+          "nullable": null,
+          "type_source": "typeof"
+        }
+      ]
+    },
+    {
+      "name": "drop_legacy_hook_migrations",
+      "bind_slots": 0,
+      "columns": []
     }
   ]
 }

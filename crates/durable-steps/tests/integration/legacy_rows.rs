@@ -62,8 +62,8 @@ pub(crate) const NATURAL_CONSTRAINTS: &[(&str, &str)] = &[
         "_fleet_sync_steps.operation_id, _fleet_sync_steps.step_name",
     ),
     (
-        "INSERT INTO _fleet_sync_schema(id,version,created_at,updated_at) SELECT '0197abc0-def0-7123-8123-abcdef012349',version,created_at,updated_at FROM _fleet_sync_schema",
-        "_fleet_sync_schema.version",
+        "INSERT INTO _fleet_sync_migrations(version,description,installed_on,success,checksum,execution_time) SELECT version,description,installed_on,success,checksum,execution_time FROM _fleet_sync_migrations WHERE version=1",
+        "_fleet_sync_migrations.version",
     ),
 ];
 

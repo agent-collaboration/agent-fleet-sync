@@ -41,12 +41,12 @@ async fn upgrade_never_silently_discards_a_legacy_step_with_no_parent() -> Resul
             before,
             "upgrade silently discarded a saved step"
         );
-        let schema = query::<Turso>("SELECT version FROM _fleet_sync_schema")
+        let receipt = query::<Turso>("SELECT max(version) AS version FROM _fleet_sync_migrations")
             .fetch_one(&mut connection)
             .await?;
         assert_eq!(
-            schema.try_get::<i64, _>("version")?,
-            if foreign_keys { 1 } else { 2 }
+            receipt.try_get::<i64, _>("version")?,
+            if foreign_keys { 1 } else { 3 }
         );
     }
     Ok(())

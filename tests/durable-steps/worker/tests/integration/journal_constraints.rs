@@ -20,7 +20,7 @@ pub(crate) async fn run(store: &DurableObjectStore<TestHost>) -> Result<(), Stor
     for (table, key) in [
         ("_fleet_sync_operations", "operation_id"),
         ("_fleet_sync_steps", "id"),
-        ("_fleet_sync_schema", "id"),
+        ("_fleet_sync_migrations", "version"),
     ] {
         store
             .transaction(move |scope| {
@@ -37,7 +37,7 @@ pub(crate) async fn run(store: &DurableObjectStore<TestHost>) -> Result<(), Stor
                         .collect::<Vec<_>>();
                     check(
                         keys == vec![key.to_owned()],
-                        "DO journal must have its actual UUIDv7 primary key",
+                        "DO journal table must have its declared primary key",
                     )
                 })
             })

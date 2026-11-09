@@ -3,12 +3,19 @@
 //! The execution core has no runtime dependency. A store owns transactions; a
 //! host supplies time, identifiers, call dispatch and timer re-arming.
 
+extern crate self as durable_steps;
+
+#[cfg(any(feature = "turso", feature = "durable-object"))]
+// The portable corpus includes writes used only by the callback-based DO host.
+#[cfg_attr(not(feature = "durable-object"), allow(dead_code))]
+mod checked_migration_queries;
+
 mod call_execution;
 mod canonical_payload;
 #[cfg(feature = "durable-object")]
 pub mod durable_object_store;
 #[cfg(any(feature = "turso", feature = "durable-object"))]
-mod journal_schema;
+mod journal_migrations;
 #[cfg(feature = "turso")]
 mod native_journal_metadata;
 mod operation_context;

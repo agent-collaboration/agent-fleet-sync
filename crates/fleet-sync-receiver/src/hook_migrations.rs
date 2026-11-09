@@ -23,49 +23,50 @@ where
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'value> String:
         Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
+    for<'value> Vec<u8>:
+        Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
 {
     async move {
         let migrations = hook.local_migrations();
+        adopt_legacy_hook_migrations(scope, migrations).await?;
         let applied = checked_queries::read_hook_migrations(scope)
             .await
             .map_err(crate::sql_transport::sql_error)?
             .into_iter()
             .map(|row| {
                 Ok((
-                    crate::schema_reads::required_text(
-                        row.version,
-                        row.version_class,
-                        "hook migration version",
-                    )?,
-                    crate::schema_reads::required_text(
-                        row.checksum,
-                        row.checksum_class,
-                        "hook migration checksum",
-                    )?,
+                    stored_version(row.version, row.version_class, "integer")?,
+                    {
+                        if row.checksum_class.as_deref() != Some("blob") {
+                            return Err(corrupt("hook migration checksum"));
+                        }
+                        if row.success_class.as_deref() != Some("integer")
+                            || row.success.as_deref() != Some("1")
+                        {
+                            return Err(corrupt("hook migration success"));
+                        }
+                        row.checksum
+                            .ok_or_else(|| corrupt("hook migration checksum"))?
+                    },
                 ))
             })
             .collect::<Result<Vec<_>, StoreError>>()?;
         let replicated = SchemaMembership(scope).names().await?;
         for row in &applied {
-            let version = row.0.parse::<i64>().map_err(|_| StoreError::Corrupt {
-                field: "hook migration version".into(),
-            })?;
+            let version = row.0;
             let migration = migrations
                 .iter()
                 .find(|migration| {
                     migration.version == version && migration.migration_type.is_up_migration()
                 })
                 .ok_or_else(|| invalid_schema("applied hook migration missing from consumer"))?;
-            if checksum(migration)? != row.1 {
+            if migration.checksum.as_ref() != row.1 {
                 return Err(invalid_schema("hook migration checksum changed"));
             }
         }
         let mut previous = None;
-        let highest = applied
-            .iter()
-            .filter_map(|row| row.0.parse::<i64>().ok())
-            .max();
+        let highest = applied.iter().map(|row| row.0).max();
         for migration in migrations
             .iter()
             .filter(|migration| migration.migration_type.is_up_migration())
@@ -76,10 +77,7 @@ where
                 ));
             }
             previous = Some(migration.version);
-            if applied
-                .iter()
-                .any(|row| row.0 == migration.version.to_string())
-            {
+            if applied.iter().any(|row| row.0 == migration.version) {
                 continue;
             }
             if highest.is_some_and(|version| migration.version <= version) {
@@ -170,7 +168,9 @@ where
             checked_queries::write_hook_migration(
                 scope,
                 migration.version.to_string(),
-                checksum(migration)?,
+                migration.description.to_string(),
+                migration.checksum.to_vec(),
+                "-1".into(),
             )
             .await
             .map_err(crate::sql_transport::sql_error)?;
@@ -179,7 +179,96 @@ where
     }
 }
 
-fn checksum(migration: &sqlx_core::migrate::Migration) -> Result<String, ReceiverError> {
-    serde_json::to_string(migration.checksum.as_ref())
-        .map_err(|_| invalid_schema("hook migration checksum encoding"))
+fn corrupt(field: &str) -> StoreError {
+    StoreError::Corrupt {
+        field: field.into(),
+    }
+}
+
+fn stored_version(
+    value: Option<String>,
+    class: Option<String>,
+    expected: &str,
+) -> Result<i64, StoreError> {
+    if class.as_deref() != Some(expected) {
+        return Err(corrupt("hook migration version"));
+    }
+    value
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| corrupt("hook migration version"))
+}
+
+async fn adopt_legacy_hook_migrations<S>(
+    scope: &mut S,
+    migrations: &[sqlx_core::migrate::Migration],
+) -> Result<(), ReceiverError>
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'value> String:
+        Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
+    for<'value> Vec<u8>:
+        Type<S::Database> + Encode<'value, S::Database> + Decode<'value, S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+{
+    if !checked_queries::schema_object_exists(scope, "_fleet_sync_legacy_hook_migrations".into())
+        .await
+        .map_err(crate::sql_transport::sql_error)?
+    {
+        return Ok(());
+    }
+    let legacy = checked_queries::read_legacy_hook_migrations(scope)
+        .await
+        .map_err(crate::sql_transport::sql_error)?;
+    if !checked_queries::read_hook_migrations(scope)
+        .await
+        .map_err(crate::sql_transport::sql_error)?
+        .is_empty()
+    {
+        return Err(invalid_schema(
+            "both legacy and standard hook migration histories exist",
+        ));
+    }
+    let mut adopted = Vec::new();
+    for row in legacy {
+        let version = stored_version(row.version, row.version_class, "text")?;
+        let encoded = crate::schema_reads::required_text(
+            row.checksum,
+            row.checksum_class,
+            "hook migration checksum",
+        )?;
+        let checksum: Vec<u8> =
+            serde_json::from_str(&encoded).map_err(|_| corrupt("hook migration checksum"))?;
+        let migration = migrations
+            .iter()
+            .find(|migration| {
+                migration.version == version && migration.migration_type.is_up_migration()
+            })
+            .ok_or_else(|| invalid_schema("applied hook migration missing from consumer"))?;
+        if migration.checksum.as_ref() != checksum {
+            return Err(invalid_schema("hook migration checksum changed"));
+        }
+        if adopted
+            .iter()
+            .any(|migration: &&sqlx_core::migrate::Migration| migration.version == version)
+        {
+            return Err(corrupt("hook migration version").into());
+        }
+        adopted.push(migration);
+    }
+    for migration in adopted {
+        checked_queries::write_hook_migration(
+            scope,
+            migration.version.to_string(),
+            migration.description.to_string(),
+            migration.checksum.to_vec(),
+            "-1".into(),
+        )
+        .await
+        .map_err(crate::sql_transport::sql_error)?;
+    }
+    checked_queries::drop_legacy_hook_migrations(scope)
+        .await
+        .map_err(crate::sql_transport::sql_error)?;
+    Ok(())
 }

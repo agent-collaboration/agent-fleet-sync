@@ -16,41 +16,33 @@ enum MalformedId {
 struct IdRow {
     id: String,
 }
+#[derive(sqlx::FromRow)]
+struct ChecksumRow {
+    checksum: Vec<u8>,
+}
 
 pub(crate) async fn run(store: &DurableObjectStore<TestHost>) -> Result<(), StoreError> {
-    for schema in [false, true] {
-        let (read, write) = if schema {
-            (
-                "SELECT id FROM _fleet_sync_schema",
-                "UPDATE _fleet_sync_schema SET id=?",
-            )
-        } else {
-            (
-                "SELECT id FROM _fleet_sync_steps WHERE operation_id='0197abc0-def0-7123-8123-abcdef012345' AND position=0",
-                "UPDATE _fleet_sync_steps SET id=? WHERE operation_id='0197abc0-def0-7123-8123-abcdef012345' AND position=0",
-            )
-        };
-        let original = store
+    let original = store
             .transaction(move |scope| {
                 Box::pin(async move {
-                    Ok(query_as::<Do, IdRow>(read)
+                    Ok(query_as::<Do, IdRow>("SELECT id FROM _fleet_sync_steps WHERE operation_id='0197abc0-def0-7123-8123-abcdef012345' AND position=0")
                         .fetch_one(scope.executor())
                         .await?
                         .id)
                 })
             })
             .await?;
-        for invalid in [
-            MalformedId::Text(ORIGINAL.replace("7123", "4123")),
-            MalformedId::Text(ORIGINAL.to_uppercase()),
-            MalformedId::Text(ORIGINAL.replace('-', "")),
-            MalformedId::Text("not-an-id".into()),
-            MalformedId::Blob(ORIGINAL.as_bytes().to_vec()),
-        ] {
-            store
+    for invalid in [
+        MalformedId::Text(ORIGINAL.replace("7123", "4123")),
+        MalformedId::Text(ORIGINAL.to_uppercase()),
+        MalformedId::Text(ORIGINAL.replace('-', "")),
+        MalformedId::Text("not-an-id".into()),
+        MalformedId::Blob(ORIGINAL.as_bytes().to_vec()),
+    ] {
+        store
                 .transaction(move |scope| {
                     Box::pin(async move {
-                        let query = query::<Do>(write);
+                        let query = query::<Do>("UPDATE _fleet_sync_steps SET id=? WHERE operation_id='0197abc0-def0-7123-8123-abcdef012345' AND position=0");
                         match invalid {
                             MalformedId::Text(value) => {
                                 query.bind(value).execute(scope.executor()).await?;
@@ -63,29 +55,25 @@ pub(crate) async fn run(store: &DurableObjectStore<TestHost>) -> Result<(), Stor
                     })
                 })
                 .await?;
-            let result = if schema {
-                store.migrate().await
-            } else {
-                store
-                    .transaction(|scope| {
-                        Box::pin(async move {
-                            let id = OperationId::try_from(ORIGINAL.to_owned())
-                                .map_err(StoreError::backend)?;
-                            scope.step(id, 0).await?;
-                            Ok(())
-                        })
-                    })
-                    .await
-            };
-            check(
-                matches!(result,Err(StoreError::Corrupt{field,..}) if field==if schema {"_fleet_sync_schema.id"}else{"step.id"}),
-                "DO malformed row id did not produce its diagnostic refusal",
-            )?;
-            let restored = original.clone();
-            store
+        let result = store
+            .transaction(|scope| {
+                Box::pin(async move {
+                    let id =
+                        OperationId::try_from(ORIGINAL.to_owned()).map_err(StoreError::backend)?;
+                    scope.step(id, 0).await?;
+                    Ok(())
+                })
+            })
+            .await;
+        check(
+            matches!(result,Err(StoreError::Corrupt{field,..}) if field=="step.id"),
+            "DO malformed row id did not produce its diagnostic refusal",
+        )?;
+        let restored = original.clone();
+        store
                 .transaction(move |scope| {
                     Box::pin(async move {
-                        query::<Do>(write)
+                        query::<Do>("UPDATE _fleet_sync_steps SET id=? WHERE operation_id='0197abc0-def0-7123-8123-abcdef012345' AND position=0")
                             .bind(restored)
                             .execute(scope.executor())
                             .await?;
@@ -93,22 +81,59 @@ pub(crate) async fn run(store: &DurableObjectStore<TestHost>) -> Result<(), Stor
                     })
                 })
                 .await?;
-            store.migrate().await?;
-            if !schema {
-                store
-                    .transaction(|scope| {
-                        Box::pin(async move {
-                            let id = OperationId::try_from(ORIGINAL.to_owned())
-                                .map_err(StoreError::backend)?;
-                            check(
-                                scope.step(id, 0).await?.is_some(),
-                                "valid DO step disappeared after refusal",
-                            )
-                        })
+        store.migrate().await?;
+        {
+            store
+                .transaction(|scope| {
+                    Box::pin(async move {
+                        let id = OperationId::try_from(ORIGINAL.to_owned())
+                            .map_err(StoreError::backend)?;
+                        check(
+                            scope.step(id, 0).await?.is_some(),
+                            "valid DO step disappeared after refusal",
+                        )
                     })
-                    .await?;
-            }
+                })
+                .await?;
         }
     }
+    let checksum = store
+        .transaction(|scope| {
+            Box::pin(async move {
+                Ok(query_as::<Do, ChecksumRow>(
+                    "SELECT checksum FROM _fleet_sync_migrations WHERE version=1",
+                )
+                .fetch_one(scope.executor())
+                .await?
+                .checksum)
+            })
+        })
+        .await?;
+    store
+        .transaction(|scope| {
+            Box::pin(async move {
+                query::<Do>("UPDATE _fleet_sync_migrations SET checksum=x'00' WHERE version=1")
+                    .execute(scope.executor())
+                    .await?;
+                Ok(())
+            })
+        })
+        .await?;
+    check(
+        matches!(store.migrate().await,Err(StoreError::Corrupt{field,..}) if field=="migration checksum"),
+        "edited DO migration checksum was accepted",
+    )?;
+    store
+        .transaction(move |scope| {
+            Box::pin(async move {
+                query::<Do>("UPDATE _fleet_sync_migrations SET checksum=? WHERE version=1")
+                    .bind(checksum)
+                    .execute(scope.executor())
+                    .await?;
+                Ok(())
+            })
+        })
+        .await?;
+    store.migrate().await?;
     Ok(())
 }

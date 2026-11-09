@@ -10,19 +10,10 @@ use crate::{
     storage::TransactionScope,
 };
 use runtime_primitives::{AlarmOwner, WakeScheduler};
-use sqlx_core::{executor::Executor, query::query, query_as::query_as};
+use sqlx_core::{query::query, query_as::query_as};
 use sqlx_durable_object::{Do, DoConnection, DoTransaction};
 use std::sync::Arc;
 use uuid::Uuid;
-
-#[derive(sqlx::FromRow)]
-struct JournalTable {
-    name: String,
-}
-#[derive(sqlx::FromRow)]
-struct JournalVersion {
-    version: i64,
-}
 
 pub struct DurableObjectStore<H: Host> {
     connection: Arc<DoConnection>,
@@ -39,34 +30,26 @@ impl<H: Host> DurableObjectStore<H> {
         }
     }
 
-    /// The DO driver cannot implement sqlx::migrate!, so bootstrap is an owned
-    /// storage transaction with the same migration SQL and an explicit version.
-    /// Refuse unregistered pre-existing journal tables instead of adopting them.
+    /// Apply the journal corpus and its SQLx receipts atomically in storage's callback.
     pub async fn migrate(&self) -> Result<(), StoreError> {
-        self.connection.transaction(move |transaction| async move {
-            let tables: Vec<JournalTable> = query_as::<Do, _>(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND name GLOB '_fleet_sync_*' ORDER BY name")
-                .fetch_all(&transaction).await?;
-            if tables.is_empty() {
-                (&transaction).execute(include_str!("../migrations/0001_durable_steps.sql")).await?;
-                (&transaction).execute(include_str!("../migrations/0002_journal_metadata.sql")).await?;
-            } else if tables.iter().any(|row| row.name == "_fleet_sync_schema") {
-                let versions: Vec<JournalVersion> = query_as::<Do, _>("SELECT version FROM _fleet_sync_schema")
-                    .fetch_all(&transaction).await?;
-                if versions.len() != 1 || versions.first().is_none_or(|row| !matches!(row.version,1|2)) {
-                    return Err(StoreError::Corrupt { field: "schema_version".into(), message: "unsupported journal schema".into() });
-                }
-                if versions.first().is_some_and(|row|row.version==1) {
-                    (&transaction).execute(include_str!("../migrations/0002_journal_metadata.sql")).await?;
-                }
-            } else {
-                return Err(StoreError::Corrupt { field: "schema_version".into(), message: "unregistered existing journal tables".into() });
-            }
-            let metadata = query_as::<Do,crate::journal_schema::JournalMetadataRow>("SELECT version,CASE WHEN typeof(id)='text' THEN id END AS id FROM _fleet_sync_schema")
-                .fetch_all(&transaction).await?;
-            crate::journal_schema::validate_schema(&metadata)?;
-            Ok(())
-        }).await
+        self.connection
+            .transaction(move |transaction| async move {
+                crate::journal_migrations::run_in_scope(&mut JournalMigrationScope(&transaction))
+                    .await
+            })
+            .await
+    }
+}
+
+struct JournalMigrationScope<'scope>(&'scope DoTransaction);
+impl TransactionScope for JournalMigrationScope<'_> {
+    type Database = Do;
+    type Executor<'query>
+        = &'query DoTransaction
+    where
+        Self: 'query;
+    fn executor(&mut self) -> Self::Executor<'_> {
+        self.0
     }
 }
 

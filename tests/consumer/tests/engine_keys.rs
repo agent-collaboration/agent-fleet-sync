@@ -17,11 +17,7 @@ async fn audited_engine_keys_declare_not_null_and_reject_null_without_rowid_assi
         (
             "journal",
             sqlx::migrate!("../../crates/durable-steps/migrations"),
-            &[
-                "_fleet_sync_operations",
-                "_fleet_sync_steps",
-                "_fleet_sync_schema",
-            ],
+            &["_fleet_sync_operations", "_fleet_sync_steps"],
         ),
         (
             "lease",
@@ -50,7 +46,6 @@ async fn audited_engine_keys_declare_not_null_and_reject_null_without_rowid_assi
                 "_fleet_sync_seed_pages",
                 "_fleet_sync_seed_attempts",
                 "_fleet_sync_copy_tables",
-                "_fleet_sync_hook_migrations",
                 "_fleet_sync_install_pages",
             ],
         ),

@@ -33,8 +33,8 @@ fn key(value: &str) -> RequestKey {
 
 #[cfg(feature = "turso")]
 #[tokio::test]
-async fn engine_schema_records_its_explicit_integer_version()
--> Result<(), Box<dyn std::error::Error>> {
+async fn engine_schema_records_its_sqlx_migration_prefix() -> Result<(), Box<dyn std::error::Error>>
+{
     use sqlx_turso::{
         TursoConnectOptions,
         sqlx::{ConnectOptions, Connection},
@@ -49,14 +49,16 @@ async fn engine_schema_records_its_explicit_integer_version()
     durable_steps::turso_store::migrate_journal(&mut transaction).await?;
     transaction.commit().await?;
     use sqlx_core::row::Row;
-    let rows = sqlx::query::<sqlx_turso::Turso>("SELECT version FROM _fleet_sync_schema")
-        .fetch_all(&mut connection)
-        .await?;
+    let rows = sqlx::query::<sqlx_turso::Turso>(
+        "SELECT version FROM _fleet_sync_migrations ORDER BY version",
+    )
+    .fetch_all(&mut connection)
+    .await?;
     let versions = rows
         .iter()
         .map(|row| row.try_get::<i64, _>("version"))
         .collect::<Result<Vec<_>, _>>()?;
-    assert_eq!(versions, vec![2]);
+    assert_eq!(versions, vec![1, 2, 3]);
     Ok(())
 }
 

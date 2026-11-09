@@ -1,5 +1,5 @@
 use super::{
-    journal_metadata::{Result, connect, history, legacy_file, metadata, operations, receipts},
+    journal_metadata::{Result, connect, history, legacy_file, operations, receipts},
     legacy_rows::{NATURAL_CONSTRAINTS, unique_failure},
 };
 use crate::support::TestHost;
@@ -19,9 +19,7 @@ async fn every_natural_unique_refuses_duplicates_without_changing_the_upgraded_r
         history(&mut connection).await?,
         receipts(&mut connection).await?,
     );
-    let schema = metadata(&mut connection, "_fleet_sync_schema", "id").await?;
-    let mut cases = NATURAL_CONSTRAINTS.to_vec();
-    cases.push(("INSERT INTO _fleet_sync_migrations(id,version,description,installed_on,success,checksum,execution_time,created_at,updated_at) SELECT '0197abc0-def0-7123-8123-abcdef012349',version,description,installed_on,success,checksum,execution_time,created_at,updated_at FROM _fleet_sync_migrations WHERE version=1","_fleet_sync_migrations.version"));
+    let cases = NATURAL_CONSTRAINTS.to_vec();
     for (sql, columns) in cases {
         store
             .transaction(move |scope| {
@@ -48,10 +46,6 @@ async fn every_natural_unique_refuses_duplicates_without_changing_the_upgraded_r
                 receipts(&mut connection).await?
             ),
             before
-        );
-        assert_eq!(
-            metadata(&mut connection, "_fleet_sync_schema", "id").await?,
-            schema
         );
     }
     Ok(())

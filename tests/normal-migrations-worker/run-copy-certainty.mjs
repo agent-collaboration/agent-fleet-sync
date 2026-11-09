@@ -37,6 +37,9 @@ async function counts(name) {
 }
 try {
   await runtime.ready;
+  const hooks = await call(randomUUID(), JSON.stringify({ action: "hookMigrations" }));
+  assert.deepEqual(hooks, { effects: "1", receipts: "1", versionClass: "integer", checksumClass: "blob", editedRefused: true });
+  observations.push({ hookMigrations: hooks });
   for (const fault of ["rollbackAfterApply", "lostRollbackReply", "lostCommitReply", "unknownRollbackCode"]) {
     const name = randomUUID();
     await call(name, JSON.stringify({ action: "initialize", create: fixture.create, journal: true }));

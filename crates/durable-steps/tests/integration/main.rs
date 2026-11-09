@@ -4,6 +4,8 @@ mod call_reconciliation;
 #[cfg(feature = "turso")]
 mod journal_constraints;
 #[cfg(feature = "turso")]
+mod journal_corpus;
+#[cfg(feature = "turso")]
 mod journal_metadata;
 #[cfg(feature = "turso")]
 mod journal_parser_stack;

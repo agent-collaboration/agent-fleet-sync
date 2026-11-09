@@ -1,0 +1,1 @@
+DROP TABLE _fleet_sync_legacy_hook_migrations

@@ -25,7 +25,7 @@ fn declared_indexes() -> Vec<IndexDefinition> {
     // SQLx owns the delivery corpus receipt table; the journal owns its own receipts.
     let keys: &[(&str, &[&[&str]])] = &[
         ("_fleet_sync_delivery_migrations", &[&["version"]]),
-        ("_fleet_sync_migrations", &[&["id"], &["version"]]),
+        ("_fleet_sync_migrations", &[&["version"]]),
         (
             "_fleet_sync_operations",
             &[&["operation_id"], &["kind", "request_key"]],
@@ -38,7 +38,6 @@ fn declared_indexes() -> Vec<IndexDefinition> {
                 &["operation_id", "step_name"],
             ],
         ),
-        ("_fleet_sync_schema", &[&["id"], &["version"]]),
         (
             "_fleet_sync_mail_items",
             &[&["item_id"], &["stream", "seq"]],

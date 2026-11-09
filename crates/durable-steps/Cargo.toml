@@ -32,6 +32,9 @@ worker = { workspace = true, optional = true }
 futures-executor = "0.3.34"
 tempfile = "3.27.0"
 
+[build-dependencies]
+fleet-sync-query-gen = { path = "../fleet-sync-query-gen" }
+
 [lints]
 workspace = true
 

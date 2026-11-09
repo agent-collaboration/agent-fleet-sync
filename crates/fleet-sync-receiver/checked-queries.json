@@ -390,7 +390,17 @@
           "nullable": false
         },
         {
+          "name": "description",
+          "kind": "text",
+          "nullable": false
+        },
+        {
           "name": "checksum",
+          "kind": "blob",
+          "nullable": false
+        },
+        {
+          "name": "execution_time",
           "kind": "text",
           "nullable": false
         }
@@ -578,6 +588,20 @@
           "nullable": false
         }
       ]
+    },
+    {
+      "name": "read_legacy_hook_migrations",
+      "sql": "sql/read_legacy_hook_migrations.sql",
+      "result": "many",
+      "row": "LegacyHookMigrationRow",
+      "parameters": []
+    },
+    {
+      "name": "drop_legacy_hook_migrations",
+      "sql": "sql/drop_legacy_hook_migrations.sql",
+      "result": "execute",
+      "row": null,
+      "parameters": []
     }
   ]
 }

@@ -40,6 +40,13 @@ fn declared_tables() -> Result<BTreeMap<String, Cmd>, StoreError> {
             .next_cmd()
             .map_err(|_| corrupt("receiver migration corpus"))?
         {
+            if let Cmd::Stmt(Stmt::AlterTable(alter)) = &command
+                && alter.name.name.as_str() == "_fleet_sync_hook_migrations"
+                && matches!(&alter.body, turso_parser::ast::AlterTableBody::RenameTo(next) if next.as_str() == "_fleet_sync_legacy_hook_migrations")
+            {
+                tables.remove("_fleet_sync_hook_migrations");
+                continue;
+            }
             let Cmd::Stmt(Stmt::CreateTable { tbl_name, .. }) = &command else {
                 return Err(corrupt(
                     "receiver corpus must declare its current table definitions",

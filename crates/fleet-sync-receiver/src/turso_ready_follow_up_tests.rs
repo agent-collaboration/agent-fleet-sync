@@ -73,7 +73,9 @@ async fn ready_admission_rolls_back_then_delivers_once_across_reopen_and_replay(
                     "\n",
                     include_str!("../migrations/0002_replicated_schema.sql"),
                     "\n",
-                    include_str!("../migrations/0003_snapshot_install.sql")
+                    include_str!("../migrations/0003_snapshot_install.sql"),
+                    "\n",
+                    include_str!("../migrations/0004_hook_sqlx_receipts.sql")
                 ))
                 .execute(scope.executor())
                 .await?;

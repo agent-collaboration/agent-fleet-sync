@@ -29,7 +29,7 @@ pub(super) async fn metadata(
     store: &DurableObjectStore<TestHost>,
 ) -> Result<Vec<MetadataRow>, StoreError> {
     store.transaction(|scope|Box::pin(async move {
-        Ok(query_as::<Do,MetadataRow>("SELECT operation_id AS id,created_at,updated_at FROM _fleet_sync_operations UNION ALL SELECT id,created_at,updated_at FROM _fleet_sync_steps UNION ALL SELECT id,created_at,updated_at FROM _fleet_sync_schema ORDER BY id")
+        Ok(query_as::<Do,MetadataRow>("SELECT operation_id AS id,created_at,updated_at FROM _fleet_sync_operations UNION ALL SELECT id,created_at,updated_at FROM _fleet_sync_steps ORDER BY id")
             .fetch_all(scope.executor()).await?)
     })).await
 }
@@ -114,6 +114,11 @@ pub(crate) async fn run(
                     "../../../../../crates/durable-steps/tests/integration/fixtures/v1_pending.sql"
                 ))
                 .await?;
+            (&transaction).execute(include_str!("../../../../../crates/durable-steps/query-schema/99990000_journal_receipts.sql")).await?;
+            let corpus = sqlx::migrate!("../../../crates/durable-steps/migrations");
+            let migration = corpus.iter().next().ok_or_else(|| StoreError::Aborted { reason: "missing v1 fixture migration".into() })?;
+            query::<Do>("INSERT INTO _fleet_sync_migrations(version,description,success,checksum,execution_time) VALUES(1,?,TRUE,?,-1)")
+                .bind(migration.description.as_ref()).bind(migration.checksum.as_ref()).execute(&transaction).await?;
             Ok::<(), StoreError>(())
         })
         .await?;
@@ -137,14 +142,14 @@ pub(crate) async fn run(
     )?;
     let saved = metadata(&store).await?;
     check(
-        saved.len() == 6
+        saved.len() == 5
             && saved.iter().all(|row| {
                 runtime_primitives::canonical_uuid_v7(&row.id)
                     && row.created_at != 0
                     && row.updated_at != 0
                     && row.updated_at >= row.created_at
             }),
-        "all three DO journal tables need valid keys and timestamps",
+        "both DO journal data tables need valid keys and timestamps",
     )?;
     let replayed = store
         .transaction(|scope| {
@@ -168,7 +173,7 @@ pub(crate) async fn run(
     )?;
     store.transaction(|scope|Box::pin(async move {
         let tables=query_as::<Do,CountRow>("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name GLOB '_fleet_sync_*'").fetch_one(scope.executor()).await?;
-        check(tables.count==3,"DO must not invent native migration receipts")
+        check(tables.count==3,"DO must keep the standard migration receipts")
     })).await?;
     store.migrate().await?;
     check(

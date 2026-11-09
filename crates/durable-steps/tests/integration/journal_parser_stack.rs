@@ -36,15 +36,24 @@ fn migration_child_with_retained_caller_frames() -> Result {
             let mut connection = runtime.block_on(legacy_file(&path))?;
             let before = runtime.block_on(history(&mut connection))?;
             if phase == "receipts" {
-                // Isolate the native bootstrap: the journal SQL has completed,
-                // while the receipt table still has its original SQLx columns.
+                // Freeze the released extended receipts before exercising their
+                // adoption beneath the caller's retained frames.
                 let mut migrator = Migrator::with_migrations(
-                    sqlx::migrate!("./migrations").iter().cloned().collect(),
+                    sqlx::migrate!("./migrations")
+                        .iter()
+                        .filter(|migration| migration.version <= 2)
+                        .cloned()
+                        .collect(),
                 );
                 migrator.dangerous_set_table_name("_fleet_sync_migrations");
                 runtime.block_on(async {
                     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
                     migrator.run_direct(None, &mut *transaction, false).await?;
+                    sqlx_core::raw_sql::raw_sql(include_str!(
+                        "../../native-migrations/0001_receipt_metadata.sql"
+                    ))
+                    .execute(&mut *transaction)
+                    .await?;
                     transaction.commit().await
                 })?;
             } else {

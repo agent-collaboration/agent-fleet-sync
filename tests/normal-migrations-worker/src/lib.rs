@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 mod copy_certainty;
+mod hook_migration_tests;
 mod seed_integrity;
 use durable_steps::{CallId, storage::TransactionScope};
 use fleet_sync_protocol::{
@@ -57,6 +58,7 @@ impl fleet_sync_receiver::FollowUpHandler for ProbeHook {
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "camelCase")]
 enum ProbeRequest {
+    HookMigrations,
     Seed {
         input: seed_integrity::SeedInput,
     },
@@ -115,6 +117,7 @@ impl DurableObject for ProbeObject {
         let input: ProbeRequest = serde_json::from_str(&request.text().await?).map_err(error)?;
         let conn = DoConnection::new(self.state.storage());
         let reply: serde_json::Value = match input {
+            ProbeRequest::HookMigrations => hook_migration_tests::run(&conn).await.map_err(error)?,
             ProbeRequest::Seed {input} => serde_json::to_value(seed_integrity::run(&self.state,input).await?).map_err(error)?,
             ProbeRequest::CertaintyApply { piece, sender, fault } => serde_json::to_value(
                 copy_certainty::apply(&self.state, piece, sender, fault).await?
@@ -126,6 +129,7 @@ impl DurableObject for ProbeObject {
                     include_str!("../../../crates/fleet-sync-receiver/migrations/0001_copy_rules.sql"),
                     include_str!("../../../crates/fleet-sync-receiver/migrations/0002_replicated_schema.sql"),
                     include_str!("../../../crates/fleet-sync-receiver/migrations/0003_snapshot_install.sql"),
+                    include_str!("../../../crates/fleet-sync-receiver/migrations/0004_hook_sqlx_receipts.sql"),
                 ] { (&tx).execute(migration).await?; }
                 let result = fleet_sync_receiver::create_copy(&mut WorkerScope(&tx), &create).await.map_err(storage_error)?;
                 Ok::<_, sqlx::Error>(serde_json::json!({"kind":"initialized", "result":format!("{result:?}")}))
@@ -155,6 +159,7 @@ impl DurableObject for ProbeObject {
                     include_str!("../../../crates/fleet-sync-receiver/migrations/0001_copy_rules.sql"),
                     include_str!("../../../crates/fleet-sync-receiver/migrations/0002_replicated_schema.sql"),
                     include_str!("../../../crates/fleet-sync-receiver/migrations/0003_snapshot_install.sql"),
+                    include_str!("../../../crates/fleet-sync-receiver/migrations/0004_hook_sqlx_receipts.sql"),
                 ] { (&tx).execute(migration).await?; }
                 SnapshotInstallRules(&mut WorkerScope(&tx)).prepare(&install,&source).await.map_err(storage_error)?;
                 Ok::<_,sqlx::Error>(serde_json::json!({"kind":"prepared"}))

@@ -733,8 +733,10 @@ where
 pub(crate) struct StoredHookMigrationRow {
     pub version: Option<String>,
     pub version_class: Option<String>,
-    pub checksum: Option<String>,
+    pub checksum: Option<Vec<u8>>,
     pub checksum_class: Option<String>,
+    pub success: Option<String>,
+    pub success_class: Option<String>,
 }
 pub(crate) fn read_hook_migrations<S>(
     scope: &mut S,
@@ -744,6 +746,7 @@ where
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
     for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+    for<'value> Option<Vec<u8>>: Type<S::Database> + Decode<'value, S::Database>,
 {
     async move {
         let statement = query::<S::Database>(include_str!(concat!(
@@ -758,6 +761,8 @@ where
                     version_class: row.try_get("version_class")?,
                     checksum: row.try_get("checksum")?,
                     checksum_class: row.try_get("checksum_class")?,
+                    success: row.try_get("success")?,
+                    success_class: row.try_get("success_class")?,
                 })
             })
             .collect()
@@ -766,12 +771,15 @@ where
 pub(crate) fn write_hook_migration<S>(
     scope: &mut S,
     version: String,
-    checksum: String,
+    description: String,
+    checksum: Vec<u8>,
+    execution_time: String,
 ) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
 where
     S: TransactionScope,
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
+    for<'value> Vec<u8>: Type<S::Database> + Encode<'value, S::Database>,
 {
     async move {
         let statement = query::<S::Database>(include_str!(concat!(
@@ -779,7 +787,9 @@ where
             "/sql/write_hook_migration.sql"
         )))
         .bind(version)
-        .bind(checksum);
+        .bind(description)
+        .bind(checksum)
+        .bind(execution_time);
         statement.execute(scope.executor()).await?;
         Ok(())
     }
@@ -1285,5 +1295,56 @@ where
                 })
             })
             .collect()
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct LegacyHookMigrationRow {
+    pub version: Option<String>,
+    pub version_class: Option<String>,
+    pub checksum: Option<String>,
+    pub checksum_class: Option<String>,
+}
+pub(crate) fn read_legacy_hook_migrations<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<Vec<LegacyHookMigrationRow>, sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+    for<'row> &'row str: ColumnIndex<<S::Database as Database>::Row>,
+    for<'value> Option<String>: Type<S::Database> + Decode<'value, S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/read_legacy_hook_migrations.sql"
+        )));
+        let rows = statement.fetch_all(scope.executor()).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(LegacyHookMigrationRow {
+                    version: row.try_get("version")?,
+                    version_class: row.try_get("version_class")?,
+                    checksum: row.try_get("checksum")?,
+                    checksum_class: row.try_get("checksum_class")?,
+                })
+            })
+            .collect()
+    }
+}
+pub(crate) fn drop_legacy_hook_migrations<S>(
+    scope: &mut S,
+) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
+where
+    S: TransactionScope,
+    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
+{
+    async move {
+        let statement = query::<S::Database>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sql/drop_legacy_hook_migrations.sql"
+        )));
+        statement.execute(scope.executor()).await?;
+        Ok(())
     }
 }

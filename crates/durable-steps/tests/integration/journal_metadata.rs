@@ -170,12 +170,10 @@ async fn native_upgrade_preserves_saved_history_and_replays_it_once() -> Result 
         assert_eq!(operations(&mut connection).await?, operation_before);
         let receipt_after = receipts(&mut connection).await?;
         assert_eq!(&receipt_after[..1], receipt_before.as_slice());
-        assert_eq!(receipt_after.len(), 2);
+        assert_eq!(receipt_after.len(), 3);
         for (table, key) in [
             ("_fleet_sync_operations", "operation_id"),
             ("_fleet_sync_steps", "id"),
-            ("_fleet_sync_schema", "id"),
-            ("_fleet_sync_migrations", "id"),
         ] {
             let rows = metadata(&mut connection, table, key).await?;
             assert!(!rows.is_empty(), "{home}: {table}");
@@ -209,8 +207,6 @@ async fn native_upgrade_preserves_saved_history_and_replays_it_once() -> Result 
         for (table, key) in [
             ("_fleet_sync_operations", "operation_id"),
             ("_fleet_sync_steps", "id"),
-            ("_fleet_sync_schema", "id"),
-            ("_fleet_sync_migrations", "id"),
         ] {
             let rows = metadata(&mut connection, table, key).await?;
             assert!(
@@ -220,14 +216,6 @@ async fn native_upgrade_preserves_saved_history_and_replays_it_once() -> Result 
             );
             stable.push(rows);
         }
-        let receipt_times =
-            query::<Turso>("SELECT created_at FROM _fleet_sync_migrations WHERE version=1")
-                .fetch_one(&mut connection)
-                .await?;
-        assert_eq!(
-            receipt_times.try_get::<i64, _>("created_at")?,
-            946_782_245_000
-        );
         let step_times=query::<Turso>("SELECT operation_id,position,created_at FROM _fleet_sync_steps ORDER BY operation_id,position").fetch_all(&mut connection).await?;
         assert_eq!(
             step_times
@@ -242,8 +230,6 @@ async fn native_upgrade_preserves_saved_history_and_replays_it_once() -> Result 
         for ((table, key), before) in [
             ("_fleet_sync_operations", "operation_id"),
             ("_fleet_sync_steps", "id"),
-            ("_fleet_sync_schema", "id"),
-            ("_fleet_sync_migrations", "id"),
         ]
         .into_iter()
         .zip(stable)
@@ -485,44 +471,6 @@ async fn reopened_step_rows_refuse_noncanonical_and_nontext_surrogate_ids() -> R
         assert!(
             matches!(result,Err(StoreError::Corrupt{field,message}) if field=="step.id" && message.contains(OPERATION) && message.contains("position 0"))
         );
-    }
-    Ok(())
-}
-
-#[tokio::test]
-async fn bootstrap_refuses_invalid_schema_and_native_receipt_row_ids() -> Result {
-    for table in ["_fleet_sync_schema", "_fleet_sync_migrations"] {
-        for (offered, blob) in [
-            (OPERATION.replace("7123", "4123"), false),
-            (OPERATION.to_uppercase(), false),
-            (OPERATION.replace('-', ""), false),
-            ("not-an-id".to_owned(), false),
-            (OPERATION.to_owned(), true),
-        ] {
-            let directory = tempfile::tempdir()?;
-            let path = directory.path().join("bad-metadata.sqlite");
-            let host = TestHost::new();
-            drop(TursoStore::open_and_migrate(&path, host.clone()).await?);
-            let mut connection = connect(&path).await?;
-            let sql = match table {
-                "_fleet_sync_schema" => "UPDATE _fleet_sync_schema SET id=?",
-                _ => "UPDATE _fleet_sync_migrations SET id=? WHERE version=1",
-            };
-            let update = query::<Turso>(sql);
-            if blob {
-                update
-                    .bind(offered.as_bytes())
-                    .execute(&mut connection)
-                    .await?;
-            } else {
-                update.bind(offered).execute(&mut connection).await?;
-            }
-            connection.close().await?;
-            let result = TursoStore::open_and_migrate(&path, host).await;
-            assert!(
-                matches!(result,Err(StoreError::Corrupt{field,message}) if field==format!("{table}.id") && message.contains("version"))
-            );
-        }
     }
     Ok(())
 }
