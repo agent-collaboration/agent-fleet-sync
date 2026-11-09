@@ -79,44 +79,58 @@ async fn receiver_rows(connection: &mut TursoConnection) -> TestResult<String> {
     Ok(rows.join("\n"))
 }
 
-fn fence_request(holder: PeerId) -> TestResult<FenceRequest> {
+fn fence_request(
+    transfer: u128,
+    new_epoch: u64,
+    acked: ReplicationPosition,
+    holder: u128,
+) -> TestResult<FenceRequest> {
     Ok(FenceRequest {
         database: fixture::database()?,
-        transfer_id: TransferId::new(Uuid::from_u128(0x019eef00000070008000000000000701))?,
-        new_epoch: Epoch::new(2)?,
+        transfer_id: TransferId::new(Uuid::from_u128(
+            0x019eef00000070008000000000000000 | transfer,
+        ))?,
+        new_epoch: Epoch::new(new_epoch)?,
         expect: FenceExpectation {
-            epoch: Epoch::new(1)?,
-            acked: fixture::position(0)?,
+            epoch: Epoch::new(new_epoch - 1)?,
+            acked,
         },
         target_schema: Some(SchemaSupport { max_version: 1 }),
-        holder,
+        holder: PeerId::new(Uuid::from_u128(0x019eef00000070008000000000000000 | holder))?,
     })
 }
 
-/// An authoritative Copy with its creation request and one fence receipt.
-async fn fenced_copy() -> TestResult<(TursoConnection, FenceRequest)> {
+/// An authoritative Copy with its creation request and two fence receipts:
+/// A ends epoch 1 and grants 2, then B ends 2 and grants 3.
+async fn fenced_copy() -> TestResult<(TursoConnection, FenceRequest, FenceRequest)> {
     let mut connection = fixture::connection().await?;
-    let request = fence_request(PeerId::new(Uuid::from_u128(
-        0x019eef00000070008000000000000702,
-    ))?)?;
+    let first = fence_request(0x701, 2, fixture::position(0)?, 0x702)?;
     let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
     assert!(matches!(
-        fence(&mut TursoScope(&mut transaction), &request).await?,
+        fence(&mut TursoScope(&mut transaction), &first).await?,
+        FenceResult::Fenced { .. }
+    ));
+    let status = fixture::ready_status(copy_status(&mut TursoScope(&mut transaction)).await?)?;
+    let second = fence_request(0x703, 3, status.acked, 0x704)?;
+    assert!(matches!(
+        fence(&mut TursoScope(&mut transaction), &second).await?,
         FenceResult::Fenced { .. }
     ));
     transaction.commit().await?;
-    Ok((connection, request))
+    Ok((connection, first, second))
 }
 
 #[tokio::test]
 async fn creation_and_fence_receipts_decode_and_a_damaged_one_is_refused() -> TestResult {
-    let (mut connection, request) = fenced_copy().await?;
+    let (mut connection, first, second) = fenced_copy().await?;
+    let first_row = serde_json::to_string(&first.transfer_id)?;
+    let second_row = serde_json::to_string(&second.transfer_id)?;
     let before = receiver_rows(&mut connection).await?;
     assert_eq!(
         inspect(&mut connection).await?,
         RetainedRecords {
             creation: 1,
-            fence_receipts: 1,
+            fence_receipts: 2,
             ..RetainedRecords::default()
         }
     );
@@ -126,37 +140,47 @@ async fn creation_and_fence_receipts_decode_and_a_damaged_one_is_refused() -> Te
         "inspection must not write"
     );
 
-    damage(
-        &mut connection,
-        r#"UPDATE _fleet_sync_fence_receipts SET result = '{"kind":"fenceNotAdvanced","currentEpoch":1}'"#,
-    )
-    .await?;
-    let refusal = refused(&mut connection, RetainedFamily::FenceReceipts).await?;
-    assert_eq!(refusal.row, serde_json::to_string(&request.transfer_id)?);
-
-    // Filed under another transfer: the receipt reader, keyed by the request's
-    // transfer, finds nothing. Filed under another epoch: the epoch reader does.
+    // Each damages row A only. Aliased: A holds B's request, which B's own
+    // address would accept, so only reading A at its own address refuses it.
+    // Result: A's result no longer a successful fence. Transfer: A filed under
+    // another transfer, so the refusal names it at that address. Epoch: A
+    // filed under another ended epoch.
     let other_transfer = serde_json::to_string(&TransferId::new(Uuid::from_u128(
-        0x019eef00000070008000000000000703,
+        0x019eef000000700080000000000007ff,
     ))?)?;
-    for (name, sql) in [
+    for (name, set, refused_row) in [
+        (
+            "aliased",
+            format!(
+                "request = (SELECT request FROM _fleet_sync_fence_receipts WHERE transfer = '{second_row}')"
+            ),
+            &first_row,
+        ),
+        (
+            "result",
+            r#"result = '{"kind":"fenceNotAdvanced","currentEpoch":1}'"#.to_owned(),
+            &first_row,
+        ),
         (
             "transfer",
-            format!("UPDATE _fleet_sync_fence_receipts SET transfer = '{other_transfer}'"),
+            format!("transfer = '{other_transfer}'"),
+            &other_transfer,
         ),
-        (
-            "epoch",
-            "UPDATE _fleet_sync_fence_receipts SET old_epoch = '7'".to_owned(),
-        ),
+        ("epoch", "old_epoch = '7'".to_owned(), &first_row),
     ] {
-        let (mut connection, _) = fenced_copy().await?;
-        damage(&mut connection, &sql).await?;
-        refused(&mut connection, RetainedFamily::FenceReceipts)
+        let (mut connection, ..) = fenced_copy().await?;
+        damage(
+            &mut connection,
+            &format!("UPDATE _fleet_sync_fence_receipts SET {set} WHERE transfer = '{first_row}'"),
+        )
+        .await?;
+        let refusal = refused(&mut connection, RetainedFamily::FenceReceipts)
             .await
             .map_err(|error| format!("{name}: {error}"))?;
+        assert_eq!(&refusal.row, refused_row, "{name}");
     }
 
-    let (mut connection, _) = fenced_copy().await?;
+    let (mut connection, ..) = fenced_copy().await?;
     damage(
         &mut connection,
         "UPDATE _fleet_sync_creation SET request = '{}'",

@@ -4,8 +4,9 @@
 //! candidate, before its first write). Compiled only with the `inspect` feature.
 //!
 //! Each family goes through the reader the receiver itself uses for it:
-//! the Copy record and creation request; every fence receipt by its transfer
-//! (`fence_receipt`) and by the epoch it ended (`epoch_end`), plus the carried
+//! the Copy record and creation request; every fence receipt at its own
+//! address, by its transfer (`fence_receipt`) and by the epoch it ended
+//! (`epoch_end`), each agreeing with the row's own request, plus the carried
 //! fence set a follower hands to a snapshot install (`read_old_fence`); the seed
 //! record and its pages; each seed attempt by its id; the install marker and its
 //! page receipts; and each staged transaction's parts as apply reads them
@@ -23,7 +24,7 @@ use crate::{
     snapshot_install_storage::InstallStorage,
 };
 use durable_steps::storage::TransactionScope;
-use fleet_sync_protocol::{CopyRole, FenceRequest, SeedAttemptId};
+use fleet_sync_protocol::{CopyRole, Epoch, FenceRequest, PeerId, SeedAttemptId};
 use serde::{Serialize, de::DeserializeOwned};
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
@@ -145,22 +146,49 @@ where
             .transfer
             .clone()
             .unwrap_or_else(|| format!("row {index}"));
+        let refuse = |detail: String| RetainedRecordRefusal {
+            family: Family::FenceReceipts,
+            row: label.clone(),
+            detail,
+        };
+        // Each row at its own address, as the carried-fence reader addresses
+        // it: its own transfer and its own ended epoch, both agreeing with the
+        // request it holds, so one row's request can't stand in for another's.
         let request: FenceRequest = decode_record(row.request, "fence receipt request")
-            .map_err(|error| refusal(Family::FenceReceipts, label.as_str())(error.to_string()))?;
-        CopyStorage(scope)
+            .map_err(|error| refuse(error.to_string()))?;
+        let old_epoch = row
+            .old_epoch
+            .as_deref()
+            .and_then(|value| value.parse::<u64>().ok())
+            .and_then(|epoch| Epoch::new(epoch).ok())
+            .ok_or_else(|| refuse(corrupt("fence receipt epoch")))?;
+        let old_holder: Option<PeerId> = row
+            .old_holder
+            .map(|value| decode_record(Some(value), "fence receipt holder"))
+            .transpose()
+            .map_err(|error| refuse(error.to_string()))?;
+        let transfer =
+            encode_record(&request.transfer_id).map_err(|error| refuse(error.to_string()))?;
+        if row.transfer.as_deref() != Some(transfer.as_str()) || old_epoch != request.expect.epoch {
+            return Err(refuse(corrupt("fence receipt identity")));
+        }
+        let result = CopyStorage(scope)
             .fence_receipt(&request)
             .await
-            .map_err(|error| refusal(Family::FenceReceipts, label.as_str())(error.to_string()))?
-            .ok_or_else(|| {
-                refusal(Family::FenceReceipts, label.as_str())(corrupt("fence receipt"))
-            })?;
-        CopyStorage(scope)
-            .epoch_end(request.expect.epoch)
+            .map_err(|error| refuse(error.to_string()))?
+            .ok_or_else(|| refuse(corrupt("fence receipt")))?;
+        let result = encode_record(&result).map_err(|error| refuse(error.to_string()))?;
+        if row.result.as_deref() != Some(result.as_str()) {
+            return Err(refuse(corrupt("fence receipt identity")));
+        }
+        if CopyStorage(scope)
+            .epoch_end(old_epoch)
             .await
-            .map_err(|error| refusal(Family::FenceReceipts, label.as_str())(error.to_string()))?
-            .ok_or_else(|| {
-                refusal(Family::FenceReceipts, label.as_str())(corrupt("epoch fence"))
-            })?;
+            .map_err(|error| refuse(error.to_string()))?
+            != Some((old_holder, request.expect.acked))
+        {
+            return Err(refuse(corrupt("epoch fence")));
+        }
         records.fence_receipts += 1;
     }
     let follower = match &copy {
