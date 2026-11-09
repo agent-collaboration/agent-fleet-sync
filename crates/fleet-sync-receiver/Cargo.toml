@@ -7,6 +7,10 @@ license.workspace = true
 publish.workspace = true
 description = "Runtime-independent replication copy rules over borrowed SQLx scopes"
 
+[features]
+# Read-only retained-record inspection for hosts proving storage they did not write.
+inspect = []
+
 [dependencies]
 durable-steps = { path = "../durable-steps" }
 sqlx-core = { workspace = true, features = ["migrate"] }

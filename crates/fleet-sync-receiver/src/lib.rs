@@ -17,6 +17,14 @@ mod copy_inspection;
 mod copy_lifecycle;
 mod inspection_corpus;
 pub use copy_inspection::{CopyInspection, CopyStage, StagedPart, StagedTransaction, inspect_copy};
+#[cfg(feature = "inspect")]
+mod checked_inspect_queries;
+#[cfg(feature = "inspect")]
+mod retained_inspection;
+#[cfg(feature = "inspect")]
+pub use retained_inspection::{
+    RetainedFamily, RetainedRecordRefusal, RetainedRecords, inspect_retained_records,
+};
 mod copy_storage;
 mod fence_rules;
 mod foreign_key_integrity;
@@ -37,6 +45,8 @@ mod snapshot_install_contract;
 mod snapshot_install_fence;
 #[cfg(test)]
 mod turso_copy_inspection_tests;
+#[cfg(all(test, feature = "inspect"))]
+mod turso_retained_inspection_tests;
 pub use snapshot_install_fence::{SNAPSHOT_REPLACED_TABLES, SnapshotFence};
 mod snapshot_install_storage;
 pub use snapshot_install::SnapshotInstallRules;

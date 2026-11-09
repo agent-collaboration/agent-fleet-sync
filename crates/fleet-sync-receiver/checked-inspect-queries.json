@@ -1,0 +1,16 @@
+{
+  "migrations": [
+    "migrations"
+  ],
+  "output": "src/checked_inspect_queries.rs",
+  "metadata": "checked-inspect-query-metadata.json",
+  "queries": [
+    {
+      "name": "read_seed_attempt_ids",
+      "sql": "sql/read_seed_attempt_ids.sql",
+      "row": "StoredSeedAttemptIdRow",
+      "result": "many",
+      "parameters": []
+    }
+  ]
+}
