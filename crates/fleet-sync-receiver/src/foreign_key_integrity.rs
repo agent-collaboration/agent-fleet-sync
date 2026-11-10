@@ -53,8 +53,8 @@ where
     <S::Database as Database>::Arguments: IntoArguments<S::Database>,
     for<'a> String: Type<S::Database> + Encode<'a, S::Database> + Decode<'a, S::Database>,
     for<'a> Option<String>: Type<S::Database> + Encode<'a, S::Database> + Decode<'a, S::Database>,
-    for<'a> f64: Type<S::Database> + Encode<'a, S::Database> + Decode<'a, S::Database>,
-    for<'a> Vec<u8>: Type<S::Database> + Encode<'a, S::Database> + Decode<'a, S::Database>,
+    for<'a> f64: Type<S::Database> + Encode<'a, S::Database>,
+    for<'a> Vec<u8>: Type<S::Database> + Encode<'a, S::Database>,
     for<'r> &'r str: ColumnIndex<<S::Database as Database>::Row>,
 {
     pub(crate) async fn defer(&mut self) -> Result<(), ReceiverError> {
@@ -75,7 +75,11 @@ where
         }
         Ok(())
     }
-    pub(crate) async fn validate(&mut self) -> Result<Option<IntegrityViolation>, ReceiverError> {
+    pub(crate) async fn validate(&mut self) -> Result<Option<IntegrityViolation>, ReceiverError>
+    where
+        for<'a> f64: Decode<'a, S::Database>,
+        for<'a> Vec<u8>: Decode<'a, S::Database>,
+    {
         let tables = SchemaReads(self.0).table_names().await?;
         for table in &tables {
             let child_columns = SchemaReads(self.0).table_columns(table).await?;

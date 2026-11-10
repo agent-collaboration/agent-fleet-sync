@@ -172,6 +172,11 @@ where
                 acked: status.acked,
             });
         }
+        // A parent can sort before its children. Keep relational checks deferred
+        // within this owned transaction until every replicated table is empty.
+        crate::foreign_key_integrity::ForeignKeyIntegrity(scope)
+            .defer()
+            .await?;
         for table in SchemaReads(scope).table_names().await? {
             BoundStatement::new(
                 format!("DELETE FROM {}", quoted_identifier(&table)),
@@ -180,6 +185,9 @@ where
             .execute(scope)
             .await?;
         }
+        crate::foreign_key_integrity::ForeignKeyIntegrity(scope)
+            .restore()
+            .await?;
         CopyStorage(scope).erase_records().await?;
         CopyStorage(scope)
             .save(&CopyRecord::Retired {
