@@ -30,6 +30,16 @@ function decodeRustString(literal) {
 const conformanceCases = [...conformanceSource.matchAll(/passed\.push\(\s*"((?:[^"\\]|\\[\s\S])*)"\s*,?\s*\)/g)]
   .map(([, name]) => decodeRustString(name));
 assert.ok(conformanceCases.length > 0, "no conformance cases found");
+// /scope-migrations returns each scope-migration case after it passes; the
+// expected names are the CASES list beside the shared cases, so a skipped or
+// renamed case fails here rather than shrinking the run.
+const scopeSource = await readFile(
+  new URL("../../crates/durable-steps/tests/integration/scope_migration_cases.rs", import.meta.url), "utf8",
+);
+const scopeBlock = scopeSource.match(/pub\(crate\) const CASES: &\[&str\] = &\[([\s\S]*?)\];/);
+assert.ok(scopeBlock, "no CASES list in scope_migration_cases.rs");
+const scopeCases = [...scopeBlock[1].matchAll(/"((?:[^"\\]|\\[\s\S])*)"/g)].map(([, name]) => decodeRustString(name));
+assert.ok(scopeCases.length > 0, "no scope-migration cases found");
 
 const stateRoot = await mkdtemp(join(tmpdir(), "2026-10-durable-steps-workerd-"));
 const entropy = JSON.stringify([...randomBytes(10)]);
@@ -44,7 +54,7 @@ function options(name) {
   };
 }
 try {
-  for (const path of ["/suite", "/metadata-upgrade", "/reborrow", "/alarm-atomic", "/alarm-concurrent"]) {
+  for (const path of ["/suite", "/scope-migrations", "/metadata-upgrade", "/reborrow", "/alarm-atomic", "/alarm-concurrent"]) {
     const runtime = new Miniflare(options(randomBytes(16).toString("hex")));
     try {
       await runtime.ready;
@@ -53,6 +63,7 @@ try {
       console.log(JSON.stringify({ path, status: response.status, body }));
       assert.equal(response.status, 200);
       if (path === "/suite") assert.deepEqual(JSON.parse(body), conformanceCases);
+      else if (path === "/scope-migrations") assert.deepEqual(JSON.parse(body), scopeCases);
       else if (path === "/metadata-upgrade") assert.deepEqual(JSON.parse(body), [
         "v1 history and metadata survive upgrade",
         "repeat bootstrap preserves row ids",

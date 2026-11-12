@@ -16,6 +16,8 @@ mod journey_worker;
 mod legacy_rows;
 mod reborrow_cases;
 mod retry_journal;
+#[path = "../../../../crates/durable-steps/tests/integration/scope_migration_cases.rs"]
+mod scope_migration_cases;
 #[path = "../../../../crates/durable-steps/tests/support/mod.rs"]
 mod support;
 pub use journey_worker::{JourneyObject, ReceiverObject};
@@ -155,6 +157,13 @@ impl DurableObject for StepsObject {
                 )
                 .await?;
                 Response::from_json(&observations)
+            }
+            "/scope-migrations" => {
+                let passed = scope_migration_cases::run(&*self.store)
+                    .await
+                    .map_err(worker_error)?;
+                self.state.storage().sync().await?;
+                Response::from_json(&passed)
             }
             "/suite" => {
                 let passed = conformance::run(Arc::clone(&self.store), Arc::clone(&self.host))

@@ -4,7 +4,7 @@
 use durable_steps::storage::TransactionScope;
 use sqlx_core::{
     arguments::IntoArguments, column::ColumnIndex, database::Database, decode::Decode,
-    encode::Encode, query::query, row::Row, types::Type,
+    query::query, row::Row, types::Type,
 };
 
 #[derive(Debug)]
@@ -44,30 +44,6 @@ where
                 })
             })
             .collect()
-    }
-}
-pub(crate) fn write_migration_receipt<S>(
-    scope: &mut S,
-    version: String,
-    description: String,
-    checksum: Vec<u8>,
-) -> impl std::future::Future<Output = Result<(), sqlx_core::Error>> + Send
-where
-    S: TransactionScope,
-    <S::Database as Database>::Arguments: IntoArguments<S::Database>,
-    for<'value> String: Type<S::Database> + Encode<'value, S::Database>,
-    for<'value> Vec<u8>: Type<S::Database> + Encode<'value, S::Database>,
-{
-    async move {
-        let statement = query::<S::Database>(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/migration-queries/write_migration_receipt.sql"
-        )))
-        .bind(version)
-        .bind(description)
-        .bind(checksum);
-        statement.execute(scope.executor()).await?;
-        Ok(())
     }
 }
 

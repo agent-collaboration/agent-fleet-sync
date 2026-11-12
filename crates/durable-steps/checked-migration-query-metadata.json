@@ -1,7 +1,7 @@
 {
   "producer": "owned sqlx-turso / Turso 0.8.1 describe",
   "sources": {
-    "checked-migration-queries.json": "3565b20521d61ad28e3fab4316844e1dc3d5de9a7bde2ca48544e537e1eb9592",
+    "checked-migration-queries.json": "ed9e15deef137cee558d93355405d6c2c802906b4c1471113c800ed04c86d8c0",
     "generator:fleet-sync-query-gen/Cargo.toml": "01210c567dcbccb4ff127626a0ff7625641edd4c5f0787ea41777757b1eaa3e6",
     "generator:fleet-sync-query-gen/src/expression_classes.rs": "14dc40abaec059e437d3e44bc187b9560812b0ed21ee2ad9d558364032fb097e",
     "generator:fleet-sync-query-gen/src/lib.rs": "df50be1a279adf266fdd12d184637b0113740390c0cef7273d1995dea0475152",
@@ -52,19 +52,18 @@
     "generator:sqlx-turso-core/src/value/primitive_codecs.rs": "8843e6dd8f05373f519b4fb03e001132debdca1f56fd137ca179c75793a8170f",
     "generator:sqlx-turso/Cargo.toml": "157f1fdfaaf89c5bdd0dc44c806a5155b723e350d545afec86004a77ec67c0e6",
     "generator:sqlx-turso/src/lib.rs": "32ec3ac4ca4d0d703a452496262928a3a00ddfdf71eac8cbbe4ce1a3da69d9b5",
-    "generator:workspace/Cargo.lock": "9cddb21fd9fbfa173b3935edc9e647c9a9b7fcf2cb0ea9f33e389255f4e14d31",
+    "generator:workspace/Cargo.lock": "52273bcccb74ac2babe3da489e32e47e08d093ef30aea4907048fe9c161c66f6",
     "generator:workspace/rust-toolchain.toml": "3baca9098f290c1bc291aa94f22c516487ba2c0865bd9795d1c863b72025ab9c",
     "migration-queries/read_migration_columns.sql": "326ec3996ceb1014d42a8b950d9bb5e7e25c52f0ad195b7a7ee2f0d43aa97adf",
     "migration-queries/read_migration_receipts.sql": "146fb90feb5062723c3c3c59506211f570436ede84bd914a7d24fab76df47900",
     "migration-queries/read_migration_tables.sql": "2c25740cdb79fa1d67df49b8ff97609bb8496498626e1d45d4c9c1d978fba453",
-    "migration-queries/write_migration_receipt.sql": "66cfeb0695b7a0e12dee214a24caa0b5f16f7983693dba873a1d49b4d247d8b6",
     "migrations/0001_durable_steps.sql": "116021a175b2fa65dd297e72b25b571f0a3677993f804dea67f61dcdcbe54546",
     "migrations/0002_journal_metadata.sql": "dd1b0814420de627963a243815b5d68e73ccd67a5327af987214a59c3822b718",
     "migrations/0003_sqlx_journal_receipts.sql": "9a97765b34c84834e523c22d7b30b8593cadaa5528afd14e125ea8b1b114e59f",
     "query-schema/99990000_journal_receipts.sql": "56ff05f5b68c9a1632719717c6bfe0ca9c2c80b388bf7009cdcafafba1ababc3",
-    "src/checked_migration_queries.rs": "e6dd7a241b2ceb97c8b415b77a1ee97b988b87493fd47b58c8f7ae48ffc5650d"
+    "src/checked_migration_queries.rs": "79573c6f27e302a67778e889b9833031c03fa18dfbc9100f7198a836c2131180"
   },
-  "queries_digest": "979b434fac26981dc9f76842ea5cf4bdbfa953b13f4e21cbb5b6bea07e6854bf",
+  "queries_digest": "99fb5b65ed24d97dffbc6c2c865af1ec4ec7d6d9050f8bbe95be11e4a27a592d",
   "queries": [
     {
       "name": "read_migration_receipts",
@@ -113,11 +112,6 @@
           "type_source": "typeof"
         }
       ]
-    },
-    {
-      "name": "write_migration_receipt",
-      "bind_slots": 3,
-      "columns": []
     },
     {
       "name": "read_migration_tables",

@@ -14,29 +14,6 @@
       "parameters": []
     },
     {
-      "name": "write_migration_receipt",
-      "sql": "migration-queries/write_migration_receipt.sql",
-      "row": null,
-      "result": "execute",
-      "parameters": [
-        {
-          "name": "version",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "description",
-          "kind": "text",
-          "nullable": false
-        },
-        {
-          "name": "checksum",
-          "kind": "blob",
-          "nullable": false
-        }
-      ]
-    },
-    {
       "name": "read_migration_tables",
       "sql": "migration-queries/read_migration_tables.sql",
       "row": "MigrationTableRow",

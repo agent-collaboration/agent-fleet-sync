@@ -25,6 +25,7 @@ mod operation_context;
 mod operation_contract;
 mod operation_engine;
 mod operation_model;
+pub mod scope_migrations;
 #[cfg(any(feature = "turso", feature = "durable-object"))]
 mod sql_journal;
 #[cfg(any(feature = "turso", feature = "durable-object"))]

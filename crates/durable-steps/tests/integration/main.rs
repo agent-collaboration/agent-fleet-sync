@@ -15,6 +15,10 @@ mod journal_upgrade_crash;
 mod legacy_integrity;
 #[cfg(feature = "turso")]
 mod legacy_rows;
+#[cfg(feature = "turso")]
+mod scope_migration_cases;
+#[cfg(feature = "turso")]
+mod scope_migrations;
 mod store_conformance;
 #[path = "../support/mod.rs"]
 mod support;
