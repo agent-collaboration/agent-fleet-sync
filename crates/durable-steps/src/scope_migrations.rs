@@ -44,14 +44,17 @@ pub struct MigrationProgress {
 }
 
 /// Why a run stopped. The host's transaction must roll back on every variant.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum MigrationRunError {
     /// SQLx refused the history: dirty, unknown or changed versions.
+    #[error("SQLx refused the migration history: {0}")]
     Policy(MigrateError),
     /// The source or the stored history broke a rule SQLx does not check, or
     /// the history could not be read.
+    #[error(transparent)]
     History(HistoryFault),
     /// SQLx asked to apply `version` and it failed.
+    #[error("migration {version} failed: {cause}")]
     AtVersion {
         version: i64,
         cause: MigrationVersionCause,
@@ -59,43 +62,52 @@ pub enum MigrationRunError {
 }
 
 /// The phase of a pending version that failed, with its original error.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum MigrationVersionCause {
     /// The host's check before this version's SQL.
+    #[error("its preflight refused it: {0}")]
     Preflight(StoreError),
     /// The migration's own SQL.
+    #[error("its SQL failed: {0}")]
     Statement(sqlx_core::Error),
     /// Writing the version's receipt after its SQL succeeded.
+    #[error("its receipt could not be written: {0}")]
     Receipt(sqlx_core::Error),
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum HistoryFault {
     /// Creating or reading the history table failed.
+    #[error("the migration history could not be read or created: {0}")]
     Storage(sqlx_core::Error),
     /// The configured history table is not a plain SQL identifier.
+    #[error("the migration history table is not a plain identifier")]
     TableName,
+    #[error(transparent)]
     Source(SourceFault),
     /// A stored receipt field lacks its recorded storage class or value.
+    #[error("migration receipt {version:?} has an invalid {}", field.column())]
     Record {
         version: Option<i64>,
         field: ReceiptField,
     },
+    #[error("migration {0} has two receipts")]
     DuplicateVersion(i64),
     /// `version` was never applied, but `highest` was.
-    LowerHole {
-        version: i64,
-        highest: i64,
-    },
+    #[error("migration {version} is missing below applied migration {highest}")]
+    LowerHole { version: i64, highest: i64 },
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SourceFault {
     /// No up migration.
+    #[error("the migration source has no up migration")]
     Empty,
     /// `version` does not follow its predecessor strictly.
+    #[error("migration {version} is out of order in its source")]
     Unordered { version: i64 },
     /// `version` asks to run outside a transaction.
+    #[error("migration {version} must run inside the transaction")]
     NoTransaction { version: i64 },
 }
 
